@@ -80,7 +80,6 @@ function Bone({ h = 72 }: { h?: number }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export function TodayScreen({ simple = false, onStockSelect, commandCenter }: { simple?: boolean; onStockSelect?: (s: string) => void; commandCenter?: React.ReactNode }) {
-  const [todayView, setTodayView] = useState<"intelligence"|"market">("intelligence")
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [regime, setRegime] = useState("NORMAL")
@@ -311,7 +310,8 @@ export function TodayScreen({ simple = false, onStockSelect, commandCenter }: { 
           Intelligence refreshes daily at 6:30 AM IST · AMFI updates monthly
         </div>
       </div>
-      )} {/* end intelligence view */}
     </div>
   )
 }
+
+

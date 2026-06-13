@@ -1,88 +1,83 @@
 // app/api/ipo/route.ts
-// IPO API — reads from ipo_live table (populated by fetch_live_ipos.py)
-// Falls back to lib/ipo/pipeline.ts static data if table empty
-
 import { NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
-import { getIpoPipeline } from "@/lib/ipo/pipeline"
-import { scoreIpo } from "@/lib/ipo/scoring"
+import { IPO_PIPELINE, getIposByStatus } from "@/lib/ipo/pipeline"
+import { calcScore } from "@/lib/ipo/scoring"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
-    const status = searchParams.get("status") || ""    // OPEN|UPCOMING|CLOSED
+    const status = searchParams.get("status") || ""
     const limit  = Math.min(50, parseInt(searchParams.get("limit") || "20"))
 
-    // Try DB first (populated by cron)
     const dbIpos = await sql`
-      SELECT
-        id, name, symbol, open_date, close_date,
+      SELECT id, name, symbol, open_date, close_date,
         price_band_low, price_band_high, issue_size, lot_size,
         fresh_issue, ofs_size, status, listing_exchange, listing_date,
-        gmp, gmp_pct,
-        subscription_qib, subscription_nii, subscription_retail, subscription_total,
-        anchor_allotment, sector, source,
-        score_recommendation, score_conviction, score_reason,
-        updated_at
+        gmp, subscription_qib, subscription_nii,
+        subscription_retail, subscription_total,
+        sector, source, score_recommendation, score_conviction, updated_at
       FROM ipo_live
       WHERE (${status} = '' OR status = ${status})
-      ORDER BY
-        CASE status
-          WHEN 'OPEN'     THEN 1
-          WHEN 'UPCOMING' THEN 2
-          WHEN 'CLOSED'   THEN 3
-          ELSE 4
-        END,
-        updated_at DESC
+      ORDER BY CASE status
+        WHEN 'OPEN'     THEN 1
+        WHEN 'UPCOMING' THEN 2
+        WHEN 'CLOSED'   THEN 3
+        ELSE 4 END, updated_at DESC
       LIMIT ${limit}
     `.catch(() => [])
 
     if (dbIpos.length > 0) {
-      // Score each IPO using our scoring engine
       const scored = dbIpos.map((ipo: any) => {
-        const scoreResult = scoreIpo({
-          name:           ipo.name,
-          priceBandLow:   ipo.price_band_low,
-          priceBandHigh:  ipo.price_band_high,
-          issueSize:      ipo.issue_size,
-          freshIssue:     ipo.fresh_issue,
-          gmpPrice:       ipo.gmp,
-          openDate:       ipo.open_date,
-          closeDate:      ipo.close_date,
-          status:         ipo.status,
-          sector:         ipo.sector,
-          subscriptionX:  ipo.subscription_total,
-        })
+        // Map DB columns to exact IpoData interface fields
+        const ipoData = {
+          name:           ipo.name         || "",
+          sector:         ipo.sector       || "",
+          issueSize:      Number(ipo.issue_size      || 0),
+          freshIssuePct:  Number(ipo.fresh_issue     || 0),
+          ofsPct:         Number(ipo.ofs_size        || 0),
+          priceBandLow:   Number(ipo.price_band_low  || 0),
+          priceBandHigh:  Number(ipo.price_band_high || 0),
+          lotSize:        Number(ipo.lot_size        || 0),
+          gmpPrice:       Number(ipo.gmp             || 0),
+          retailX:        Number(ipo.subscription_retail || 0),
+          niiX:           Number(ipo.subscription_nii    || 0),
+          qibX:           Number(ipo.subscription_qib    || 0),
+          totalX:         Number(ipo.subscription_total  || 0),
+          status:         ipo.status       || "UPCOMING",
+          listingDate:    ipo.listing_date || "",
+          anchors:        [] as string[],
+        }
         return {
           ...ipo,
-          id:     String(ipo.id),
-          score:  ipo.score_recommendation
-            ? { recommendation: ipo.score_recommendation, listingScore: ipo.score_conviction, reason: ipo.score_reason }
-            : scoreResult,
+          id: String(ipo.id),
+          priceBandLow:  ipoData.priceBandLow,
+          priceBandHigh: ipoData.priceBandHigh,
+          score: ipo.score_recommendation
+            ? { recommendation: ipo.score_recommendation, listingScore: ipo.score_conviction }
+            : calcScore(ipoData),
         }
       })
-
-      return NextResponse.json({ success: true, ipos: scored, source: "db", count: scored.length })
+      return NextResponse.json({ success: true, ipos: scored, source: "db" })
     }
 
-    // Fallback to static pipeline
-    const staticIpos = getIpoPipeline()
-    const scored = staticIpos.map((ipo: any) => ({
-      ...ipo,
-      score: scoreIpo(ipo),
-    }))
-
-    return NextResponse.json({ success: true, ipos: scored, source: "static", count: scored.length })
+    // Static fallback
+    const staticIpos = status
+      ? getIposByStatus(status as "UPCOMING" | "OPEN" | "LISTED")
+      : IPO_PIPELINE.slice(0, limit)
+    return NextResponse.json({
+      success: true,
+      ipos: staticIpos.map((ipo: any) => ({ ...ipo, score: calcScore(ipo) })),
+      source: "static",
+    })
 
   } catch (error: unknown) {
-    // Final fallback — never crash IPO page
     try {
-      const staticIpos = getIpoPipeline()
       return NextResponse.json({
         success: true,
-        ipos: staticIpos.map((ipo: any) => ({ ...ipo, score: scoreIpo(ipo) })),
+        ipos: IPO_PIPELINE.slice(0, 20).map((ipo: any) => ({ ...ipo, score: calcScore(ipo) })),
         source: "static_fallback",
       })
     } catch {
