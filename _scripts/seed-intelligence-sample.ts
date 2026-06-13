@@ -87,7 +87,7 @@ async function main() {
       INSERT INTO amfi_category_flows (report_month, report_year, category, sub_category, net_inflow, aum, mom_change, yoy_change)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
       ON CONFLICT (report_month, report_year, category, sub_category) DO UPDATE SET
-        net_inflow=EXCLUDED.net_inflow, aum=EXCLUDED.aum, updated_at=now()
+        net_inflow=EXCLUDED.net_inflow, aum=EXCLUDED.aum
     `, [r.report_month, r.report_year, r.category, r.sub_category, r.net_inflow, r.aum, r.mom_change, r.yoy_change])
   }
   console.log('  ✓ AMFI flows (May 2026)')
@@ -99,3 +99,4 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
+
