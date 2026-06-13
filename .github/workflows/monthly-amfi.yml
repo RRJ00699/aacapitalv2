@@ -1,0 +1,17 @@
+name: AACapital Monthly AMFI
+on:
+  schedule:
+    - cron: '0 2 10 * *'   # 10th of month 7:30 AM IST
+  workflow_dispatch:
+jobs:
+  load-amfi:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx tsx _scripts/loaders/load-amfi.ts
+      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=amfi

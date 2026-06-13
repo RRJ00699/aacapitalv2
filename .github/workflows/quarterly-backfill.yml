@@ -1,0 +1,20 @@
+name: AACapital Quarterly Backfill
+on:
+  schedule:
+    - cron: '0 2 15 1,4,7,10 *'   # Jan/Apr/Jul/Oct 15th
+  workflow_dispatch:
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx tsx _scripts/backfill/backfill-earnings.ts --source=csv
+      - run: npx tsx _scripts/run-intelligence-scoring.ts

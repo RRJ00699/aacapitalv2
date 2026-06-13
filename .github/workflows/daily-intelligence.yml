@@ -1,0 +1,26 @@
+name: AACapital Daily Intelligence
+on:
+  schedule:
+    - cron: '0 1 * * 1-5'   # 6:30 AM IST
+  workflow_dispatch:
+jobs:
+  score-all:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=earnings
+      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=commentary
+      - name: Log job
+        if: always()
+        run: |
+          node -e "
+          const {Pool}=require('pg');
+          const p=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
+          p.query(\"INSERT INTO intelligence_jobs(job_type,status,completed_at) VALUES('daily_scoring','${{ job.status }}',NOW())\").finally(()=>p.end());
+          "
