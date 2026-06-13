@@ -1,0 +1,5 @@
+nse_symbol,quarter,promoter_pct,fii_pct,dii_pct,mutual_fund_pct,insurance_pct,public_pct,pledged_pct
+RELIANCE,2024Q4,50.10,19.00,17.50,11.50,4.80,13.40,0
+RELIANCE,2025Q4,50.10,20.20,18.30,12.00,5.00,11.40,0
+WABAG,2024Q4,19.12,9.20,13.40,10.50,1.50,58.28,0
+WABAG,2025Q4,19.12,12.50,18.80,14.20,2.10,49.58,0

@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/premarket-brief",
+      "schedule": "30 0 * * 1-5"
+    },
+    {
+      "path": "/api/cron/dna-refresh",
+      "schedule": "30 19 * * 5"
+    }
+  ]
+}
