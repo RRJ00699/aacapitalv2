@@ -1,0 +1,60 @@
+name: Neon Storage Monitor
+
+on:
+  # Run daily at 6 AM IST (00:30 UTC)
+  schedule:
+    - cron: '30 0 * * *'
+  # Run after every candle load (in case someone accidentally loads to Neon)
+  workflow_run:
+    workflows: ["Load Candles to DB"]
+    types: [completed]
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      purge:
+        description: 'Run purge strategy if over threshold'
+        default: 'false'
+        type: boolean
+
+jobs:
+  check-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Neon storage
+        id: storage
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          PURGE_FLAG=""
+          if [ "${{ github.event.inputs.purge }}" == "true" ]; then
+            PURGE_FLAG="--purge"
+          fi
+          npx tsx _scripts/check-neon-storage.ts $PURGE_FLAG
+        continue-on-error: true  # Don't fail pipeline, just report
+
+      - name: Auto-purge if critical (>85%)
+        if: steps.storage.outputs.neon_status == 'critical'
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx _scripts/check-neon-storage.ts --purge
+
+      - name: Alert summary
+        run: |
+          echo "Neon Storage: ${{ steps.storage.outputs.neon_used_mb }} MB (${{ steps.storage.outputs.neon_pct }}%)"
+          echo "Status: ${{ steps.storage.outputs.neon_status }}"

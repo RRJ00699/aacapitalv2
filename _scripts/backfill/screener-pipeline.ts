@@ -293,70 +293,89 @@ async function upsertToDb(data: ReturnType<typeof parseDataSheet>) {
   try {
     // Annual rows — fiscal_quarter = "FY" to distinguish from quarterly
     for (const r of data.annual) {
-      await client.query(`
-        INSERT INTO quarterly_results
-          (symbol, fiscal_year, fiscal_quarter, result_date,
-           revenue, operating_profit, ebitda, pat, ebitda_margin, pat_margin)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT (symbol, fiscal_year, fiscal_quarter) DO UPDATE SET
-          revenue=EXCLUDED.revenue,
-          operating_profit=EXCLUDED.operating_profit,
-          ebitda=EXCLUDED.ebitda,
-          pat=EXCLUDED.pat,
-          ebitda_margin=EXCLUDED.ebitda_margin,
-          pat_margin=EXCLUDED.pat_margin, result_date=EXCLUDED.result_date,
-          updated_at=NOW()
-      `, [
-        r.symbol,
-        r.year_end.substring(0, 4),   // fiscal_year e.g. "2024"
-        "FY",                          // fiscal_quarter = FY for annual rows
-        r.year_end,                    // result_date
-        r.revenue_cr,
-        r.operating_profit_cr,
-        r.operating_profit_cr,         // ebitda ≈ operating_profit (before int/dep adjustment)
-        r.net_profit_cr,               // pat
-        r.opm_pct,                     // ebitda_margin
-        (r.net_profit_cr != null && r.revenue_cr && r.revenue_cr > 0)
-          ? Math.round(r.net_profit_cr / r.revenue_cr * 10000) / 100
-          : null,                      // pat_margin
-      ]);
+      try {
+        await client.query(`
+          INSERT INTO quarterly_results
+            (symbol, fiscal_year, fiscal_quarter, result_date,
+             revenue, operating_profit, ebitda, pat, ebitda_margin, pat_margin)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          ON CONFLICT (symbol, fiscal_year, fiscal_quarter) DO UPDATE SET
+            revenue=EXCLUDED.revenue,
+            operating_profit=EXCLUDED.operating_profit,
+            ebitda=EXCLUDED.ebitda,
+            pat=EXCLUDED.pat,
+            ebitda_margin=EXCLUDED.ebitda_margin,
+            pat_margin=EXCLUDED.pat_margin, result_date=EXCLUDED.result_date,
+            updated_at=NOW()
+        `, [
+          r.symbol,
+          parseInt(r.year_end.substring(0, 4)),
+          "FY",
+          r.year_end,
+          r.revenue_cr,
+          r.operating_profit_cr,
+          r.operating_profit_cr,
+          r.net_profit_cr,
+          r.opm_pct,
+          (r.net_profit_cr != null && r.revenue_cr && r.revenue_cr > 0)
+            ? Math.round(r.net_profit_cr / r.revenue_cr * 10000) / 100
+            : null,
+        ]);
+      } catch (rowErr: any) {
+        console.log(`    ✗ annual row failed: symbol=${r.symbol} year=${r.year_end} — ${rowErr.message}`);
+        await client.query('ROLLBACK').catch(() => {});
+        await client.query('BEGIN').catch(() => {});
+      }
     }
 
     // Quarterly rows
     for (const r of data.quarterly) {
-      const qLabel = r.quarter_end.substring(0, 7); // "2024-03"
-      await client.query(`
-        INSERT INTO quarterly_results
-          (symbol, fiscal_year, fiscal_quarter, result_date,
-           revenue, operating_profit, ebitda, pat, ebitda_margin, pat_margin)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT (symbol, fiscal_year, fiscal_quarter) DO UPDATE SET
-          revenue=EXCLUDED.revenue,
-          operating_profit=EXCLUDED.operating_profit,
-          ebitda=EXCLUDED.ebitda,
-          pat=EXCLUDED.pat,
-          ebitda_margin=EXCLUDED.ebitda_margin,
-          pat_margin=EXCLUDED.pat_margin, result_date=EXCLUDED.result_date,
-          updated_at=NOW()
-      `, [
-        r.symbol,
-        r.quarter_end.substring(0, 4), // fiscal_year
-        qLabel,                         // fiscal_quarter e.g. "2024-03"
-        r.quarter_end,                  // result_date
-        r.revenue_cr,
-        r.operating_profit_cr,
-        r.operating_profit_cr,
-        r.net_profit_cr,
-        r.opm_pct,
-        (r.net_profit_cr != null && r.revenue_cr && r.revenue_cr > 0)
-          ? Math.round(r.net_profit_cr / r.revenue_cr * 10000) / 100
-          : null,
-      ]);
+      const qLabel = r.quarter_end.substring(0, 7);
+      try {
+        await client.query(`
+          INSERT INTO quarterly_results
+            (symbol, fiscal_year, fiscal_quarter, result_date,
+             revenue, operating_profit, ebitda, pat, ebitda_margin, pat_margin)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          ON CONFLICT (symbol, fiscal_year, fiscal_quarter) DO UPDATE SET
+            revenue=EXCLUDED.revenue,
+            operating_profit=EXCLUDED.operating_profit,
+            ebitda=EXCLUDED.ebitda,
+            pat=EXCLUDED.pat,
+            ebitda_margin=EXCLUDED.ebitda_margin,
+            pat_margin=EXCLUDED.pat_margin, result_date=EXCLUDED.result_date,
+            updated_at=NOW()
+        `, [
+          r.symbol,
+          parseInt(r.quarter_end.substring(0, 4)),
+          qLabel,
+          r.quarter_end,
+          r.revenue_cr,
+          r.operating_profit_cr,
+          r.operating_profit_cr,
+          r.net_profit_cr,
+          r.opm_pct,
+          (r.net_profit_cr != null && r.revenue_cr && r.revenue_cr > 0)
+            ? Math.round(r.net_profit_cr / r.revenue_cr * 10000) / 100
+            : null,
+        ]);
+      } catch (rowErr: any) {
+        console.log(`    ✗ quarterly row failed: symbol=${r.symbol} qtr=${r.quarter_end} — ${rowErr.message}`);
+        await client.query('ROLLBACK').catch(() => {});
+        await client.query('BEGIN').catch(() => {});
+      }
     }
 
     console.log(`  ✓ DB: ${data.annual.length} annual + ${data.quarterly.length} quarterly inserted`);
   } catch (e: any) {
-    console.log(`  ✗ DB: ${e.message}`);
+    const sample = data.annual[0] || data.quarterly[0];
+    if (sample) {
+      const s = sample as any;
+      console.log(`  ✗ DB: ${e.message}`);
+      console.log(`    First row: symbol=[${s.symbol}] date=[${s.year_end || s.quarter_end}] rev=[${s.revenue_cr}]`);
+    } else {
+      console.log(`  ✗ DB: ${e.message} (no data rows)`);
+    }
   } finally { client.release(); }
 }
 
@@ -410,3 +429,4 @@ async function main() {
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
+// DEBUG PATCH - this should not be in the file
