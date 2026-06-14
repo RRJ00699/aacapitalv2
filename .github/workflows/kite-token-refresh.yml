@@ -1,0 +1,59 @@
+name: Kite Token Refresh
+
+on:
+  schedule:
+    # 8:00 AM IST = 2:30 UTC (Mon-Fri)
+    - cron: '30 2 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install kiteconnect pyotp selenium webdriver-manager python-dotenv
+
+      - name: Install Chrome
+        run: |
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+          sudo apt-get update -q
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Refresh Kite access token
+        id: refresh
+        env:
+          KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
+          KITE_USER_ID:     ${{ secrets.KITE_USER_ID }}
+          KITE_PASSWORD:    ${{ secrets.KITE_PASSWORD }}
+          KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
+        run: |
+          echo "KITE_API_KEY=$KITE_API_KEY"         > .env.local
+          echo "KITE_API_SECRET=$KITE_API_SECRET"  >> .env.local
+          echo "KITE_USER_ID=$KITE_USER_ID"         >> .env.local
+          echo "KITE_PASSWORD=$KITE_PASSWORD"        >> .env.local
+          echo "KITE_TOTP_SECRET=$KITE_TOTP_SECRET" >> .env.local
+          python _scripts/kite-auth-auto.py --auto
+          TOKEN=$(grep KITE_ACCESS_TOKEN .env.local | cut -d'=' -f2)
+          echo "access_token=$TOKEN" >> $GITHUB_OUTPUT
+          echo "✅ Token refreshed"
+
+      - name: Update KITE_ACCESS_TOKEN secret
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: KITE_ACCESS_TOKEN
+          value: ${{ steps.refresh.outputs.access_token }}
+          pa_token: ${{ secrets.GH_PAT }}

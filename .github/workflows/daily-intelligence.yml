@@ -1,26 +1,79 @@
-name: AACapital Daily Intelligence
+name: Daily Intelligence Pipeline
+
 on:
   schedule:
-    - cron: '0 1 * * 1-5'   # 6:30 AM IST
+    # 4:30 PM IST = 11:00 UTC (Mon-Fri)
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
+    inputs:
+      skip_kite:
+        description: 'Skip Kite sync (if token not refreshed)'
+        default: 'false'
+        type: boolean
+
 jobs:
-  score-all:
+  daily-pipeline:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
-      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=earnings
-      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=commentary
-      - name: Log job
-        if: always()
-        run: |
-          node -e "
-          const {Pool}=require('pg');
-          const p=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
-          p.query(\"INSERT INTO intelligence_jobs(job_type,status,completed_at) VALUES('daily_scoring','${{ job.status }}',NOW())\").finally(()=>p.end());
-          "
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: pip install kiteconnect psycopg2-binary python-dotenv pandas requests
+
+      - name: Sync today's candles from Kite
+        if: ${{ github.event.inputs.skip_kite != 'true' }}
+        env:
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL:   ${{ secrets.NEON_DATABASE_URL }}
+          KITE_API_KEY:        ${{ secrets.KITE_API_KEY }}
+          KITE_ACCESS_TOKEN:   ${{ secrets.KITE_ACCESS_TOKEN }}
+        run: python _scripts/kite-sync-candles.py --days 1
+        continue-on-error: true
+
+      - name: Fetch FII/DII institutional flows
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/fetch_fii_dii.py
+        continue-on-error: true
+
+      - name: Update market regime
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/engines/market_regime.py
+        continue-on-error: true
+
+      - name: Run intelligence scoring
+        env:
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL:   ${{ secrets.NEON_DATABASE_URL }}
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx _scripts/run-intelligence-scoring.ts
+
+      - name: Check Neon storage
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx _scripts/check-neon-storage.ts
+        continue-on-error: true
+
+      - name: Pipeline summary
+        run: echo "✅ Daily pipeline complete $(date -u '+%Y-%m-%d %H:%M UTC')"
