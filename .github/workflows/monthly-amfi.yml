@@ -1,17 +1,35 @@
 name: AACapital Monthly AMFI
+
 on:
   schedule:
-    - cron: '0 2 10 * *'   # 10th of month 7:30 AM IST
+    # 1st of every month at 9 AM IST (3:30 UTC)
+    - cron: '30 3 1 * *'
   workflow_dispatch:
+
 jobs:
-  load-amfi:
+  amfi-update:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
-      - run: npx tsx _scripts/loaders/load-amfi.ts
-      - run: npx tsx _scripts/run-intelligence-scoring.ts --module=amfi
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AMFI scoring
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx _scripts/run-intelligence-scoring.ts --module=amfi
+
+      - name: Summary
+        run: echo "✅ Monthly AMFI update complete $(date -u '+%Y-%m-%d %H:%M UTC')"
