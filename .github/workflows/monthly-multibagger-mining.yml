@@ -1,0 +1,62 @@
+name: Monthly Multibagger Mining
+
+on:
+  schedule:
+    # 1st of each month at 6:00 AM IST (00:30 UTC)
+    - cron: "30 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      min_gain:
+        description: "Minimum historical gain to qualify (e.g. 500 for 5x)"
+        required: false
+        default: "500"
+
+jobs:
+  multibagger-mining:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Python deps
+        run: |
+          pip install psycopg2-binary python-dotenv numpy scipy
+
+      - name: Run historical multibagger miner
+        env:
+          DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: |
+          npx tsx _scripts/engines/indicator_calculator.ts --mode full
+
+      - name: Extract pattern DNA via DTW
+        env:
+          DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: |
+          python _scripts/engines/multibagger_pattern_miner.py \
+            --min-gain ${{ github.event.inputs.min_gain || '500' }}
+
+      - name: Sync updated patterns to Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: |
+          npx tsx _scripts/sync-signals-to-neon.ts
+
+      - name: Summary
+        run: echo "✅ Monthly multibagger mining complete"

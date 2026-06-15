@@ -1,390 +1,386 @@
-#!/usr/bin/env python3
 """
-_scripts/engines/market_regime.py
-─────────────────────────────────────────────────────────────────────────────
-Market Regime Engine — V10 AACapital
+AACapital — Market Regime Engine (with India VIX)
+Task 12: Wire India VIX to market regime engine
 
-Computes the daily market regime using:
-  1. Nifty 50 vs its 200-day EMA  (trend filter)
-  2. % of 200 watchlist stocks above their own 200-day EMA  (breadth filter)
-
-Regime matrix:
-  NORMAL   → Nifty > EMA200 AND breadth > 60%  → Deploy 70–100%
-  VOLATILE → Nifty > EMA200 AND breadth 40–60% → Deploy 30–50%
-  CAUTION  → Nifty > EMA200 AND breadth < 40%  → Deploy 20–30%
-  BEARISH  → Nifty < EMA200                    → Deploy 0–20%
+Computes daily Nifty regime + breadth + VIX and writes to Neon market_regimes table.
 
 Usage:
-  python _scripts/engines/market_regime.py               # compute + insert today
-  python _scripts/engines/market_regime.py --dry-run     # print only
-  python _scripts/engines/market_regime.py --backfill    # compute last 252 days
-
-Install:
-  pip install pandas numpy psycopg2-binary python-dotenv yfinance
-
-Env vars (.env.local):
-  DATABASE_URL=postgresql://...
+    python _scripts/engines/market_regime.py              # today only
+    python _scripts/engines/market_regime.py --backfill   # last 30 days
+    python _scripts/engines/market_regime.py --days 90    # last N days
 """
 
-import sys
 import os
+import sys
 import argparse
-import json
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
-try:
-    import pandas as pd
-    import numpy as np
-except ImportError:
-    print("ERROR: pip install pandas numpy", file=sys.stderr)
-    sys.exit(1)
+import psycopg2
+import psycopg2.extras
+from kiteconnect import KiteConnect
+from dotenv import load_dotenv
 
-try:
-    import yfinance as yf
-except ImportError:
-    print("ERROR: pip install yfinance", file=sys.stderr)
-    sys.exit(1)
+load_dotenv()
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(".env.local" if Path(".env.local").exists() else ".env")
-except ImportError:
-    pass
+NEON_URL     = os.environ["NEON_DATABASE_URL"]
+KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+
+# Access token: prefer env var, then fall back to .kite_token file
+# (same file your existing kite_token_refresh.py writes to)
+def _load_kite_token() -> str:
+    token = os.environ.get("KITE_ACCESS_TOKEN", "")
+    if not token:
+        token_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", ".kite_token")
+        )
+        if os.path.exists(token_file):
+            with open(token_file) as f:
+                token = f.read().strip()
+    return token
+
+KITE_TOKEN = _load_kite_token()
+
+# Kite instrument tokens
+NIFTY_TOKEN  = 256265   # NIFTY 50
+INDIA_VIX_TOKEN = 264969  # INDIA VIX
 
 
-# ─── Regime matrix ────────────────────────────────────────────────────────────
-def classify_regime(nifty_close: float, nifty_ema200: float, breadth_pct: float) -> dict:
-    above_ema = nifty_close > nifty_ema200
+def log(msg: str):
+    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
 
-    if not above_ema:
-        return {
-            "regime": "BEARISH",
-            "label":  "Bearish — capital preservation",
-            "deploy_min": 0,
-            "deploy_max": 20,
-            "ui_color":   "red",
-            "simple_msg": "Protect capital. Stay mostly in cash.",
-        }
 
-    if breadth_pct >= 60:
-        return {
-            "regime": "NORMAL",
-            "label":  "Normal — aggressive accumulation",
-            "deploy_min": 70,
-            "deploy_max": 100,
-            "ui_color":   "green",
-            "simple_msg": "Good time to invest. Deploy capital.",
-        }
+def _get_token() -> str:
+    t = os.environ.get('KITE_ACCESS_TOKEN', '').strip()
+    if t:
+        return t
+    for p in [os.path.join(os.getcwd(), '.kite_token'),
+              os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.kite_token'))]:
+        if os.path.exists(p):
+            t = open(p).read().strip()
+            if t:
+                return t
+    t = os.environ.get('ACCESS_TOKEN', '').strip()
+    if t:
+        return t
+    raise RuntimeError('No Kite access token. Run: $env:KITE_ACCESS_TOKEN = YOUR_TOKEN')
 
-    if breadth_pct >= 40:
-        return {
-            "regime": "VOLATILE",
-            "label":  "Volatile — selective stock picking",
-            "deploy_min": 30,
-            "deploy_max": 50,
-            "ui_color":   "amber",
-            "simple_msg": "Be selective. Only high-conviction ideas.",
-        }
+
+def get_kite() -> KiteConnect:
+    kite = KiteConnect(api_key=KITE_API_KEY)
+    kite.set_access_token(_get_token())
+    return kite
+
+
+def get_neon():
+    return psycopg2.connect(NEON_URL)
+
+
+# ── VIX level classifier ───────────────────────────────────────────────────────
+
+def classify_vix(vix: Optional[float]) -> str:
+    """
+    India VIX interpretation:
+    < 13  → Very Low Fear  (complacency risk)
+    13-17 → Low            (normal market)
+    17-22 → Moderate       (caution)
+    22-28 → High           (fear zone)
+    > 28  → Extreme Fear   (potential reversal zone)
+    """
+    if vix is None:
+        return "UNKNOWN"
+    if vix < 13:   return "VERY_LOW"
+    if vix < 17:   return "LOW"
+    if vix < 22:   return "MODERATE"
+    if vix < 28:   return "HIGH"
+    return "EXTREME"
+
+
+def vix_deployment_signal(vix: Optional[float]) -> str:
+    """
+    Maps VIX level to a capital deployment signal.
+    Counterintuitively: high VIX = buying opportunity.
+    """
+    if vix is None:
+        return "NEUTRAL"
+    if vix < 13:   return "REDUCE"      # overconfidence
+    if vix < 17:   return "FULL"        # normal — deploy freely
+    if vix < 22:   return "SELECTIVE"   # stay selective
+    if vix < 28:   return "ACCUMULATE"  # fear = opportunity
+    return "AGGRESSIVE_BUY"             # extreme fear = back up the truck
+
+
+# ── Nifty regime classifier ────────────────────────────────────────────────────
+
+def compute_ema(prices: list[float], period: int) -> list[float]:
+    ema = []
+    k = 2 / (period + 1)
+    for i, p in enumerate(prices):
+        if i == 0:
+            ema.append(p)
+        else:
+            ema.append(p * k + ema[-1] * (1 - k))
+    return ema
+
+
+def classify_regime(
+    nifty_close: float,
+    ema200: float,
+    breadth_pct: float,
+    vix: Optional[float],
+) -> dict:
+    """
+    Composite regime using Nifty vs EMA200 + breadth + VIX.
+    Returns regime label + deployment pct.
+    """
+    above_ema = nifty_close > ema200
+    strong_breadth = breadth_pct >= 60
+
+    vix_class  = classify_vix(vix)
+    vix_signal = vix_deployment_signal(vix)
+
+    # Base regime
+    if above_ema and strong_breadth:
+        base = "BULLISH"
+        base_deploy = 80
+    elif above_ema and not strong_breadth:
+        base = "NEUTRAL_BULLISH"
+        base_deploy = 50
+    elif not above_ema and strong_breadth:
+        base = "NEUTRAL_BEARISH"
+        base_deploy = 30
+    else:
+        base = "BEARISH"
+        base_deploy = 10
+
+    # VIX modifier: extreme fear can override bearish to "accumulate"
+    if vix and vix >= 28 and base == "BEARISH":
+        deploy_pct = 40  # extreme VIX = contrarian buy signal
+        regime_label = "BEARISH_REVERSAL_WATCH"
+    elif vix and vix < 13 and base == "BULLISH":
+        deploy_pct = 60  # complacency — trim
+        regime_label = "BULLISH_CAUTIOUS"
+    else:
+        deploy_pct = base_deploy
+        regime_label = base
 
     return {
-        "regime": "CAUTION",
-        "label":  "Caution — wait for breadth recovery",
-        "deploy_min": 20,
-        "deploy_max": 30,
-        "ui_color":   "amber",
-        "simple_msg": "Reduce exposure. Wait for market to stabilise.",
+        "regime":         regime_label,
+        "deploy_pct":     deploy_pct,
+        "vix_class":      vix_class,
+        "vix_signal":     vix_signal,
+        "above_ema200":   above_ema,
+        "breadth_strong": strong_breadth,
     }
 
 
-# ─── EMA computation ──────────────────────────────────────────────────────────
-def ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
+# ── fetch candles ──────────────────────────────────────────────────────────────
 
-
-# ─── Download Nifty data ──────────────────────────────────────────────────────
-def get_nifty(period: str = "2y") -> pd.DataFrame:
-    print("[nifty] Downloading ^NSEI...")
-    df = yf.download("^NSEI", period=period, interval="1d", progress=False, auto_adjust=True)
-    if df.empty:
-        # Fallback to BSE Sensex if Nifty unavailable
-        print("[nifty] ^NSEI failed, trying ^BSESN...")
-        df = yf.download("^BSESN", period=period, interval="1d", progress=False, auto_adjust=True)
-    df = df[["Close"]].dropna()
-    df.columns = ["close"]
-    df.index = pd.to_datetime(df.index).normalize()
-    df["ema200"] = ema(df["close"], 200)
-    return df
-
-
-# ─── Compute breadth from local candle files ──────────────────────────────────
-def compute_breadth_from_files(candle_dir: Path, as_of_date: pd.Timestamp) -> float:
-    """
-    Read all daily candle CSVs, compute EMA200 for each stock,
-    and count what % are above their EMA200 on `as_of_date`.
-    """
-    candle_dir = Path(candle_dir)
-    if not candle_dir.exists():
-        print(f"[breadth] Warning: {candle_dir} not found — using 50% default")
-        return 50.0
-
-    files = list(candle_dir.glob("*.csv"))
-    if not files:
-        return 50.0
-
-    above = 0
-    total = 0
-
-    for f in files:
-        try:
-            df = pd.read_csv(f, index_col=0, parse_dates=True)
-            # Handle both yfinance column names
-            close_col = None
-            for col in ["Close", "close", "Adj Close"]:
-                if col in df.columns:
-                    close_col = col
-                    break
-            if not close_col or len(df) < 200:
-                continue
-
-            df.index = pd.to_datetime(df.index).normalize()
-            df = df.sort_index()
-
-            # Get data up to as_of_date
-            df = df[df.index <= as_of_date]
-            if len(df) < 200:
-                continue
-
-            closes = df[close_col].dropna()
-            ema200 = ema(closes, 200).iloc[-1]
-            last_close = closes.iloc[-1]
-
-            total += 1
-            if last_close > ema200:
-                above += 1
-
-        except Exception:
-            continue
-
-    if total == 0:
-        return 50.0
-
-    pct = round((above / total) * 100, 2)
-    print(f"[breadth] {above}/{total} stocks above EMA200 = {pct}%")
-    return pct
-
-
-# ─── Compute breadth from Neon DB ────────────────────────────────────────────
-def compute_breadth_from_db(db_url: str, as_of_date: str) -> float:
-    """
-    Read price_candles from Neon, compute breadth.
-    More accurate than file-based — uses DB for speed.
-    """
+def fetch_historical(kite: KiteConnect, token: int, from_dt: date, to_dt: date) -> list[dict]:
+    """Fetch daily OHLCV candles from Kite."""
     try:
-        import psycopg2
-        conn = psycopg2.connect(db_url)
-        cur  = conn.cursor()
+        data = kite.historical_data(
+            instrument_token=token,
+            from_date=from_dt,
+            to_date=to_dt,
+            interval="day",
+        )
+        return data
+    except Exception as e:
+        log(f"ERROR fetching token {token}: {e}")
+        return []
 
-        # Get all symbols with sufficient history
-        cur.execute("""
-            WITH symbol_counts AS (
-                SELECT symbol, COUNT(*) as cnt
-                FROM price_candles
-                WHERE date <= %s
-                GROUP BY symbol
-                HAVING COUNT(*) >= 200
-            ),
-            latest_prices AS (
-                SELECT DISTINCT ON (p.symbol)
-                    p.symbol, p.close
-                FROM price_candles p
-                JOIN symbol_counts s ON s.symbol = p.symbol
-                WHERE p.date <= %s
-                ORDER BY p.symbol, p.date DESC
-            ),
-            ema_calc AS (
-                SELECT
-                    symbol,
-                    AVG(close) OVER (
-                        PARTITION BY symbol
-                        ORDER BY date
-                        ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
-                    ) as ema200_approx,
-                    close,
-                    date
+
+def fetch_breadth_from_local(conn_local, as_of: date) -> float:
+    """
+    Compute % of stocks above their 200-day EMA from local price_candles.
+    Falls back to 50% if local DB unavailable.
+    """
+    LOCAL_URL = os.environ.get(
+        "LOCAL_DATABASE_URL",
+        "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable"
+    )
+    try:
+        lconn = psycopg2.connect(LOCAL_URL)
+        lcur  = lconn.cursor()
+        lcur.execute("""
+            WITH latest AS (
+                SELECT symbol,
+                       close,
+                       AVG(close) OVER (
+                           PARTITION BY symbol
+                           ORDER BY date
+                           ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
+                       ) AS ema200
                 FROM price_candles
                 WHERE date <= %s
             ),
-            latest_ema AS (
-                SELECT DISTINCT ON (symbol)
-                    symbol, close, ema200_approx
-                FROM ema_calc
-                WHERE ema200_approx IS NOT NULL
-                ORDER BY symbol, date DESC
+            ranked AS (
+                SELECT symbol, close, ema200,
+                       ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY (SELECT 1)) AS rn
+                FROM latest
+            ),
+            last_row AS (
+                SELECT symbol, close > ema200 AS above
+                FROM ranked
+                WHERE rn = 1
             )
             SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN close > ema200_approx THEN 1 ELSE 0 END) as above
-            FROM latest_ema
-        """, (as_of_date, as_of_date, as_of_date))
-
-        row = cur.fetchone()
-        conn.close()
-
-        if row and row[0] > 0:
-            total, above = row[0], row[1] or 0
-            pct = round((above / total) * 100, 2)
-            print(f"[breadth] DB: {above}/{total} stocks above EMA200 = {pct}%")
-            return pct
-
+                ROUND(100.0 * SUM(CASE WHEN above THEN 1 ELSE 0 END) / COUNT(*), 1)
+            FROM last_row
+        """, (as_of,))
+        row = lcur.fetchone()
+        lconn.close()
+        return float(row[0]) if row and row[0] else 50.0
     except Exception as e:
-        print(f"[breadth] DB compute failed: {e}", file=sys.stderr)
+        log(f"Local DB breadth error (using 50% fallback): {e}")
+        return 50.0
 
-    return 50.0
+
+# ── upsert regime ──────────────────────────────────────────────────────────────
+
+def ensure_schema(conn):
+    cur = conn.cursor()
+    cur.execute("""
+        ALTER TABLE market_regimes
+        ADD COLUMN IF NOT EXISTS india_vix        NUMERIC(6,2),
+        ADD COLUMN IF NOT EXISTS vix_class        TEXT,
+        ADD COLUMN IF NOT EXISTS vix_signal       TEXT,
+        ADD COLUMN IF NOT EXISTS above_ema200     BOOLEAN,
+        ADD COLUMN IF NOT EXISTS breadth_strong   BOOLEAN,
+        ADD COLUMN IF NOT EXISTS deploy_pct       INT,
+        ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ DEFAULT now()
+    """)
+    conn.commit()
+    log("Schema ensured (VIX columns added if missing)")
 
 
-# ─── Insert to market_regimes ─────────────────────────────────────────────────
-def upsert_regime(record: dict, dry_run: bool):
-    if dry_run:
-        print("\n[dry-run] Would insert:")
-        print(json.dumps(record, indent=2, default=str))
-        return
+def upsert_regime(conn, day: date, nifty: float, ema200: float,
+                  breadth: float, vix: Optional[float], regime_data: dict):
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO market_regimes
+            (date, nifty_close, ema200, breadth_pct,
+             india_vix, vix_class, vix_signal,
+             regime, deploy_pct, above_ema200, breadth_strong, updated_at)
+        VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, now())
+        ON CONFLICT (date) DO UPDATE SET
+            nifty_close   = EXCLUDED.nifty_close,
+            ema200        = EXCLUDED.ema200,
+            breadth_pct   = EXCLUDED.breadth_pct,
+            india_vix     = EXCLUDED.india_vix,
+            vix_class     = EXCLUDED.vix_class,
+            vix_signal    = EXCLUDED.vix_signal,
+            regime        = EXCLUDED.regime,
+            deploy_pct    = EXCLUDED.deploy_pct,
+            above_ema200  = EXCLUDED.above_ema200,
+            breadth_strong= EXCLUDED.breadth_strong,
+            updated_at    = now()
+    """, (
+        day, nifty, ema200, breadth,
+        vix, regime_data["vix_class"], regime_data["vix_signal"],
+        regime_data["regime"], regime_data["deploy_pct"],
+        regime_data["above_ema200"], regime_data["breadth_strong"],
+    ))
+    conn.commit()
 
-    db_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
-    if not db_url:
-        print("[db] ERROR: No DATABASE_URL set", file=sys.stderr)
+
+# ── main loop ──────────────────────────────────────────────────────────────────
+
+def process_days(days: int = 1):
+    kite  = get_kite()
+    conn  = get_neon()
+
+    ensure_schema(conn)
+
+    to_dt   = date.today()
+    # Need 300 extra days of Nifty to compute EMA200 accurately
+    from_dt = to_dt - timedelta(days=days + 300)
+
+    log(f"Fetching Nifty candles {from_dt} → {to_dt}")
+    nifty_candles = fetch_historical(kite, NIFTY_TOKEN, from_dt, to_dt)
+
+    log(f"Fetching India VIX candles {from_dt} → {to_dt}")
+    vix_candles   = fetch_historical(kite, INDIA_VIX_TOKEN, from_dt, to_dt)
+
+    if not nifty_candles:
+        log("ERROR: No Nifty candles returned. Check Kite token.")
         sys.exit(1)
 
-    try:
-        import psycopg2
-        conn = psycopg2.connect(db_url)
-        cur  = conn.cursor()
-        cur.execute("""
-            INSERT INTO market_regimes
-                (evaluation_date, nifty_close, nifty_ema_200,
-                 breadth_percentage, active_regime,
-                 recommended_allocation_min, recommended_allocation_max)
-            VALUES
-                (%(evaluation_date)s, %(nifty_close)s, %(nifty_ema_200)s,
-                 %(breadth_percentage)s, %(active_regime)s,
-                 %(deploy_min)s, %(deploy_max)s)
-            ON CONFLICT (evaluation_date) DO UPDATE SET
-                nifty_close              = EXCLUDED.nifty_close,
-                nifty_ema_200            = EXCLUDED.nifty_ema_200,
-                breadth_percentage       = EXCLUDED.breadth_percentage,
-                active_regime            = EXCLUDED.active_regime,
-                recommended_allocation_min = EXCLUDED.recommended_allocation_min,
-                recommended_allocation_max = EXCLUDED.recommended_allocation_max
-        """, record)
-        conn.commit()
-        conn.close()
-        print(f"[db] ✓ Regime upserted for {record['evaluation_date']}")
-    except Exception as e:
-        print(f"[db] Insert error: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Build EMA200 series over full Nifty history
+    closes   = [c["close"] for c in nifty_candles]
+    ema200s  = compute_ema(closes, 200)
+
+    # Map VIX by date
+    vix_by_date = {c["date"].date(): c["close"] for c in vix_candles}
+
+    # Process only the requested window
+    process_from = to_dt - timedelta(days=days - 1)
+    processed = 0
+
+    for i, candle in enumerate(nifty_candles):
+        cdate = candle["date"].date() if hasattr(candle["date"], "date") else candle["date"]
+        if cdate < process_from:
+            continue
+
+        nifty_close = candle["close"]
+        ema200      = ema200s[i]
+        vix         = vix_by_date.get(cdate)
+
+        # Breadth from local DB
+        breadth = fetch_breadth_from_local(None, cdate)
+
+        regime_data = classify_regime(nifty_close, ema200, breadth, vix)
+
+        upsert_regime(conn, cdate, nifty_close, ema200, breadth, vix, regime_data)
+
+        log(
+            f"{cdate} | Nifty={nifty_close:,.0f} EMA200={ema200:,.0f} "
+            f"Breadth={breadth:.1f}% VIX={vix or 'N/A'} "
+            f"→ {regime_data['regime']} deploy={regime_data['deploy_pct']}%"
+        )
+        processed += 1
+
+    conn.close()
+    log(f"\n✅ Done. {processed} day(s) processed.")
+
+    # Print current regime summary
+    if processed > 0:
+        print("\n" + "═"*50)
+        print("CURRENT MARKET REGIME SUMMARY")
+        print("═"*50)
+        last = nifty_candles[-1]
+        cdate = last["date"].date() if hasattr(last["date"], "date") else last["date"]
+        vix   = vix_by_date.get(cdate)
+        print(f"  Date:          {cdate}")
+        print(f"  Nifty:         {last['close']:,.0f}")
+        print(f"  EMA200:        {ema200s[-1]:,.0f}")
+        print(f"  India VIX:     {vix or 'N/A'} ({classify_vix(vix)})")
+        rd = classify_regime(last["close"], ema200s[-1], 52.5, vix)
+        print(f"  Regime:        {rd['regime']}")
+        print(f"  Deploy signal: {rd['deploy_pct']}%")
+        print(f"  VIX signal:    {rd['vix_signal']}")
+        print("═"*50)
 
 
-# ─── Also update market_snapshot table if it exists ──────────────────────────
-def update_snapshot(regime: str, nifty_close: float, dry_run: bool):
-    if dry_run:
-        return
-    db_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
-    if not db_url:
-        return
-    try:
-        import psycopg2
-        conn = psycopg2.connect(db_url)
-        cur  = conn.cursor()
-        cur.execute("""
-            UPDATE market_snapshot
-            SET market_regime = %s, nifty_price = %s, last_updated = NOW()
-            WHERE id = 1
-        """, (regime, nifty_close))
-        if cur.rowcount == 0:
-            cur.execute("""
-                INSERT INTO market_snapshot (id, market_regime, nifty_price, last_updated)
-                VALUES (1, %s, %s, NOW())
-                ON CONFLICT (id) DO UPDATE SET
-                    market_regime = EXCLUDED.market_regime,
-                    nifty_price   = EXCLUDED.nifty_price,
-                    last_updated  = NOW()
-            """, (regime, nifty_close))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass  # Non-fatal — snapshot table may not exist yet
-
-
-# ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="AACapital Market Regime Engine")
-    parser.add_argument("--dry-run",  action="store_true", help="Print regime, skip DB")
-    parser.add_argument("--backfill", action="store_true", help="Compute last 252 trading days")
-    parser.add_argument("--candle-dir", default="data/candles/daily", help="Path to daily candle CSVs")
+    parser = argparse.ArgumentParser(description="AACapital Market Regime Engine + India VIX")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Process last 30 days")
+    parser.add_argument("--days", type=int, default=1,
+                        help="Number of days to process (default: 1 = today)")
     args = parser.parse_args()
 
-    print("━" * 56)
-    print(" AACapital — Market Regime Engine")
-    print("━" * 56)
+    d = 30 if args.backfill else args.days
 
-    # Download Nifty data
-    nifty = get_nifty(period="3y")
-    if nifty.empty:
-        print("❌ Failed to download Nifty data", file=sys.stderr)
-        sys.exit(1)
+    log("═"*50)
+    log(f"AACapital — Market Regime Engine (VIX enabled)")
+    log(f"Processing {d} day(s)")
+    log("═"*50)
 
-    db_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL") or ""
+    process_days(days=d)
 
-    # Determine dates to process
-    if args.backfill:
-        # Last 252 trading days where EMA200 is valid
-        dates = nifty.dropna(subset=["ema200"]).index[-252:]
-    else:
-        dates = nifty.dropna(subset=["ema200"]).index[-1:]
-
-    print(f"  Processing {len(dates)} date(s)...\n")
-
-    for date in dates:
-        date_str = date.strftime("%Y-%m-%d")
-        row = nifty.loc[date]
-        nifty_close = round(float(row["close"]), 2)
-        nifty_ema   = round(float(row["ema200"]), 2)
-
-        # Compute breadth
-        if db_url and not args.backfill:
-            breadth = compute_breadth_from_db(db_url, date_str)
-        else:
-            breadth = compute_breadth_from_files(Path(args.candle_dir), date)
-
-        regime_info = classify_regime(nifty_close, nifty_ema, breadth)
-
-        print(f"  {date_str}")
-        print(f"  Nifty:   {nifty_close:,.0f} (EMA200: {nifty_ema:,.0f}) → {'ABOVE' if nifty_close > nifty_ema else 'BELOW'}")
-        print(f"  Breadth: {breadth:.1f}%")
-        print(f"  Regime:  {regime_info['regime']} — {regime_info['label']}")
-        print(f"  Deploy:  {regime_info['deploy_min']}%–{regime_info['deploy_max']}%")
-        print()
-
-        record = {
-            "evaluation_date":  date_str,
-            "nifty_close":      nifty_close,
-            "nifty_ema_200":    nifty_ema,
-            "breadth_percentage": breadth,
-            "active_regime":    regime_info["regime"],
-            "deploy_min":       regime_info["deploy_min"],
-            "deploy_max":       regime_info["deploy_max"],
-        }
-
-        upsert_regime(record, dry_run=args.dry_run)
-
-        if not args.backfill:
-            update_snapshot(regime_info["regime"], nifty_close, dry_run=args.dry_run)
-
-    print("━" * 56)
-    print("✅ Market Regime Engine complete.")
-    print()
-    print("API endpoint: GET /api/market/snapshot → { regime, deploy_min, deploy_max }")
-    print("Today screen uses this to show the regime card.")
 
 if __name__ == "__main__":
     main()

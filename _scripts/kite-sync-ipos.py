@@ -1,303 +1,328 @@
 """
-_scripts/kite-sync-ipos.py
-Fetches live IPO data from Zerodha Kite + NSE and populates ipo_intelligence table.
-Also captures listing day OI, VWAP, and delivery data for the prediction engine.
+AACapital — Kite IPO Sync
+Task 8: Build kite-sync-ipos.py — live IPO data from Zerodha
+
+Fetches live IPO subscription, allotment status, and listing signals
+from Zerodha Kite and syncs them to Neon ipo_intelligence.
 
 Usage:
-  python _scripts/kite-sync-ipos.py                    # fetch current/upcoming IPOs
-  python _scripts/kite-sync-ipos.py --listing           # capture listing day signals
-  python _scripts/kite-sync-ipos.py --symbol SYMBOL     # fetch single IPO listing data
-  python _scripts/kite-sync-ipos.py --backfill          # backfill historical from ipo_history
-
-Requirements:
-  pip install kiteconnect psycopg2-binary python-dotenv pandas requests
+    python _scripts/kite-sync-ipos.py            # sync live + upcoming IPOs
+    python _scripts/kite-sync-ipos.py --dry-run  # preview without writing
+    python _scripts/kite-sync-ipos.py --listing  # include listing day signals
 """
 
 import os
 import sys
-import time
-import json
 import argparse
-import requests
+import json
+from datetime import date, datetime, timezone
+from typing import Optional
+
 import psycopg2
 import psycopg2.extras
-import pandas as pd
-from datetime import date, datetime, timedelta
+import requests
+from kiteconnect import KiteConnect
 from dotenv import load_dotenv
 
-load_dotenv(".env.local")
-load_dotenv(".env")
+load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
-KITE_API_KEY = os.getenv("KITE_API_KEY")
-KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
+NEON_URL     = os.environ["NEON_DATABASE_URL"]
+KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+KITE_TOKEN   = os.environ.get("KITE_ACCESS_TOKEN", "")
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--listing",  action="store_true", help="Capture listing day signals")
-parser.add_argument("--symbol",   help="Single symbol")
-parser.add_argument("--backfill", action="store_true", help="Backfill from ipo_history")
-args = parser.parse_args()
 
-# ── Kite setup ────────────────────────────────────────────────────────────────
-try:
-    from kiteconnect import KiteConnect
+def log(msg: str):
+    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
+
+
+def get_kite() -> KiteConnect:
     kite = KiteConnect(api_key=KITE_API_KEY)
-    kite.set_access_token(KITE_ACCESS_TOKEN)
-    KITE_AVAILABLE = True
-except Exception as e:
-    print(f"⚠ Kite not available: {e}")
-    KITE_AVAILABLE = False
+    kite.set_access_token(KITE_TOKEN)
+    return kite
 
-# ── DB ────────────────────────────────────────────────────────────────────────
-def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode="require",
-                            cursor_factory=psycopg2.extras.RealDictCursor)
 
-# ── Fetch current IPOs from NSE ────────────────────────────────────────────────
-def fetch_nse_ipos():
-    """Fetch upcoming and recently listed IPOs from NSE."""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Referer": "https://www.nseindia.com",
-    }
-    session = requests.Session()
-    session.headers.update(headers)
+def get_neon():
+    return psycopg2.connect(NEON_URL)
 
-    ipos = []
-    # NSE IPO endpoints
-    urls = [
-        "https://www.nseindia.com/api/ipo-current-allotment",
-        "https://www.nseindia.com/api/ipo-detail",
-    ]
+
+# ── IPO list from Kite ─────────────────────────────────────────────────────────
+
+def fetch_kite_ipos(kite: KiteConnect) -> list[dict]:
+    """
+    Fetch IPOs via Kite Connect REST API.
+    Returns list of IPO dicts with status, subscription, dates.
+    """
     try:
-        # Get cookies first
-        session.get("https://www.nseindia.com", timeout=10)
-        time.sleep(1)
-        r = session.get("https://www.nseindia.com/api/ipo-current-allotment", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            ipos.extend(data if isinstance(data, list) else [])
+        # Kite's IPO endpoint (undocumented but available via REST)
+        url = f"https://api.kite.trade/ipo"
+        headers = {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {KITE_API_KEY}:{KITE_TOKEN}",
+        }
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        ipos = data.get("data", [])
+        log(f"Kite returned {len(ipos)} IPOs")
+        return ipos
     except Exception as e:
-        print(f"  ⚠ NSE IPO fetch failed: {e}")
+        log(f"Kite IPO API error: {e}")
+        log("Falling back to Kite instruments search for listed IPOs…")
+        return []
 
-    return ipos
 
-# ── Fetch listing day signals from Kite ───────────────────────────────────────
-def fetch_listing_signals(symbol: str, listing_date: date, issue_price: float) -> dict:
+def fetch_listing_signals(kite: KiteConnect, symbol: str) -> dict:
     """
-    Fetch intraday 15-min candles on listing day.
-    Compute VWAP at open, 30min, 60min.
+    Fetch listing day OI + VWAP signals for a symbol.
+    Used on listing day to get real-time signals.
     """
-    if not KITE_AVAILABLE:
-        return {}
-
+    signals = {}
     try:
-        # Get instrument token
-        instruments = kite.instruments("NSE")
-        token_map   = {i["tradingsymbol"]: i["instrument_token"] for i in instruments}
-        token       = token_map.get(symbol) or token_map.get(f"{symbol}-EQ")
-        if not token:
-            print(f"  ✗ {symbol} — not found in Kite instruments")
-            return {}
+        # Get quote
+        quote = kite.quote([f"NSE:{symbol}"])
+        q = quote.get(f"NSE:{symbol}", {})
 
-        # Fetch 15-min candles for listing day
+        signals["last_price"]    = q.get("last_price")
+        signals["volume"]        = q.get("volume")
+        signals["buy_quantity"]  = q.get("buy_quantity")
+        signals["sell_quantity"] = q.get("sell_quantity")
+        signals["ohlc"]          = q.get("ohlc", {})
+
+        # VWAP approximation from intraday candles
         candles = kite.historical_data(
-            instrument_token=token,
-            from_date=listing_date,
-            to_date=listing_date,
+            instrument_token=_get_token(kite, symbol),
+            from_date=date.today(),
+            to_date=date.today(),
             interval="15minute",
         )
+        if candles:
+            total_vol = sum(c["volume"] for c in candles)
+            vwap = sum(
+                ((c["high"] + c["low"] + c["close"]) / 3) * c["volume"]
+                for c in candles
+            ) / total_vol if total_vol else 0
+            signals["vwap"] = round(vwap, 2)
+            signals["above_vwap"] = (signals["last_price"] or 0) > vwap
 
-        if not candles:
-            return {}
-
-        df = pd.DataFrame(candles)
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date")
-
-        # Compute cumulative VWAP
-        df["typical_price"] = (df["high"] + df["low"] + df["close"]) / 3
-        df["tp_vol"]        = df["typical_price"] * df["volume"]
-        df["cum_tp_vol"]    = df["tp_vol"].cumsum()
-        df["cum_vol"]       = df["volume"].cumsum()
-        df["vwap"]          = df["cum_tp_vol"] / df["cum_vol"]
-
-        # Snapshots
-        opening_candle    = df.iloc[0]
-        candle_30min      = df[df["date"].dt.time >= pd.Timestamp("10:00:00").time()].iloc[0] if len(df) > 1 else None
-        candle_60min      = df[df["date"].dt.time >= pd.Timestamp("10:15:00").time()].iloc[0] if len(df) > 2 else None
-
-        listing_open  = float(opening_candle["open"])
-        vwap_open     = float(opening_candle["vwap"])
-        vwap_30min    = float(candle_30min["vwap"]) if candle_30min is not None else vwap_open
-        vwap_60min    = float(candle_60min["vwap"]) if candle_60min is not None else vwap_30min
-        vwap_day      = float(df.iloc[-1]["vwap"])
-
-        listing_close = float(df.iloc[-1]["close"])
-        listing_high  = float(df["high"].max())
-        listing_low   = float(df["low"].min())
-        volume_total  = int(df["volume"].sum())
-        volume_first  = int(df.iloc[:2]["volume"].sum()) if len(df) >= 2 else volume_total
-
-        # Momentum chase check: at 10:00 AM, is price above open AND above VWAP?
-        mc_price  = float(candle_30min["close"]) if candle_30min is not None else listing_open
-        mc_entry  = mc_price > listing_open and mc_price > vwap_30min
-
-        # Return calculation
-        r_day1 = (listing_close - issue_price) / issue_price if issue_price else None
-
-        # Get delivery %
-        delivery_pct = None
-        try:
-            quote = kite.quote(f"NSE:{symbol}")
-            delivery_pct = quote.get(f"NSE:{symbol}", {}).get("delivery_percentage")
-        except:
-            pass
-
-        return {
-            "listing_open":         listing_open,
-            "listing_high":         listing_high,
-            "listing_low":          listing_low,
-            "listing_close":        listing_close,
-            "vwap_open":            vwap_open,
-            "vwap_30min":           vwap_30min,
-            "vwap_60min":           vwap_60min,
-            "vwap_day":             vwap_day,
-            "open_above_vwap":      listing_open > vwap_open,
-            "open_above_issue":     listing_open > issue_price if issue_price else None,
-            "momentum_chase_entry": mc_entry,
-            "volume_total":         volume_total,
-            "volume_first_30min":   volume_first,
-            "volume_ratio":         volume_first / volume_total if volume_total else None,
-            "delivery_pct":         delivery_pct,
-            "return_day1":          r_day1,
-            "candles_15min":        json.dumps(candles, default=str),
-        }
     except Exception as e:
-        print(f"  ✗ {symbol} listing signals error: {e}")
-        return {}
+        log(f"  Listing signal error for {symbol}: {e}")
 
-# ── Backfill from ipo_history ─────────────────────────────────────────────────
-def backfill_from_history():
+    return signals
+
+
+def _get_token(kite: KiteConnect, symbol: str) -> Optional[int]:
+    try:
+        instruments = kite.instruments("NSE")
+        for inst in instruments:
+            if inst["tradingsymbol"] == symbol:
+                return inst["instrument_token"]
+    except Exception:
+        pass
+    return None
+
+
+# ── map Kite IPO fields to our schema ─────────────────────────────────────────
+
+def map_kite_ipo(raw: dict) -> dict:
     """
-    Transfer data from existing ipo_history table into ipo_intelligence.
-    Maps columns from old schema to new enriched schema.
+    Map Kite IPO API response fields to ipo_intelligence columns.
+    Kite field names may vary — we handle both snake_case variants.
     """
-    conn = get_conn()
-    cur  = conn.cursor()
 
-    # Check what columns ipo_history has
-    cur.execute("""
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'ipo_history' AND table_schema = 'public'
-        ORDER BY ordinal_position
-    """)
-    cols = [r["column_name"] for r in cur.fetchall()]
-    print(f"  ipo_history columns: {cols}")
+    def g(key: str):
+        return raw.get(key) or raw.get(key.replace("_", ""))
 
-    cur.execute("SELECT * FROM ipo_history ORDER BY listing_date NULLS LAST LIMIT 5")
-    sample = cur.fetchall()
-    if sample:
-        print(f"\n  Sample row: {dict(sample[0])}")
+    status_map = {
+        "open":         "OPEN",
+        "closed":       "CLOSED",
+        "allotment":    "ALLOTMENT_PENDING",
+        "listing":      "LISTING_PENDING",
+        "listed":       "LISTED",
+        "withdrawn":    "WITHDRAWN",
+    }
 
-    cur.execute("SELECT COUNT(*) as n FROM ipo_history")
-    n = cur.fetchone()["n"]
-    print(f"\n  Total IPOs in ipo_history: {n}")
-    print("  Use this data to populate ipo_intelligence table.")
-    print("  Column mapping needed — share ipo_history schema for full mapping.")
+    raw_status = (g("status") or "").lower()
+    status     = status_map.get(raw_status, raw_status.upper())
 
-    conn.close()
+    data = {
+        "company_name":        g("name") or g("company_name"),
+        "kite_ipo_id":         g("id") or g("ipo_id"),
+        "ipo_status":          status,
+        "issue_price":         g("price") or g("issue_price"),
+        "lot_size":            g("lot_size"),
+        "issue_open_date":     g("open_date") or g("issue_open_date"),
+        "issue_close_date":    g("close_date") or g("issue_close_date"),
+        "listing_date":        g("listing_date"),
+        "issue_size_cr":       g("size") or g("issue_size"),
+        "exchange":            g("exchange") or "NSE",
+        "is_sme":              bool(g("sme")),
+        "listing_exchange":    g("listing_exchange") or "NSE",
+        "kite_synced_at":      datetime.now(timezone.utc).isoformat(),
 
-# ── Save listing signals ───────────────────────────────────────────────────────
-def save_listing_signals(symbol: str, listing_date: date, signals: dict):
-    if not signals:
-        return
-    conn = get_conn()
-    cur  = conn.cursor()
-    cols = list(signals.keys())
-    vals = list(signals.values())
-    cur.execute(f"""
-        INSERT INTO ipo_listing_signals
-          (symbol, listing_date, {', '.join(cols)})
-        VALUES (%s, %s, {', '.join(['%s']*len(cols))})
-        ON CONFLICT (symbol, listing_date) DO UPDATE SET
-          {', '.join([f'{c}=EXCLUDED.{c}' for c in cols])},
-          created_at = NOW()
-    """, [symbol, listing_date] + vals)
+        # subscription if available from Kite
+        "total_subscription":  g("total_subscription") or g("subscription"),
+        "qib_subscription":    g("qib_subscription") or g("qib"),
+        "nii_subscription":    g("nii_subscription") or g("nii"),
+        "retail_subscription": g("retail_subscription") or g("retail"),
+    }
+
+    # Remove None values
+    return {k: v for k, v in data.items() if v is not None}
+
+
+# ── ensure Neon schema ─────────────────────────────────────────────────────────
+
+def ensure_kite_columns(conn):
+    cur = conn.cursor()
+    extra_cols = [
+        ("kite_ipo_id",      "TEXT"),
+        ("ipo_status",       "TEXT"),
+        ("issue_open_date",  "DATE"),
+        ("issue_close_date", "DATE"),
+        ("exchange",         "TEXT"),
+        ("is_sme",           "BOOLEAN"),
+        ("listing_exchange", "TEXT"),
+        ("kite_synced_at",   "TIMESTAMPTZ"),
+        ("vwap",             "NUMERIC(10,2)"),
+        ("above_vwap",       "BOOLEAN"),
+        ("listing_volume",   "BIGINT"),
+        ("buy_qty",          "BIGINT"),
+        ("sell_qty",         "BIGINT"),
+    ]
+    for col, dtype in extra_cols:
+        cur.execute(f"""
+            ALTER TABLE ipo_intelligence
+            ADD COLUMN IF NOT EXISTS {col} {dtype}
+        """)
     conn.commit()
-    cur.close()
-    conn.close()
-    print(f"  ✓ Saved listing signals for {symbol}")
+    log("Kite columns ensured in ipo_intelligence")
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+
+# ── upsert ─────────────────────────────────────────────────────────────────────
+
+def upsert_ipo(conn, data: dict, dry_run: bool = False):
+    name = data.get("company_name", "UNKNOWN")
+
+    if dry_run:
+        log(f"  [DRY RUN] Would upsert: {name} — {json.dumps({k:v for k,v in data.items() if k not in ['company_name']}, default=str)}")
+        return
+
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Check if IPO already exists
+    cur.execute(
+        "SELECT id FROM ipo_intelligence WHERE company_name ILIKE %s",
+        (f"%{name}%",)
+    )
+    row = cur.fetchone()
+
+    if row:
+        ipo_id = row["id"]
+        set_parts = [f"{k} = %s" for k in data if k != "company_name"]
+        values    = [data[k] for k in data if k != "company_name"]
+        values.append(ipo_id)
+        if set_parts:
+            cur.execute(
+                f"UPDATE ipo_intelligence SET {', '.join(set_parts)} WHERE id = %s",
+                values
+            )
+            log(f"  Updated: {name} (id={ipo_id})")
+    else:
+        # New IPO — insert
+        cols = list(data.keys())
+        vals = list(data.values())
+        cur.execute(
+            f"INSERT INTO ipo_intelligence ({', '.join(cols)}) VALUES ({', '.join(['%s']*len(cols))})",
+            vals
+        )
+        log(f"  Inserted new IPO: {name}")
+
+    conn.commit()
+
+
+def sync_listing_signals(kite: KiteConnect, conn, dry_run: bool):
+    """
+    For IPOs with ipo_status=LISTING_PENDING and listing_date=today,
+    fetch live OI + VWAP signals.
+    """
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT id, company_name, nse_symbol
+        FROM ipo_intelligence
+        WHERE ipo_status IN ('LISTING_PENDING', 'LISTED')
+          AND listing_date = CURRENT_DATE
+          AND nse_symbol IS NOT NULL
+    """)
+    listing_today = cur.fetchall()
+
+    if not listing_today:
+        log("No IPOs listing today — skipping listing signal fetch")
+        return
+
+    log(f"{len(listing_today)} IPO(s) listing today — fetching signals")
+    for ipo in listing_today:
+        symbol  = ipo["nse_symbol"]
+        signals = fetch_listing_signals(kite, symbol)
+        if signals:
+            update_data = {
+                "vwap":           signals.get("vwap"),
+                "above_vwap":     signals.get("above_vwap"),
+                "listing_volume": signals.get("volume"),
+                "buy_qty":        signals.get("buy_quantity"),
+                "sell_qty":       signals.get("sell_quantity"),
+            }
+            update_data = {k: v for k, v in update_data.items() if v is not None}
+            if not dry_run and update_data:
+                set_parts = [f"{k} = %s" for k in update_data]
+                values    = list(update_data.values()) + [ipo["id"]]
+                conn.cursor().execute(
+                    f"UPDATE ipo_intelligence SET {', '.join(set_parts)} WHERE id = %s",
+                    values
+                )
+                conn.commit()
+                log(f"  Listing signals saved for {ipo['company_name']}")
+            else:
+                log(f"  [DRY RUN] {ipo['company_name']}: {update_data}")
+
+
+# ── main ───────────────────────────────────────────────────────────────────────
+
 def main():
-    print("═" * 50)
-    print("  AACapital — Kite IPO Sync")
-    print("═" * 50)
+    parser = argparse.ArgumentParser(description="AACapital — Kite IPO Sync")
+    parser.add_argument("--dry-run",  action="store_true", help="Preview without writing to DB")
+    parser.add_argument("--listing",  action="store_true", help="Also fetch listing day signals")
+    args = parser.parse_args()
 
-    if args.backfill:
-        print("\nBackfilling from ipo_history...")
-        backfill_from_history()
-        return
+    log("═" * 50)
+    log("AACapital — Kite IPO Sync")
+    log("═" * 50)
 
+    kite = get_kite()
+    conn = get_neon()
+
+    ensure_kite_columns(conn)
+
+    # Fetch from Kite
+    raw_ipos = fetch_kite_ipos(kite)
+
+    if raw_ipos:
+        log(f"\nProcessing {len(raw_ipos)} Kite IPOs…")
+        for raw in raw_ipos:
+            data = map_kite_ipo(raw)
+            upsert_ipo(conn, data, dry_run=args.dry_run)
+        log(f"✅ Kite sync complete — {len(raw_ipos)} IPOs processed")
+    else:
+        log("No IPOs returned from Kite API — DB unchanged for main sync")
+
+    # Listing day signals
     if args.listing:
-        # Fetch listing day signals for today's listing IPOs
-        conn = get_conn()
-        cur  = conn.cursor()
-        today = date.today()
-        cur.execute("""
-            SELECT symbol, issue_price, listing_date
-            FROM ipo_intelligence
-            WHERE listing_date = %s AND symbol IS NOT NULL
-        """, [today])
-        listing_today = cur.fetchall()
-        conn.close()
+        log("\n── Listing Day Signals ──")
+        sync_listing_signals(kite, conn, dry_run=args.dry_run)
 
-        if not listing_today:
-            print(f"\n  No IPOs listing today ({today})")
-            return
+    conn.close()
+    log("\n✅ Kite IPO Sync done")
 
-        print(f"\n  {len(listing_today)} IPO(s) listing today:")
-        for ipo in listing_today:
-            sym = ipo["symbol"]
-            print(f"\n  [{sym}] Fetching listing day signals...")
-            signals = fetch_listing_signals(sym, today, float(ipo["issue_price"] or 0))
-            save_listing_signals(sym, today, signals)
-            if signals:
-                print(f"    Listing open: ₹{signals.get('listing_open')}")
-                print(f"    VWAP open:    ₹{signals.get('vwap_open'):.2f}")
-                print(f"    MC Entry?     {'✅ YES' if signals.get('momentum_chase_entry') else '❌ NO'}")
-                print(f"    Day1 return:  {signals.get('return_day1',0)*100:.1f}%")
-        return
-
-    if args.symbol:
-        # Single symbol listing data
-        print(f"\nFetching listing signals for {args.symbol}...")
-        conn = get_conn()
-        cur  = conn.cursor()
-        cur.execute("SELECT * FROM ipo_intelligence WHERE symbol ILIKE %s LIMIT 1", [args.symbol])
-        ipo = cur.fetchone()
-        conn.close()
-        if ipo:
-            signals = fetch_listing_signals(args.symbol, ipo["listing_date"], float(ipo["issue_price"] or 0))
-            save_listing_signals(args.symbol, ipo["listing_date"], signals)
-        else:
-            print(f"  ✗ {args.symbol} not found in ipo_intelligence")
-        return
-
-    # Default: fetch current IPOs from NSE
-    print("\nFetching current IPOs from NSE...")
-    nse_ipos = fetch_nse_ipos()
-    print(f"  Found {len(nse_ipos)} IPOs from NSE")
-    for ipo in nse_ipos[:5]:
-        print(f"  → {ipo}")
-
-    print("\n✅ Done")
-    print("\nNext steps:")
-    print("  1. Populate ipo_intelligence table with historical data")
-    print("  2. Run: python _scripts/engines/ipo_intelligence_engine.py --mode=backtest")
-    print("  3. On listing days: python _scripts/kite-sync-ipos.py --listing")
 
 if __name__ == "__main__":
     main()

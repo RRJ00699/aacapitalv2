@@ -1,0 +1,68 @@
+name: Daily Multibagger Technical
+
+on:
+  schedule:
+    # 5:00 PM IST Mon-Fri (11:30 UTC) — after market close + Kite sync
+    - cron: "30 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Screener mode"
+        required: false
+        default: "latest"
+        type: choice
+        options:
+          - latest
+          - full
+
+jobs:
+  multibagger-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Python deps
+        run: |
+          pip install psycopg2-binary kiteconnect python-dotenv requests beautifulsoup4 lxml numpy scipy
+
+      - name: Compute technical indicators (latest)
+        env:
+          DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+          KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
+        run: |
+          npx tsx _scripts/engines/indicator_calculator.ts \
+            --mode ${{ github.event.inputs.mode || 'latest' }}
+
+      - name: Run multibagger screener
+        env:
+          DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: |
+          npx tsx _scripts/engines/multibagger_screener.ts
+
+      - name: Sync signals local → Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: |
+          npx tsx _scripts/sync-signals-to-neon.ts
+
+      - name: Summary
+        run: echo "✅ Multibagger scan + Neon sync complete"
