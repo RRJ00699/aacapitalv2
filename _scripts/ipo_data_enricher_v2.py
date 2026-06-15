@@ -31,7 +31,7 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env.local")
 
 NEON_URL = os.environ["NEON_DATABASE_URL"]
 

@@ -21,7 +21,7 @@ import psycopg2.extras
 from kiteconnect import KiteConnect
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env.local")
 
 NEON_URL     = os.environ["NEON_DATABASE_URL"]
 KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
