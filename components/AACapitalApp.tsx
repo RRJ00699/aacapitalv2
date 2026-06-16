@@ -25,7 +25,7 @@ import { TodayScreen } from "./features/today-screen"
 import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
-import IpoCommandCenter from "./ipo/IpoCommandCenter"
+import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
 /* eslint-disable */
 
