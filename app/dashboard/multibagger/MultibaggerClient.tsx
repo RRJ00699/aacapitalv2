@@ -89,7 +89,7 @@ export default function MultibaggerClient({ signals, stats }: Props) {
           </p>
         </div>
         <span className="text-xs text-gray-400 pt-1">
-          Updated: {stats.latestDate ? stats.latestDate.substring(0, 10) : "—"}
+          Updated: {stats.latestDate ? String(stats.latestDate).substring(0, 10) : "—"}
         </span>
       </div>
 
@@ -260,7 +260,7 @@ export default function MultibaggerClient({ signals, stats }: Props) {
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-400">
-                      {s.signal_date ? s.signal_date.substring(0, 10) : "—"}
+                      {s.signal_date ? String(s.signal_date).substring(0, 10) : "—"}
                     </td>
                   </tr>
                 ))

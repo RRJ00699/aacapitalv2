@@ -251,23 +251,23 @@ export default function IPOCommandCenterClient({ ipos, stats }: Props) {
                       )}
                     </td>
                     <td className="px-4 py-3 text-blue-600 tabular-nums">
-                      {ipo.p_profit_10pct !== null ? `${(ipo.p_profit_10pct * 100).toFixed(0)}%` : "—"}
+                      {ipo.p_profit_10pct !== null ? `${(Number(ipo.p_profit_10pct ) * 100).toFixed(0)}%` : "—"}
                     </td>
                     <td className="px-4 py-3 text-red-600 tabular-nums">
-                      {ipo.p_loss !== null ? `${(ipo.p_loss * 100).toFixed(0)}%` : "—"}
+                      {ipo.p_loss !== null ? `${(Number(ipo.p_loss ) * 100).toFixed(0)}%` : "—"}
                     </td>
                     <td className={`px-4 py-3 font-medium tabular-nums ${
                       (ipo.expected_return_pct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"
                     }`}>
                       {ipo.expected_return_pct !== null
-                        ? `${ipo.expected_return_pct > 0 ? "+" : ""}${ipo.expected_return_pct.toFixed(1)}%`
+                        ? `${ipo.expected_return_pct > 0 ? "+" : ""}${Number(ipo.expected_return_pct).toFixed(1)}%`
                         : "—"}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
-                      {ipo.gmp_percentage !== null ? `+${ipo.gmp_percentage.toFixed(1)}%` : "—"}
+                      {ipo.gmp_percentage !== null ? `+${Number(ipo.gmp_percentage).toFixed(1)}%` : "—"}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
-                      {ipo.total_subscription !== null ? `${ipo.total_subscription.toFixed(1)}x` : "—"}
+                      {ipo.total_subscription !== null ? `${Number(ipo.total_subscription).toFixed(1)}x` : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {ipo.listing_date?.substring(0, 10) ?? "—"}

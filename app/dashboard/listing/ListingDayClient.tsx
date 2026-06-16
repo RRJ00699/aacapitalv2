@@ -114,7 +114,7 @@ function ListingCard({ ipo }: { ipo: ListingSignal }) {
           {ipo.last_price && (
             <div>
               <p className="text-[10px] text-gray-400">LTP</p>
-              <p className="text-base font-semibold text-blue-700">₹{ipo.last_price.toFixed(1)}</p>
+              <p className="text-base font-semibold text-blue-700">₹{Number(ipo.last_price).toFixed(1)}</p>
             </div>
           )}
           <div className="ml-auto text-right">
@@ -143,13 +143,13 @@ function ListingCard({ ipo }: { ipo: ListingSignal }) {
           {subscriptions.map((s) => s.value !== null && (
             <div key={s.label}>
               <span className="text-gray-400">{s.label} </span>
-              <span className="font-medium text-gray-700">{s.value.toFixed(1)}x</span>
+              <span className="font-medium text-gray-700">{Number(s.value).toFixed(1)}x</span>
             </div>
           ))}
           {ipo.gmp_percentage !== null && (
             <div>
               <span className="text-gray-400">GMP </span>
-              <span className="font-medium text-emerald-700">+{ipo.gmp_percentage.toFixed(1)}%</span>
+              <span className="font-medium text-emerald-700">+{Number(ipo.gmp_percentage).toFixed(1)}%</span>
             </div>
           )}
           <div className="ml-auto">
@@ -184,10 +184,10 @@ function RecentListingRow({ ipo }: { ipo: ListingSignal }) {
         <GainBadge pct={ipo.listing_gap_pct} />
       </td>
       <td className="px-4 py-3 text-xs text-gray-500 tabular-nums">
-        {ipo.total_subscription !== null ? `${ipo.total_subscription.toFixed(1)}x` : "—"}
+        {ipo.total_subscription !== null ? `${Number(ipo.total_subscription).toFixed(1)}x` : "—"}
       </td>
       <td className="px-4 py-3 text-xs tabular-nums text-emerald-700">
-        {ipo.gmp_percentage !== null ? `+${ipo.gmp_percentage.toFixed(1)}%` : "—"}
+        {ipo.gmp_percentage !== null ? `+${Number(ipo.gmp_percentage).toFixed(1)}%` : "—"}
       </td>
       <td className="px-4 py-3 text-xs font-bold text-blue-600 tabular-nums">
         {ipo.lqi_score !== null ? Math.round(ipo.lqi_score) : "—"}

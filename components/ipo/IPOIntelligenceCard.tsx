@@ -274,7 +274,7 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
         }`}>
           <span>GMP</span>
           <span>
-            ₹{ipo.gmp_value ?? "—"} &nbsp;|&nbsp; +{ipo.gmp_percentage.toFixed(1)}%
+            ₹{ipo.gmp_value ?? "—"} &nbsp;|&nbsp; +{Number(ipo.gmp_percentage).toFixed(1)}%
           </span>
         </div>
       )}
