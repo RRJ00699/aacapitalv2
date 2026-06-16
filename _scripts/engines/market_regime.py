@@ -259,29 +259,38 @@ def ensure_schema(conn):
 def upsert_regime(conn, day: date, nifty: float, ema200: float,
                   breadth: float, vix: Optional[float], regime_data: dict):
     cur = conn.cursor()
+    # deploy_pct maps to both min and max allocation range
+    alloc_min = max(0, regime_data["deploy_pct"] - 10)
+    alloc_max = min(100, regime_data["deploy_pct"] + 10)
+
     cur.execute("""
         INSERT INTO market_regimes
             (evaluation_date, nifty_close, nifty_ema_200, breadth_percentage,
              india_vix, vix_class, vix_signal,
-             active_regime, deploy_pct, above_ema200, breadth_strong, updated_at)
-        VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, now())
+             active_regime, deploy_pct, above_ema200, breadth_strong,
+             recommended_allocation_min, recommended_allocation_max,
+             updated_at)
+        VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s,%s, now())
         ON CONFLICT (evaluation_date) DO UPDATE SET
-            nifty_close        = EXCLUDED.nifty_close,
-            nifty_ema_200      = EXCLUDED.nifty_ema_200,
-            breadth_percentage = EXCLUDED.breadth_percentage,
-            india_vix     = EXCLUDED.india_vix,
-            vix_class     = EXCLUDED.vix_class,
-            vix_signal    = EXCLUDED.vix_signal,
-            active_regime      = EXCLUDED.active_regime,
-            deploy_pct    = EXCLUDED.deploy_pct,
-            above_ema200  = EXCLUDED.above_ema200,
-            breadth_strong     = EXCLUDED.breadth_strong,
-            updated_at    = now()
+            nifty_close                 = EXCLUDED.nifty_close,
+            nifty_ema_200               = EXCLUDED.nifty_ema_200,
+            breadth_percentage          = EXCLUDED.breadth_percentage,
+            india_vix                   = EXCLUDED.india_vix,
+            vix_class                   = EXCLUDED.vix_class,
+            vix_signal                  = EXCLUDED.vix_signal,
+            active_regime               = EXCLUDED.active_regime,
+            deploy_pct                  = EXCLUDED.deploy_pct,
+            above_ema200                = EXCLUDED.above_ema200,
+            breadth_strong              = EXCLUDED.breadth_strong,
+            recommended_allocation_min  = EXCLUDED.recommended_allocation_min,
+            recommended_allocation_max  = EXCLUDED.recommended_allocation_max,
+            updated_at                  = now()
     """, (
         day, nifty, ema200, breadth,
         vix, regime_data["vix_class"], regime_data["vix_signal"],
         regime_data["regime"], regime_data["deploy_pct"],
         regime_data["above_ema200"], regime_data["breadth_strong"],
+        alloc_min, alloc_max,
     ))
     conn.commit()
 

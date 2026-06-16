@@ -1,10 +1,14 @@
-name: Daily Intelligence Pipeline
+name: Daily Intelligence Pipeline V2
 
 on:
   schedule:
-    # 4:30 PM IST Mon-Fri = 11:00 AM UTC
-    - cron: "0 11 * * 1-5"
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
+    inputs:
+      skip_kite:
+        description: 'Skip Kite sync'
+        default: 'false'
+        type: boolean
 
 jobs:
   intelligence:
@@ -15,56 +19,67 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '22'
+          cache: 'npm'
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install Node deps
+      - name: Install Node dependencies
         run: npm ci
 
-      - name: Install Python deps
-        run: pip install psycopg2-binary kiteconnect python-dotenv requests beautifulsoup4
+      - name: Install Python dependencies
+        run: pip install kiteconnect psycopg2-binary python-dotenv pandas requests beautifulsoup4 openpyxl
 
       - name: Sync Kite candles
+        if: ${{ github.event.inputs.skip_kite != 'true' }}
         env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
           KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
-          DATABASE_URL:      ${{ secrets.LOCAL_DATABASE_URL }}
         run: python _scripts/kite-sync-candles.py --days 1
         continue-on-error: true
 
-      - name: Market regime + VIX
+      - name: Market regime
         env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
           KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python _scripts/engines/market_regime.py
         continue-on-error: true
 
       - name: Kite IPO sync
         env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
           KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python _scripts/kite-sync-ipos.py
+        continue-on-error: true
+
+      - name: IPO probability engine
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/engines/ipo_probability_engine.py --all
         continue-on-error: true
 
       - name: Multibagger signals
         env:
-          DATABASE_URL:      ${{ secrets.LOCAL_DATABASE_URL }}
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: |
-          npx tsx _scripts/engines/indicator_calculator.ts --mode latest
-          npx tsx _scripts/engines/multibagger_screener.ts
-          npx tsx _scripts/sync-signals-to-neon.ts
+          npx tsx _scripts/engines/indicator_calculator.ts --mode latest || true
+          npx tsx _scripts/engines/multibagger_screener.ts || true
+          npx tsx _scripts/sync-signals-to-neon.ts || true
         continue-on-error: true
 
       - name: Summary
-        run: echo "✅ Daily intelligence pipeline complete"
+        run: echo "Done $(date -u '+%Y-%m-%d %H:%M UTC')"

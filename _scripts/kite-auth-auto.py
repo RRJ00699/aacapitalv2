@@ -141,9 +141,41 @@ def auto_auth():
         code   = totp.now()
         print(f"  ✓ TOTP generated: {code}")
 
-        totp_input = wait.until(EC.presence_of_element_located((By.ID, "totp")))
+        # Try multiple selectors — Zerodha changes field IDs periodically
+        totp_input = None
+        for selector in [
+            (By.ID, "totp"),
+            (By.NAME, "totp"),
+            (By.XPATH, "//input[@type='number']"),
+            (By.XPATH, "//input[@placeholder='6-digit code']"),
+            (By.XPATH, "//input[contains(@class,'totp')]"),
+            (By.CSS_SELECTOR, "input[type='number']"),
+        ]:
+            try:
+                totp_input = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located(selector)
+                )
+                if totp_input:
+                    break
+            except:
+                continue
+
+        if not totp_input:
+            # Take screenshot for debugging
+            driver.save_screenshot("/tmp/kite_totp_debug.png")
+            print(f"  Page source snippet: {driver.page_source[:500]}")
+            raise Exception("TOTP input field not found — Zerodha may have changed UI")
+
+        totp_input.clear()
         totp_input.send_keys(code)
-        driver.find_element(By.XPATH, "//button[@type='submit']").click()
+        time.sleep(0.5)
+        # Try submit button variations
+        for submit_xpath in ["//button[@type='submit']", "//button[contains(text(),'Continue')]", "//input[@type='submit']"]:
+            try:
+                driver.find_element(By.XPATH, submit_xpath).click()
+                break
+            except:
+                continue
 
         # Wait for redirect to 127.0.0.1
         time.sleep(3)

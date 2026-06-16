@@ -1,0 +1,84 @@
+2026-06-15 23:37:48,722 IPOs needing GMP data: 286
+2026-06-15 23:37:53,047 [1/286] AGS Transact
+2026-06-15 23:40:21,645 [2/286] ASK Automotive
+2026-06-15 23:41:44,986 [3/286] Abans Holdings
+2026-06-15 23:43:07,488 [4/286] Adani Wilmar
+2026-06-15 23:44:32,235 [5/286] Aditya Birla AMC
+2026-06-15 23:48:06,300 [6/286] Aditya Infotech Ltd
+2026-06-15 23:49:29,838 [7/286] Advance Agrolife Ltd
+2026-06-15 23:50:53,621 [8/286] Aegis Vopak Terminals Limited
+2026-06-15 23:52:16,585 [9/286] Aequs Ltd
+2026-06-15 23:53:41,341 [10/286] Aeroflex Industries
+2026-06-15 23:53:41,367 Retry 1: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-06-15 23:55:12,498 [11/286] Aether Industries
+2026-06-15 23:56:37,693 [12/286] All Time Plastics Ltd
+2026-06-15 23:57:58,880 [13/286] Amanta Healthcare Ltd
+2026-06-15 23:59:23,416 [14/286] Ami Organics
+2026-06-16 00:00:46,508 [15/286] Anand Rathi Share and Stock Brokers Ltd
+2026-06-16 00:04:19,720 [16/286] Anand Rathi Wealth
+2026-06-16 00:05:43,902 [17/286] Angel Broking
+2026-06-16 00:07:08,150 [18/286] Anlon Healthcare Ltd
+2026-06-16 00:08:32,257 [19/286] Anthem Biosciences Ltd
+2026-06-16 00:09:55,826 [20/286] Antony Waste Handling Cell
+2026-06-16 00:13:28,646 [21/286] Anupam Rasyan
+2026-06-16 00:17:00,288 [22/286] Aptus Value Housing Finance
+2026-06-16 00:19:30,690 [23/286] Archean Chemical
+2026-06-16 00:20:55,998 [24/286] Arisinfra Solutions Limited
+2026-06-16 00:22:18,648 [25/286] Ather Energy Limited
+2026-06-16 00:42:33,494 [26/286] Atlanta Electricals Ltd
+2026-06-16 00:43:56,760 [27/286] Avalon Technologies
+2026-06-16 00:45:21,134 [28/286] Aye Finance Ltd
+2026-06-16 00:46:45,314 [29/286] Azad Engineering
+2026-06-16 00:48:08,452 [30/286] BMW Ventures Ltd
+2026-06-16 00:49:31,888 [31/286] Barbeque Nation
+2026-06-16 00:50:57,060 [32/286] Belrise Industries Limited
+2026-06-16 00:52:21,581 [33/286] Bikaji Foods
+2026-06-16 00:53:43,906 [34/286] Billionbrains Garage Ventures Ltd
+2026-06-16 00:57:13,985 [35/286] Blue Jet Healthcare
+2026-06-16 00:58:34,540 [36/286] BlueStone Jewellery and Lifestyle Ltd
+2026-06-16 01:02:01,452 [37/286] Borana Weaves Limited
+2026-06-16 01:03:22,510 [38/286] Brigade Hotel Ventures Ltd
+2026-06-16 01:03:22,597 Retry 1: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-06-16 01:04:48,875 [39/286] Burger King
+2026-06-16 01:06:09,058 [40/286] CAMS
+2026-06-16 01:07:30,834 [41/286] CE Infosystems
+2026-06-16 01:10:59,384 [42/286] CMS Infosystems
+2026-06-16 01:14:28,132 [43/286] Campus Shoes
+2026-06-16 01:17:57,273 [44/286] Canara HSBC Life Insurance Co Ltd
+2026-06-16 01:21:27,670 [45/286] Canara Robeco Asset Management Co Ltd
+2026-06-16 01:23:21,288 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /canara-robeco-asset-management-co-grey-market-premium/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 01:23:49,479 Retry 1: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /canara-robeco-asset-management-co/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 01:56:59,289 Retry 2: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /canara-robeco-asset-management-co/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 01:57:46,842 [46/286] Capillary Technologies India Ltd
+2026-06-16 02:01:00,298 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Read timed out. (read timeout=20)
+2026-06-16 02:01:20,489 [47/286] CarTrade Tech
+2026-06-16 02:56:59,715 Retry 1: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /cartrade-tech-ipo-gmp/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11004] getaddrinfo failed)"))
+2026-06-16 02:57:04,745 Retry 2: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /cartrade-tech-ipo-gmp/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 03:00:08,807 [48/286] Cello World
+2026-06-16 03:01:30,122 [49/286] Chemcon Speciality Chemicals
+2026-06-16 03:02:35,306 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /chemcon-speciality-chemicals-ipo-gmp/ (Caused by ConnectTimeoutError(<HTTPSConnection(host='ipowatch.in', port=443) at 0x245a0997e90>, 'Connection to ipowatch.in timed out. (connect timeout=20)'))
+2026-06-16 03:59:35,918 Retry 1: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /chemcon-speciality-chemicals-grey-market-premium/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 04:01:50,661 [50/286] Chemplast Sanmar
+2026-06-16 04:03:12,293 [51/286] Clean Science And Technology
+2026-06-16 04:04:00,665 Retry 2: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /clean-science-technology-grey-market-premium/ (Caused by ConnectTimeoutError(<HTTPSConnection(host='ipowatch.in', port=443) at 0x2459eff3230>, 'Connection to ipowatch.in timed out. (connect timeout=20)'))
+2026-06-16 04:59:48,742 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /clean-science-technology-grey-market-premium/ (Caused by NewConnectionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to establish a new connection: [WinError 10053] An established connection was aborted by the software in your host machine"))
+2026-06-16 05:00:14,306 [52/286] Concord Biotech
+2026-06-16 05:00:14,346 Retry 1: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-06-16 05:01:39,561 [53/286] Corona Remedies Ltd
+2026-06-16 05:01:39,721 Retry 1: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-06-16 05:03:03,981 [54/286] Craftsman Automation
+2026-06-16 05:04:24,454 [55/286] Credo Brands
+2026-06-16 05:05:18,636 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Read timed out. (read timeout=20)
+2026-06-16 06:01:01,991 Retry 1: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /credo-brands-grey-market-premium/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 06:02:14,691 [56/286] Crizac Limited
+2026-06-16 06:03:36,566 [57/286] Cyient DLM
+2026-06-16 06:04:57,801 [58/286] DCX Systems
+2026-06-16 06:05:18,580 Retry 1: HTTPSConnectionPool(host='ipowatch.in', port=443): Read timed out. (read timeout=20)
+2026-06-16 06:05:54,644 Retry 2: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /dcx-systems-ipo-gmp/ (Caused by ConnectTimeoutError(<HTTPSConnection(host='ipowatch.in', port=443) at 0x2459f0ef5c0>, 'Connection to ipowatch.in timed out. (connect timeout=20)'))
+2026-06-16 07:02:16,292 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /dcx-systems-ipo-gmp/ (Caused by NameResolutionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to resolve 'ipowatch.in' ([Errno 11001] getaddrinfo failed)"))
+2026-06-16 07:03:50,204 [59/286] DOMS Industries
+2026-06-16 07:03:50,390 Retry 1: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2026-06-16 07:06:33,049 Retry 2: HTTPSConnectionPool(host='ipowatch.in', port=443): Read timed out. (read timeout=20)
+2026-06-16 09:37:01,841 Retry 3: HTTPSConnectionPool(host='ipowatch.in', port=443): Max retries exceeded with url: /doms-industries/ (Caused by NewConnectionError("HTTPSConnection(host='ipowatch.in', port=443): Failed to establish a new connection: [WinError 10053] An established connection was aborted by the software in your host machine"))
+2026-06-16 09:37:21,866 [60/286] Data Patterns
+2026-06-16 09:38:45,947 [61/286] Delhivery
