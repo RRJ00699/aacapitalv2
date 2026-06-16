@@ -261,21 +261,21 @@ def upsert_regime(conn, day: date, nifty: float, ema200: float,
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO market_regimes
-            (date, nifty_close, ema200, breadth_pct,
+            (evaluation_date, nifty_close, nifty_ema_200, breadth_percentage,
              india_vix, vix_class, vix_signal,
-             regime, deploy_pct, above_ema200, breadth_strong, updated_at)
+             active_regime, deploy_pct, above_ema200, breadth_strong, updated_at)
         VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, now())
-        ON CONFLICT (date) DO UPDATE SET
-            nifty_close   = EXCLUDED.nifty_close,
-            ema200        = EXCLUDED.ema200,
-            breadth_pct   = EXCLUDED.breadth_pct,
+        ON CONFLICT (evaluation_date) DO UPDATE SET
+            nifty_close        = EXCLUDED.nifty_close,
+            nifty_ema_200      = EXCLUDED.nifty_ema_200,
+            breadth_percentage = EXCLUDED.breadth_percentage,
             india_vix     = EXCLUDED.india_vix,
             vix_class     = EXCLUDED.vix_class,
             vix_signal    = EXCLUDED.vix_signal,
-            regime        = EXCLUDED.regime,
+            active_regime      = EXCLUDED.active_regime,
             deploy_pct    = EXCLUDED.deploy_pct,
             above_ema200  = EXCLUDED.above_ema200,
-            breadth_strong= EXCLUDED.breadth_strong,
+            breadth_strong     = EXCLUDED.breadth_strong,
             updated_at    = now()
     """, (
         day, nifty, ema200, breadth,
