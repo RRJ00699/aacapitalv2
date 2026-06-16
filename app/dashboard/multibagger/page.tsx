@@ -6,7 +6,7 @@ import MultibaggerClient from "./MultibaggerClient";
 
 const sql = neon(process.env.NEON_DATABASE_URL!);
 
-export const revalidate = 3600; // revalidate every hour
+export const revalidate = 3600;
 
 export interface TechnicalSignal {
   id: number;
@@ -32,18 +32,24 @@ async function getSignals(): Promise<TechnicalSignal[]> {
   const result = await sql`
     SELECT
       id, symbol, signal_date,
-      monthly_rsi, monthly_rsi_ok,
-      weekly_ema30, price_above_ema30,
-      weekly_ha_bullish,
-      daily_nr7, daily_inside_bar,
-      criteria_met, all_criteria_met,
-      mb_score, conviction,
-      dtw_pattern_match, dtw_similarity_pct,
-      synced_at
+      monthly_rsi_14                    AS monthly_rsi,
+      monthly_ok                        AS monthly_rsi_ok,
+      weekly_ema_30                     AS weekly_ema30,
+      weekly_ok                         AS price_above_ema30,
+      weekly_ha_green_no_lower_shadow   AS weekly_ha_bullish,
+      daily_nr7_recent                  AS daily_nr7,
+      daily_inside_bar_recent           AS daily_inside_bar,
+      buy_zone_score                    AS criteria_met,
+      trigger_ok                        AS all_criteria_met,
+      probability_score                 AS mb_score,
+      action_label                      AS conviction,
+      NULL::text                        AS dtw_pattern_match,
+      NULL::numeric                     AS dtw_similarity_pct,
+      updated_at                        AS synced_at
     FROM technical_signals
     ORDER BY
-      all_criteria_met DESC NULLS LAST,
-      mb_score DESC NULLS LAST,
+      trigger_ok DESC NULLS LAST,
+      probability_score DESC NULLS LAST,
       signal_date DESC
     LIMIT 200
   ` as TechnicalSignal[];
@@ -53,10 +59,10 @@ async function getSignals(): Promise<TechnicalSignal[]> {
 async function getStats() {
   const r = await sql`
     SELECT
-      COUNT(*)                                            AS total,
-      COUNT(*) FILTER (WHERE all_criteria_met = true)    AS strong,
-      COUNT(DISTINCT symbol)                             AS unique_stocks,
-      MAX(signal_date)                                   AS latest_date
+      COUNT(*)                                          AS total,
+      COUNT(*) FILTER (WHERE trigger_ok = true)        AS strong,
+      COUNT(DISTINCT symbol)                            AS unique_stocks,
+      MAX(signal_date)                                  AS latest_date
     FROM technical_signals
   `;
   return r[0];
