@@ -14,11 +14,16 @@ async function getIPOs(): Promise<IPOIntelligence[]> {
     SELECT
       id, company_name,
       issue_price, issue_size_cr,
-      issue_open_date, issue_close_date, listing_date,
-      ipo_status,
+      open_date AS issue_open_date,
+      close_date AS issue_close_date,
+      listing_date,
+      suggested_action AS ipo_status,
 
-      lqi_score, conviction,
-      p_profit_10pct, p_loss, expected_return_pct,
+      lqi_final AS lqi_score,
+      archetype AS conviction,
+      prob_10pct_profit AS p_profit_10pct,
+      prob_loss_gt10 AS p_loss,
+      expected_return AS expected_return_pct,
 
       qib_subscription, nii_subscription,
       retail_subscription, total_subscription,
@@ -27,20 +32,15 @@ async function getIPOs(): Promise<IPOIntelligence[]> {
       revenue_growth_3yr, pat_growth_3yr,
       pe_ratio, sector_pe_median,
 
-      anchor_classification, anchor_investor_count,
+      anchor_classification,
+      NULL::int AS anchor_investor_count,
       ofs_percentage, promoter_holding_post,
-      is_sme, listing_exchange
+      NULL::boolean AS is_sme,
+      NULL::text AS listing_exchange
 
     FROM ipo_intelligence
     ORDER BY
-      CASE ipo_status
-        WHEN 'OPEN'               THEN 1
-        WHEN 'LISTING_PENDING'    THEN 2
-        WHEN 'ALLOTMENT_PENDING'  THEN 3
-        WHEN 'CLOSED'             THEN 4
-        WHEN 'LISTED'             THEN 5
-        ELSE 6
-      END,
+      lqi_final DESC NULLS LAST,
       listing_date DESC NULLS LAST
     LIMIT 333
   ` as IPOIntelligence[];
@@ -50,12 +50,12 @@ async function getIPOs(): Promise<IPOIntelligence[]> {
 async function getSummaryStats() {
   const r = await sql`
     SELECT
-      COUNT(*) FILTER (WHERE ipo_status = 'OPEN')                              AS open_count,
-      COUNT(*) FILTER (WHERE ipo_status = 'LISTING_PENDING')                   AS listing_pending,
-      COUNT(*) FILTER (WHERE conviction IN ('STRONG_BUY','BUY'))               AS buy_signals,
-      COUNT(*) FILTER (WHERE lqi_score >= 70)                                  AS high_lqi,
+      COUNT(*) FILTER (WHERE suggested_action = 'APPLY')                       AS open_count,
+      COUNT(*) FILTER (WHERE listing_date >= CURRENT_DATE)                     AS listing_pending,
+      COUNT(*) FILTER (WHERE archetype IN ('STRONG_BUY','BUY','APPLY'))        AS buy_signals,
+      COUNT(*) FILTER (WHERE lqi_final >= 70)                                  AS high_lqi,
       COUNT(*) FILTER (WHERE gmp_percentage >= 20)                             AS high_gmp,
-      ROUND(AVG(lqi_score)::numeric, 1)                                        AS avg_lqi,
+      ROUND(AVG(lqi_final)::numeric, 1)                                        AS avg_lqi,
       COUNT(*)                                                                  AS total
     FROM ipo_intelligence
   `;

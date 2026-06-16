@@ -39,17 +39,17 @@ export interface ListingSignal {
 async function getListingToday(): Promise<ListingSignal[]> {
   const r = await sql`
     SELECT
-      id, company_name, nse_symbol,
+      id, company_name, symbol AS nse_symbol,
       issue_price, listing_date,
       listing_price, listing_gap_pct,
-      lqi_score, conviction,
-      last_price, vwap, above_vwap,
-      listing_volume, buy_qty, sell_qty,
-      total_subscription, qib_subscription,
+      lqi_final AS lqi_score, conviction,
+      NULL::numeric AS last_price, listing_vwap AS vwap, above_listing_vwap AS vwap,
+      listing_volume, NULL::bigint AS buy_qty, NULL::bigint AS sell_qty,
+      total_subscription, qib_subscription_x AS qib_subscription,
       gmp_percentage
     FROM ipo_intelligence
     WHERE listing_date = CURRENT_DATE
-    ORDER BY lqi_score DESC NULLS LAST
+    ORDER BY lqi_final DESC NULLS LAST
   ` as ListingSignal[];
   return r;
 }
@@ -57,17 +57,17 @@ async function getListingToday(): Promise<ListingSignal[]> {
 async function getRecentListings(): Promise<ListingSignal[]> {
   const r = await sql`
     SELECT
-      id, company_name, nse_symbol,
+      id, company_name, symbol AS nse_symbol,
       issue_price, listing_date,
       listing_price, listing_gap_pct,
-      lqi_score, conviction,
-      total_subscription, qib_subscription,
+      lqi_final AS lqi_score, conviction,
+      total_subscription, qib_subscription_x AS qib_subscription,
       gmp_percentage,
-      NULL::numeric AS last_price,
-      NULL::numeric AS vwap,
-      NULL::boolean AS above_vwap,
+      NULL::numeric AS NULL::numeric AS last_price,
+      NULL::numeric AS listing_vwap AS vwap,
+      NULL::boolean AS above_listing_vwap AS vwap,
       NULL::bigint  AS listing_volume,
-      NULL::bigint  AS buy_qty,
+      NULL::bigint  AS NULL::bigint AS buy_qty,
       NULL::bigint  AS sell_qty
     FROM ipo_intelligence
     WHERE listing_date >= CURRENT_DATE - INTERVAL '14 days'
