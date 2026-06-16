@@ -1,14 +1,17 @@
 // app/dashboard/ipo/page.tsx
 // Task 5: IPO Command Center — full page wired to ipo_intelligence
 
-import { sql } from "@vercel/postgres";
+import postgres from "postgres";
+
 import IPOCommandCenterClient from "./IPOCommandCenterClient";
 import type { IPOIntelligence } from "@/components/ipo/IPOIntelligenceCard";
+
+const db = postgres(process.env.NEON_DATABASE_URL!, { ssl: "require" });
 
 export const revalidate = 900; // 15 min
 
 async function getIPOs(): Promise<IPOIntelligence[]> {
-  const r = await sql<IPOIntelligence>`
+  const r = await db<IPOIntelligence>`
     SELECT
       id, company_name,
       issue_price, issue_size_cr,
@@ -46,7 +49,7 @@ async function getIPOs(): Promise<IPOIntelligence[]> {
 }
 
 async function getSummaryStats() {
-  const r = await sql`
+  const r = await db`
     SELECT
       COUNT(*) FILTER (WHERE ipo_status = 'OPEN')                              AS open_count,
       COUNT(*) FILTER (WHERE ipo_status = 'LISTING_PENDING')                   AS listing_pending,

@@ -1,8 +1,11 @@
 // app/dashboard/listing/page.tsx
 // Task 7: Listing Day Dashboard — OI + VWAP signals
 
-import { sql } from "@vercel/postgres";
+import postgres from "postgres";
+
 import ListingDayClient from "./ListingDayClient";
+
+const db = postgres(process.env.NEON_DATABASE_URL!, { ssl: "require" });
 
 export const revalidate = 60; // refresh every minute on listing day
 
@@ -35,7 +38,7 @@ export interface ListingSignal {
 }
 
 async function getListingToday(): Promise<ListingSignal[]> {
-  const r = await sql<ListingSignal>`
+  const r = await db<ListingSignal>`
     SELECT
       id, company_name, nse_symbol,
       issue_price, listing_date,
@@ -53,7 +56,7 @@ async function getListingToday(): Promise<ListingSignal[]> {
 }
 
 async function getRecentListings(): Promise<ListingSignal[]> {
-  const r = await sql<ListingSignal>`
+  const r = await db<ListingSignal>`
     SELECT
       id, company_name, nse_symbol,
       issue_price, listing_date,
@@ -78,7 +81,7 @@ async function getRecentListings(): Promise<ListingSignal[]> {
 }
 
 async function getListingStats() {
-  const r = await sql`
+  const r = await db`
     SELECT
       COUNT(*) FILTER (WHERE listing_gap_pct > 0)   AS positive_listings,
       COUNT(*) FILTER (WHERE listing_gap_pct >= 10)  AS gain_10plus,

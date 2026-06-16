@@ -1,8 +1,11 @@
 // app/dashboard/multibagger/page.tsx
 // Task 2: Wire Multibagger Discovery tab to Neon technical_signals
 
-import { sql } from "@vercel/postgres";
+import postgres from "postgres";
+
 import MultibaggerClient from "./MultibaggerClient";
+
+const db = postgres(process.env.NEON_DATABASE_URL!, { ssl: "require" });
 
 export const revalidate = 3600; // revalidate every hour
 
@@ -27,7 +30,7 @@ export interface TechnicalSignal {
 }
 
 async function getSignals(): Promise<TechnicalSignal[]> {
-  const result = await sql<TechnicalSignal>`
+  const result = await db<TechnicalSignal>`
     SELECT
       id, symbol, signal_date,
       monthly_rsi, monthly_rsi_ok,
@@ -49,7 +52,7 @@ async function getSignals(): Promise<TechnicalSignal[]> {
 }
 
 async function getStats() {
-  const r = await sql`
+  const r = await db`
     SELECT
       COUNT(*)                                            AS total,
       COUNT(*) FILTER (WHERE all_criteria_met = true)    AS strong,
