@@ -256,7 +256,7 @@ export default function MultibaggerClient({ signals, stats }: Props) {
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-500">
                       {s.dtw_pattern_match
-                        ? `${s.dtw_pattern_match} (${s.dtw_similarity_pct?.toFixed(0)}%)`
+                        ? `${s.dtw_pattern_match} (${s.dtw_similarity_pct != null ? Number(s.dtw_similarity_pct).toFixed(0) : ''}%)`
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-400">

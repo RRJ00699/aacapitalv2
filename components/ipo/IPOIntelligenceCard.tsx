@@ -192,7 +192,7 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
 
   const peVsPeers =
     ipo.pe_ratio && ipo.sector_pe_median
-      ? ((ipo.pe_ratio / ipo.sector_pe_median) * 100 - 100).toFixed(1)
+      ? ((Number(ipo.pe_ratio) / Number(ipo.sector_pe_median)) * 100 - 100).toFixed(1)
       : null;
 
   return (
@@ -223,7 +223,7 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
               {ipo.issue_size_cr && <span>₹{ipo.issue_size_cr.toLocaleString("en-IN")} Cr</span>}
               {ipo.listing_exchange && <span>{ipo.listing_exchange}</span>}
               {ipo.listing_date && (
-                <span>Lists: {ipo.listing_date.substring(0, 10)}</span>
+                <span>Lists: {String(ipo.listing_date).substring(0, 10)}</span>
               )}
             </div>
           </div>
@@ -257,7 +257,7 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
             (ipo.expected_return_pct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"
           }`}>
             {ipo.expected_return_pct !== null
-              ? `${ipo.expected_return_pct > 0 ? "+" : ""}${ipo.expected_return_pct?.toFixed(1)}%`
+              ? `${ipo.expected_return_pct > 0 ? "+" : ""}${Number(ipo.expected_return_pct ?? 0).toFixed(1)}%`
               : "—"}
           </span>
         </div>
@@ -303,12 +303,12 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
               <div className="grid grid-cols-2 gap-2">
                 <DimensionPill
                   label="Total Subscription"
-                  value={ipo.total_subscription !== null ? `${ipo.total_subscription?.toFixed(1)}x` : null}
+                  value={ipo.total_subscription !== null ? `${Number(ipo.total_subscription ?? 0).toFixed(1)}x` : null}
                   isGood={(ipo.total_subscription ?? 0) >= 10}
                 />
                 <DimensionPill
                   label="GMP"
-                  value={ipo.gmp_percentage !== null ? `+${ipo.gmp_percentage?.toFixed(1)}%` : null}
+                  value={ipo.gmp_percentage !== null ? `+${Number(ipo.gmp_percentage ?? 0).toFixed(1)}%` : null}
                   isGood={(ipo.gmp_percentage ?? 0) >= 10}
                 />
                 <DimensionPill
@@ -327,19 +327,19 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
 
             {tab === "Subscription" && (
               <div className="space-y-2">
-                <MetricRow label="QIB"    value={ipo.qib_subscription?.toFixed(2)}    suffix="x" />
-                <MetricRow label="NII"    value={ipo.nii_subscription?.toFixed(2)}    suffix="x" />
-                <MetricRow label="Retail" value={ipo.retail_subscription?.toFixed(2)} suffix="x" />
-                <MetricRow label="Total"  value={ipo.total_subscription?.toFixed(2)}  suffix="x" />
+                <MetricRow label="QIB"    value={Number(ipo.qib_subscription ?? 0).toFixed(2)}    suffix="x" />
+                <MetricRow label="NII"    value={Number(ipo.nii_subscription ?? 0).toFixed(2)}    suffix="x" />
+                <MetricRow label="Retail" value={Number(ipo.retail_subscription ?? 0).toFixed(2)} suffix="x" />
+                <MetricRow label="Total"  value={Number(ipo.total_subscription ?? 0).toFixed(2)}  suffix="x" />
               </div>
             )}
 
             {tab === "Financials" && (
               <div className="space-y-2">
-                <MetricRow label="Revenue Growth (3yr)" value={ipo.revenue_growth_3yr?.toFixed(1)} suffix="%" />
-                <MetricRow label="PAT Growth (3yr)"     value={ipo.pat_growth_3yr?.toFixed(1)}     suffix="%" />
-                <MetricRow label="P/E Ratio (issue)"    value={ipo.pe_ratio?.toFixed(1)}           suffix="x" />
-                <MetricRow label="Sector P/E (median)"  value={ipo.sector_pe_median?.toFixed(1)}   suffix="x" />
+                <MetricRow label="Revenue Growth (3yr)" value={Number(ipo.revenue_growth_3yr ?? 0).toFixed(1)} suffix="%" />
+                <MetricRow label="PAT Growth (3yr)"     value={Number(ipo.pat_growth_3yr ?? 0).toFixed(1)}     suffix="%" />
+                <MetricRow label="P/E Ratio (issue)"    value={Number(ipo.pe_ratio ?? 0).toFixed(1)}           suffix="x" />
+                <MetricRow label="Sector P/E (median)"  value={Number(ipo.sector_pe_median ?? 0).toFixed(1)}   suffix="x" />
                 {peVsPeers && (
                   <div className={`text-xs py-1.5 px-2 rounded-lg ${
                     Number(peVsPeers) <= 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
@@ -365,8 +365,8 @@ export default function IPOIntelligenceCard({ ipo, compact = false }: Props) {
             {tab === "Structure" && (
               <div className="space-y-2">
                 <MetricRow label="Issue Size"           value={ipo.issue_size_cr ? `₹${ipo.issue_size_cr.toLocaleString("en-IN")} Cr` : null} />
-                <MetricRow label="OFS %"                value={ipo.ofs_percentage?.toFixed(1)} suffix="%" />
-                <MetricRow label="Promoter Post-IPO"    value={ipo.promoter_holding_post?.toFixed(1)} suffix="%" />
+                <MetricRow label="OFS %"                value={Number(ipo.ofs_percentage ?? 0).toFixed(1)} suffix="%" />
+                <MetricRow label="Promoter Post-IPO"    value={Number(ipo.promoter_holding_post ?? 0).toFixed(1)} suffix="%" />
                 <MetricRow label="Exchange"             value={ipo.listing_exchange} />
                 <MetricRow label="Open"  value={ipo.issue_open_date?.substring(0,10)} />
                 <MetricRow label="Close" value={ipo.issue_close_date?.substring(0,10)} />

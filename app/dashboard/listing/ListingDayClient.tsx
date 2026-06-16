@@ -38,7 +38,7 @@ function VWAPSignal({ price, vwap, aboveVwap }: {
         {aboveVwap ? "Above VWAP" : "Below VWAP"}
       </div>
       <div className="text-[10px] text-gray-400 mt-0.5">
-        LTP ₹{price.toFixed(1)} · VWAP ₹{vwap.toFixed(1)}
+        LTP ₹{Number(price).toFixed(1)} · VWAP ₹{Number(vwap).toFixed(1)}
       </div>
     </div>
   );
@@ -59,8 +59,8 @@ function OrderImbalance({ buyQty, sellQty }: { buyQty: number | null; sellQty: n
         <div className="bg-red-400 flex-1" />
       </div>
       <div className="flex justify-between text-[10px] mt-0.5">
-        <span className="text-emerald-600">B {buyPct.toFixed(0)}%</span>
-        <span className="text-red-600">S {(100 - buyPct).toFixed(0)}%</span>
+        <span className="text-emerald-600">B {Number(buyPct).toFixed(0)}%</span>
+        <span className="text-red-600">S {Number(100 - buyPct).toFixed(0)}%</span>
       </div>
     </div>
   );
