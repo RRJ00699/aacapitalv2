@@ -2,38 +2,36 @@ name: Kite Token Refresh
 
 on:
   schedule:
-    # 8:00 AM IST = 2:30 UTC (Mon-Fri)
-    - cron: '30 2 * * 1-5'
+    # 8:00 AM IST = 2:30 AM UTC, Mon-Fri
+    - cron: "30 2 * * 1-5"
   workflow_dispatch:
 
 jobs:
   refresh-token:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install kiteconnect pyotp selenium webdriver-manager python-dotenv
+        run: |
+          pip install kiteconnect python-dotenv pyotp selenium webdriver-manager requests
 
       - name: Install Chrome
         run: |
           wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
-          sudo apt-get update -q
+          sudo apt-get update -qq
           sudo apt-get install -y google-chrome-stable
 
-      - name: Refresh Kite access token
-        id: refresh
+      - name: Refresh Kite Token
         env:
           KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
           KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
@@ -41,19 +39,59 @@ jobs:
           KITE_PASSWORD:    ${{ secrets.KITE_PASSWORD }}
           KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
         run: |
-          echo "KITE_API_KEY=$KITE_API_KEY"         > .env.local
-          echo "KITE_API_SECRET=$KITE_API_SECRET"  >> .env.local
-          echo "KITE_USER_ID=$KITE_USER_ID"         >> .env.local
-          echo "KITE_PASSWORD=$KITE_PASSWORD"        >> .env.local
-          echo "KITE_TOTP_SECRET=$KITE_TOTP_SECRET" >> .env.local
           python _scripts/kite-auth-auto.py --auto
-          TOKEN=$(grep KITE_ACCESS_TOKEN .env.local | cut -d'=' -f2)
-          echo "access_token=$TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ Token refreshed"
 
-      - name: Update KITE_ACCESS_TOKEN secret
-        uses: gliech/create-github-secret-action@v1
-        with:
-          name: KITE_ACCESS_TOKEN
-          value: ${{ steps.refresh.outputs.access_token }}
-          pa_token: ${{ secrets.GH_PAT }}
+      - name: Write token to GitHub Secrets
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO:     ${{ github.repository }}
+        run: |
+          # Read token from .env.local written by kite-auth-auto.py
+          TOKEN=$(grep KITE_ACCESS_TOKEN .env.local | cut -d'=' -f2 | tr -d '"')
+          if [ -z "$TOKEN" ]; then
+            echo "ERROR: Token not found in .env.local"
+            exit 1
+          fi
+          echo "Token captured (${#TOKEN} chars)"
+
+          # Get public key for secret encryption
+          PK=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/actions/secrets/public-key")
+          KEY_ID=$(echo $PK | python3 -c "import sys,json; print(json.load(sys.stdin)['key_id'])")
+          KEY=$(echo $PK | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
+
+          # Encrypt and update secret
+          ENCRYPTED=$(python3 -c "
+          import base64, sys
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+          from cryptography.hazmat.primitives import serialization
+          from nacl.public import PublicKey, SealedBox
+
+          public_key = PublicKey(base64.b64decode('$KEY'))
+          sealed = SealedBox(public_key)
+          encrypted = sealed.encrypt(b'$TOKEN')
+          print(base64.b64encode(encrypted).decode())
+          ")
+
+          curl -s -X PUT \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/secrets/KITE_ACCESS_TOKEN" \
+            -d "{\"encrypted_value\":\"$ENCRYPTED\",\"key_id\":\"$KEY_ID\"}"
+
+          echo "✅ KITE_ACCESS_TOKEN updated in GitHub Secrets"
+
+      - name: Verify token works
+        env:
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          TOKEN=$(grep KITE_ACCESS_TOKEN .env.local | cut -d'=' -f2 | tr -d '"')
+          python3 -c "
+          from kiteconnect import KiteConnect
+          kite = KiteConnect(api_key='${{ secrets.KITE_API_KEY }}')
+          kite.set_access_token('$TOKEN')
+          profile = kite.profile()
+          print(f'✅ Token valid — logged in as {profile[\"user_name\"]}')
+          "

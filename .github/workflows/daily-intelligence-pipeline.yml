@@ -1,0 +1,70 @@
+name: Daily Intelligence Pipeline
+
+on:
+  schedule:
+    # 4:30 PM IST Mon-Fri = 11:00 AM UTC
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  intelligence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Python deps
+        run: pip install psycopg2-binary kiteconnect python-dotenv requests beautifulsoup4
+
+      - name: Sync Kite candles
+        env:
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
+          DATABASE_URL:      ${{ secrets.LOCAL_DATABASE_URL }}
+        run: python _scripts/kite-sync-candles.py --days 1
+        continue-on-error: true
+
+      - name: Market regime + VIX
+        env:
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/engines/market_regime.py
+        continue-on-error: true
+
+      - name: Kite IPO sync
+        env:
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/kite-sync-ipos.py
+        continue-on-error: true
+
+      - name: Multibagger signals
+        env:
+          DATABASE_URL:      ${{ secrets.LOCAL_DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          npx tsx _scripts/engines/indicator_calculator.ts --mode latest
+          npx tsx _scripts/engines/multibagger_screener.ts
+          npx tsx _scripts/sync-signals-to-neon.ts
+        continue-on-error: true
+
+      - name: Summary
+        run: echo "✅ Daily intelligence pipeline complete"

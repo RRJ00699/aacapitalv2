@@ -2,12 +2,12 @@ name: Monthly Multibagger Mining
 
 on:
   schedule:
-    # 1st of each month at 6:00 AM IST (00:30 UTC)
+    # 1st of month at 6:00 AM IST = 12:30 AM UTC
     - cron: "30 0 1 * *"
   workflow_dispatch:
     inputs:
       min_gain:
-        description: "Minimum historical gain to qualify (e.g. 500 for 5x)"
+        description: "Minimum historical gain % (e.g. 500 for 5x)"
         required: false
         default: "500"
 
@@ -26,37 +26,24 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Node deps
+      - name: Install dependencies
         run: npm ci
 
-      - name: Install Python deps
-        run: |
-          pip install psycopg2-binary python-dotenv numpy scipy
-
-      - name: Run historical multibagger miner
+      - name: Full indicator calculation
         env:
           DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
-        run: |
-          npx tsx _scripts/engines/indicator_calculator.ts --mode full
+        run: npx tsx _scripts/engines/indicator_calculator.ts --mode full
 
-      - name: Extract pattern DNA via DTW
+      - name: Mine historical multibagger patterns
         env:
           DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
-        run: |
-          python _scripts/engines/multibagger_pattern_miner.py \
-            --min-gain ${{ github.event.inputs.min_gain || '500' }}
+        run: npx tsx _scripts/engines/historical_multibagger_miner.ts --min-gain ${{ github.event.inputs.min_gain || '500' }}
 
-      - name: Sync updated patterns to Neon
+      - name: Sync to Neon
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
-        run: |
-          npx tsx _scripts/sync-signals-to-neon.ts
+          DATABASE_URL:      ${{ secrets.LOCAL_DATABASE_URL }}
+        run: npx tsx _scripts/sync-signals-to-neon.ts
 
       - name: Summary
         run: echo "✅ Monthly multibagger mining complete"
