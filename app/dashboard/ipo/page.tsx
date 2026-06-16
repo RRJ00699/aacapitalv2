@@ -10,7 +10,7 @@ const sql = neon(process.env.NEON_DATABASE_URL!);
 export const revalidate = 900; // 15 min
 
 async function getIPOs(): Promise<IPOIntelligence[]> {
-  const r = await sql<IPOIntelligence>`
+  const r = await sql`
     SELECT
       id, company_name,
       issue_price, issue_size_cr,
@@ -43,8 +43,8 @@ async function getIPOs(): Promise<IPOIntelligence[]> {
       END,
       listing_date DESC NULLS LAST
     LIMIT 333
-  `;
-  return r.rows;
+  ` as IPOIntelligence[];
+  return r;
 }
 
 async function getSummaryStats() {
@@ -59,7 +59,7 @@ async function getSummaryStats() {
       COUNT(*)                                                                  AS total
     FROM ipo_intelligence
   `;
-  return r.rows[0];
+  return r[0];
 }
 
 export default async function IPOCommandCenterPage() {

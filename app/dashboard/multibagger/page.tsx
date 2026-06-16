@@ -29,7 +29,7 @@ export interface TechnicalSignal {
 }
 
 async function getSignals(): Promise<TechnicalSignal[]> {
-  const result = await sql<TechnicalSignal>`
+  const result = await sql`
     SELECT
       id, symbol, signal_date,
       monthly_rsi, monthly_rsi_ok,
@@ -46,8 +46,8 @@ async function getSignals(): Promise<TechnicalSignal[]> {
       mb_score DESC NULLS LAST,
       signal_date DESC
     LIMIT 200
-  `;
-  return result.rows;
+  ` as TechnicalSignal[];
+  return result;
 }
 
 async function getStats() {
@@ -59,7 +59,7 @@ async function getStats() {
       MAX(signal_date)                                   AS latest_date
     FROM technical_signals
   `;
-  return r.rows[0];
+  return r[0];
 }
 
 export default async function MultibaggerPage() {

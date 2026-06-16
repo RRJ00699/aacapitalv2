@@ -37,7 +37,7 @@ export interface ListingSignal {
 }
 
 async function getListingToday(): Promise<ListingSignal[]> {
-  const r = await sql<ListingSignal>`
+  const r = await sql`
     SELECT
       id, company_name, nse_symbol,
       issue_price, listing_date,
@@ -50,12 +50,12 @@ async function getListingToday(): Promise<ListingSignal[]> {
     FROM ipo_intelligence
     WHERE listing_date = CURRENT_DATE
     ORDER BY lqi_score DESC NULLS LAST
-  `;
-  return r.rows;
+  ` as ListingSignal[];
+  return r;
 }
 
 async function getRecentListings(): Promise<ListingSignal[]> {
-  const r = await sql<ListingSignal>`
+  const r = await sql`
     SELECT
       id, company_name, nse_symbol,
       issue_price, listing_date,
@@ -75,8 +75,8 @@ async function getRecentListings(): Promise<ListingSignal[]> {
       AND listing_gap_pct IS NOT NULL
     ORDER BY listing_date DESC
     LIMIT 20
-  `;
-  return r.rows;
+  ` as ListingSignal[];
+  return r;
 }
 
 async function getListingStats() {
@@ -91,7 +91,7 @@ async function getListingStats() {
     WHERE listing_gap_pct IS NOT NULL
       AND listing_date >= CURRENT_DATE - INTERVAL '90 days'
   `;
-  return r.rows[0];
+  return r[0];
 }
 
 export default async function ListingDayPage() {
