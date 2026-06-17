@@ -205,4 +205,18 @@ def main():
 
         save_to_db(access_token)
 
-        if verify_token(
+        # FIXED Syntax block: single-line execution removes parenthesis leakage risk
+        is_valid = verify_token(access_token)
+        if is_valid:
+            log.info("✅ Token refresh complete — all pipelines will use new token")
+        else:
+            log.error("❌ Token saved but verification failed")
+            sys.exit(1)
+
+    except Exception as e:
+        log.error(f"Token refresh failed: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
