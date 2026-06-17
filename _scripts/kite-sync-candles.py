@@ -32,7 +32,7 @@ load_dotenv(".env")
 
 API_KEY      = os.getenv("KITE_API_KEY")
 ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
+DATABASE_URL = os.getenv("CANDLES_DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--symbol",   help="Single symbol to sync")
