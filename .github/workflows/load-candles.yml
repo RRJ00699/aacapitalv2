@@ -1,77 +1,30 @@
-name: Load Candles to DB
+name: Load Candles to DB (LOCAL ONLY)
+
+# ⚠️  IMPORTANT: This workflow loads candles to Neon (cloud DB).
+# Candle sync should run LOCALLY using:
+#   python _scripts/kite-sync-candles.py --days 1
+#
+# This workflow is kept for reference only.
+# Do NOT trigger it — it will write candles to Neon and fill up the 512MB limit.
 
 on:
-  # Manual trigger (used after downloading new CSVs)
   workflow_dispatch:
     inputs:
-      candle_type:
-        description: 'Which candles to load'
+      confirm:
+        description: 'Type YES to confirm you want to load candles to Neon (NOT recommended)'
         required: true
-        default: 'both'
-        type: choice
-        options:
-          - both
-          - daily
-          - weekly
-      dry_run:
-        description: 'Dry run (no DB writes)'
-        required: false
-        default: 'false'
-        type: boolean
-
-  # Also run after quarterly-backfill completes (candles downloaded)
-  workflow_run:
-    workflows: ["Quarterly Backfill"]
-    types: [completed]
+        default: 'NO'
 
 jobs:
   load-candles:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Load daily candles
-        if: ${{ github.event.inputs.candle_type == 'daily' || github.event.inputs.candle_type == 'both' || github.event_name == 'workflow_run' }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - name: Check confirmation
         run: |
-          DRY_FLAG=""
-          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            DRY_FLAG="--dry-run"
+          if [ "${{ github.event.inputs.confirm }}" != "YES" ]; then
+            echo "Cancelled. Candle sync runs locally only."
+            echo "Run: python _scripts/kite-sync-candles.py --days 1"
+            exit 1
           fi
-          npx tsx _scripts/loaders/load-daily-candles.ts $DRY_FLAG
-
-      - name: Load weekly candles
-        if: ${{ github.event.inputs.candle_type == 'weekly' || github.event.inputs.candle_type == 'both' || github.event_name == 'workflow_run' }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-        run: |
-          DRY_FLAG=""
-          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            DRY_FLAG="--dry-run"
-          fi
-          npx tsx _scripts/loaders/load-weekly-candles.ts $DRY_FLAG
-
-      - name: Trigger Market Regime backfill
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-        run: |
-          echo "✅ Candles loaded — triggering market regime calculation"
-          python _scripts/engines/market_regime.py --backfill || echo "⚠ Market regime backfill failed (non-fatal)"
-        continue-on-error: true
+          echo "WARNING: Writing candles to Neon. This fills up 512MB storage."

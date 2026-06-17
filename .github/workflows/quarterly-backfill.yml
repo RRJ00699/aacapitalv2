@@ -1,20 +1,54 @@
 name: AACapital Quarterly Backfill
+
 on:
   schedule:
     - cron: '0 2 15 1,4,7,10 *'   # Jan/Apr/Jul/Oct 15th
   workflow_dispatch:
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
-      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
-      - run: npx tsx _scripts/backfill/backfill-earnings.ts --source=csv
-      - run: npx tsx _scripts/run-intelligence-scoring.ts
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install psycopg2-binary kiteconnect python-dotenv pandas requests openpyxl
+
+      - name: Run intelligence scoring
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx _scripts/run-intelligence-scoring.ts
+        continue-on-error: true
+
+      - name: Score IPO engine
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/engines/ipo_probability_engine.py --all
+        continue-on-error: true
+
+      - name: Market regime backfill
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+        run: python _scripts/engines/market_regime.py --backfill
+        continue-on-error: true
+
+      - name: Summary
+        run: echo "Quarterly backfill done $(date -u '+%Y-%m-%d %H:%M UTC')"
