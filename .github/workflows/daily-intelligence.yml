@@ -2,11 +2,11 @@ name: Daily Intelligence Pipeline
 
 on:
   schedule:
-    - cron: '0 11 * * 1-5'   # 4:30 PM IST Mon-Fri
+    - cron: '0 11 * * 1-5'   # 4:30 PM IST Mon-Fri (after market close)
   workflow_dispatch:
     inputs:
       skip_kite:
-        description: 'Skip Kite sync'
+        description: 'Skip Kite candle sync'
         default: 'false'
         type: boolean
 
@@ -34,17 +34,7 @@ jobs:
         run: npm ci
 
       - name: Install Python dependencies
-        run: pip install kiteconnect psycopg2-binary python-dotenv pandas requests beautifulsoup4 openpyxl
-
-      - name: Sync today candles from Kite
-        if: ${{ github.event.inputs.skip_kite != 'true' }}
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
-          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
-        run: python _scripts/kite-sync-candles.py --days 1
-        continue-on-error: true
+        run: pip install kiteconnect psycopg2-binary python-dotenv pandas requests beautifulsoup4 openpyxl curl_cffi pyotp
 
       - name: Fetch FII/DII flows
         env:
@@ -53,12 +43,18 @@ jobs:
         run: python _scripts/fetch_fii_dii.py
         continue-on-error: true
 
+      - name: Seed global markets cache
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/seed_global_cache.py
+        continue-on-error: true
+
       - name: Update market regime
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
-          KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
         run: python _scripts/engines/market_regime.py
         continue-on-error: true
 
@@ -75,16 +71,6 @@ jobs:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: npx tsx _scripts/run-intelligence-scoring.ts
-        continue-on-error: true
-
-      - name: Multibagger signals
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-        run: |
-          npx tsx _scripts/engines/indicator_calculator.ts --mode latest || true
-          npx tsx _scripts/engines/multibagger_screener.ts || true
-          npx tsx _scripts/sync-signals-to-neon.ts || true
         continue-on-error: true
 
       - name: Check Neon storage
