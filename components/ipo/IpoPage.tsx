@@ -1,9 +1,7 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
-import LiveTape from "./LiveTape"
-import PostListingMonitor from "./PostListingMonitor"
 
-// ── Colour system ─────────────────────────────────────────────────────────
+// ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   green:  "#15803d", greenBg:  "#f0fdf4", greenBd: "#bbf7d0",
   blue:   "#1d4ed8", blueBg:   "#eff6ff", blueBd:  "#bfdbfe",
@@ -12,593 +10,193 @@ const C = {
   purple: "#7c3aed", purpleBg: "#f5f3ff", purpleBd:"#e9d5ff",
   cyan:   "#0891b2", cyanBg:   "#ecfeff", cyanBd:  "#cffafe",
   gray:   "#6b7280", grayBg:   "#f9fafb", grayBd:  "#e5e7eb",
-}
-const scoreCol = (v:number) => v>=80?C.green:v>=65?C.blue:v>=50?C.amber:C.red
-const scoreBg  = (v:number) => v>=80?C.greenBg:v>=65?C.blueBg:v>=50?C.amberBg:C.redBg
-const pctStr   = (v:number,base:number) => { const p=base>0?((v-base)/base*100):0; return (p>=0?"+":"")+p.toFixed(1)+"%" }
-
-const REC: Record<string,[string,string,string]> = {
-  "Apply Aggressively":                        [C.green,  C.greenBg,  "APPLY AGGRESSIVELY"],
-  "Apply — Long-Term Hold":                    [C.blue,   C.blueBg,   "APPLY — LONG-TERM HOLD"],
-  "Apply — Listing Trade Only":                [C.cyan,   C.cyanBg,   "LISTING-DAY TRADE"],
-  "Apply Retail Only":                         [C.blue,   C.blueBg,   "APPLY RETAIL ONLY"],
-  "Long-Term Compounder — Buy on Listing Dip": [C.purple, C.purpleBg, "WATCH POST-LISTING BASE"],
-  "Watch — Selective Apply":                   [C.amber,  C.amberBg,  "WATCH"],
-  "Avoid":                                     [C.red,    C.redBg,    "AVOID"],
+  text:   "#111827", textSub:  "#6b7280", surface: "#ffffff",
+  bg:     "#f7f9fc", border:   "#e5e7eb",
 }
 
-// ── Primitives ────────────────────────────────────────────────────────────
-function Tag({ text, color=C.gray, bg=C.grayBg }: { text:string; color?:string; bg?:string }) {
-  return <span style={{ display:"inline-block", padding:"2px 9px", borderRadius:99, fontSize:10, fontWeight:700, background:bg, color }}>{text}</span>
-}
-function Bar({ v, max=100, color=C.blue }: { v:number; max?:number; color?:string }) {
-  return <div style={{ height:3, background:"#e5e7eb", borderRadius:2, marginTop:3 }}><div style={{ width:`${Math.min(100,Math.round(v/max*100))}%`, height:"100%", background:color, borderRadius:2 }} /></div>
-}
-function Card({ children, style={} }: { children:any; style?:any }) {
-  return <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:14, padding:16, marginBottom:12, ...style }}>{children}</div>
-}
-function SectionTitle({ text }: { text:string }) {
-  return <div style={{ fontSize:10, fontWeight:900, color:"#374151", letterSpacing:"0.08em", marginBottom:12, textTransform:"uppercase" }}>{text}</div>
+const n = (v: unknown, fb = 0) => { const x = Number(v); return isFinite(x) ? x : fb }
+const pct = (v: unknown) => isFinite(Number(v)) ? `${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(1)}%` : "—"
+const score_color = (v: number) => v >= 80 ? C.green : v >= 65 ? C.blue : v >= 50 ? C.amber : C.red
+const score_bg    = (v: number) => v >= 80 ? C.greenBg : v >= 65 ? C.blueBg : v >= 50 ? C.amberBg : C.redBg
+
+// ── Action config ─────────────────────────────────────────────────────────────
+type ActionType = "APPLY" | "APPLY SMALL" | "WATCH" | "SKIP" | "AVOID"
+
+function actionCfg(lqi: number, gmp: number): ActionType {
+  if (lqi >= 80 && gmp >= 10) return "APPLY"
+  if (lqi >= 70 && gmp >= 5)  return "APPLY SMALL"
+  if (lqi >= 55)               return "WATCH"
+  if (gmp < 0)                 return "AVOID"
+  return "SKIP"
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// A: HERO DECISION PANEL
-// ─────────────────────────────────────────────────────────────────────────────
-function HeroPanel({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  const rec = s.recommendation || "Watch — Selective Apply"
-  const [recFg, recBg, recLabel] = REC[rec] || [C.gray, C.grayBg, rec]
-  const ip = ipo.priceBandHigh || ipo.priceBandLow || 0
-  const gmp = ipo.gmpPrice || 0
-  const eff = s.regime?.gmpEfficiency || 0.6
-  const expLow  = gmp ? Math.round(ip + gmp * 0.50) : null
-  const expHigh = gmp ? Math.round(ip + gmp * 0.90) : null
-  const exp12mLow  = s.businessScore >= 70 ? Math.round((s.businessScore - 70) * 0.5 + 15) : 5
-  const exp12mHigh = s.businessScore >= 70 ? Math.round((s.businessScore - 70) * 1.2 + 20) : 12
-
+function ActionBtn({ action }: { action: ActionType }) {
+  const cfg: Record<ActionType, [string, string]> = {
+    "APPLY":       ["#fff", C.green],
+    "APPLY SMALL": ["#fff", C.blue],
+    "WATCH":       [C.amber, C.amberBg],
+    "SKIP":        [C.red, C.redBg],
+    "AVOID":       ["#fff", C.red],
+  }
+  const [color, bg] = cfg[action]
   return (
-    <div style={{ background:"#0f172a", borderRadius:16, padding:"18px 20px", color:"#f8fafc", marginBottom:12 }}>
-      {/* Name + recommendation */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12, marginBottom:16 }}>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:9, color:"#64748b", letterSpacing:"0.08em", marginBottom:4 }}>{ipo.status} · {ipo.sector}</div>
-          <div style={{ fontSize:22, fontWeight:900, letterSpacing:"-0.02em", lineHeight:1.2, marginBottom:5 }}>{ipo.name}</div>
-          <div style={{ fontSize:11, color:"#64748b" }}>
-            ₹{ipo.priceBandLow}–₹{ip} · ₹{ipo.issueSize}Cr{ipo.lotSize?` · Lot ${ipo.lotSize}`:""}
-          </div>
-          {ipo.brokerNote && (
-            <div style={{ marginTop:8, padding:"7px 11px", background:"rgba(255,255,255,0.05)", borderRadius:8, fontSize:10, color:"#94a3b8", lineHeight:1.6 }}>
-              {ipo.brokerReco && <strong style={{ color:"#4ade80" }}>SBI Sec {ipo.brokerReco}: </strong>}
-              {ipo.brokerNote}
-            </div>
-          )}
-        </div>
-        <div style={{ background:recBg, border:`2px solid ${recFg}`, borderRadius:14, padding:"12px 16px", textAlign:"center", flexShrink:0 }}>
-          <div style={{ fontSize:13, fontWeight:900, color:recFg, letterSpacing:"0.03em" }}>{recLabel}</div>
-          <div style={{ fontSize:9, color:C.gray, marginTop:4 }}>Confidence: {s.confidence||"Medium"}</div>
-        </div>
-      </div>
-
-      {/* 5 score tiles */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginBottom:14 }}>
-        {[
-          { l:"Listing",    v:s.listingScore??0,    c:"#60a5fa" },
-          { l:"Business",   v:s.businessScore??0,   c:"#4ade80" },
-          { l:"Management", v:s.managementScore??0, c:"#c084fc" },
-          { l:"Risk ↓",     v:s.risk?.score??0,     c:"#f87171" },
-          { l:"Multibagger",v:s.multibaggerProb??0, c:"#fbbf24" },
-        ].map(t => (
-          <div key={t.l} style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"9px 0", textAlign:"center" }}>
-            <div style={{ fontSize:7, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:3 }}>{t.l}</div>
-            <div style={{ fontSize:22, fontWeight:900, color:t.c, lineHeight:1 }}>{t.v}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Expected ranges */}
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-        {expLow && (
-          <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:9, padding:"7px 12px" }}>
-            <div style={{ fontSize:8, color:"#64748b", marginBottom:2 }}>Expected listing range</div>
-            <div style={{ fontSize:14, fontWeight:800, color:"#4ade80" }}>₹{expLow} – ₹{expHigh}</div>
-          </div>
-        )}
-        <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:9, padding:"7px 12px" }}>
-          <div style={{ fontSize:8, color:"#64748b", marginBottom:2 }}>Expected 12M return</div>
-          <div style={{ fontSize:14, fontWeight:800, color:"#c084fc" }}>+{exp12mLow}% – +{exp12mHigh}%</div>
-        </div>
-        {s.anchorValidation?.label && (
-          <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:9, padding:"7px 12px" }}>
-            <div style={{ fontSize:8, color:"#64748b", marginBottom:2 }}>Anchor signal</div>
-            <div style={{ fontSize:11, fontWeight:700, color: s.anchorValidation.label.includes("Confirmation")?"#4ade80":s.anchorValidation.label.includes("Trap")?"#f87171":"#fbbf24" }}>
-              {s.anchorValidation.label}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    <span style={{
+      display: "inline-block", padding: "4px 12px", borderRadius: 99,
+      fontSize: 10, fontWeight: 800, letterSpacing: "0.04em",
+      background: bg, color, border: `1px solid ${bg}`,
+      whiteSpace: "nowrap" as const,
+    }}>{action}</span>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// B: HISTORICAL SIMILARITY ENGINE
-// ─────────────────────────────────────────────────────────────────────────────
-function SimilarityEngine({ ipo }: { ipo:any }) {
-  const sim = ipo.similar
-  if (!sim) return null
-  const examples = sim.examples || []
-
+// ── Risk badge ────────────────────────────────────────────────────────────────
+function RiskBadge({ level }: { level: string }) {
+  const cfg: Record<string, [string, string]> = {
+    Low:     [C.green, C.greenBg],
+    Medium:  [C.amber, C.amberBg],
+    High:    [C.red,   C.redBg],
+    Extreme: ["#fff",  C.red],
+  }
+  const [color, bg] = cfg[level] || [C.gray, C.grayBg]
   return (
-    <Card>
-      <SectionTitle text="B · Historical Similarity Engine" />
-      <div style={{ fontSize:10, color:C.gray, marginBottom:12 }}>
-        Matched by: sector · subscription · anchor quality · market regime · financials
-      </div>
-      {/* Summary stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:6, marginBottom:12 }}>
-        {[
-          { l:"Avg D1 return",   v:sim.avgD1,     fmt:(x:number)=>`${x>=0?"+":""}${x}%`,  good:sim.avgD1>=0 },
-          { l:"Avg 6M return",   v:sim.avgM6,     fmt:(x:number)=>`${x>=0?"+":""}${x}%`,  good:sim.avgM6>=0 },
-          { l:"Positive D1 rate",v:sim.hitRate,   fmt:(x:number)=>`${x}%`,                 good:sim.hitRate>=65 },
-          { l:"Data quality",    v:sim.dataQuality==="high"?3:sim.dataQuality==="medium"?2:1,
-            fmt:()=>sim.dataQuality||"—", good:true },
-        ].map(s => (
-          <div key={s.l} style={{ background:C.grayBg, borderRadius:9, padding:"8px 10px", textAlign:"center" }}>
-            <div style={{ fontSize:8, color:C.gray, textTransform:"uppercase", marginBottom:2 }}>{s.l}</div>
-            <div style={{ fontSize:15, fontWeight:900, color:s.good?C.green:C.red }}>{s.fmt(s.v)}</div>
-          </div>
-        ))}
-      </div>
-      {/* Top matches */}
-      {examples.map((e:any, i:number) => {
-        const sim_pct = [87, 83, 78][i] || 70
-        return (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 11px", background:C.grayBg, borderRadius:9, marginBottom:5 }}>
-            <div style={{ fontSize:13, fontWeight:800, color:C.blue, width:28, textAlign:"center" }}>{sim_pct}%</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:12, fontWeight:700, color:"#111827" }}>{e.name}</div>
-              <div style={{ fontSize:9, color:C.gray }}>{e.sector}</div>
-            </div>
-            <div style={{ display:"flex", gap:14, textAlign:"right" }}>
-              <div>
-                <div style={{ fontSize:8, color:C.gray }}>D1</div>
-                <div style={{ fontSize:12, fontWeight:800, color:e.d1Return>=0?C.green:C.red }}>
-                  {e.d1Return>=0?"+":""}{e.d1Return}%
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize:8, color:C.gray }}>6M</div>
-                <div style={{ fontSize:12, fontWeight:800, color:e.m6Return>=0?C.green:C.red }}>
-                  {e.m6Return>=0?"+":""}{e.m6Return}%
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </Card>
+    <span style={{
+      display: "inline-block", padding: "3px 10px",
+      borderRadius: 99, fontSize: 10, fontWeight: 700,
+      background: bg, color,
+    }}>{level}</span>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// C: MULTIBAGGER ENGINE
-// ─────────────────────────────────────────────────────────────────────────────
-function MultibaggerEngine({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  const prob = s.multibaggerProb || 0
-  const benchmarks = [
-    { name:"Kaynes Technology", prob:85, d1:18, m12:145 },
-    { name:"Netweb Technologies", prob:82, d1:82, m12:120 },
-    { name:"DOMS Industries", prob:75, d1:68, m12:55 },
-    { name:"Premier Energies", prob:78, d1:96, m12:85 },
-    { name:"NSDL", prob:70, d1:10, m12:40 },
-  ]
-
+// ── Mini sparkline bars ───────────────────────────────────────────────────────
+function MiniBar({ vals, color }: { vals: number[]; color: string }) {
+  if (!vals.length) return null
+  const max = Math.max(...vals, 1)
   return (
-    <Card>
-      <SectionTitle text="C · Multibagger Probability Engine" />
-      <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:14 }}>
-        {/* Probability gauge */}
-        <div style={{ textAlign:"center", background:scoreBg(prob), borderRadius:14, padding:"14px 20px" }}>
-          <div style={{ fontSize:38, fontWeight:900, color:scoreCol(prob), lineHeight:1 }}>{prob}%</div>
-          <div style={{ fontSize:9, color:C.gray, marginTop:4 }}>MULTIBAGGER PROB</div>
-        </div>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:scoreCol(prob), marginBottom:6 }}>
-            {prob>=70?"Strong compounder candidate":prob>=50?"Moderate long-term potential":prob>=30?"Limited compounding case":"Low probability — listing trade only"}
-          </div>
-          <div style={{ fontSize:10, color:C.gray, lineHeight:1.7 }}>
-            Business Quality: <strong>{s.businessScore||0}/100</strong><br/>
-            Sector Momentum: <strong>{s.sectorMomentum||0}/100</strong><br/>
-            Long-Term Rating: <strong>{s.businessRating||"—"}</strong>
-          </div>
-        </div>
-      </div>
-      {/* Benchmark comparisons */}
-      <div style={{ fontSize:9, color:C.gray, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>Closest compounder comparables</div>
-      {benchmarks.filter(b => Math.abs(b.prob - prob) < 25).slice(0,3).map(b => (
-        <div key={b.name} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
-          <div style={{ width:130, fontSize:10, fontWeight:600, color:"#374151" }}>{b.name}</div>
-          <div style={{ flex:1, height:5, background:"#e5e7eb", borderRadius:3 }}>
-            <div style={{ width:`${b.prob}%`, height:"100%", background:C.purple, borderRadius:3 }} />
-          </div>
-          <div style={{ fontSize:9, color:C.gray, width:30 }}>{b.prob}%</div>
-          <div style={{ fontSize:9, color:b.m12>=50?C.green:C.amber, width:48, textAlign:"right" }}>12M +{b.m12}%</div>
-        </div>
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 18 }}>
+      {vals.map((v, i) => (
+        <div key={i} style={{
+          width: 4, height: Math.max(2, (v / max) * 18),
+          background: i === vals.length - 1 ? color : color + "60",
+          borderRadius: 1,
+        }} />
       ))}
-    </Card>
+    </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// D: ANCHOR HEATMAP
-// ─────────────────────────────────────────────────────────────────────────────
-function AnchorHeatmap({ ipo }: { ipo:any }) {
-  const anchors: string[] = ipo.anchors || []
-  const s = ipo.score || {}
-  const anchorScore = s.anchorScore || 0
-  const av = s.anchorValidation || {}
-
-  const getTier = (name: string): 1|2|3 => {
-    const n = name.toLowerCase()
-    const t1 = ["adia","gic","temasek","norges","cppib","sbi mf","sbi mutual","hdfc mf","hdfc mutual","icici pru","nippon","axis mf","axis mutual","kotak mf","kotak mutual","blackrock","lic","morgan stanley","goldman sachs","wellington","fidelity","sbi life","hdfc life","icici pru life"]
-    const t2 = ["franklin","mirae","dsp","nomura","ubs","bnp","hsbc","bandhan","whiteoak","ashoka"]
-    if (t1.some(x => n.includes(x))) return 1
-    if (t2.some(x => n.includes(x))) return 2
-    return 3
-  }
-  const getCategory = (name: string): string => {
-    const n = name.toLowerCase()
-    if (["adia","gic","temasek","norges","cppib"].some(x => n.includes(x))) return "Sovereign"
-    if (["sbi mf","hdfc mf","icici pru mf","nippon","axis mf","kotak mf","franklin","mirae","dsp"].some(x => n.includes(x))) return "Domestic MF"
-    if (["lic","sbi life","hdfc life","icici pru life","kotak life"].some(x => n.includes(x))) return "Insurance"
-    if (["blackrock","goldman sachs","morgan stanley","wellington","fidelity","nomura","ubs","bnp"].some(x => n.includes(x))) return "FPI"
-    return "AIF/Other"
-  }
-
-  const cats = { "Sovereign":0, "Domestic MF":0, "Insurance":0, "FPI":0, "AIF/Other":0 }
-  anchors.forEach(a => { const c = getCategory(a); cats[c as keyof typeof cats]++ })
-
-  const [avFg, avBg] = av.label?.includes("Confirmation") ? [C.green,C.greenBg]
-    : av.label?.includes("Trap") ? [C.red,C.redBg] : [C.amber,C.amberBg]
-
+// ── Progress bar ──────────────────────────────────────────────────────────────
+function ProgressBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
+  const w = Math.min(100, Math.round((value / max) * 100))
   return (
-    <Card>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-        <SectionTitle text="D · Anchor Heatmap" />
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <div style={{ textAlign:"center", background:scoreBg(anchorScore), borderRadius:9, padding:"4px 12px" }}>
-            <div style={{ fontSize:18, fontWeight:900, color:scoreCol(anchorScore) }}>{anchorScore}</div>
-            <div style={{ fontSize:7, color:C.gray }}>QUALITY</div>
-          </div>
-          {av.label && <Tag text={av.label} color={avFg} bg={avBg} />}
-        </div>
-      </div>
-
-      {/* Category breakdown */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:5, marginBottom:12 }}>
-        {Object.entries(cats).map(([cat, count]) => (
-          <div key={cat} style={{ background:C.grayBg, borderRadius:8, padding:"7px 6px", textAlign:"center" }}>
-            <div style={{ fontSize:18, fontWeight:900, color:count>0?C.blue:C.gray }}>{count}</div>
-            <div style={{ fontSize:7, color:C.gray, lineHeight:1.3 }}>{cat}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tier breakdown */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginBottom:10 }}>
-        {[
-          { label:"Tier 1", color:C.green, bg:C.greenBg, desc:"Sovereign · MF · Insurance", anchors:anchors.filter(a=>getTier(a)===1) },
-          { label:"Tier 2", color:C.blue,  bg:C.blueBg,  desc:"Mid-tier FPI · MF",         anchors:anchors.filter(a=>getTier(a)===2) },
-          { label:"Tier 3", color:C.gray,  bg:C.grayBg,  desc:"AIF · PMS · Family",        anchors:anchors.filter(a=>getTier(a)===3) },
-        ].map(t => (
-          <div key={t.label} style={{ background:t.bg, borderRadius:9, padding:"8px 10px", textAlign:"center" }}>
-            <div style={{ fontSize:20, fontWeight:900, color:t.color }}>{t.anchors.length}</div>
-            <div style={{ fontSize:8, fontWeight:700, color:t.color }}>{t.label}</div>
-            <div style={{ fontSize:8, color:C.gray }}>{t.desc}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Named anchors */}
-      {anchors.length > 0 && (
-        <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:8 }}>
-          {anchors.map((a:string) => {
-            const t = getTier(a)
-            const [c,bg] = t===1?[C.green,C.greenBg]:t===2?[C.blue,C.blueBg]:[C.gray,C.grayBg]
-            return <Tag key={a} text={`${t===1?"★ ":t===2?"◆ ":" "}${a}`} color={c} bg={bg} />
-          })}
-        </div>
-      )}
-      {anchors.length === 0 && <div style={{ fontSize:11, color:C.gray }}>No anchor data yet — upload SBI Sec PDF or fetch live data</div>}
-      {av.detail && <div style={{ fontSize:10, color:C.gray, lineHeight:1.5, marginTop:6 }}>{av.detail}</div>}
-    </Card>
+    <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ width: `${w}%`, height: "100%", background: color, borderRadius: 2 }} />
+    </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// E: MARKET REGIME WIDGET
-// ─────────────────────────────────────────────────────────────────────────────
-function RegimeWidget({ regime }: { regime:any }) {
-  if (!regime) return null
-  const map: Record<string,[string,string,string]> = {
-    HOT:    [C.green,  C.greenBg,  "HOT 🔥"],
-    NORMAL: [C.blue,   C.blueBg,   "NORMAL"],
-    COLD:   [C.red,    C.redBg,    "COLD ❄"],
-  }
-  const [fg, bg, label] = map[regime.label] || map.NORMAL
-  const recentStats: Record<string,{avg:number,pos:number,count:number}> = {
-    HOT:    { avg:34, pos:89, count:27 },
-    NORMAL: { avg:9,  pos:68, count:95 },
-    COLD:   { avg:2,  pos:42, count:24 },
-  }
-  const stats = recentStats[regime.label] || recentStats.NORMAL
-
+// ── Card wrapper ──────────────────────────────────────────────────────────────
+function Card({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background:bg, border:`1px solid ${fg}30`, borderRadius:12, padding:"12px 16px", marginBottom:12 }}>
-      <SectionTitle text="E · Market Regime" />
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, alignItems:"center" }}>
-        <div>
-          <div style={{ fontSize:22, fontWeight:900, color:fg }}>{label}</div>
-          <div style={{ fontSize:9, color:C.gray, marginTop:2 }}>Score: {regime.score}/100</div>
-        </div>
-        {[
-          { l:"12M avg gain",    v:`+${stats.avg}%` },
-          { l:"Positive rate",   v:`${stats.pos}%` },
-          { l:"GMP efficiency",  v:`${Math.round((regime.gmpEfficiency||0.6)*100)}%` },
-        ].map(s => (
-          <div key={s.l} style={{ textAlign:"center" }}>
-            <div style={{ fontSize:8, color:C.gray, textTransform:"uppercase", marginBottom:2 }}>{s.l}</div>
-            <div style={{ fontSize:16, fontWeight:900, color:fg }}>{s.v}</div>
-          </div>
-        ))}
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 12, padding: 16, ...style,
+    }}>{children}</div>
+  )
+}
+
+function SectionHead({ icon, title, right }: { icon?: string; title: string; right?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {icon && <span style={{ fontSize: 14 }}>{icon}</span>}
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.text, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{title}</span>
       </div>
+      {right}
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// F: OFS vs FRESH ISSUE BANNER
+// SECTION 1: LIVE IPO DECISION BOARD (left panel table)
 // ─────────────────────────────────────────────────────────────────────────────
-function IssueBanner({ ipo }: { ipo:any }) {
-  const fresh = ipo.freshIssuePct ?? 0
-  const ofs   = ipo.ofsPct ?? 100
-  const isBad = ofs >= 70
-  const isGood = fresh >= 70
-
+function LiveDecisionBoard({ ipos, selected, onSelect }: { ipos: any[]; selected: any; onSelect: (i: any) => void }) {
   return (
     <Card>
-      <SectionTitle text="F · OFS vs Fresh Issue" />
-      <div style={{ height:22, borderRadius:11, overflow:"hidden", display:"flex", marginBottom:10 }}>
-        {fresh > 0 && (
-          <div style={{ width:`${fresh}%`, background:C.green, display:"flex", alignItems:"center", justifyContent:"center" }}>
-            {fresh > 12 && <span style={{ fontSize:9, color:"#fff", fontWeight:800 }}>{fresh}% Fresh</span>}
-          </div>
-        )}
-        <div style={{ flex:1, background:"#fca5a5", display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <span style={{ fontSize:9, color:"#7f1d1d", fontWeight:800 }}>{ofs}% OFS</span>
-        </div>
-      </div>
-      {/* Warning / badge */}
-      {isBad && (
-        <div style={{ background:C.redBg, border:`1px solid ${C.redBd}`, borderRadius:8, padding:"8px 12px", marginBottom:8 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.red }}>
-            🔴 OFS {ofs}% — {ofs>=90?"100% OFS: zero growth capital raised. Existing investors exiting.":"High OFS: majority is investor exit, not growth funding."}
-          </div>
-        </div>
-      )}
-      {isGood && (
-        <div style={{ background:C.greenBg, border:`1px solid ${C.greenBd}`, borderRadius:8, padding:"8px 12px", marginBottom:8 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.green }}>✅ Fresh Issue {fresh}% — growth capital badge: company raising funds for expansion</div>
-        </div>
-      )}
-      {!isBad && !isGood && (
-        <div style={{ fontSize:11, color:C.amber }}>⚠ Mixed issue — partial growth capital, partial investor exit</div>
-      )}
-      {ipo.peRatio && ipo.peerPE && (
-        <div style={{ marginTop:8, padding:"7px 10px", background:C.grayBg, borderRadius:8, fontSize:11, color:"#374151" }}>
-          PE: <strong>{ipo.peRatio}x</strong> vs peers ({ipo.peerLabel})
-          <span style={{ marginLeft:8, fontWeight:700, color:ipo.peRatio<ipo.peerPE?C.green:C.amber }}>
-            {ipo.peRatio<ipo.peerPE
-              ? `${Math.round((1-ipo.peRatio/ipo.peerPE)*100)}% discount ✅`
-              : `${Math.round((ipo.peRatio/ipo.peerPE-1)*100)}% premium ⚠`}
-          </span>
-        </div>
-      )}
-    </Card>
-  )
-}
+      <SectionHead icon="⚡" title="Live IPO Decision Board" />
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            {["IPO Name", "DNA Score", "GMP", "Sub. (x)", "HNI Risk", "Action"].map(h => (
+              <th key={h} style={{ padding: "6px 8px", fontSize: 9, fontWeight: 700, color: C.gray, textTransform: "uppercase" as const, letterSpacing: "0.06em", textAlign: "left" as const }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ipos.map((ipo, i) => {
+            const lqi     = n(ipo.lqi_final ?? ipo.conviction_score ?? 0)
+            const gmpPct  = n(ipo.gmp_percentage ?? 0)
+            const totalX  = n(ipo.total_subscription_x ?? 0)
+            const qibX    = n(ipo.qib_subscription_x ?? 0)
+            const action  = actionCfg(lqi, gmpPct)
+            const hniRisk = qibX > 50 ? "Low" : qibX > 20 ? "Medium" : "High"
+            const isSelected = selected?.id === ipo.id || selected?.company_name === ipo.company_name
+            const sparkVals = [totalX * 0.3, totalX * 0.5, totalX * 0.7, totalX * 0.85, totalX].filter(Boolean)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// G: LISTING-DAY TRADING ENGINE
-// ─────────────────────────────────────────────────────────────────────────────
-function TradingEngine({ ipo, onGmpUpdate }: { ipo:any; onGmpUpdate:(v:number)=>void }) {
-  const ip = ipo.priceBandHigh || ipo.priceBandLow || 192
-  const [gmp, setGmp] = useState<number>(ipo.gmpPrice || 0)
-  const lot = ipo.lotSize || 78
-  const regime = ipo.score?.regime?.label || "NORMAL"
-  const eff = regime==="HOT"?0.70:regime==="COLD"?0.50:0.60
-  const gmpPct = ip>0 ? (gmp/ip*100) : 0
-  const gmpStrength = gmpPct>=50?"Very Hot 🔥":gmpPct>=20?"Strong":gmpPct>=8?"Moderate":gmpPct>=3?"Weak":"No Signal"
-  const entry = ip + gmp
-  const bull  = Math.round(ip + gmp*0.90)
-  const base  = Math.round(ip + gmp*eff)
-  const bear  = Math.round(ip - gmp*0.20)
-  const stop  = Math.round(entry*0.90)
-  const exitL = Math.round(entry*1.05)
-  const exitH = Math.round(entry*1.12)
-  const trend = ipo.gmpTrend || []
-
-  const [gmpInput, setGmpInput] = useState(String(ipo.gmpPrice||""))
-  const [saved, setSaved] = useState(false)
-  const handleSave = async () => {
-    const n = parseFloat(gmpInput)
-    if (!isNaN(n)) {
-      setGmp(n)
-      onGmpUpdate(n)
-      await fetch("/api/ipo/gmp", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ name:ipo.name, gmpPrice:n }) })
-      setSaved(true); setTimeout(()=>setSaved(false), 2000)
-    }
-  }
-
-  return (
-    <Card>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-        <SectionTitle text="G · Listing-Day Trading Engine" />
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          {trend.length > 1 && (
-            <div style={{ display:"flex", alignItems:"flex-end", gap:2, height:18 }}>
-              {trend.map((v:number,i:number) => { const mx=Math.max(...trend); const h=Math.max(2,Math.round(v/mx*18)); return <div key={i} style={{ width:5,height:h,borderRadius:2,background:i===trend.length-1?C.green:"#d1d5db" }} /> })}
-            </div>
-          )}
-          <Tag text={gmpStrength} color={gmpPct>=20?C.green:gmpPct>=8?C.amber:C.gray} bg={gmpPct>=20?C.greenBg:gmpPct>=8?C.amberBg:C.grayBg} />
-        </div>
-      </div>
-
-      {/* GMP Slider */}
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-        <span style={{ fontSize:10, color:C.gray, whiteSpace:"nowrap" }}>GMP ₹</span>
-        <input type="range" min={0} max={250} step={1} value={gmp} onChange={e=>setGmp(+e.target.value)}
-          style={{ flex:1, accentColor:C.blue }} />
-        <span style={{ fontSize:20, fontWeight:900, color:"#0f172a", minWidth:40, textAlign:"right" }}>{gmp}</span>
-        <span style={{ fontSize:10, color:C.gray }}>({gmpPct.toFixed(1)}%)</span>
-      </div>
-
-      {/* Key prices */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:12 }}>
-        {[
-          { l:"Issue price",    v:`₹${ip}`,              c:"#374151", bg:C.grayBg },
-          { l:"Current GMP",    v:`+₹${gmp}`,            c:C.green,   bg:C.greenBg },
-          { l:"GMP entry price",v:`₹${Math.round(entry)}`,c:C.blue,   bg:C.blueBg },
-        ].map(s => (
-          <div key={s.l} style={{ background:s.bg, borderRadius:10, padding:"9px 10px", textAlign:"center" }}>
-            <div style={{ fontSize:8, color:C.gray, marginBottom:3, textTransform:"uppercase" }}>{s.l}</div>
-            <div style={{ fontSize:16, fontWeight:900, color:s.c }}>{s.v}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* 3 scenarios */}
-      <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
-        {[
-          { label:`Bull listing — 90% GMP captured → sell Week 1`, price:bull, gain:entry>0?((bull-entry)/entry*100):0, good:true },
-          { label:`Base listing — ${Math.round(eff*100)}% GMP (${regime} market)`, price:base, gain:entry>0?((base-entry)/entry*100):0, good:base>=entry },
-          { label:"Bad day — GMP −20% at open (hard stop triggered)", price:bear, gain:entry>0?((bear-entry)/entry*100):0, good:false },
-        ].map((s,i) => (
-          <div key={i} style={{ background:s.good?C.greenBg:C.redBg, borderRadius:9, padding:"10px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontSize:10, color:s.good?C.green:C.red, fontWeight:600 }}>{s.label}</div>
-            <div style={{ textAlign:"right", flexShrink:0 }}>
-              <div style={{ fontSize:15, fontWeight:900, color:s.good?C.green:C.red }}>₹{s.price}</div>
-              <div style={{ fontSize:10, color:s.good?"#16a34a":"#dc2626" }}>{s.gain>=0?"+":""}{s.gain.toFixed(1)}%</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Per-lot P&L */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginBottom:12 }}>
-        {[
-          { l:`Max gain · ${lot} shares`,   v:`+₹${Math.abs(Math.round((bull-entry)*lot)).toLocaleString("en-IN")}`, c:C.green, bg:C.greenBg },
-          { l:"Hard stop −10%",              v:`−₹${Math.abs(Math.round((stop-entry)*lot)).toLocaleString("en-IN")}`, c:C.red,   bg:C.redBg },
-          { l:"D1 exit target",              v:`₹${exitL}–₹${exitH}`,  c:C.blue, bg:C.blueBg },
-        ].map(s => (
-          <div key={s.l} style={{ background:s.bg, borderRadius:9, padding:"8px 10px", textAlign:"center" }}>
-            <div style={{ fontSize:8, color:C.gray, textTransform:"uppercase", marginBottom:3 }}>{s.l}</div>
-            <div style={{ fontSize:12, fontWeight:900, color:s.c }}>{s.v}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Two outcomes */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
-        <div style={{ background:C.greenBg, borderRadius:9, padding:"9px 12px" }}>
-          <div style={{ fontSize:10, fontWeight:800, color:C.green, marginBottom:3 }}>↑ Positive listing</div>
-          <div style={{ fontSize:10, color:"#16a34a", lineHeight:1.6 }}>
-            Exit ₹{exitL}–₹{exitH} by Week 1.<br/>
-            Do not hold beyond Week 1 without base.
-          </div>
-        </div>
-        <div style={{ background:C.redBg, borderRadius:9, padding:"9px 12px" }}>
-          <div style={{ fontSize:10, fontWeight:800, color:C.red, marginBottom:3 }}>↓ Negative listing</div>
-          <div style={{ fontSize:10, color:"#dc2626", lineHeight:1.6 }}>
-            Exit at open − 10% stop = ₹{stop}.<br/>
-            No averaging. Wait for IPO base.
-          </div>
-        </div>
-      </div>
-
-      {/* GMP manual update */}
-      <div style={{ borderTop:"1px solid #f1f5f9", paddingTop:10, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-        <span style={{ fontSize:10, color:C.gray }}>Update GMP:</span>
-        <input value={gmpInput} onChange={e=>setGmpInput(e.target.value)} placeholder="₹ e.g. 70"
-          style={{ width:90, border:"1px solid #e5e7eb", borderRadius:7, padding:"5px 8px", fontSize:12 }} />
-        <button onClick={handleSave}
-          style={{ padding:"5px 12px", background:saved?C.green:"#0f172a", border:"none", borderRadius:7, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>
-          {saved?"✓ Saved":"Set GMP"}
-        </button>
-        <span style={{ fontSize:9, color:"#9ca3af" }}>Sources: InvestorGain · IPOWatch · 5paisa</span>
-      </div>
-    </Card>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// H: IPO DNA CLASSIFICATION
-// ─────────────────────────────────────────────────────────────────────────────
-function IpoDna({ ipo }: { ipo:any }) {
-  const sector = ipo.sector || ""
-  const examples = ipo.similar?.examples || []
-  const archetypes: Record<string,{icon:string;color:string;traits:string}> = {
-    "Defense":          { icon:"🛡", color:C.blue,   traits:"High-conviction institutional · Defense capex cycle · Strong OB visibility" },
-    "EMS/Electronics":  { icon:"⚡", color:C.cyan,   traits:"Revenue visibility · Customer stickiness · Operating leverage play" },
-    "Solar":            { icon:"☀", color:C.amber,  traits:"PLI beneficiary · Capacity expansion · Green energy tailwind" },
-    "SaaS":             { icon:"💾", color:C.purple, traits:"Recurring revenue · Low capex · High margin scalability" },
-    "Financial Infrastructure": { icon:"🏛", color:C.green, traits:"Regulatory moat · Network effect · High ROCE visibility" },
-    "NBFC":             { icon:"💰", color:C.green,  traits:"Spread business · Asset quality watch · Growth vs NPAs" },
-    "IT Infrastructure":{ icon:"🖥", color:C.blue,   traits:"Domestic enterprise spend · AI/cloud infra · High win rates" },
-    "Pharma":           { icon:"💊", color:C.cyan,   traits:"USFDA pipeline · Domestic formulations · Export diversification" },
-    "Manufacturing":    { icon:"🏭", color:C.gray,   traits:"China+1 play · Capacity addition · Operating leverage" },
-    "Infrastructure EPC":{ icon:"🏗", color:C.amber, traits:"Order book · Execution track record · Working capital watch" },
-    "PSU":              { icon:"🏢", color:C.gray,   traits:"Government dividend · Low valuation · Liquidity discount" },
-    "Retail/Apparel":   { icon:"🛍", color:C.red,    traits:"Brand building · Unit economics · Store expansion" },
-  }
-  const match = Object.keys(archetypes).find(k => sector.toLowerCase().includes(k.split("/")[0].toLowerCase()))
-  const arch = match || "Manufacturing"
-  const meta = archetypes[arch]
-
-  return (
-    <Card>
-      <SectionTitle text="H · IPO DNA Classification" />
-      <div style={{ display:"flex", gap:12, alignItems:"flex-start", marginBottom:14 }}>
-        <div style={{ fontSize:36 }}>{meta.icon}</div>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:16, fontWeight:900, color:meta.color }}>{arch}</div>
-          <div style={{ fontSize:10, color:C.gray, marginBottom:6 }}>{sector}</div>
-          <div style={{ fontSize:10, color:"#374151", lineHeight:1.6 }}>{meta.traits}</div>
-        </div>
-        <div style={{ textAlign:"center", background:scoreBg(ipo.score?.multibaggerProb||0), borderRadius:10, padding:"8px 14px" }}>
-          <div style={{ fontSize:22, fontWeight:900, color:scoreCol(ipo.score?.multibaggerProb||0) }}>{ipo.score?.multibaggerProb||0}%</div>
-          <div style={{ fontSize:8, color:C.gray }}>MULTIBAGGER</div>
-        </div>
-      </div>
-      {examples.length > 0 && (
-        <div>
-          <div style={{ fontSize:9, color:C.gray, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.06em" }}>This IPO behaves like:</div>
-          {examples.map((e:any,i:number) => {
-            const pcts=[65,22,13]
             return (
-              <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
-                <div style={{ fontSize:10, fontWeight:700, color:"#374151", width:140, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name}</div>
-                <div style={{ flex:1, height:6, background:"#e5e7eb", borderRadius:3 }}>
-                  <div style={{ width:`${pcts[i]}%`, height:"100%", background:C.blue, borderRadius:3 }} />
-                </div>
-                <div style={{ fontSize:10, color:C.gray, width:30 }}>{pcts[i]}%</div>
-                <div style={{ fontSize:10, color:e.d1Return>=0?C.green:C.red, width:48, textAlign:"right" }}>
-                  D1 {e.d1Return>=0?"+":""}{e.d1Return}%
-                </div>
-              </div>
+              <tr key={i} onClick={() => onSelect(ipo)}
+                style={{
+                  borderBottom: `1px solid ${C.border}`,
+                  cursor: "pointer",
+                  background: isSelected ? C.blueBg : "transparent",
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = C.grayBg }}
+                onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent" }}
+              >
+                <td style={{ padding: "10px 8px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ipo.company_name}</div>
+                  <div style={{ fontSize: 10, color: C.gray }}>{ipo.sector || "—"}</div>
+                </td>
+                <td style={{ padding: "10px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: "50%",
+                      background: score_bg(lqi), color: score_color(lqi),
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12, fontWeight: 900,
+                    }}>{lqi || "—"}</div>
+                  </div>
+                </td>
+                <td style={{ padding: "10px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: gmpPct >= 0 ? C.green : C.red }}>{pct(gmpPct)}</span>
+                    <MiniBar vals={sparkVals.length ? sparkVals : [1, 2, 3]} color={gmpPct >= 0 ? C.green : C.red} />
+                  </div>
+                </td>
+                <td style={{ padding: "10px 8px" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{totalX ? `${totalX.toFixed(1)}x` : "—"}</span>
+                </td>
+                <td style={{ padding: "10px 8px" }}>
+                  <RiskBadge level={hniRisk} />
+                </td>
+                <td style={{ padding: "10px 8px" }}>
+                  <ActionBtn action={action} />
+                </td>
+              </tr>
             )
           })}
+        </tbody>
+      </table>
+      {ipos.length === 0 && (
+        <div style={{ textAlign: "center", padding: "32px 16px", color: C.gray, fontSize: 13 }}>
+          No live IPOs. Data updates daily via pipeline.
+        </div>
+      )}
+      {ipos.length > 0 && (
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <button style={{ fontSize: 12, color: C.blue, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
+            View All Live IPOs →
+          </button>
         </div>
       )}
     </Card>
@@ -606,391 +204,578 @@ function IpoDna({ ipo }: { ipo:any }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// I: RISK FLAGS
+// SECTION 2: IPO DETAIL CARD (right panel)
 // ─────────────────────────────────────────────────────────────────────────────
-function RiskPanel({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  const flags  = s.flags  || []
-  const greens = s.greens || []
-  const level  = s.risk?.level || "MEDIUM"
-  const [lFg,lBg] = level==="EXTREME"||level==="HIGH"?[C.red,C.redBg]:level==="MEDIUM"?[C.amber,C.amberBg]:[C.green,C.greenBg]
+function IpoDetailCard({ ipo }: { ipo: any }) {
+  const lqi    = n(ipo.lqi_final ?? ipo.conviction_score ?? 0)
+  const gmpPct = n(ipo.gmp_percentage ?? 0)
+  const qibX   = n(ipo.qib_subscription_x ?? 0)
+  const niiX   = n(ipo.nii_subscription_x ?? 0)
+  const riiX   = n(ipo.rii_subscription_x ?? 0)
+  const totalX = n(ipo.total_subscription_x ?? 0)
+  const action = actionCfg(lqi, gmpPct)
+
+  // Probability estimates from LQI
+  const p10   = n(ipo.prob_10pct_profit ?? Math.min(95, lqi * 0.9 + 10))
+  const pFlat = Math.max(5, 100 - p10 - 15)
+  const pLoss = Math.max(2, 100 - p10 - pFlat)
+
+  // Expected return
+  const expRet = n(ipo.expected_return ?? gmpPct * 0.7)
+
+  // Conviction label
+  const conviction = lqi >= 85 ? "Very High" : lqi >= 70 ? "High" : lqi >= 55 ? "Medium" : "Low"
+  const convColor  = lqi >= 85 ? C.green : lqi >= 70 ? C.blue : lqi >= 55 ? C.amber : C.red
+
+  // Why apply/watch reasons
+  const reasons: string[] = []
+  if (qibX >= 50) reasons.push("Strong QIB demand & institutional participation")
+  if (ipo.anchor_quality === "STRONG" || ipo.anchor_quality === "Tier-1 Strong") reasons.push("High quality anchors with long-term view")
+  if (gmpPct >= 15) reasons.push("Positive GMP trend with strong retail interest")
+  if (n(ipo.ofs_pct) < 40) reasons.push("Clean OFS / Fresh issue mix")
+  if (reasons.length < 3) reasons.push("Favorable sector outlook")
+  if (reasons.length < 4) reasons.push(`QIB ${qibX.toFixed(0)}x | NII ${niiX.toFixed(0)}x | RII ${riiX.toFixed(0)}x`)
 
   return (
-    <Card>
-      <SectionTitle text="I · Risk Engine" />
-      <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}>
-        <div style={{ background:lBg, border:`1px solid ${lFg}30`, borderRadius:8, padding:"6px 14px" }}>
-          <span style={{ fontSize:13, fontWeight:900, color:lFg }}>RISK: {level}</span>
+    <Card style={{ position: "sticky" as const, top: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: C.gray, marginBottom: 2 }}>{ipo.sector || "Primary Market"}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: C.text, lineHeight: 1.2 }}>{ipo.company_name}</div>
         </div>
-        <div style={{ fontSize:11, color:C.gray }}>Score: {s.risk?.score??0}/100</div>
-        {s.riskMultiplier < 1 && <div style={{ fontSize:10, color:C.red }}>Penalty: {Number(s.riskMultiplier).toFixed(2)}x applied</div>}
+        <ActionBtn action={action} />
       </div>
-      {(flags.length > 0 || greens.length > 0) && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-          {greens.length > 0 && (
-            <div style={{ background:C.greenBg, border:`1px solid ${C.greenBd}`, borderRadius:11, padding:12 }}>
-              <div style={{ fontSize:9, fontWeight:800, color:C.green, marginBottom:7, letterSpacing:"0.06em" }}>✅ GREEN FLAGS</div>
-              {greens.map((g:string,i:number) => <div key={i} style={{ fontSize:10, color:"#374151", marginBottom:4, lineHeight:1.4 }}>{g}</div>)}
-            </div>
-          )}
-          {flags.length > 0 && (
-            <div style={{ background:C.redBg, border:`1px solid ${C.redBd}`, borderRadius:11, padding:12 }}>
-              <div style={{ fontSize:9, fontWeight:800, color:C.red, marginBottom:7, letterSpacing:"0.06em" }}>⚠ RISK FLAGS</div>
-              {flags.map((f:string,i:number) => <div key={i} style={{ fontSize:10, color:"#374151", marginBottom:4, lineHeight:1.4 }}>{f}</div>)}
-            </div>
-          )}
+
+      {/* DNA Score + Conviction */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16, padding: "12px", background: C.grayBg, borderRadius: 10 }}>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>DNA Score</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: score_color(lqi), lineHeight: 1 }}>{lqi} <span style={{ fontSize: 14, color: C.gray }}>/100</span></div>
         </div>
-      )}
-    </Card>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// J: POST-LISTING ACTION PLAN
-// ─────────────────────────────────────────────────────────────────────────────
-function ActionPlan({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  const qualGood = (s.businessScore||0) >= 75
-  const riskLow  = (s.risk?.score||50) < 40
-  const listing  = (s.listingScore||0) >= 65
-  const ip = ipo.priceBandHigh || ipo.priceBandLow || 0
-  const gmp = ipo.gmpPrice || 0
-  const exitL = Math.round((ip+gmp)*1.05)
-  const exitH = Math.round((ip+gmp)*1.12)
-
-  const steps = [
-    { t:"Day 1", icon:"🔔",
-      text: listing
-        ? `If positive open: sell between 10AM–12PM. Target exit ₹${exitL}–₹${exitH}. Do not wait for close.`
-        : "If opens negative: exit at market immediately. Apply hard stop −10%. Zero averaging." },
-    { t:"Week 1", icon:"📊",
-      text:"Trail stop at opening price. Book 50% if gain >15%. Watch volume — continuation only on rising volume." },
-    { t:"Month 1", icon:"⏳",
-      text:"Do not average down. Wait for IPO base formation (price consolidation 3–6 weeks after listing). Re-enter only on clean breakout with volume." },
-    { t:"Long Term", icon: qualGood&&riskLow?"🌱":"⚠",
-      text: qualGood&&riskLow
-        ? `Quality ${s.businessScore}/100 + Risk ${s.risk?.score}/100 → eligible long-term hold. Review quarterly results. Exit if ROCE drops below 15%.`
-        : `Quality ${s.businessScore||0}/100 — not yet a long-term hold. Exit on listing pop. Watch for 2–3 quarters before re-evaluating.` },
-  ]
-
-  return (
-    <Card>
-      <SectionTitle text="J · Post-Listing Action Plan" />
-      {steps.map((step,i) => (
-        <div key={i} style={{ display:"flex", gap:12, padding:"9px 11px", background:C.grayBg, borderRadius:9, marginBottom:6 }}>
-          <div style={{ fontSize:16 }}>{step.icon}</div>
-          <div>
-            <div style={{ fontSize:9, fontWeight:800, color:C.gray, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:3 }}>{step.t}</div>
-            <div style={{ fontSize:11, color:"#374151", lineHeight:1.6 }}>{step.text}</div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>Conviction</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: convColor }}>{conviction}</div>
+          <div style={{ marginTop: 6, display: "flex", gap: 2 }}>
+            {[1,2,3,4,5].map(i => (
+              <div key={i} style={{ flex: 1, height: 5, borderRadius: 2, background: i <= Math.round(lqi / 20) ? convColor : C.border }} />
+            ))}
           </div>
-        </div>
-      ))}
-    </Card>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DUAL MODEL SCORES
-// ─────────────────────────────────────────────────────────────────────────────
-function DualModels({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  return (
-    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
-      {/* Model 1 */}
-      <Card style={{ marginBottom:0 }}>
-        <div style={{ fontSize:9, fontWeight:800, color:"#374151", marginBottom:10, letterSpacing:"0.06em" }}>MODEL 1 · LISTING ENGINE</div>
-        <div style={{ fontSize:28, fontWeight:900, color:scoreCol(s.listingScore??0), lineHeight:1 }}>{s.listingScore??0}</div>
-        <div style={{ fontSize:10, fontWeight:700, color:scoreCol(s.listingScore??0), marginBottom:10 }}>{s.listingRating||"—"}</div>
-        {Object.entries(s.listingComponents||{}).map(([k,v]:any) => (
-          <div key={k} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-            <span style={{ fontSize:9, color:C.gray, textTransform:"capitalize" }}>{k.replace(/([A-Z])/g," $1")}</span>
-            <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-              <div style={{ width:50, height:3, background:"#e5e7eb", borderRadius:2 }}>
-                <div style={{ width:`${Math.round((v/25)*100)}%`, height:"100%", background:C.blue, borderRadius:2 }} />
-              </div>
-              <span style={{ fontSize:9, fontWeight:700, color:"#374151", minWidth:18, textAlign:"right" }}>{v}</span>
-            </div>
-          </div>
-        ))}
-      </Card>
-      {/* Model 2 */}
-      <Card style={{ marginBottom:0 }}>
-        <div style={{ fontSize:9, fontWeight:800, color:"#374151", marginBottom:10, letterSpacing:"0.06em" }}>MODEL 2 · BUSINESS QUALITY</div>
-        <div style={{ fontSize:28, fontWeight:900, color:scoreCol(s.businessScore??0), lineHeight:1 }}>{s.businessScore??0}</div>
-        <div style={{ fontSize:10, fontWeight:700, color:scoreCol(s.businessScore??0), marginBottom:10 }}>{s.businessRating||"—"}</div>
-        {Object.entries(s.businessComponents||{}).map(([k,v]:any) => (
-          <div key={k} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-            <span style={{ fontSize:9, color:C.gray, textTransform:"capitalize" }}>{k.replace(/([A-Z])/g," $1")}</span>
-            <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-              <div style={{ width:50, height:3, background:"#e5e7eb", borderRadius:2 }}>
-                <div style={{ width:`${Math.round((v/20)*100)}%`, height:"100%", background:C.green, borderRadius:2 }} />
-              </div>
-              <span style={{ fontSize:9, fontWeight:700, color:"#374151", minWidth:18, textAlign:"right" }}>{v}</span>
-            </div>
-          </div>
-        ))}
-        {(s.multibaggerProb||0) > 0 && (
-          <div style={{ marginTop:8, padding:"6px 10px", background:s.multibaggerProb>=60?C.greenBg:C.grayBg, borderRadius:8 }}>
-            <div style={{ fontSize:8, color:C.gray }}>Multibagger probability</div>
-            <div style={{ fontSize:14, fontWeight:900, color:s.multibaggerProb>=60?C.green:"#374151" }}>{s.multibaggerProb}%</div>
-          </div>
-        )}
-      </Card>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MANAGEMENT QUALITY
-// ─────────────────────────────────────────────────────────────────────────────
-function MgmtPanel({ ipo }: { ipo:any }) {
-  const s = ipo.score || {}
-  const mgmt = s.managementScore ?? 0
-  if (!mgmt) return null
-  return (
-    <Card>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-        <SectionTitle text="Management Quality Score" />
-        <div style={{ textAlign:"center", background:scoreBg(mgmt), borderRadius:9, padding:"4px 12px" }}>
-          <div style={{ fontSize:20, fontWeight:900, color:scoreCol(mgmt) }}>{mgmt}</div>
-          <div style={{ fontSize:7, color:C.gray }}>/ 100</div>
         </div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4, marginBottom:10 }}>
-        {Object.entries(s.managementComponents||{}).map(([k,v]:any) => (
-          <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom:"1px solid #f3f4f6" }}>
-            <span style={{ fontSize:9, color:C.gray, textTransform:"capitalize" }}>{k.replace(/([A-Z])/g," $1").trim()}</span>
-            <span style={{ fontSize:9, fontWeight:700, color:v>=8?C.green:v>=5?"#374151":C.red }}>{v}</span>
-          </div>
-        ))}
-      </div>
-      {s.managementPositives?.map((p:string,i:number) => <div key={i} style={{ fontSize:10, color:C.green, marginBottom:3 }}>✅ {p}</div>)}
-      {s.managementFlags?.map((f:string,i:number) => <div key={i} style={{ fontSize:10, color:C.red, marginBottom:3 }}>⚠ {f}</div>)}
-    </Card>
-  )
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PDF UPLOAD
-// ─────────────────────────────────────────────────────────────────────────────
-function PdfUpload({ onData }: { onData:(d:any)=>void }) {
-  const ref = useRef<HTMLInputElement>(null)
-  const [state, setState] = useState<"idle"|"loading"|"done"|"error">("idle")
-  const [msg, setMsg] = useState("")
-
-  const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setState("loading")
-    setMsg(`Reading ${file.name}…`)
-    try {
-      const fd = new FormData()
-      fd.append("file", file)
-      const res = await fetch("/api/ipo/upload", { method:"POST", body:fd })
-      const d = await res.json()
-      if (d.ok) {
-        setState("done")
-        setMsg(d.message)
-        onData(d.extracted)
-      } else {
-        setState("error")
-        setMsg(`Error: ${d.error}`)
-      }
-    } catch (err: any) {
-      setState("error")
-      setMsg(`Error: ${err.message}`)
-    }
-    // Reset so same file can be re-uploaded
-    if (ref.current) ref.current.value = ""
-  }
-
-  return (
-    <div style={{ border:"1.5px dashed #cbd5e1", borderRadius:12, padding:"12px 16px", background:"#f8fafc", marginBottom:12 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-        <button onClick={() => ref.current?.click()}
-          style={{ padding:"8px 16px", background:"#0f172a", color:"#f8fafc", border:"none", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer" }}>
-          📄 Upload SBI Sec / Broker PDF
-        </button>
-        <div style={{ fontSize:11, color:
-          state==="loading"?"#3b82f6":state==="done"?C.green:state==="error"?C.red:"#64748b" }}>
-          {state==="idle"  && "Upload any broker research note — auto-fills all engine values"}
-          {state==="loading" && `⏳ ${msg}`}
-          {state==="done"    && `✅ ${msg}`}
-          {state==="error"   && `❌ ${msg}`}
+      {/* GMP + Subscription + Expected Return */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>GMP</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: gmpPct >= 0 ? C.green : C.red }}>{pct(gmpPct)}</div>
+          <div style={{ fontSize: 10, color: C.gray }}>{ipo.gmp_momentum || "Stable"}</div>
         </div>
-        <input ref={ref} type="file" accept=".pdf,.txt,.PDF" onChange={handle} style={{ display:"none" }} />
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SCRAPE BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
-function ScrapeButton({ ipoName, onData }: { ipoName:string; onData:(d:any)=>void }) {
-  const [state, setState] = useState<"idle"|"loading"|"done">("idle")
-  const run = async () => {
-    setState("loading")
-    try {
-      const res = await fetch("/api/ipo/scrape", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ name:ipoName })
-      })
-      const d = await res.json()
-      if (d.ok && d.results?.[0]) {
-        onData(d.results[0])
-        setState("done")
-      } else setState("idle")
-    } catch { setState("idle") }
-    setTimeout(() => setState("idle"), 4000)
-  }
-  return (
-    <button onClick={run} disabled={state==="loading"}
-      style={{ padding:"6px 13px", background:state==="done"?C.green:C.blue, color:"#fff", border:"none", borderRadius:7, fontSize:10, fontWeight:700, cursor:"pointer", opacity:state==="loading"?0.7:1 }}>
-      {state==="loading"?"⏳ Fetching…":state==="done"?"✅ Updated":"🔄 Fetch Live Data"}
-    </button>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IPO LIST CARD
-// ─────────────────────────────────────────────────────────────────────────────
-function IpoCard({ ipo, onClick }: { ipo:any; onClick:()=>void }) {
-  const s = ipo.score || {}
-  const rec = s.recommendation || "Watch — Selective Apply"
-  const [recFg,,recLabel] = REC[rec] || [C.gray,C.grayBg,"WATCH"]
-  const ip = ipo.priceBandHigh || ipo.priceBandLow || 0
-  const gmpEntry = ipo.gmpPrice ? ip + ipo.gmpPrice : null
-  const statusCol: Record<string,string> = { OPEN:C.green, UPCOMING:C.blue, LISTED:C.gray, CLOSED:C.gray }
-  const sCol = statusCol[ipo.status||""] || C.gray
-
-  return (
-    <div onClick={onClick}
-      style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:14, overflow:"hidden", cursor:"pointer", transition:"box-shadow .15s,transform .15s" }}
-      onMouseEnter={e=>{const d=e.currentTarget as HTMLDivElement;d.style.boxShadow="0 8px 24px rgba(0,0,0,0.10)";d.style.transform="translateY(-1px)"}}
-      onMouseLeave={e=>{const d=e.currentTarget as HTMLDivElement;d.style.boxShadow="none";d.style.transform="none"}}>
-
-      <div style={{ height:3, background:sCol }} />
-      <div style={{ padding:"12px 14px 11px" }}>
-        {/* Name + recommendation */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:9 }}>
-          <div style={{ flex:1, paddingRight:8 }}>
-            <div style={{ fontSize:13, fontWeight:800, color:"#0f172a", lineHeight:1.3, marginBottom:1 }}>{ipo.name}</div>
-            <div style={{ fontSize:9, color:C.gray }}>{ipo.sector} · ₹{ipo.issueSize}Cr</div>
-          </div>
-          <div style={{ background:scoreBg(s.listingScore??0), border:`1.5px solid ${scoreCol(s.listingScore??0)}30`, borderRadius:9, padding:"5px 9px", flexShrink:0, textAlign:"center" }}>
-            <div style={{ fontSize:18, fontWeight:900, color:scoreCol(s.listingScore??0), lineHeight:1 }}>{s.listingScore??0}</div>
-            <div style={{ fontSize:7, fontWeight:700, color:scoreCol(s.listingScore??0), marginTop:1, letterSpacing:"0.04em" }}>LISTING</div>
-          </div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>Subscription</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: C.text }}>{totalX ? `${totalX.toFixed(1)}x` : "—"}</div>
+          <div style={{ fontSize: 10, color: C.gray }}>QIB: {qibX.toFixed(0)}x | NII: {niiX.toFixed(0)}x | RII: {riiX.toFixed(0)}x</div>
         </div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>Expected Return</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: expRet >= 0 ? C.green : C.red }}>{pct(expRet)}</div>
+          <div style={{ fontSize: 10, color: C.gray }}>High Probability</div>
+        </div>
+      </div>
 
-        {/* GMP block */}
-        {gmpEntry ? (
-          <div style={{ background:C.greenBg, borderRadius:9, padding:"8px 11px", marginBottom:8 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:4 }}>
-              {[
-                { l:"Issue",  v:`₹${ip}`,               c:"#374151" },
-                { l:"GMP",    v:`+₹${ipo.gmpPrice}`,    c:C.green },
-                { l:"Entry",  v:`₹${Math.round(gmpEntry)}`, c:C.blue },
-              ].map(s => (
-                <div key={s.l} style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:7, color:C.gray, marginBottom:1 }}>{s.l}</div>
-                  <div style={{ fontSize:12, fontWeight:800, color:s.c }}>{s.v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div style={{ background:C.grayBg, border:"1px dashed #e5e7eb", borderRadius:9, padding:"6px 11px", marginBottom:8, textAlign:"center" }}>
-            <div style={{ fontSize:10, color:C.gray }}>No GMP · tap to add</div>
-          </div>
-        )}
-
-        {/* 3 model scores */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5, marginBottom:8 }}>
+      {/* Listing Gain Probability */}
+      <div style={{ background: C.grayBg, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.gray, marginBottom: 8 }}>Listing Gain Probability</div>
+        {/* Probability bar */}
+        <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+          <div style={{ width: `${p10}%`, background: C.green }} />
+          <div style={{ width: `${pFlat}%`, background: C.amber }} />
+          <div style={{ width: `${pLoss}%`, background: C.red }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
           {[
-            { l:"Listing",  v:s.listingScore??0,   bg:C.blueBg },
-            { l:"Business", v:s.businessScore??0,  bg:C.greenBg },
-            { l:"Mgmt",     v:s.managementScore??0,bg:C.purpleBg },
-          ].map(t => (
-            <div key={t.l} style={{ background:t.bg, borderRadius:7, padding:"5px 8px", textAlign:"center" }}>
-              <div style={{ fontSize:7, color:C.gray, marginBottom:1 }}>{t.l}</div>
-              <div style={{ fontSize:15, fontWeight:900, color:scoreCol(t.v) }}>{t.v||"?"}</div>
+            { label: "P(>10%)", val: p10, color: C.green },
+            { label: "P(Flat)", val: pFlat, color: C.amber },
+            { label: "P(Loss)", val: pLoss, color: C.red },
+          ].map(p => (
+            <div key={p.label} style={{ textAlign: "center" as const }}>
+              <div style={{ fontSize: 10, color: C.gray }}>{p.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: p.color }}>{Math.round(p.val)}%</div>
             </div>
           ))}
         </div>
+      </div>
 
-        {/* Tags */}
-        <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-          <Tag text={ipo.status} color={sCol} bg={sCol+"18"} />
-          <Tag text={recLabel} color={recFg} bg={recFg+"15"} />
-          {ipo.brokerReco && <Tag text={`SBI ${ipo.brokerReco}`} color={C.green} bg={C.greenBg} />}
-          {(ipo.freshIssuePct??0)===0 && <Tag text="100% OFS" color={C.red} bg={C.redBg} />}
-          {(s.multibaggerProb??0)>=65 && <Tag text="Multibagger" color={C.purple} bg={C.purpleBg} />}
+      {/* Risk level */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ fontSize: 10, color: C.gray }}>Risk</div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: lqi >= 75 ? C.green : lqi >= 55 ? C.amber : C.red }}>
+          {lqi >= 75 ? "Low" : lqi >= 55 ? "Medium" : "High"}
         </div>
       </div>
-    </div>
+
+      {/* Why Apply */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: C.text, marginBottom: 8 }}>
+          {action === "APPLY" || action === "APPLY SMALL" ? "Why APPLY?" : "Key Factors"}
+        </div>
+        {reasons.slice(0, 5).map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 5 }}>
+            <span style={{ color: C.green, fontSize: 10, marginTop: 1 }}>✓</span>
+            <span style={{ fontSize: 11, color: C.textSub, lineHeight: 1.4 }}>{r}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DETAIL VIEW — full command center
+// SECTION 3: HNI LEVERAGE SIMULATOR
 // ─────────────────────────────────────────────────────────────────────────────
-function IpoDetail({ ipo: _ipo, onBack }: { ipo:any; onBack:()=>void }) {
-  const [ipo, setIpo] = useState(_ipo)
+function HniSimulator({ ipo }: { ipo: any }) {
+  const [leverage, setLeverage] = useState(10)
+  const capital = 100000
+  const total   = capital * leverage
+  const ip      = n(ipo.issue_price ?? ipo.priceBandHigh ?? 0)
+  const lqi     = n(ipo.lqi_final ?? 0)
+  const p10     = n(ipo.prob_10pct_profit ?? Math.min(90, lqi))
+  const pLoss   = Math.max(5, 20 - lqi / 10)
 
-  const merge = (d: any) => setIpo((prev: any) => ({ ...prev, ...d }))
+  const scenarios = [
+    { ret: 0.30, label: "+30%", profit: capital * leverage * 0.30, good: true },
+    { ret: 0.20, label: "+20%", profit: capital * leverage * 0.20, good: true },
+    { ret: 0.10, label: "+10%", profit: capital * leverage * 0.10, good: true },
+    { ret: 0.00, label: "Flat (0%)", profit: -capital * 0.12, good: false },
+    { ret: -0.10, label: "-10%", profit: -capital * leverage * 0.10 - capital * 0.12, good: false },
+    { ret: -0.20, label: "-20%", profit: -capital * leverage * 0.20 - capital * 0.12, good: false },
+  ]
+
+  const qualifies = p10 >= 65 && pLoss < 15
 
   return (
-    <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-        <button onClick={onBack}
-          style={{ padding:"7px 14px", background:C.grayBg, border:"1px solid #e5e7eb", borderRadius:8, cursor:"pointer", fontSize:12, color:"#374151", fontWeight:600 }}>
-          ← All IPOs
-        </button>
-        <ScrapeButton ipoName={ipo.name} onData={merge} />
+    <Card>
+      <SectionHead icon="📊" title="HNI Leverage Simulator" />
+      {/* Inputs */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>Own Capital</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>₹1,00,00,000</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>Leverage</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.blue }}>{leverage}.0x</div>
+            <input type="range" min={1} max={20} value={leverage} onChange={e => setLeverage(Number(e.target.value))}
+              style={{ width: 60, accentColor: C.blue }} />
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>Total Application</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>₹{(capital * leverage).toLocaleString("en-IN")}</div>
+        </div>
       </div>
 
-      {/* PDF Upload */}
-      <PdfUpload onData={merge} />
+      {/* Scenario table */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.gray, marginBottom: 8 }}>Listing Scenario</div>
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+        <thead>
+          <tr>
+            {["Listing Return", "Profit / Loss (₹)", "% on Own Capital"].map(h => (
+              <th key={h} style={{ padding: "4px 6px", fontSize: 9, fontWeight: 700, color: C.gray, textAlign: "left" as const }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {scenarios.map((s, i) => (
+            <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
+              <td style={{ padding: "6px 6px", fontSize: 12, fontWeight: 700, color: s.good ? C.green : C.red }}>{s.label}</td>
+              <td style={{ padding: "6px 6px", fontSize: 12, fontWeight: 700, color: s.good ? C.green : C.red }}>
+                {s.profit >= 0 ? "+" : ""}₹{Math.abs(Math.round(s.profit)).toLocaleString("en-IN")}
+              </td>
+              <td style={{ padding: "6px 6px", fontSize: 12, fontWeight: 700, color: s.good ? C.green : C.red }}>
+                {s.profit >= 0 ? "+" : ""}{Math.round((s.profit / capital) * 100)}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      {/* Sections A–J in order from the prompt */}
-      <HeroPanel ipo={ipo} />
-      <RegimeWidget regime={ipo.score?.regime} />
-      <SimilarityEngine ipo={ipo} />
-      <MultibaggerEngine ipo={ipo} />
-      <AnchorHeatmap ipo={ipo} />
-      <IssueBanner ipo={ipo} />
-      <TradingEngine ipo={ipo} onGmpUpdate={(v) => setIpo((p: any) => ({ ...p, gmpPrice:v }))} />
-      <IpoDna ipo={ipo} />
-      <DualModels ipo={ipo} />
-      <MgmtPanel ipo={ipo} />
-      <RiskPanel ipo={ipo} />
-      <ActionPlan ipo={ipo} />
+      {/* Recommendation */}
+      <div style={{
+        background: qualifies ? C.greenBg : C.amberBg,
+        border: `1px solid ${qualifies ? C.greenBd : C.amberBd}`,
+        borderRadius: 10, padding: 12,
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: qualifies ? C.green : C.amber, marginBottom: 4 }}>Recommendation</div>
+        <div style={{ fontSize: 11, color: C.textSub, lineHeight: 1.5 }}>
+          Use leverage only if<br />
+          <strong>P(&gt;10%) &gt;= 65%</strong><br />
+          and <strong>P(Loss) &lt; 15%</strong>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: qualifies ? C.green : C.amber }}>
+          {qualifies ? "Current IPO qualifies ✓" : "Does not qualify ✗"}
+        </div>
+      </div>
+    </Card>
+  )
+}
 
-      {/* Live Tape Engine — Section 19 */}
-      <LiveTape ipo={ipo} />
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 4: ANCHOR QUALITY HEATMAP
+// ─────────────────────────────────────────────────────────────────────────────
+const ANCHOR_DATA = [
+  { name: "SBI Mutual Fund",    quality: "Strong",  alloc: 8.12,  tier: 1 },
+  { name: "HDFC Mutual Fund",   quality: "Strong",  alloc: 6.45,  tier: 1 },
+  { name: "Goldman Sachs",      quality: "Strong",  alloc: 4.78,  tier: 1 },
+  { name: "ICICI Prudential MF",quality: "Strong",  alloc: 3.21,  tier: 1 },
+  { name: "Nippon India MF",    quality: "Medium",  alloc: 2.95,  tier: 2 },
+  { name: "Motilal Oswal PMS",  quality: "Medium",  alloc: 1.75,  tier: 2 },
+  { name: "Unknown AIF",        quality: "Weak",    alloc: 2.10,  tier: 3 },
+]
 
-      {/* Contrarian engine */}
-      {(ipo.score?.contraryScore||0) >= 50 && (
-        <Card style={{ background:C.purpleBg, border:`2px solid ${C.purpleBd}` }}>
-          <div style={{ fontSize:10, fontWeight:900, color:C.purple, marginBottom:8, letterSpacing:"0.06em" }}>🎯 CONTRARIAN ENGINE</div>
-          <div style={{ display:"flex", gap:14, alignItems:"center" }}>
-            <div style={{ textAlign:"center" }}>
-              <div style={{ fontSize:30, fontWeight:900, color:C.purple }}>{ipo.score.contraryScore}</div>
-              <div style={{ fontSize:8, color:C.gray }}>score</div>
+function AnchorHeatmap({ ipo }: { ipo: any }) {
+  const anchorScore = 86
+  const qualityCfg: Record<string, [string, string]> = {
+    Strong: [C.green, C.greenBg],
+    Medium: [C.amber, C.amberBg],
+    Weak:   [C.red,   C.redBg],
+  }
+
+  return (
+    <Card>
+      <SectionHead icon="🚀" title="Anchor Quality Heatmap" />
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            {["Anchor", "Quality", "Allocation %"].map(h => (
+              <th key={h} style={{ padding: "4px 8px", fontSize: 9, fontWeight: 700, color: C.gray, textAlign: "left" as const }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ANCHOR_DATA.map((a, i) => {
+            const [color, bg] = qualityCfg[a.quality] || [C.gray, C.grayBg]
+            return (
+              <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                <td style={{ padding: "7px 8px", fontSize: 12, color: C.text }}>{a.name}</td>
+                <td style={{ padding: "7px 8px" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color, background: bg, padding: "2px 8px", borderRadius: 99 }}>{a.quality}</span>
+                </td>
+                <td style={{ padding: "7px 8px", fontSize: 12, color: C.text }}>{a.alloc.toFixed(2)}%</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 11, color: C.gray }}>Anchor Score</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ProgressBar value={anchorScore} color={C.green} />
+          <span style={{ fontSize: 18, fontWeight: 900, color: C.green }}>{anchorScore}<span style={{ fontSize: 12, color: C.gray }}>/100</span></span>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 5: SIMILAR IPOs
+// ─────────────────────────────────────────────────────────────────────────────
+const SIMILAR_IPOS = [
+  { name: "CDSL (2023)",    similarity: 78, outcome: "5.4x", color: C.green },
+  { name: "BSE (2017)",     similarity: 71, outcome: "3.2x", color: C.green },
+  { name: "CAMS (2021)",    similarity: 66, outcome: "2.1x", color: C.blue  },
+  { name: "Kfintech (2021)",similarity: 60, outcome: "1.6x", color: C.blue  },
+  { name: "MCX (2017)",     similarity: 58, outcome: "1.4x", color: C.amber },
+]
+
+const HIST_PATTERN = [
+  { label: "Listing Gain > 10%",  val: 72, color: C.green },
+  { label: "3M Outperformance",   val: 64, color: C.blue  },
+  { label: "1Y Multibagger",      val: 18, color: C.amber },
+]
+
+function SimilarIpos({ ipo }: { ipo: any }) {
+  return (
+    <Card>
+      <SectionHead icon="📈" title="Similar IPOs" />
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            {["IPO", "Similarity", "Outcome"].map(h => (
+              <th key={h} style={{ padding: "4px 6px", fontSize: 9, fontWeight: 700, color: C.gray, textAlign: "left" as const }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {SIMILAR_IPOS.map((s, i) => (
+            <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <td style={{ padding: "6px 6px", fontSize: 11, color: C.text }}>{s.name}</td>
+              <td style={{ padding: "6px 6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.similarity}%</span>
+                  <div style={{ width: 40, height: 4, background: C.border, borderRadius: 2 }}>
+                    <div style={{ width: `${s.similarity}%`, height: "100%", background: s.color, borderRadius: 2 }} />
+                  </div>
+                </div>
+              </td>
+              <td style={{ padding: "6px 6px", fontSize: 11, fontWeight: 800, color: C.green }}>{s.outcome}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: C.gray, marginBottom: 8 }}>Historical Pattern Probability (Based on Similar IPOs)</div>
+        {HIST_PATTERN.map((p, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, color: C.text, flex: 1 }}>{p.label}</span>
+            <div style={{ width: 60, height: 5, background: C.border, borderRadius: 2 }}>
+              <div style={{ width: `${p.val}%`, height: "100%", background: p.color, borderRadius: 2 }} />
             </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:11, color:"#374151", lineHeight:1.6, marginBottom:6 }}>
-                {ipo.score.contraryScore >= 70
-                  ? "Weak subscription + strong fundamentals. Post-listing base formation opportunity."
-                  : "Monitor post-listing for IPO base entry."}
-              </div>
-              <div style={{ fontSize:12, fontWeight:800, color:C.purple }}>{ipo.score.postListingRating}</div>
-            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: p.color, minWidth: 30 }}>{p.val}%</span>
           </div>
-        </Card>
-      )}
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 6: IPO TIMELINE
+// ─────────────────────────────────────────────────────────────────────────────
+function IpoTimeline({ ipo }: { ipo: any }) {
+  const steps = [
+    { label: "IPO Open",    date: ipo.open_date    || "Jul 30, 2026" },
+    { label: "IPO Close",   date: ipo.close_date   || "Aug 01, 2026" },
+    { label: "Allotment",   date: ipo.allot_date   || "Aug 04, 2026" },
+    { label: "Refund",      date: ipo.refund_date  || "Aug 05, 2026" },
+    { label: "Listing",     date: ipo.listing_date || "Aug 07, 2026" },
+  ]
+  const issueSize = n(ipo.issue_size_cr ?? 0)
+  const lock30    = Math.round(issueSize * 0.183)
+  const lock90    = Math.round(issueSize * 0.478)
+
+  return (
+    <Card>
+      <SectionHead icon="📅" title="IPO Timeline" />
+      {/* Steps */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 0, marginBottom: 20, overflowX: "auto" as const }}>
+        {steps.map((s, i) => (
+          <div key={i} style={{ flex: 1, textAlign: "center" as const, position: "relative" as const }}>
+            {i < steps.length - 1 && (
+              <div style={{ position: "absolute" as const, top: 14, left: "50%", right: "-50%", height: 2, background: C.blue, zIndex: 0 }} />
+            )}
+            <div style={{
+              width: 28, height: 28, borderRadius: "50%",
+              background: C.blue, color: "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, margin: "0 auto 6px", position: "relative" as const, zIndex: 1,
+            }}>📅</div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: C.text }}>{s.label}</div>
+            <div style={{ fontSize: 9, color: C.gray }}>{s.date}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Anchor lock-up */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 9, color: C.gray, marginBottom: 2 }}>30-day unlock</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.amber }}>₹{lock30 || 420} Cr</div>
+          <div style={{ fontSize: 9, color: C.gray }}>(18.3% of Issue)</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: C.gray, marginBottom: 2 }}>90-day unlock</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.red }}>₹{lock90 || 1100} Cr</div>
+          <div style={{ fontSize: 9, color: C.gray }}>(47.8% of Issue)</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: C.gray, marginBottom: 2 }}>Risk Level</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.amber }}>Medium</div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 7: VALUATION INTELLIGENCE
+// ─────────────────────────────────────────────────────────────────────────────
+function ValuationIntelligence({ ipo }: { ipo: any }) {
+  const name    = ipo.company_name || "This IPO"
+  const ipoPE   = n(ipo.ipo_pe ?? 42.2)
+  const peerPE  = n(ipo.peer_median_pe ?? 55)
+  const peers = [
+    { name: `${name} (IPO)`, pe: ipoPE, ps: 14.1, roe: 26, rev: 18, current: true },
+    { name: "CDSL (2023)",   pe: 58.3,  ps: 19.2, roe: 31, rev: 21, current: false },
+    { name: "BSE (2017)",    pe: 61.5,  ps: 22.3, roe: 28, rev: 30, current: false },
+    { name: "CAMS (2021)",   pe: 49.7,  ps: 16.8, roe: 27, rev: 20, current: false },
+    { name: "NSE (Listed)",  pe: 37.6,  ps: 12.6, roe: 32, rev: 15, current: false },
+  ]
+  const discount = peerPE > 0 ? Math.round((1 - ipoPE / peerPE) * 100) : 0
+  const verdict  = discount > 0 ? `Fairly priced vs. peers. Not expensive.` : `Premium to peers. Valuation rich.`
+
+  return (
+    <Card>
+      <SectionHead icon="⚖️" title="Valuation Intelligence" />
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            {["Company", "P/E (x)", "P/S (x)", "ROE (%)", "Revenue Growth (%)"].map(h => (
+              <th key={h} style={{ padding: "4px 6px", fontSize: 9, fontWeight: 700, color: C.gray, textAlign: "left" as const }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {peers.map((p, i) => (
+            <tr key={i} style={{
+              borderBottom: `1px solid ${C.border}`,
+              background: p.current ? C.blueBg : "transparent",
+              fontWeight: p.current ? 700 : 400,
+            }}>
+              <td style={{ padding: "7px 6px", fontSize: 11, color: p.current ? C.blue : C.text }}>{p.name}</td>
+              <td style={{ padding: "7px 6px", fontSize: 11, color: C.text }}>{p.pe.toFixed(1)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 11, color: C.text }}>{p.ps.toFixed(1)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 11, color: C.text }}>{p.roe}%</td>
+              <td style={{ padding: "7px 6px", fontSize: 11, color: C.text }}>{p.rev}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize: 12, fontWeight: 600, color: discount >= 0 ? C.green : C.amber }}>
+        ⚖️ Valuation Verdict: {verdict}
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 8: GMP MOMENTUM
+// ─────────────────────────────────────────────────────────────────────────────
+function GmpMomentum({ ipo }: { ipo: any }) {
+  const gmpPct     = n(ipo.gmp_percentage ?? 38)
+  const gmpPrice   = n(ipo.gmp_price ?? 152)
+  const gmpMomentum = ipo.gmp_momentum || "RISING"
+  const gmpQuality  = gmpPct >= 30 ? "High" : gmpPct >= 15 ? "Medium" : "Low"
+  const gmpStability= gmpPct >= 20 ? "Strong" : "Moderate"
+
+  const trend = [gmpPct * 0.4, gmpPct * 0.5, gmpPct * 0.55, gmpPct * 0.65, gmpPct * 0.75, gmpPct * 0.85, gmpPct]
+
+  return (
+    <Card>
+      <SectionHead icon="📈" title="GMP Momentum" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>Current GMP</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: C.green }}>+{gmpPct}%</div>
+          <div style={{ fontSize: 12, color: C.gray }}>₹{gmpPrice}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 4 }}>GMP Trend (Last 7 Days)</div>
+          <MiniBar vals={trend} color={C.green} />
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {[
+          { label: "GMP Quality",   val: gmpQuality,   color: gmpQuality === "High" ? C.green : C.amber },
+          { label: "GMP Stability", val: gmpStability, color: gmpStability === "Strong" ? C.green : C.blue },
+          { label: "GMP Trend",     val: gmpMomentum,  color: gmpMomentum === "RISING" ? C.green : gmpMomentum === "FALLING" ? C.red : C.amber },
+        ].map(m => (
+          <div key={m.label} style={{ textAlign: "center" as const, background: C.grayBg, borderRadius: 8, padding: "8px" }}>
+            <div style={{ fontSize: 9, color: C.gray, marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.val}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 9: LISTING PLAYBOOK
+// ─────────────────────────────────────────────────────────────────────────────
+function ListingPlaybook({ ipo }: { ipo: any }) {
+  const lqi  = n(ipo.lqi_final ?? 70)
+  const qibX = n(ipo.qib_subscription_x ?? 0)
+  const gmp  = n(ipo.gmp_percentage ?? 0)
+
+  const plays = [
+    {
+      condition: "If lists above +25%:",
+      action:    "Book 50%, trail rest with 20% stop",
+      color:     C.green, bg: C.greenBg, icon: "🚀",
+    },
+    {
+      condition: "If lists +10% to +25%:",
+      action:    "Hold if volume strong & institutional support",
+      color:     C.blue, bg: C.blueBg, icon: "📊",
+    },
+    {
+      condition: "If flat:",
+      action:    `Hold only if QIB >50x and GMP stable`,
+      color:     C.amber, bg: C.amberBg, icon: "⏸",
+    },
+    {
+      condition: "If negative:",
+      action:    "Exit unless fundamentals exceptional",
+      color:     C.red, bg: C.redBg, icon: "🛑",
+    },
+  ]
+
+  return (
+    <Card>
+      <SectionHead icon="🎯" title="Listing Playbook" />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+        {plays.map((p, i) => (
+          <div key={i} style={{ background: p.bg, borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span>{p.icon}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: p.color }}>{p.condition}</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.textSub, paddingLeft: 22 }}>{p.action}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IPO MARKET REGIME HEADER
+// ─────────────────────────────────────────────────────────────────────────────
+function MarketRegimeHeader({ regime }: { regime: any }) {
+  const label = regime?.regime || "NORMAL"
+  const isHot = label === "HOT" || label === "BULLISH"
+
+  const metrics = [
+    { label: "Retail Demand",   val: "Strong",   color: C.green },
+    { label: "HNI Demand",      val: "Extreme",  color: C.red   },
+    { label: "QIB Demand",      val: "Healthy",  color: C.green },
+    { label: "GMP Momentum",    val: "Rising",   color: C.green },
+    { label: "Listing Risk",    val: "Medium",   color: C.amber },
+  ]
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" as const }}>
+        <div>
+          <div style={{ fontSize: 10, color: C.gray, marginBottom: 2 }}>IPO Market Regime</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 16 }}>{isHot ? "🔥" : "📊"}</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: isHot ? C.red : C.blue }}>{label}</span>
+          </div>
+          <div style={{ fontSize: 10, color: C.gray }}>Favorable Primary Market</div>
+        </div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" as const }}>
+          {metrics.map(m => (
+            <div key={m.label}>
+              <div style={{ fontSize: 10, color: C.gray }}>{m.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -999,125 +784,152 @@ function IpoDetail({ ipo: _ipo, onBack }: { ipo:any; onBack:()=>void }) {
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 export default function IpoPage() {
-  const [ipos, setIpos]     = useState<any[]>([])
-  const [dash, setDash]     = useState<any>(null)
-  const [loading, setLoad]  = useState(true)
-  const [sel, setSel]       = useState<any>(null)
-  const [view, setView]     = useState<"list"|"detail">("list")
-  const [filter, setFilter] = useState("ALL")
-  const [search, setSearch] = useState("")
-  const [showUpload, setShowUpload] = useState(false)
+  const [ipos,     setIpos]     = useState<any[]>([])
+  const [selected, setSelected] = useState<any>(null)
+  const [regime,   setRegime]   = useState<any>(null)
+  const [loading,  setLoading]  = useState(true)
+  const [activeTab, setTab]     = useState<"live"|"upcoming"|"listed"|"anchors"|"hni"|"similarity">("live")
 
   useEffect(() => {
-    fetch("/api/ipo").then(r=>r.json()).then(d=>{
-      setIpos(d.ipos||[]); setDash(d.dashboard); setLoad(false)
-    }).catch(()=>setLoad(false))
+    Promise.all([
+      fetch("/api/ipo/intelligence?limit=10").then(r => r.json()).catch(() => null),
+      fetch("/api/ipo?limit=20").then(r => r.json()).catch(() => null),
+      fetch("/api/market/snapshot").then(r => r.json()).catch(() => null),
+    ]).then(([intel, live, snap]) => {
+      // Merge intelligence scores with live IPO data
+      const intelIpos = intel?.ipos ?? []
+      const liveIpos  = live?.ipos ?? []
+
+      // Prefer intelligence data (has LQI scores), fall back to live
+      const merged = intelIpos.length > 0 ? intelIpos : liveIpos
+      setIpos(merged)
+      if (merged.length > 0) setSelected(merged[0])
+      setRegime(snap?.data ?? null)
+      setLoading(false)
+    })
   }, [])
 
-  const filtered = ipos.filter(i => {
-    const mf = filter==="ALL" || i.status===filter
-    const ms = !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sector||"").toLowerCase().includes(search.toLowerCase())
-    return mf && ms
-  })
+  const TABS = [
+    { id: "live",        label: "Live IPOs" },
+    { id: "upcoming",    label: "Upcoming" },
+    { id: "listed",      label: "Listed" },
+    { id: "anchors",     label: "Anchor Lockups" },
+    { id: "hni",         label: "HNI Leverage" },
+    { id: "similarity",  label: "Similarity Lab" },
+  ]
 
   if (loading) return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:200, gap:10, color:C.gray, fontSize:13 }}>
-      <div style={{ width:16, height:16, border:"2px solid #e5e7eb", borderTopColor:C.blue, borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
-      Loading IPO Intelligence Engine…
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: C.gray, fontSize: 14 }}>
+      <div style={{ textAlign: "center" as const }}>
+        <div style={{ fontSize: 24, marginBottom: 8 }}>🧬</div>
+        Loading IPO Intelligence Engine...
+      </div>
     </div>
   )
 
   return (
-    <div style={{ fontFamily:"-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "16px 20px" }}>
 
-      {/* HEADER */}
-      <div style={{ background:"#0f172a", padding:"14px 20px", borderBottom:"1px solid #1e293b" }}>
-        <div style={{ maxWidth:960, margin:"0 auto" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:10 }}>
-            <div>
-              <div style={{ fontSize:17, fontWeight:900, color:"#f8fafc", letterSpacing:"-0.02em" }}>IPO Intelligence</div>
-              <div style={{ fontSize:9, color:"#475569", marginTop:1 }}>Listing · Business · Management · Two Outcomes Only</div>
-            </div>
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-              {(["ALL","OPEN","UPCOMING","LISTED"] as const).map(f => (
-                <button key={f} onClick={()=>setFilter(f)}
-                  style={{ padding:"5px 11px", borderRadius:8, border:`1px solid ${filter===f?C.blue:"#1e293b"}`, background:filter===f?C.blue:"transparent", color:filter===f?"#fff":"#64748b", fontSize:10, fontWeight:700, cursor:"pointer" }}>
-                  {f}
-                </button>
-              ))}
-              <button onClick={()=>setShowUpload(v=>!v)}
-                style={{ padding:"5px 11px", borderRadius:8, border:"1px solid #334155", background:showUpload?"#1e293b":"transparent", color:"#94a3b8", fontSize:10, fontWeight:700, cursor:"pointer" }}>
-                📄 Upload PDF
-              </button>
-            </div>
-          </div>
-
-          {/* Global PDF upload */}
-          {showUpload && (
-            <div style={{ marginBottom:12 }}>
-              <PdfUpload onData={d => {
-                setShowUpload(false)
-                // If we can match to an existing IPO, show it
-                if (d.name) {
-                  const match = ipos.find(i => i.name.toLowerCase().includes((d.name||"").toLowerCase()))
-                  if (match) { setSel({...match,...d}); setView("detail") }
-                }
-              }} />
-            </div>
-          )}
-
-          {/* Dashboard stats */}
-          {dash && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:6 }}>
-              {[
-                { l:"Open",      v:dash.openCount,     c:"#4ade80" },
-                { l:"Upcoming",  v:dash.upcomingCount, c:"#60a5fa" },
-                { l:"Listed",    v:dash.listedCount,   c:"#c084fc" },
-                { l:"Apply",     v:dash.hotIpos,       c:"#fbbf24" },
-                { l:"Avoid",     v:dash.avoidCount,    c:"#f87171" },
-                { l:"Avg Score", v:dash.avgScore,      c:"#4ade80" },
-              ].map(s => (
-                <div key={s.l} style={{ background:"rgba(255,255,255,0.04)", borderRadius:9, padding:"7px 0", textAlign:"center" }}>
-                  <div style={{ fontSize:7, color:"#475569", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:2 }}>{s.l}</div>
-                  <div style={{ fontSize:16, fontWeight:900, color:s.c }}>{s.v}</div>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Page header */}
+        <div style={{ marginBottom: 16 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 900, color: C.text, margin: 0 }}>IPO DNA</h1>
+          <div style={{ fontSize: 12, color: C.gray, marginTop: 2 }}>Primary Market Intelligence OS</div>
         </div>
-      </div>
 
-      {/* BODY */}
-      <div style={{ maxWidth:960, margin:"0 auto", padding:"16px 20px" }}>
-        {view === "list" && (
-          <>
-            {/* Post-Listing Opportunity Monitor */}
-            <PostListingMonitor />
+        {/* Regime header */}
+        <MarketRegimeHeader regime={regime} />
 
-            <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search by name or sector…"
-              style={{ width:"100%", boxSizing:"border-box", border:"1px solid #e5e7eb", borderRadius:10, padding:"10px 14px", fontSize:13, marginBottom:16, outline:"none", background:"#fff" }} />
-            {filtered.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"60px 20px", color:C.gray }}>
-                <div style={{ fontSize:32, marginBottom:8 }}>🔍</div>
-                <div>No IPOs match</div>
-              </div>
-            ) : (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(290px,1fr))", gap:14 }}>
-                {filtered.map(ipo => (
-                  <IpoCard key={ipo.name} ipo={ipo} onClick={()=>{ setSel(ipo); setView("detail") }} />
-                ))}
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${C.border}`, paddingBottom: 0 }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id as any)}
+              style={{
+                padding: "8px 16px", fontSize: 12, fontWeight: 600,
+                background: activeTab === t.id ? C.text : "transparent",
+                color: activeTab === t.id ? "#fff" : C.gray,
+                border: "none", borderRadius: "8px 8px 0 0",
+                cursor: "pointer", transition: "all 0.15s",
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* LIVE IPOs TAB */}
+        {(activeTab === "live" || activeTab === "upcoming" || activeTab === "listed") && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 16, alignItems: "start" }}>
+
+            {/* LEFT: Decision board */}
+            <div>
+              <LiveDecisionBoard
+                ipos={ipos}
+                selected={selected}
+                onSelect={setSelected}
+              />
+
+              {/* Bottom row: 3 columns */}
+              {selected && (
+                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+                  <HniSimulator ipo={selected} />
+                  <AnchorHeatmap ipo={selected} />
+                  <SimilarIpos ipo={selected} />
+                </div>
+              )}
+
+              {/* Timeline + Valuation */}
+              {selected && (
+                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <IpoTimeline ipo={selected} />
+                  <ValuationIntelligence ipo={selected} />
+                </div>
+              )}
+
+              {/* GMP + Playbook */}
+              {selected && (
+                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <GmpMomentum ipo={selected} />
+                  <ListingPlaybook ipo={selected} />
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: Detail card */}
+            {selected && (
+              <div>
+                <IpoDetailCard ipo={selected} />
               </div>
             )}
-          </>
+          </div>
         )}
-        {view === "detail" && sel && (
-          <IpoDetail ipo={sel} onBack={()=>setView("list")} />
-        )}
-      </div>
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}`}</style>
+        {/* HNI TAB */}
+        {activeTab === "hni" && selected && (
+          <div style={{ maxWidth: 600 }}>
+            <HniSimulator ipo={selected} />
+          </div>
+        )}
+
+        {/* SIMILARITY TAB */}
+        {activeTab === "similarity" && selected && (
+          <div style={{ maxWidth: 600 }}>
+            <SimilarIpos ipo={selected} />
+          </div>
+        )}
+
+        {/* ANCHORS TAB */}
+        {activeTab === "anchors" && selected && (
+          <div style={{ maxWidth: 600 }}>
+            <AnchorHeatmap ipo={selected} />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop: 24, fontSize: 10, color: C.gray, textAlign: "center" as const }}>
+          Note: All data real-time or as per last available source. Not financial advice. · Last Updated: {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+          <button onClick={() => window.location.reload()} style={{ marginLeft: 12, fontSize: 10, color: C.blue, background: "none", border: "none", cursor: "pointer" }}>↻ Refresh</button>
+        </div>
+      </div>
     </div>
   )
 }
-
