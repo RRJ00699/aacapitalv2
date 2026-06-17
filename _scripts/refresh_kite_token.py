@@ -27,7 +27,7 @@ log = logging.getLogger()
 API_KEY      = os.environ.get("KITE_API_KEY",      "br9m41pn8nvvywnl")
 API_SECRET   = os.environ.get("KITE_API_SECRET",   "")
 USER_ID      = os.environ.get("KITE_USER_ID",      "")
-PASSWORD     = os.environ.get("KITE_PASSWORD",      "")
+PASSWORD     = os.environ.get("KITE_PASSWORD",     "")
 TOTP_SECRET  = os.environ.get("KITE_TOTP_SECRET",  "")
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
 
@@ -42,7 +42,7 @@ def get_request_token() -> str:
 
     # Step 1: Hit login URL to get cookies
     login_url = f"https://kite.trade/connect/login?v=3&api_key={API_KEY}"
-    log.info(f"Opening login URL...")
+    log.info("Opening login URL...")
     res = session.get(login_url, allow_redirects=True)
     log.info(f"Login page status: {res.status_code}")
 
@@ -82,7 +82,6 @@ def get_request_token() -> str:
     log.info("2FA OK")
 
     # Step 4: Follow the OAuth redirect to capture request_token
-    # Kite redirects to 127.0.0.1 (your redirect URL) — we catch that and extract token
     time.sleep(1)
     final_url = ""
     try:
@@ -96,7 +95,7 @@ def get_request_token() -> str:
         log.info(f"Expected redirect caught: {err_str[:120]}")
         m = re.search(r"request_token=([a-zA-Z0-9]+)", err_str)
         if m:
-            log.info(f"request_token extracted from error URL")
+            log.info("request_token extracted from error URL")
             return m.group(1)
 
     # Try to extract from redirect URL
@@ -155,7 +154,7 @@ def save_to_db(access_token: str):
 
     conn.commit()
     conn.close()
-    log.info(f"Token saved to Neon platform_config")
+    log.info("Token saved to Neon platform_config")
 
 
 def get_token_from_db() -> str:
@@ -206,16 +205,4 @@ def main():
 
         save_to_db(access_token)
 
-        if verify_token(access_token):
-            log.info("✅ Token refresh complete — all pipelines will use new token")
-        else:
-            log.error("❌ Token saved but verification failed")
-            sys.exit(1)
-
-    except Exception as e:
-        log.error(f"Token refresh failed: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+        if verify_token(

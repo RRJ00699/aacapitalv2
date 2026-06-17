@@ -9,7 +9,6 @@ jobs:
   refresh-token:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,13 +23,13 @@ jobs:
 
       - name: Refresh Kite token
         env:
-          KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
-          KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
-          KITE_USER_ID:     ${{ secrets.KITE_USER_ID }}
-          KITE_PASSWORD:    ${{ secrets.KITE_PASSWORD }}
+          KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
+          KITE_USER_ID: ${{ secrets.KITE_USER_ID }}
+          KITE_PASSWORD: ${{ secrets.KITE_PASSWORD }}
           KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
-          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL:${{ secrets.NEON_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python _scripts/refresh_kite_token.py
 
       - name: Confirm token in DB
