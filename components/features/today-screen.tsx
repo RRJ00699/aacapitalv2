@@ -152,21 +152,19 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         getGlobalRow(g, ["BTC-USD", "BTC", "bitcoin", "Bitcoin"], "BTC"),
       ])
 
-      // Operator suppression: filter out low-liquidity / penny stocks
-      const SUPPRESS = /^(ANTELOP|ACUTAAS|BMWVENTURE|PENNY|MICRO)/i
+      const SUPPRESS = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
       const iccData = (iccR?.data ?? []) as any[]
-      const techData = iccData.filter((x: any) => {
+      const techFiltered = iccData.filter((x: any) => {
         const sym = String(x.nse_symbol ?? x.symbol ?? "")
         const mcap = num(x.market_cap ?? 0)
         if (SUPPRESS.test(sym)) return false
-        if (mcap > 0 && mcap < 500) return false  // < ₹500Cr suppressed
+        if (mcap > 0 && mcap < 500) return false
         return true
       })
-      setOpps(techData.slice(0, 5).map((x: any) => {
+      setOpps(techFiltered.slice(0, 5).map((x: any) => {
         const score = Math.round(num(x.convergence_score ?? x.probability_score ?? x.mb_score ?? 55))
         const action: Action = score >= 80 ? "BUY" : score >= 60 ? "WATCH" : "HOLD"
-        const sym = x.nse_symbol ?? x.symbol
-        return { symbol: sym, name: x.name ?? x.company_name, score, action, investability: Math.min(99, Math.max(45, score + 8)), operatorRisk: score >= 70 ? "LOW" : "MEDIUM", reasons: [x.industry ?? "Technical signal", `Score ${score}`] }
+        return { symbol: x.nse_symbol ?? x.symbol, name: x.name ?? x.company_name, score, action, investability: Math.min(99, Math.max(45, score + 8)), operatorRisk: score >= 70 ? "LOW" : "MEDIUM", reasons: [x.industry ?? "Technical signal", `Score ${score}`] }
       }))
 
       const hot = (sectorR?.hot_sectors ?? sectorR?.sectors ?? []) as any[]
@@ -174,9 +172,9 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
 
       const ipoList = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
       setIpos(ipoList.slice(0, 4).map((i: any) => {
-        const lqi = num(i.lqi ?? i.conviction_score ?? i.score?.listingScore ?? 0)
+        const lqi = num(i.lqi ?? i.conviction_score ?? 0)
         const rec = lqi >= 75 ? "APPLY" : lqi >= 50 ? "WATCH" : "SKIP"
-        return { name: i.company_name ?? i.name ?? i.ipo_name, recommendation: i.recommendation ?? rec, score: lqi || undefined }
+        return { name: i.company_name ?? i.name ?? i.ipo_name, recommendation: rec, score: lqi || undefined }
       }))
 
       setBrokerConnected(typeof brokerR?.connected === "boolean" ? brokerR.connected : null)
