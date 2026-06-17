@@ -1,83 +1,134 @@
 // app/api/market/global/route.ts
-// Global markets + India snapshot for Today screen
-// Yahoo Finance with Neon cache fallback when blocked on Vercel
+// India data: Zerodha Kite (token from Neon platform_config)
+// Global data: Yahoo Finance (US, Gold, BTC, DXY, Asia, Europe)
+// Yahoo cache in Neon for after-hours fallback
 
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
-import { getBroker } from "@/lib/brokers"
 
 export const dynamic = "force-dynamic"
 
-const YF_BASES = [
-  "https://query1.finance.yahoo.com",
-  "https://query2.finance.yahoo.com",
-]
-const YF_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-  "Accept": "application/json,text/plain,*/*",
-  "Referer": "https://finance.yahoo.com",
-}
+const db = () => neon(process.env.DATABASE_URL!)
 
-const SYMBOLS = [
-  "^GSPC","^NDX","^DJI","^RUT",
+// ── Global symbols (non-India only) ──────────────────────────────────────────
+const GLOBAL_SYMBOLS = [
+  "^GSPC","^NDX","^DJI",
   "DX-Y.NYB","USDINR=X",
-  "GC=F","SI=F","CL=F","NG=F","HG=F",
-  "BTC-USD","ETH-USD",
-  "^N225","^HSI","000001.SS","^KS11",
-  "^FTSE","^GDAXI","^FCHI",
+  "GC=F","CL=F",
+  "BTC-USD",
+  "^N225","^HSI",
+  "^FTSE","^GDAXI",
 ]
 
 const META: Record<string, { label: string; region: string; flag: string }> = {
-  "^GSPC":     { label:"S&P 500",    region:"us",        flag:"🇺🇸" },
-  "^NDX":      { label:"Nasdaq 100", region:"us",        flag:"🇺🇸" },
-  "^DJI":      { label:"Dow Jones",  region:"us",        flag:"🇺🇸" },
-  "^RUT":      { label:"Russell 2K", region:"us",        flag:"🇺🇸" },
-  "DX-Y.NYB":  { label:"DXY",        region:"fx",        flag:"💵" },
-  "USDINR=X":  { label:"USD/INR",    region:"fx",        flag:"₹"  },
-  "GC=F":      { label:"Gold",       region:"commodity", flag:"🥇" },
-  "SI=F":      { label:"Silver",     region:"commodity", flag:"🥈" },
-  "CL=F":      { label:"Crude Oil",  region:"commodity", flag:"🛢" },
-  "NG=F":      { label:"Nat Gas",    region:"commodity", flag:"🔥" },
-  "HG=F":      { label:"Copper",     region:"commodity", flag:"🔶" },
-  "BTC-USD":   { label:"Bitcoin",    region:"crypto",    flag:"₿"  },
-  "ETH-USD":   { label:"Ethereum",   region:"crypto",    flag:"Ξ"  },
-  "^N225":     { label:"Nikkei 225", region:"asia",      flag:"🇯🇵" },
-  "^HSI":      { label:"Hang Seng",  region:"asia",      flag:"🇭🇰" },
-  "000001.SS": { label:"Shanghai",   region:"asia",      flag:"🇨🇳" },
-  "^KS11":     { label:"KOSPI",      region:"asia",      flag:"🇰🇷" },
-  "^FTSE":     { label:"FTSE 100",   region:"europe",    flag:"🇬🇧" },
-  "^GDAXI":    { label:"DAX",        region:"europe",    flag:"🇩🇪" },
-  "^FCHI":     { label:"CAC 40",     region:"europe",    flag:"🇫🇷" },
+  "^GSPC":    { label:"S&P 500",    region:"us",        flag:"🇺🇸" },
+  "^NDX":     { label:"Nasdaq 100", region:"us",        flag:"🇺🇸" },
+  "^DJI":     { label:"Dow Jones",  region:"us",        flag:"🇺🇸" },
+  "DX-Y.NYB": { label:"DXY",        region:"fx",        flag:"💵" },
+  "USDINR=X": { label:"USD/INR",    region:"fx",        flag:"₹"  },
+  "GC=F":     { label:"Gold",       region:"commodity", flag:"🥇" },
+  "CL=F":     { label:"Crude Oil",  region:"commodity", flag:"🛢" },
+  "BTC-USD":  { label:"Bitcoin",    region:"crypto",    flag:"₿"  },
+  "^N225":    { label:"Nikkei",     region:"asia",      flag:"🇯🇵" },
+  "^HSI":     { label:"Hang Seng",  region:"asia",      flag:"🇭🇰" },
+  "^FTSE":    { label:"FTSE 100",   region:"europe",    flag:"🇬🇧" },
+  "^GDAXI":   { label:"DAX",        region:"europe",    flag:"🇩🇪" },
 }
 
 const toNum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : null }
 const first = (...vals: any[]) => vals.find(v => v !== null && v !== undefined && v !== "") ?? null
-const db = () => neon(process.env.DATABASE_URL!)
 
-async function fetchYahoo(): Promise<Record<string, any>> {
+// ── Zerodha: get Indian market data using token from Neon ─────────────────────
+async function getKiteIndia(sql: ReturnType<typeof db>) {
+  try {
+    const rows = await sql`SELECT value FROM platform_config WHERE key = 'kite_access_token' LIMIT 1`
+    if (!rows.length) return null
+
+    const token  = rows[0].value as string
+    const apiKey = process.env.KITE_API_KEY || "br9m41pn8nvvywnl"
+
+    // Fetch Nifty 50, Bank Nifty, India VIX in one call
+    const res = await fetch(
+      "https://api.kite.trade/quote?i=NSE%3ANIFTY+50&i=NSE%3ANIFTY+BANK&i=NSE%3AINDIA+VIX",
+      {
+        headers: {
+          "X-Kite-Version": "3",
+          "Authorization": `token ${apiKey}:${token}`,
+        },
+        signal: AbortSignal.timeout(5000),
+        cache: "no-store",
+      }
+    )
+
+    if (!res.ok) {
+      console.warn(`Kite API ${res.status}: ${await res.text().catch(() => "")}`)
+      return null
+    }
+
+    const data = await res.json()
+    const d    = data?.data ?? {}
+
+    const nifty     = d["NSE:NIFTY 50"]
+    const bankNifty = d["NSE:NIFTY BANK"]
+    const vix       = d["NSE:INDIA VIX"]
+
+    if (!nifty) return null
+
+    return {
+      nifty:        toNum(nifty.last_price),
+      niftyChg:     toNum(nifty.net_change),
+      niftyChgPct:  nifty.last_price && nifty.ohlc?.close
+                      ? toNum(((nifty.last_price - nifty.ohlc.close) / nifty.ohlc.close) * 100)
+                      : null,
+      bankNifty:    toNum(bankNifty?.last_price),
+      bankNiftyChgPct: bankNifty?.last_price && bankNifty?.ohlc?.close
+                        ? toNum(((bankNifty.last_price - bankNifty.ohlc.close) / bankNifty.ohlc.close) * 100)
+                        : null,
+      vix:          toNum(vix?.last_price),
+      source:       "kite_live",
+    }
+  } catch (e) {
+    console.warn("Kite India fetch failed:", e)
+    return null
+  }
+}
+
+// ── Yahoo Finance: global assets only ────────────────────────────────────────
+async function fetchYahooGlobal(): Promise<Record<string, any>> {
   const global: Record<string, any> = {}
-  for (const base of YF_BASES) {
+
+  for (const base of ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"]) {
     try {
       const res = await fetch(
-        `${base}/v7/finance/quote?symbols=${encodeURIComponent(SYMBOLS.join(","))}`,
-        { headers: YF_HEADERS, cache: "no-store", signal: AbortSignal.timeout(6000) }
+        `${base}/v7/finance/quote?symbols=${encodeURIComponent(GLOBAL_SYMBOLS.join(","))}`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+            "Accept": "application/json",
+            "Referer": "https://finance.yahoo.com",
+          },
+          cache: "no-store",
+          signal: AbortSignal.timeout(6000),
+        }
       )
       if (!res.ok) continue
+
       const data = await res.json()
-      for (const q of data?.quoteResponse?.result || []) {
+      for (const q of data?.quoteResponse?.result ?? []) {
         const meta = META[q.symbol]
         if (!meta) continue
         global[q.symbol] = {
-          ...meta, symbol: q.symbol,
+          ...meta,
+          symbol:    q.symbol,
           price:     toNum(q.regularMarketPrice),
           change:    toNum(q.regularMarketChange),
           changePct: toNum(q.regularMarketChangePercent),
-          time:      q.regularMarketTime ?? null,
         }
       }
       if (Object.keys(global).length > 3) break
     } catch {}
   }
+
   return global
 }
 
@@ -85,91 +136,74 @@ export async function GET() {
   try {
     const sql = db()
 
-    const [yahooRes, snapshotRows, regimeRows, flowRows, indiaLive] = await Promise.allSettled([
-      fetchYahoo(),
+    // Run all fetches in parallel
+    const [kiteResult, yahooResult, regimeRows, flowRows, snapRows] = await Promise.allSettled([
+      getKiteIndia(sql),
+      fetchYahooGlobal(),
+      sql`SELECT active_regime, nifty_close, nifty_ema_200, breadth_percentage,
+                 india_vix, evaluation_date,
+                 recommended_allocation_min, recommended_allocation_max
+          FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`.catch(() => []),
+      sql`SELECT fii_net, dii_net, trade_date
+          FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`.catch(() => []),
       sql`SELECT * FROM market_snapshot WHERE id = 1 LIMIT 1`.catch(() => []),
-      sql`SELECT * FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`.catch(() => []),
-      sql`SELECT * FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`.catch(() => []),
-      (async () => {
-        try {
-          const broker = getBroker()
-          if (!(await broker.isConnected())) return null
-          return await (broker as any).getQuotes(["NSE:NIFTY 50","NSE:NIFTY BANK","NSE:INDIA VIX"])
-        } catch { return null }
-      })(),
     ])
 
-    // Process Yahoo — with Neon cache fallback
-    const global: Record<string, any> = yahooRes.status === "fulfilled" ? yahooRes.value : {}
+    const kite   = kiteResult.status   === "fulfilled" ? kiteResult.value   : null
+    const regime = regimeRows.status   === "fulfilled" ? (regimeRows.value   as any[])[0] ?? {} : {}
+    const flow   = flowRows.status     === "fulfilled" ? (flowRows.value     as any[])[0] ?? {} : {}
+    const snap   = snapRows.status     === "fulfilled" ? (snapRows.value     as any[])[0] ?? {} : {}
 
+    // ── Global markets: Yahoo fresh → Neon cache fallback ──────────────────
+    let global = yahooResult.status === "fulfilled" ? yahooResult.value : {}
     const gotYahoo = Object.keys(global).length > 3
+
     if (gotYahoo) {
-      // Cache fresh data for after-hours use
-      sql`
-        INSERT INTO platform_config (key, value, updated_at)
-        VALUES ('global_cache', ${JSON.stringify(global)}, NOW())
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-      `.catch(() => {})
+      // Save fresh data to cache
+      sql`INSERT INTO platform_config (key, value, updated_at)
+          VALUES ('global_cache', ${JSON.stringify(global)}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
+        .catch(() => {})
     } else {
-      // Yahoo blocked — load from cache
+      // Load from cache
       try {
-        const cached = await sql`SELECT value, updated_at FROM platform_config WHERE key = 'global_cache' LIMIT 1`
+        const cached = await sql`SELECT value FROM platform_config WHERE key = 'global_cache' LIMIT 1`
         if (cached.length) Object.assign(global, JSON.parse(cached[0].value as string))
       } catch {}
     }
 
-    const snap = snapshotRows.status === "fulfilled" ? ((snapshotRows.value as any[])[0] ?? {}) : {}
-    const reg  = regimeRows.status  === "fulfilled" ? ((regimeRows.value  as any[])[0] ?? {}) : {}
-    const flow = flowRows.status    === "fulfilled" ? ((flowRows.value    as any[])[0] ?? {}) : {}
-    const iq   = indiaLive.status   === "fulfilled" ? indiaLive.value : null
-
-    const niftyLive = iq?.["NSE:NIFTY 50"]
-    const bankLive  = iq?.["NSE:NIFTY BANK"]
-    const vixLive   = iq?.["NSE:INDIA VIX"]
-
+    // ── India: Kite live → regime → snapshot fallback ───────────────────────
     const india = {
-      nifty:        first(niftyLive?.lastPrice, snap.nifty_price, reg.nifty_close),
-      niftyChg:     first(niftyLive?.changePct, snap.nifty_change_pct),
-      bankNifty:    first(bankLive?.lastPrice,  snap.banknifty_price),
-      bankNiftyChg: first(bankLive?.changePct,  snap.banknifty_change_pct),
-      vix:          first(vixLive?.lastPrice,   snap.vix, snap.india_vix, reg.india_vix),
+      nifty:        first(kite?.nifty,     regime.nifty_close,  snap.nifty_price),
+      niftyChg:     first(kite?.niftyChg,  snap.nifty_change),
+      niftyChgPct:  first(kite?.niftyChgPct, snap.nifty_change_pct),
+      bankNifty:    first(kite?.bankNifty,  snap.banknifty_price),
+      bankNiftyChgPct: first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
+      vix:          first(kite?.vix, regime.india_vix, snap.vix, snap.india_vix),
       pcr:          first(snap.pcr, snap.nifty_pcr),
       fii:          first(flow.fii_net, snap.fii_flow, snap.fii_cash_flow),
       dii:          first(flow.dii_net, snap.dii_flow, snap.dii_cash_flow),
-      regime:       first(reg.active_regime, snap.market_regime, "NORMAL"),
-      breadthPct:   first(reg.breadth_percentage, snap.breadth_pct),
-      deployMin:    first(reg.recommended_allocation_min, snap.deploy_min),
-      deployMax:    first(reg.recommended_allocation_max, snap.deploy_max),
-      sectors:      snap.sector_data_json ? JSON.parse(snap.sector_data_json) : {},
-      source:       iq ? "zerodha_live" : gotYahoo ? "yahoo_fresh" : "neon_cache",
+      regime:       first(regime.active_regime, snap.market_regime, "NORMAL"),
+      breadthPct:   first(regime.breadth_percentage, snap.breadth_pct),
+      deployMin:    first(regime.recommended_allocation_min, snap.deploy_min),
+      deployMax:    first(regime.recommended_allocation_max, snap.deploy_max),
+      source:       kite ? "kite_live" : "neon_fallback",
     }
-
-    const avg = (keys: string[]) => {
-      const vals = keys.map(k => global[k]?.changePct).filter((v: any) => typeof v === "number")
-      return vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0
-    }
-    const usAvg   = avg(["^GSPC","^NDX","^DJI"])
-    const dxyChg  = global["DX-Y.NYB"]?.changePct ?? 0
-    const goldChg = global["GC=F"]?.changePct ?? 0
-    const btcChg  = global["BTC-USD"]?.changePct ?? 0
-    const riskOff = usAvg < -0.5 && dxyChg > 0 && goldChg > 0
-    const riskOn  = usAvg > 0.5  && btcChg > 0  && dxyChg < 0
 
     return NextResponse.json({
-      ok: true,
+      ok:        true,
       global,
       india,
       composite: {
-        usAvg, asiaAvg: avg(["^N225","^HSI","000001.SS","^KS11"]),
-        euroAvg: avg(["^FTSE","^GDAXI","^FCHI"]),
-        capitalFlow: riskOff ? "Risk-Off → Bonds + Dollar" : riskOn ? "Risk-On → Equities + Crypto" : "Mixed",
-        riskOffSignal: riskOff, riskOnSignal: riskOn,
-        dataSource: gotYahoo ? "yahoo_live" : "neon_cache",
+        dataSource:   kite ? "kite+yahoo" : gotYahoo ? "yahoo_only" : "neon_cache",
+        yahooFresh:   gotYahoo,
+        kiteLive:     !!kite,
       },
       fetchedAt: new Date().toISOString(),
     })
+
   } catch (err: any) {
     console.error("Global market error:", err)
-    return NextResponse.json({ ok: false, error: err?.message }, { status: 500 })
+    return NextResponse.json({ ok: false, global: {}, india: {}, error: err.message }, { status: 200 })
   }
 }
