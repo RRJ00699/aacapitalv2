@@ -2875,7 +2875,10 @@ setMarketFetched(true);
 
       {/* ── Simple/Advanced toggle ── */}
       {tab==="today"&&(
-        <TodayScreen simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)} commandCenter={<CommandCenter onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}/>
+        <TodayScreen
+  simple={simpleMode}
+  onStockSelect={(s) => setWorkspaceSymbol(s)}
+/>
       )}
 
       {tab==="opportunities"&&(

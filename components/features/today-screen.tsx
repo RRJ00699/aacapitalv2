@@ -1,317 +1,215 @@
 "use client"
-// components/features/today-screen.tsx
-// TODAY — The 30-second decision screen. V10 North Star.
-// Answers: What matters right now?
-// Decision first, scores second. Simple/Advanced aware.
 
-import React, { useState, useEffect, useCallback } from "react"
-// CommandCenter imported dynamically to avoid circular deps
-import { RefreshCw, TrendingUp, AlertTriangle, ChevronRight, Droplets, Zap, Shield } from "lucide-react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw, Search, Shield, TrendingDown, TrendingUp, Zap } from "lucide-react"
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  green:  "#16A34A", greenBg:  "#F0FDF4", greenBd: "#BBF7D0",
-  blue:   "#2563EB", blueBg:   "#EFF6FF", blueBd:  "#BFDBFE",
-  amber:  "#D97706", amberBg:  "#FFFBEB", amberBd: "#FDE68A",
-  red:    "#DC2626", redBg:    "#FEF2F2", redBd:   "#FECACA",
-  purple: "#7C3AED", purpleBg: "#F5F3FF", purpleBd:"#E9D5FF",
-  gray:   "#6B7280", grayBg:   "#F9FAFB", grayBd:  "#E5E7EB",
-  text:   "#111827", textSub:  "#6B7280", surface:  "#FFFFFF",
-  bg:     "#FAFAF8", border:   "#E5E7EB",
+type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN"
+type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM"
+
+interface MarketTile { label: string; value: string; change?: number | null; note?: string }
+interface Opportunity { symbol: string; name?: string; score: number; action: Action; investability?: number; operatorRisk?: string; reasons?: string[] }
+interface IpoRow { name: string; score?: number; recommendation?: string }
+interface SectorRow { name: string; performance?: number; score?: number; signal?: string }
+interface GlobalRow { label: string; value?: string; change?: number | null; symbol?: string }
+
+const nf = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 })
+const n2 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 })
+const num = (v: unknown, fallback = 0) => {
+  const x = Number(v)
+  return Number.isFinite(x) ? x : fallback
+}
+const signed = (v?: number | null, suffix = "%") => typeof v === "number" ? `${v >= 0 ? "+" : ""}${n2.format(v)}${suffix}` : "—"
+const moneyCr = (v: unknown) => {
+  const x = num(v, NaN)
+  return Number.isFinite(x) ? `${x >= 0 ? "+" : ""}${nf.format(x)} Cr` : "—"
 }
 
-const REGIME: Record<string, { label: string; color: string; bg: string; bd: string; deploy: string; simple: string; pct: number }> = {
-  HOT:     { label: "Hot market",    color: C.green,  bg: C.greenBg,  bd: C.greenBd,  deploy: "Deploy aggressively — all engines green",         simple: "Great time to invest",                       pct: 90 },
-  NORMAL:  { label: "Normal market", color: C.blue,   bg: C.blueBg,   bd: C.blueBd,   deploy: "Deploy selectively — conviction ≥75 only",        simple: "Good time to invest selectively",             pct: 70 },
-  CAUTION: { label: "Caution",       color: C.amber,  bg: C.amberBg,  bd: C.amberBd,  deploy: "Reduce size — conviction ≥80 required",           simple: "Be careful — only your strongest ideas",     pct: 40 },
-  COLD:    { label: "Cold market",   color: C.blue,   bg: C.blueBg,   bd: C.blueBd,   deploy: "Max 40% deployment — wait for clarity",           simple: "Hold most cash, wait for better conditions",  pct: 20 },
-  FROZEN:  { label: "Frozen market", color: C.gray,   bg: C.grayBg,   bd: C.grayBd,   deploy: "Hold cash — no new positions",                    simple: "Stay in cash — market not favourable",       pct: 0  },
+const REGIME: Record<Regime, { title: string; advice: string; tone: string; deploy: string; pct: number; border: string; text: string; glow: string }> = {
+  HOT: { title: "HOT", advice: "Risk ON. Aggressively deploy capital into top-ranked sectors.", tone: "Aggressive deployment", deploy: "75–95%", pct: 92, border: "border-emerald-500/25", text: "text-emerald-300", glow: "from-emerald-500/20" },
+  NORMAL: { title: "NORMAL", advice: "Deploy selectively. Focus only on high-conviction names.", tone: "Selective deployment", deploy: "50–70%", pct: 72, border: "border-teal-500/25", text: "text-teal-300", glow: "from-teal-500/20" },
+  CAUTION: { title: "CAUTION", advice: "Protect capital. Avoid fresh leveraged positions.", tone: "Defensive selection", deploy: "25–45%", pct: 42, border: "border-amber-500/25", text: "text-amber-300", glow: "from-amber-500/20" },
+  COLD: { title: "COLD", advice: "Preserve capital. Wait for breadth and liquidity to improve.", tone: "Low deployment", deploy: "10–30%", pct: 24, border: "border-blue-500/25", text: "text-blue-300", glow: "from-blue-500/20" },
+  FROZEN: { title: "FROZEN", advice: "Risk OFF. Hold cash and avoid new positions.", tone: "Cash protocol", deploy: "0–15%", pct: 8, border: "border-rose-500/25", text: "text-rose-300", glow: "from-rose-500/20" },
 }
 
-const ACTION_CFG: Record<string, { color: string; bg: string; label: string }> = {
-  ACCUMULATE: { color: C.green,  bg: C.greenBg,  label: "Accumulate" },
-  TURNAROUND: { color: C.blue,   bg: C.blueBg,   label: "Turnaround" },
-  WATCH:      { color: C.amber,  bg: C.amberBg,  label: "Watch"      },
-  TRIM:       { color: C.amber,  bg: C.amberBg,  label: "Trim"       },
-  AVOID:      { color: C.red,    bg: C.redBg,    label: "Avoid"      },
+function Spark({ positive = true }: { positive?: boolean }) {
+  const bars = positive ? [24, 38, 31, 54, 48, 68, 82] : [80, 62, 70, 50, 42, 35, 28]
+  return <div className="flex h-6 w-16 items-end gap-0.5 opacity-70">{bars.map((h, i) => <span key={i} style={{ height: `${h}%` }} className={positive ? "w-full rounded-t-sm bg-emerald-400/70" : "w-full rounded-t-sm bg-rose-400/70"} />)}</div>
 }
 
-const AMFI_CFG: Record<string, { label: string; color: string; bg: string; deploy: string }> = {
-  RISK_ON:           { label: "Risk On",    color: C.green,  bg: C.greenBg,  deploy: "Liquidity strong — deploy with confidence"     },
-  SELECTIVE_RISK_ON: { label: "Selective",  color: C.blue,   bg: C.blueBg,   deploy: "Deploy selectively in high-conviction ideas"   },
-  NEUTRAL:           { label: "Neutral",    color: C.gray,   bg: C.grayBg,   deploy: "Hold positions — wait for clearer direction"   },
-  RISK_OFF:          { label: "Risk Off",   color: C.amber,  bg: C.amberBg,  deploy: "Reduce equity exposure — protect capital"      },
-  OVERHEATED:        { label: "Overheated", color: C.red,    bg: C.redBg,    deploy: "Book partial profits — correction may follow"  },
+function Skeleton({ className = "h-20" }: { className?: string }) {
+  return <div className={`animate-pulse rounded-xl border border-[#1F2226] bg-[#12161A] ${className}`} />
 }
 
-const MONTH = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-const n = (v: unknown) => parseFloat(String(v || 0)) || 0
-
-function deriveAction(eStatus: string, cStatus: string): string {
-  if (["DECELERATING","WARNING"].includes(eStatus) || cStatus === "DETERIORATING") return "AVOID"
-  if (eStatus === "TURNAROUND") return "TURNAROUND"
-  if (eStatus === "ACCELERATING" && ["BULLISH","IMPROVING"].includes(cStatus)) return "ACCUMULATE"
-  if (cStatus === "CAUTIOUS") return "TRIM"
-  return "WATCH"
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface Idea { symbol: string; company_name: string; action: string; conviction: number; whyBuy: string[]; period?: string }
-interface Alert { symbol: string; action: "EXIT"|"TRIM"|"ADD"|"HOLD"; reason: string }
-interface AmfiData { liquidity_status: string; report_month: number; report_year: number; total_score: unknown }
-interface IpoAlert { name: string; recommendation: string; score?: number }
-
-// ─── Section wrapper ──────────────────────────────────────────────────────────
-function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-        {icon}
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" as const, letterSpacing: ".07em" }}>{title}</span>
-      </div>
-      {children}
+function Section({ title, meta, icon, children }: { title: string; meta?: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return <section className="rounded-2xl border border-[#1F2226] bg-[#11161C] p-3 shadow-[0_12px_35px_rgba(0,0,0,0.22)]">
+    <div className="mb-3 flex items-center justify-between border-b border-[#1F2226] pb-2">
+      <h2 className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.14em] text-white">{icon}{title}</h2>
+      {meta && <span className="font-mono text-[10px] text-[#636B76]">{meta}</span>}
     </div>
-  )
+    {children}
+  </section>
 }
 
-function Bone({ h = 72 }: { h?: number }) {
-  return <div style={{ background: C.grayBg, borderRadius: 12, height: h, marginBottom: 8 }} />
+function ActionPill({ action }: { action: Action }) {
+  const a = String(action).toUpperCase()
+  const cls = a === "BUY" || a === "APPLY" || a === "ACCUMULATE"
+    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
+    : a === "SKIP" || a === "AVOID" || a === "TRIM"
+    ? "border-rose-500/25 bg-rose-500/10 text-rose-300"
+    : "border-amber-500/25 bg-amber-500/10 text-amber-300"
+  return <span className={`min-w-[58px] rounded-md border px-2 py-0.5 text-center font-mono text-[10px] font-bold tracking-wider ${cls}`}>{a}</span>
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-export function TodayScreen({ simple = false, onStockSelect, commandCenter }: { simple?: boolean; onStockSelect?: (s: string) => void; commandCenter?: React.ReactNode }) {
+export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect?: (s: string) => void; commandCenter?: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [regime, setRegime] = useState("NORMAL")
-  const [ideas, setIdeas] = useState<Idea[]>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
-  const [amfi, setAmfi] = useState<AmfiData | null>(null)
-  const [ipos, setIpos] = useState<IpoAlert[]>([])
-  const [ts, setTs] = useState<Date | null>(null)
+  const [regime, setRegime] = useState<Regime>("NORMAL")
+  const [market, setMarket] = useState<MarketTile[]>([])
+  const [globalRows, setGlobalRows] = useState<GlobalRow[]>([])
+  const [opps, setOpps] = useState<Opportunity[]>([])
+  const [ipos, setIpos] = useState<IpoRow[]>([])
+  const [sectors, setSectors] = useState<SectorRow[]>([])
+  const [brokerConnected, setBrokerConnected] = useState<boolean | null>(null)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true)
     try {
-      const [dash, amfiR, ipoR, mktR] = await Promise.all([
-        fetch("/api/intelligence/dashboard").then(r => r.json()).catch(() => null),
-        fetch("/api/intelligence/amfi").then(r => r.json()).catch(() => null),
-        fetch("/api/ipo?limit=3").then(r => r.json()).catch(() => null),
-        fetch("/api/market/snapshot").then(r => r.json()).catch(() => null),
+      const [globalR, snapR, techR, sectorR, ipoR, brokerR] = await Promise.all([
+        fetch("/api/market/global", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/market/snapshot", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/technical/screener?timeframe=daily&limit=8", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/sector-rotation?view=hot", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/ipo?limit=5", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/broker/status", { cache: "no-store" }).then(r => r.json()).catch(() => null),
       ])
 
-      if (mktR?.ok || mktR?.data) setRegime(mktR?.data?.regime || "NORMAL")
+      const india = globalR?.india ?? snapR?.data ?? {}
+      const r = String(india.regime ?? snapR?.data?.regime ?? "NORMAL").toUpperCase() as Regime
+      if (REGIME[r]) setRegime(r)
 
-      if (dash?.success) {
-        const earnings = (dash.data?.top_earnings || []) as any[]
-        const commentary = (dash.data?.top_commentary || []) as any[]
-        const cMap = new Map(commentary.map((c: any) => [c.symbol, c]))
+      setMarket([
+        { label: "NIFTY", value: india.nifty ? nf.format(num(india.nifty)) : india.nifty_price ? nf.format(num(india.nifty_price)) : "—", change: india.niftyChg ?? null },
+        { label: "BANK NIFTY", value: india.bankNifty ? nf.format(num(india.bankNifty)) : india.banknifty_price ? nf.format(num(india.banknifty_price)) : "—", change: india.bankNiftyChg ?? null },
+        { label: "VIX", value: india.vix ? n2.format(num(india.vix)) : "—", note: num(india.vix) < 14 ? "LOW VOL" : num(india.vix) > 18 ? "HIGH VOL" : "NORMAL" },
+        { label: "FII", value: moneyCr(india.fii ?? india.fii_flow), note: "Cash flow" },
+        { label: "DII", value: moneyCr(india.dii ?? india.dii_flow), note: "Cash flow" },
+        { label: "PCR", value: india.pcr ? n2.format(num(india.pcr)) : "—", note: num(india.pcr) >= 1.1 ? "BULLISH" : num(india.pcr) <= 0.8 ? "CAUTION" : "NEUTRAL" },
+      ])
 
-        const merged: Idea[] = earnings.map((e: any) => {
-          const c = cMap.get(e.symbol) as any
-          const action = deriveAction(e.acceleration_status, c?.commentary_status || "NEUTRAL")
-          const whyBuy: string[] = []
-          if (n(e.revenue_acceleration_score) > 20) whyBuy.push("Revenue accelerating")
-          if (n(e.pat_acceleration_score) > 20) whyBuy.push("Profit momentum strong")
-          if (n(e.margin_expansion_score) > 10) whyBuy.push("Margins expanding")
-          if (n(e.consistency_score) > 20) whyBuy.push("Consistent execution")
-          if (c && ["BULLISH","IMPROVING"].includes(c.commentary_status)) whyBuy.push("Management confident")
-          if (c && n(c.order_book_score) > 20) whyBuy.push("Strong order book")
-          const es = n(e.total_score); const cs = n(c?.total_score)
-          const conviction = c ? (es + cs) / 2 : es
-          return {
-            symbol: e.symbol, company_name: e.company_name, action, conviction, whyBuy,
-            period: e.fiscal_quarter ? `${e.fiscal_quarter} FY${String(e.fiscal_year).slice(-2)}` : undefined,
-          }
-        }).filter((s: Idea) => ["ACCUMULATE","TURNAROUND"].includes(s.action))
-          .sort((a: Idea, b: Idea) => b.conviction - a.conviction).slice(0, 5)
+      const g = globalR?.global ?? {}
+      const pick = (key: string, label?: string): GlobalRow => ({ label: label ?? g[key]?.label ?? key, value: g[key]?.price ? n2.format(num(g[key].price)) : "—", change: typeof g[key]?.changePct === "number" ? g[key].changePct : null, symbol: key })
+      setGlobalRows([
+        { label: "GIFT NIFTY", value: india.nifty ? nf.format(num(india.nifty)) : "—", change: india.niftyChg ?? null },
+        pick("^NDX", "NASDAQ"), pick("^GSPC", "S&P 500"), pick("DX-Y.NYB", "DXY"), pick("GC=F", "GOLD"), pick("BTC-USD", "BTC"),
+      ])
 
-        setIdeas(merged)
+      const tech = (techR?.data ?? []) as any[]
+      setOpps(tech.slice(0, 5).map((x: any) => {
+        const score = Math.round(num(x.buy_zone_score ?? x.probability_score ?? x.mb_score ?? 55))
+        const action: Action = score >= 75 || x.volume_expansion || x.nr7 ? "BUY" : score >= 55 ? "WATCH" : "HOLD"
+        return { symbol: x.symbol, name: x.company_name, score, action, investability: Math.min(99, Math.max(45, score + 8)), operatorRisk: score >= 70 ? "LOW" : "MEDIUM", reasons: [x.nr7 ? "NR7 compression" : "Technical signal", x.volume_expansion ? "Volume expansion" : "Watch volume"] }
+      }))
 
-        const alertMap = new Map<string, Alert>()
-        ;(dash.data?.warning_earnings || []).slice(0, 3).forEach((w: any) => {
-          alertMap.set(w.symbol, { symbol: w.symbol, action: w.acceleration_status === "WARNING" ? "EXIT" : "TRIM", reason: `Earnings ${w.acceleration_status.toLowerCase()} — review position` })
-        })
-        ;(dash.data?.cautious_commentary || []).slice(0, 2).forEach((c: any) => {
-          if (!alertMap.has(c.symbol)) alertMap.set(c.symbol, { symbol: c.symbol, action: "TRIM", reason: `Management tone ${c.commentary_status.toLowerCase()} — consider reducing` })
-        })
-        setAlerts(Array.from(alertMap.values()).slice(0, 4))
-      }
+      const hot = (sectorR?.hot_sectors ?? sectorR?.sectors ?? []) as any[]
+      setSectors(hot.slice(0, 5).map((s: any) => ({ name: s.industry_group, performance: num(s.return_3m ?? s.return_6m), score: Math.round(num(s.rotation_score)), signal: s.rotation_signal })))
 
-      if (amfiR?.success) setAmfi(amfiR.data?.score || null)
+      const ipoList = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
+      setIpos(ipoList.slice(0, 4).map((i: any) => ({ name: i.name ?? i.company_name ?? i.ipo_name, recommendation: i.score?.recommendation ?? i.recommendation ?? "WATCH", score: i.score?.listingScore ?? i.conviction_score ?? i.score })))
 
-      if (ipoR?.ipos) {
-        setIpos((ipoR.ipos as any[]).filter((i: any) => ["OPEN","UPCOMING"].includes(i.status)).slice(0, 2).map((i: any) => ({
-          name: i.name, recommendation: i.score?.recommendation || "Watch", score: i.score?.listingScore,
-        })))
-      }
-
-      setTs(new Date())
-    } catch { /* silent */ }
-    finally { setLoading(false); setRefreshing(false) }
+      setBrokerConnected(typeof brokerR?.connected === "boolean" ? brokerR.connected : null)
+      setUpdatedAt(new Date())
+    } finally {
+      setLoading(false); setRefreshing(false)
+    }
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const rc = REGIME[regime] || REGIME.NORMAL
-  const now = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", timeZone: "Asia/Kolkata" })
+  const rc = REGIME[regime]
+  const topSectors = sectors.slice(0, 3).map(s => s.name).filter(Boolean)
+  const day = useMemo(() => new Date().toLocaleString("en-IN", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }), [])
 
-  return (
-    <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 80 }}>
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
-
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{now}</div>
-            <div style={{ fontSize: 11, color: C.textSub }}>{ts ? `Updated ${ts.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading…"}</div>
-          </div>
-          <button onClick={() => load(true)} disabled={refreshing}
-            style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, color: C.textSub, cursor: "pointer" }}>
-            <RefreshCw size={12} />
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
+  return <div className="min-h-screen bg-[#080A0D] text-[#D9DEE7]">
+    <div className="sticky top-0 z-40 border-b border-[#1F2226] bg-[#080A0D]/90 px-4 py-2 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1700px] items-center gap-4">
+        <div className="mr-2">
+          <div className="text-[15px] font-black tracking-tight text-white">AA<span className="text-teal-300">Capital</span></div>
+          <div className="text-[9px] font-bold uppercase tracking-[0.24em] text-[#626B76]">Institutional OS</div>
         </div>
-
-        {/* Regime */}
-        <Section title="Market regime" icon={<Shield size={12} color={C.textSub} />}>
-          {loading ? <Bone /> : (
-            <div style={{ background: rc.bg, border: `1px solid ${rc.bd}`, borderRadius: 14, padding: "14px 16px", marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: rc.color, textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 3 }}>Market regime</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: rc.color, marginBottom: 4 }}>{rc.label}</div>
-                  <div style={{ fontSize: 12, color: rc.color, opacity: .85 }}>{simple ? rc.simple : rc.deploy}</div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
-                  <div style={{ fontSize: 10, color: rc.color, opacity: .7, marginBottom: 2 }}>Deploy</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: rc.color }}>{rc.pct}%</div>
-                  <div style={{ fontSize: 10, color: rc.color, opacity: .7 }}>of capital</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </Section>
-
-        {/* AMFI */}
-        {(amfi || loading) && (
-          <Section title="Liquidity signal" icon={<Droplets size={12} color={C.textSub} />}>
-            {loading ? <Bone h={44} /> : amfi ? (() => {
-              const a = AMFI_CFG[amfi.liquidity_status] || AMFI_CFG.NEUTRAL
-              return (
-                <div style={{ background: a.bg, border: `1px solid ${a.color}30`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <Droplets size={14} color={a.color} />
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: a.color }}>AMFI {a.label}</span>
-                    <span style={{ fontSize: 11, color: a.color, opacity: .7, marginLeft: 6 }}>{MONTH[amfi.report_month]} {amfi.report_year}</span>
-                    {simple && <div style={{ fontSize: 11, color: a.color, opacity: .8, marginTop: 2 }}>{a.deploy}</div>}
-                  </div>
-                  {!simple && <div style={{ fontSize: 11, color: a.color, opacity: .8 }}>Score: {Math.round(n(amfi.total_score))}</div>}
-                </div>
-              )
-            })() : null}
-          </Section>
-        )}
-
-        {/* Top ideas */}
-        <Section title={simple ? "Best stocks right now" : "Top conviction ideas"} icon={<TrendingUp size={12} color={C.textSub} />}>
-          {loading ? [1,2,3].map(i => <Bone key={i} />) :
-            ideas.length === 0 ? (
-              <div style={{ background: C.grayBg, borderRadius: 10, padding: "20px", textAlign: "center", fontSize: 12, color: C.textSub }}>
-                No high-conviction ideas at the moment — intelligence scoring runs daily at 6:30 AM IST
-              </div>
-            ) : ideas.map(idea => {
-              const ac = ACTION_CFG[idea.action] || ACTION_CFG.WATCH
-              return (
-                <div key={idea.symbol} onClick={() => onStockSelect?.(idea.symbol)}
-                  style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `3px solid ${ac.color}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: ac.bg, color: ac.color }}>{ac.label}</span>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{idea.symbol}</span>
-                      {!simple && idea.period && <span style={{ fontSize: 10, color: C.textSub }}>{idea.period}</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.textSub }}>
-                      {simple ? idea.whyBuy.slice(0,2).join(" · ") || idea.company_name : idea.company_name}
-                    </div>
-                    {!simple && idea.whyBuy.length > 0 && (
-                      <div style={{ marginTop: 4 }}>
-                        {idea.whyBuy.slice(0,2).map(r => (
-                          <div key={r} style={{ fontSize: 11, color: C.green, display: "flex", gap: 4 }}>
-                            <span>✓</span> {r}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: ac.color }}>{Math.round(idea.conviction)}</div>
-                    <div style={{ fontSize: 9, color: C.textSub }}>conviction</div>
-                  </div>
-                  <ChevronRight size={14} color={C.textSub} />
-                </div>
-              )
-            })
-          }
-        </Section>
-
-        {/* Portfolio alerts */}
-        {alerts.length > 0 && (
-          <Section title={simple ? "Holdings needing attention" : "Portfolio alerts"} icon={<AlertTriangle size={12} color={C.amber} />}>
-            {alerts.map(a => {
-              const colors2: Record<string,string> = { EXIT: C.red, TRIM: C.amber, ADD: C.green, HOLD: C.gray }
-              const bgs: Record<string,string> = { EXIT: C.redBg, TRIM: C.amberBg, ADD: C.greenBg, HOLD: C.grayBg }
-              const ac = colors2[a.action] || C.gray
-              return (
-                <div key={a.symbol} onClick={() => onStockSelect?.(a.symbol)}
-                  style={{ background: bgs[a.action] || C.grayBg, border: `1px solid ${ac}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: ac, background: ac + "20", padding: "2px 8px", borderRadius: 4 }}>{a.action}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{a.symbol}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: C.textSub, marginTop: 2 }}>{a.reason}</div>
-                  </div>
-                  <ChevronRight size={14} color={C.textSub} />
-                </div>
-              )
-            })}
-          </Section>
-        )}
-
-        {/* IPO */}
-        <Section title="IPO this week" icon={<Zap size={12} color={C.purple} />}>
-          {loading ? <Bone h={44} /> :
-            ipos.length === 0 ? (
-              <div style={{ background: C.grayBg, borderRadius: 10, padding: "12px 14px", fontSize: 12, color: C.textSub }}>
-                No open IPO this week — check back next week
-              </div>
-            ) : ipos.map(ipo => {
-              const isApply = ipo.recommendation?.toLowerCase().includes("apply")
-              const isAvoid = ipo.recommendation?.toLowerCase().includes("avoid")
-              const color = isApply ? C.purple : isAvoid ? C.red : C.amber
-              const bg = isApply ? C.purpleBg : isAvoid ? C.redBg : C.amberBg
-              return (
-                <div key={ipo.name} style={{ background: bg, border: `1px solid ${color}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <Zap size={12} color={color} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ipo.name}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color, marginTop: 2 }}>{ipo.recommendation}</div>
-                  </div>
-                  {ipo.score && <div style={{ fontSize: 18, fontWeight: 800, color }}>{ipo.score}</div>}
-                </div>
-              )
-            })
-          }
-        </Section>
-
-        <div style={{ textAlign: "center", fontSize: 10, color: "#D1D5DB", margin: "8px 0 16px" }}>
-          Intelligence refreshes daily at 6:30 AM IST · AMFI updates monthly
+        <nav className="hidden items-center gap-1 text-[12px] font-semibold text-[#838C99] lg:flex">
+          {['Today','Discovery','Portfolio','IPO DNA','Mirror','Settings','System'].map((t, i) => <span key={t} className={i === 0 ? "rounded-lg border border-[#2A3038] bg-[#171C23] px-3 py-1.5 text-white" : "rounded-lg px-3 py-1.5 hover:bg-[#12161C] hover:text-white"}>{t}</span>)}
+        </nav>
+        <div className="relative ml-auto hidden max-w-xl flex-1 md:block">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#555D68]" />
+          <input className="w-full rounded-lg border border-[#232932] bg-[#11161C] py-2 pl-9 pr-4 text-[12px] text-white outline-none placeholder:text-[#555D68] focus:border-teal-500/40" placeholder="Search stocks, sectors, IPOs, signals..." />
+        </div>
+        <div className="hidden items-center gap-3 border-l border-[#1F2226] pl-4 font-mono text-[11px] lg:flex">
+          <span className="text-[#65707D]">Broker</span>
+          <span className={brokerConnected ? "text-emerald-300" : brokerConnected === false ? "text-amber-300" : "text-[#838C99]"}>● {brokerConnected ? "Connected" : brokerConnected === false ? "Reconnect" : "Checking"}</span>
         </div>
       </div>
     </div>
-  )
+
+    <main className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 p-3">
+      <div className="col-span-12 flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#10151B] px-3 py-2">
+        <div><h1 className="text-[14px] font-bold text-white">Today’s Market Brief</h1><p className="font-mono text-[10px] text-[#65707D]">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
+        <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-[#2A3038] bg-[#171C23] px-3 py-1.5 text-[11px] font-bold text-white hover:bg-[#202734]"><RefreshCw className={`h-3 w-3 text-teal-300 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
+      </div>
+
+      <div className="col-span-12 space-y-3 xl:col-span-8">
+        {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#10151B] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)]`}>
+          <div className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l ${rc.glow} to-transparent`} />
+          <div className="relative flex items-start justify-between gap-6">
+            <div>
+              <div className="mb-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#626B76]">System Macro Regime</div>
+              <div className={`text-[42px] font-black leading-none tracking-tight ${rc.text}`}>{rc.title}</div>
+              <p className="mt-2 max-w-2xl text-[15px] font-semibold text-white">{rc.advice}</p>
+              <div className="mt-4 flex flex-wrap gap-2">{topSectors.length ? topSectors.map(s => <span key={s} className="rounded-md border border-white/5 bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white/85">{s}</span>) : <span className="text-[12px] text-[#65707D]">Sector rotation import pending</span>}</div>
+            </div>
+            <div className="min-w-[150px] rounded-xl border border-white/5 bg-black/25 p-3 text-right">
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#75808D]">Deployment</div>
+              <div className={`text-[30px] font-black ${rc.text}`}>{rc.deploy}</div>
+              <div className="mt-2 h-2 rounded-full bg-white/10"><div style={{ width: `${rc.pct}%` }} className="h-full rounded-full bg-current opacity-70" /></div>
+              <div className="mt-2 text-[11px] text-[#8B95A3]">{rc.tone}</div>
+            </div>
+          </div>
+        </section>}
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <Section title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}>
+            {loading ? <Skeleton className="h-36" /> : opps.length ? <div className="space-y-1.5">{opps.map(o => <button key={o.symbol} onClick={() => onStockSelect?.(o.symbol)} className="group flex w-full items-center justify-between rounded-xl border border-transparent p-2 text-left hover:border-[#29313B] hover:bg-[#171D25]">
+              <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[13px] font-black text-white group-hover:text-teal-300">{o.symbol}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-[#8D98A6]">Score {o.score}</span></div><div className="truncate text-[11px] text-[#687382]">{o.reasons?.slice(0, 2).join(" · ")}</div></div>
+              <div className="flex items-center gap-3"><Spark positive={o.action !== "AVOID"} /><ActionPill action={o.action} /><ChevronRight className="h-3.5 w-3.5 text-[#65707D]" /></div>
+            </button>)}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">No technical signals yet. Wire/import <span className="font-mono">technical_signals</span>.</div>}
+          </Section>
+
+          <Section title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-300" />}>
+            {loading ? <Skeleton className="h-36" /> : ipos.length ? <div className="space-y-1.5">{ipos.map(i => {
+              const rec = String(i.recommendation ?? "WATCH").toUpperCase(); const action: Action = rec.includes("APPLY") ? "APPLY" : rec.includes("SKIP") || rec.includes("AVOID") ? "SKIP" : "WATCH"
+              return <div key={i.name} className="flex items-center justify-between rounded-xl p-2 hover:bg-[#171D25]"><div className="min-w-0"><div className="truncate text-[13px] font-bold text-white">{i.name}</div><div className="font-mono text-[10px] text-[#687382]">Conviction {i.score ? Math.round(num(i.score)) : "—"}</div></div><ActionPill action={action} /></div>
+            })}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">No open IPOs.</div>}
+          </Section>
+        </div>
+
+        <Section title="Sector Leadership" meta="Rotation Engine" icon={<BarChart2 className="h-3.5 w-3.5 text-indigo-300" />}>
+          {loading ? <Skeleton className="h-28" /> : sectors.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s => <div key={s.name} className="flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#0C1015] p-2.5"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-white">{s.name}</div><div className="text-[10px] text-[#687382]">{s.signal ?? "Leadership improving"}</div></div><div className="flex items-center gap-3 font-mono"><span className={num(s.performance) >= 0 ? "text-[11px] font-bold text-emerald-300" : "text-[11px] font-bold text-rose-300"}>{signed(s.performance)}</span><span className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-300">{s.score ?? "—"}</span></div></div>)}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">Sector rotation data pending. Run import script.</div>}
+        </Section>
+      </div>
+
+      <div className="col-span-12 space-y-3 xl:col-span-4">
+        <Section title="Domestic Market" meta="Live / Cache" icon={<Activity className="h-3.5 w-3.5 text-teal-300" />}>
+          {loading ? <Skeleton className="h-72" /> : <div className="grid grid-cols-2 gap-2">{market.map((m, idx) => <div key={m.label} className={idx < 2 ? "col-span-2 flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#0C1015] p-3" : "rounded-xl border border-[#1F2226] bg-[#0C1015] p-3"}>
+            <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-[#65707D]">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-white" : "font-mono text-[16px] font-black text-white"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-[#687382]">{m.note ?? ""}</div></div>
+            {idx < 2 && <div className="flex flex-col items-end gap-1"><span className={(m.change ?? 0) >= 0 ? "font-mono text-[12px] font-bold text-emerald-300" : "font-mono text-[12px] font-bold text-rose-300"}>{signed(m.change)}</span><Spark positive={(m.change ?? 0) >= 0} /></div>}
+          </div>)}</div>}
+        </Section>
+
+        <Section title="Global Markets" meta="Macro Overlay" icon={<Globe className="h-3.5 w-3.5 text-blue-300" />}>
+          {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-[#1F2226] bg-[#0C1015] px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-[#AAB3C2]">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-white">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-300" : "min-w-[50px] text-right text-[10px] font-bold text-rose-300"}>{signed(g.change)}</span></div></div>)}</div>}
+        </Section>
+      </div>
+    </main>
+  </div>
 }
-
-
