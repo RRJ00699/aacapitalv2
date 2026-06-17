@@ -26,7 +26,6 @@ import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
-import IpoPageNew from "./ipo/IpoPage"
 import React, { useState, useEffect, useCallback, useRef } from "react";
 /* eslint-disable */
 
@@ -2822,7 +2821,7 @@ setMarketFetched(true);
       {showBackend&&<BackendModal onClose={()=>setShowBackend(false)}/>}
 
       {/* ── NAV ── */}
-      <div style={{background:"#FFFFFF",borderBottom:"1px solid #F0EDE8",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:56,position:"sticky",top:0,zIndex:300}}>
+      <div style={{background:"#FFFFFF",borderBottom:"1px solid #F0EDE8",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:56,position:"sticky",top:0,zIndex:300,overflow:"visible"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{width:34,height:34,borderRadius:9,background:"linear-gradient(135deg,#2563EB)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Sora',sans-serif",fontWeight:800,color:"#fff",fontSize:14}}>AA</div>
           <div>
@@ -2832,7 +2831,7 @@ setMarketFetched(true);
         </div>
         <div style={{flex:1}}/>
         {/* Global stock search */}
-        <div style={{width:210,marginRight:6}}>
+        <div style={{width:320,marginRight:6,position:"relative",zIndex:99999}}>
           <StockSearch onSelect={(sym)=>setWorkspaceSymbol(sym)} placeholder="Search stock..." />
         </div>
         {[
@@ -2945,7 +2944,12 @@ setMarketFetched(true);
       )}
 
       {tab==="ipo"&&(
-        <IpoPageNew />
+        <div>
+          <IpoCommandCenter simple={simpleMode}/>
+          <div style={{maxWidth:720,margin:"0 auto",padding:"0 16px 16px"}}>
+            <AnchorLockupTracker/>
+          </div>
+        </div>
       )}
 
       {tab==="research"&&(

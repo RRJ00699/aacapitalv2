@@ -150,17 +150,23 @@ export async function GET() {
     const gotYahoo = Object.keys(global).length > 3
 
     if (gotYahoo) {
-      // Save fresh data to cache
+      // Save fresh data to cache — bind as variable to avoid SQL injection issues
+      const cacheJson = JSON.stringify(global)
       sql`INSERT INTO platform_config (key, value, updated_at)
-          VALUES ('global_cache', ${JSON.stringify(global)}, NOW())
+          VALUES ('global_cache', ${cacheJson}, NOW())
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
         .catch(() => {})
     } else {
-      // Load from cache
+      // Load from Neon cache (populated by seed_global_cache.py daily at 4:30PM)
       try {
         const cached = await sql`SELECT value FROM platform_config WHERE key = 'global_cache' LIMIT 1`
-        if (cached.length) Object.assign(global, JSON.parse(cached[0].value as string))
-      } catch {}
+        if (cached.length && cached[0].value) {
+          const parsed = JSON.parse(cached[0].value as string)
+          Object.assign(global, parsed)
+        }
+      } catch (cacheErr) {
+        console.warn("Global cache parse error:", cacheErr)
+      }
     }
 
     // ── India: Kite live → regime → snapshot fallback ───────────────────────
