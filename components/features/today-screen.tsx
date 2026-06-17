@@ -228,7 +228,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
 
           {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
 
             {/* SECTION 1: REGIME HERO */}
             {loading ? <Skeleton className="h-44" /> : (
@@ -335,7 +335,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
           </div>
 
           {/* ── RIGHT COLUMN ────────────────────────────────────────────── */}
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
 
             {/* DOMESTIC MARKET */}
             <Section title="Domestic Market" meta={brokerOk ? "Live / Cache" : "Cache"} icon={<Activity className="h-4 w-4 text-cyan-500" />}>

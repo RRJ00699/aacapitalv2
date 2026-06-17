@@ -8,7 +8,7 @@ import { neon } from "@neondatabase/serverless"
 
 export const dynamic = "force-dynamic"
 
-const db = () => neon(process.env.DATABASE_URL!)
+const db = () => neon((process.env.DATABASE_URL || process.env.NEON_DATABASE_URL)! )
 
 // ── Global symbols (non-India only) ──────────────────────────────────────────
 const GLOBAL_SYMBOLS = [
@@ -42,14 +42,14 @@ const first = (...vals: any[]) => vals.find(v => v !== null && v !== undefined &
 async function getKiteIndia(sql: ReturnType<typeof db>) {
   try {
     const rows = await sql`SELECT value FROM platform_config WHERE key = 'kite_access_token' LIMIT 1`
-    if (!rows.length) return null
+    if (!rows.length || !process.env.KITE_API_KEY) return null
 
     const token  = rows[0].value as string
-    const apiKey = process.env.KITE_API_KEY || "br9m41pn8nvvywnl"
+    const apiKey = process.env.KITE_API_KEY
 
     // Fetch Nifty 50, Bank Nifty, India VIX in one call
     const res = await fetch(
-      "https://api.kite.trade/quote?i=NSE%3ANIFTY+50&i=NSE%3ANIFTY+BANK&i=NSE%3AINDIA+VIX",
+      "https://api.kite.trade/quote?i=NSE%3ANIFTY+50&i=NSE%3ANIFTY+BANK&i=NSE%3AINDIA+VIX&i=BSE%3ASENSEX",
       {
         headers: {
           "X-Kite-Version": "3",
@@ -71,6 +71,7 @@ async function getKiteIndia(sql: ReturnType<typeof db>) {
     const nifty     = d["NSE:NIFTY 50"]
     const bankNifty = d["NSE:NIFTY BANK"]
     const vix       = d["NSE:INDIA VIX"]
+    const sensex    = d["BSE:SENSEX"]
 
     if (!nifty) return null
 
@@ -81,6 +82,7 @@ async function getKiteIndia(sql: ReturnType<typeof db>) {
                       ? toNum(((nifty.last_price - nifty.ohlc.close) / nifty.ohlc.close) * 100)
                       : null,
       bankNifty:    toNum(bankNifty?.last_price),
+      sensex:       toNum(sensex?.last_price),
       bankNiftyChgPct: bankNifty?.last_price && bankNifty?.ohlc?.close
                         ? toNum(((bankNifty.last_price - bankNifty.ohlc.close) / bankNifty.ohlc.close) * 100)
                         : null,
@@ -175,10 +177,12 @@ export async function GET() {
       nifty:              first(kite?.nifty,        regime.nifty_close,  snap.nifty_price),
       bankNifty:          first(kite?.bankNifty,    snap.banknifty_price),
       vix:                first(kite?.vix,          regime.india_vix,    snap.vix, snap.india_vix),
+      sensex:             first(kite?.sensex,       snap.sensex_price),
       // Change % — both aliases for compatibility with today-screen pickFirst chains
       niftyChg:           first(kite?.niftyChgPct,  snap.nifty_change_pct),
       nifty_change_pct:   first(kite?.niftyChgPct,  snap.nifty_change_pct),
       bankNiftyChg:       first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
+      sensexChg:          first(snap.sensex_change_pct),
       banknifty_change_pct: first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
       // Flows
       pcr:      first(snap.pcr, snap.nifty_pcr),
