@@ -69,7 +69,7 @@ def fetch_fii_dii_today(session) -> list[dict]:
     NSE endpoint returns last few trading days of FII/DII data.
     Returns list of dicts with keys matching our DB schema.
     """
-    url = f"{NSE_BASE}/api/fii-dii"
+    url = f"{NSE_BASE}/api/fiidiiTradeReact"
     try:
         resp = session.get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
