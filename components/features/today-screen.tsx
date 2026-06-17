@@ -105,12 +105,12 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true)
     try {
-      const [globalR, snapR, iccR, sectorR, ipoR, brokerR] = await Promise.all([
+      const [globalR, snapR, techR, sectorR, ipoR, brokerR] = await Promise.all([
         fetch("/api/market/global", { cache: "no-store" }).then(r => r.json()).catch(() => null),
         fetch("/api/market/snapshot", { cache: "no-store" }).then(r => r.json()).catch(() => null),
-        fetch("/api/investment-command-center?view=top&limit=20", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/technical/screener?timeframe=daily&limit=8", { cache: "no-store" }).then(r => r.json()).catch(() => null),
         fetch("/api/sector-rotation?view=hot", { cache: "no-store" }).then(r => r.json()).catch(() => null),
-        fetch("/api/ipo/intelligence?limit=5", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/ipo?limit=5", { cache: "no-store" }).then(r => r.json()).catch(() => null),
         fetch("/api/broker/status", { cache: "no-store" }).then(r => r.json()).catch(() => null),
       ])
 
@@ -171,11 +171,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       setSectors(hot.slice(0, 5).map((s: any) => ({ name: s.industry_group ?? s.name ?? s.sector, performance: num(s.return_3m ?? s.return_6m), score: Math.round(num(s.rotation_score ?? s.score)), signal: s.rotation_signal })))
 
       const ipoList = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
-      setIpos(ipoList.slice(0, 4).map((i: any) => {
-        const lqi = num(i.lqi ?? i.conviction_score ?? 0)
-        const rec = lqi >= 75 ? "APPLY" : lqi >= 50 ? "WATCH" : "SKIP"
-        return { name: i.company_name ?? i.name ?? i.ipo_name, recommendation: rec, score: lqi || undefined }
-      }))
+      setIpos(ipoList.slice(0, 4).map((i: any) => ({ name: i.name ?? i.company_name ?? i.ipo_name, recommendation: i.score?.recommendation ?? i.recommendation ?? "WATCH", score: i.score?.listingScore ?? i.conviction_score ?? i.score })))
 
       setBrokerConnected(typeof brokerR?.connected === "boolean" ? brokerR.connected : null)
       setUpdatedAt(new Date())
@@ -194,6 +190,28 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const topSectors = sectors.slice(0, 3).map(s => s.name).filter(Boolean)
 
   return <div className="min-h-screen bg-[#F7F9FC] text-slate-900">
+    <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/92 px-4 py-3 shadow-sm backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1680px] items-center gap-5">
+        <div className="mr-2 flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white shadow-sm">AA</div>
+          <div>
+            <div className="text-[16px] font-black tracking-tight text-slate-950">AA<span className="text-teal-600">Capital</span></div>
+            <div className="text-[9px] font-black uppercase tracking-[0.26em] text-slate-500">Institutional OS</div>
+          </div>
+        </div>
+        <nav className="hidden items-center gap-1 text-[12px] font-bold text-slate-600 lg:flex">
+          {["Today","Discovery","Portfolio","IPO DNA","Mirror","Settings","System"].map((t, i) => <span key={t} className={i === 0 ? "rounded-full bg-slate-950 px-3 py-1.5 text-white shadow-sm" : "rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950"}>{t}</span>)}
+        </nav>
+        <div className="relative ml-auto hidden max-w-xl flex-1 md:block">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-[12px] text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-teal-400 focus:ring-4 focus:ring-teal-100" placeholder="Search stocks, sectors, IPOs, signals..." />
+        </div>
+        <div className="hidden items-center gap-3 border-l border-slate-200 pl-4 font-mono text-[11px] lg:flex">
+          <span className="text-slate-500">Broker</span>
+          <span className={brokerConnected ? "font-bold text-emerald-600" : brokerConnected === false ? "font-bold text-amber-600" : "text-slate-500"}>● {brokerConnected ? "Connected" : brokerConnected === false ? "Reconnect" : "Checking"}</span>
+        </div>
+      </div>
+    </div>
 
     <main className="mx-auto max-w-[1680px] space-y-4 px-4 py-4 lg:px-5">
       <div className="flex flex-wrap items-center justify-between gap-3 px-0.5">
@@ -204,7 +222,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-xl border border-blue-100 bg-white px-3 py-2 text-[12px] font-black text-blue-700 shadow-sm hover:bg-blue-50"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,2fr)_minmax(430px,0.8fr)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_360px]">
         <div className="space-y-4">
           {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-white p-6 shadow-[0_14px_44px_rgba(15,23,42,0.07)]`}>
             <div className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l ${rc.glow} to-transparent`} />
@@ -224,7 +242,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
             </div>
           </section>}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Section title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-4 w-4 text-orange-500" />}>
               {loading ? <Skeleton className="h-36" /> : opps.length ? <div className="space-y-2">{opps.map(o => <button key={o.symbol} onClick={() => onStockSelect?.(o.symbol)} className="group flex w-full items-center justify-between rounded-xl border border-transparent p-2.5 text-left hover:border-slate-200 hover:bg-slate-50">
                 <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[13px] font-black text-slate-950 group-hover:text-teal-600">{o.symbol}</span><span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-500">Score {o.score}</span></div><div className="truncate text-[11px] text-slate-500">{o.reasons?.slice(0, 2).join(" · ")}</div></div>
