@@ -30,9 +30,9 @@ from dotenv import load_dotenv
 load_dotenv(".env.local")
 load_dotenv(".env")
 
-API_KEY      = os.getenv("KITE_API_KEY")
-ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
+API_KEY      = os.getenv("KITE_API_KEY", "br9m41pn8nvvywnl")
 DATABASE_URL = os.getenv("CANDLES_DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
+NEON_URL     = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--symbol",   help="Single symbol to sync")
@@ -40,10 +40,36 @@ parser.add_argument("--backfill", action="store_true", help="Fetch full 3-year h
 parser.add_argument("--days",     type=int, default=5, help="Days to sync (default 5)")
 args = parser.parse_args()
 
+# ── Get Kite access token — from Neon DB first, env var fallback ───────────────
+def get_access_token() -> str:
+    # Try Neon DB first (auto-refreshed by kite-token-refresh.yml at 8AM)
+    if NEON_URL:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(NEON_URL)
+            cur  = conn.cursor()
+            cur.execute("SELECT value FROM platform_config WHERE key='kite_access_token'")
+            row = cur.fetchone()
+            conn.close()
+            if row and row[0] and row[0] != "not_set_yet":
+                print(f"  Token from Neon DB ✓")
+                return row[0]
+        except Exception as e:
+            print(f"  Neon token fetch failed: {e}")
+    # Fall back to env var
+    token = os.getenv("KITE_ACCESS_TOKEN", "")
+    if token:
+        print(f"  Token from env var ✓")
+        return token
+    print("❌ No Kite access token found.")
+    print("   Run: python _scripts/refresh_kite_token.py")
+    sys.exit(1)
+
+ACCESS_TOKEN = get_access_token()
+
 # ── Validate ──────────────────────────────────────────────────────────────────
-if not API_KEY or not ACCESS_TOKEN:
-    print("❌ KITE_API_KEY or KITE_ACCESS_TOKEN not set in .env.local")
-    print("   Run: python _scripts/kite-auth.py")
+if not API_KEY:
+    print("❌ KITE_API_KEY not set in .env.local")
     sys.exit(1)
 
 try:
@@ -80,7 +106,7 @@ def get_symbols():
         return [args.symbol.upper()]
     conn = get_connection()
     cur  = conn.cursor()
-    cur.execute("SELECT DISTINCT symbol FROM price_candles WHERE symbol IS NOT NULL ORDER BY symbol")
+    cur.execute("SELECT symbol FROM company_master WHERE symbol IS NOT NULL ORDER BY symbol")
     symbols = [r[0] for r in cur.fetchall()]
     cur.close()
     conn.close()
@@ -101,7 +127,7 @@ def upsert_daily(symbol: str, candles: list) -> int:
             VALUES %s
             ON CONFLICT (symbol, date) DO UPDATE SET
               open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
-              close=EXCLUDED.close, volume=EXCLUDED.volume, updated_at=NOW()
+              close=EXCLUDED.close, volume=EXCLUDED.volume
         """, rows)
         conn.commit()
         cur.close()
@@ -123,7 +149,7 @@ def upsert_weekly(symbol: str, weekly_rows: list) -> int:
             VALUES %s
             ON CONFLICT (symbol, week_start) DO UPDATE SET
               open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
-              close=EXCLUDED.close, volume=EXCLUDED.volume, updated_at=NOW()
+              close=EXCLUDED.close, volume=EXCLUDED.volume
         """, weekly_rows)
         conn.commit()
         cur.close()
@@ -142,7 +168,7 @@ def upsert_delivery(symbol: str, dt: date, delivery_pct: float):
             INSERT INTO technical_signals (symbol, date, delivery_pct)
             VALUES (%s,%s,%s)
             ON CONFLICT (symbol, date) DO UPDATE SET
-              delivery_pct=EXCLUDED.delivery_pct, updated_at=NOW()
+              delivery_pct=EXCLUDED.delivery_pct
         """, (symbol, dt, delivery_pct))
         conn.commit()
         cur.close()

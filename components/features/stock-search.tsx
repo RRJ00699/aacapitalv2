@@ -92,8 +92,11 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => { if (results.length > 0) setOpen(true) }}
+          onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery("") } }}
           placeholder={placeholder}
+          autoComplete="off"
+          spellCheck={false}
           style={{
             width: "100%", boxSizing: "border-box",
             border: `1px solid ${open ? C.blue : C.border}`,
@@ -115,7 +118,7 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
           background: C.surface, border: `1px solid ${C.border}`,
           borderRadius: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-          zIndex: 999, overflow: "hidden", maxHeight: 480, overflowY: "auto",
+          zIndex: 99999, overflow: "hidden", maxHeight: 480, overflowY: "auto",
         }}>
           {results.map((r, i) => (
             <div
@@ -225,7 +228,7 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
           background: C.surface, border: `1px solid ${C.border}`,
           borderRadius: 10, padding: "14px", textAlign: "center",
-          fontSize: 12, color: C.gray, zIndex: 999,
+          fontSize: 12, color: C.gray, zIndex: 99999,
         }}>
           No stocks found for "{query}"
         </div>
