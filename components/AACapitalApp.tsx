@@ -26,6 +26,7 @@ import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
+import IpoPageNew from "./ipo/IpoPage"
 import React, { useState, useEffect, useCallback, useRef } from "react";
 /* eslint-disable */
 
@@ -2944,12 +2945,7 @@ setMarketFetched(true);
       )}
 
       {tab==="ipo"&&(
-        <div>
-          <IpoCommandCenter simple={simpleMode}/>
-          <div style={{maxWidth:720,margin:"0 auto",padding:"0 16px 16px"}}>
-            <AnchorLockupTracker/>
-          </div>
-        </div>
+        <IpoPageNew />
       )}
 
       {tab==="research"&&(
