@@ -174,27 +174,20 @@ export async function GET() {
 
     // ── India: Kite live → regime → snapshot fallback ───────────────────────
     const india = {
-      // Prices
-      nifty:              first(kite?.nifty,        regime.nifty_close,  snap.nifty_price),
-      bankNifty:          first(kite?.bankNifty,    snap.banknifty_price),
-      vix:                first(kite?.vix,          regime.india_vix,    snap.vix, snap.india_vix),
-      // Change % — both aliases for compatibility with today-screen pickFirst chains
-      niftyChg:           first(kite?.niftyChgPct,  snap.nifty_change_pct),
-      nifty_change_pct:   first(kite?.niftyChgPct,  snap.nifty_change_pct),
-      bankNiftyChg:       first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
-      banknifty_change_pct: first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
-      // Flows
-      pcr:      first(snap.pcr, snap.nifty_pcr),
-      fii:      first(flow.fii_net, snap.fii_flow,  snap.fii_cash_flow),
-      fii_flow: first(flow.fii_net, snap.fii_flow,  snap.fii_cash_flow),
-      dii:      first(flow.dii_net, snap.dii_flow,  snap.dii_cash_flow),
-      dii_flow: first(flow.dii_net, snap.dii_flow,  snap.dii_cash_flow),
-      // Regime
-      regime:    first(regime.active_regime, snap.market_regime, "NORMAL"),
-      breadthPct:first(regime.breadth_percentage, snap.breadth_pct),
-      deployMin: first(regime.recommended_allocation_min, snap.deploy_min),
-      deployMax: first(regime.recommended_allocation_max, snap.deploy_max),
-      source:    kite ? "kite_live" : "neon_fallback",
+      nifty:        first(kite?.nifty,     regime.nifty_close,  snap.nifty_price),
+      niftyChg:     first(kite?.niftyChg,  snap.nifty_change),
+      niftyChgPct:  first(kite?.niftyChgPct, snap.nifty_change_pct),
+      bankNifty:    first(kite?.bankNifty,  snap.banknifty_price),
+      bankNiftyChgPct: first(kite?.bankNiftyChgPct, snap.banknifty_change_pct),
+      vix:          first(kite?.vix, regime.india_vix, snap.vix, snap.india_vix),
+      pcr:          first(snap.pcr, snap.nifty_pcr),
+      fii:          first(flow.fii_net, snap.fii_flow, snap.fii_cash_flow),
+      dii:          first(flow.dii_net, snap.dii_flow, snap.dii_cash_flow),
+      regime:       first(regime.active_regime, snap.market_regime, "NORMAL"),
+      breadthPct:   first(regime.breadth_percentage, snap.breadth_pct),
+      deployMin:    first(regime.recommended_allocation_min, snap.deploy_min),
+      deployMax:    first(regime.recommended_allocation_max, snap.deploy_max),
+      source:       kite ? "kite_live" : "neon_fallback",
     }
 
     return NextResponse.json({
