@@ -27,7 +27,7 @@ log = logging.getLogger()
 API_KEY      = os.environ.get("KITE_API_KEY",      "br9m41pn8nvvywnl")
 API_SECRET   = os.environ.get("KITE_API_SECRET",   "")
 USER_ID      = os.environ.get("KITE_USER_ID",      "")
-PASSWORD     = os.environ.get("KITE_PASSWORD",     "")
+PASSWORD     = os.environ.get("KITE_PASSWORD",      "")
 TOTP_SECRET  = os.environ.get("KITE_TOTP_SECRET",  "")
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
 
@@ -42,7 +42,7 @@ def get_request_token() -> str:
 
     # Step 1: Hit login URL to get cookies
     login_url = f"https://kite.trade/connect/login?v=3&api_key={API_KEY}"
-    log.info("Opening login URL...")
+    log.info(f"Opening login URL...")
     res = session.get(login_url, allow_redirects=True)
     log.info(f"Login page status: {res.status_code}")
 
@@ -81,34 +81,53 @@ def get_request_token() -> str:
 
     log.info("2FA OK")
 
-    # Step 4: Follow the OAuth redirect to capture request_token
+    # Step 4: Follow OAuth redirect — try multiple strategies to get request_token
     time.sleep(1)
-    final_url = ""
+
+    # Strategy 1: allow_redirects=False — check Location header
     try:
-        # Disable redirect following so we can catch the redirect URL
         final_res = session.get(login_url, allow_redirects=False, timeout=15)
-        final_url = final_res.headers.get("Location", final_res.url)
-        log.info(f"Redirect location: {str(final_url)[:80]}...")
-    except Exception as redirect_err:
-        # Connection refused to 127.0.0.1 is EXPECTED — extract token from error URL
-        err_str = str(redirect_err)
-        log.info(f"Expected redirect caught: {err_str[:120]}")
-        m = re.search(r"request_token=([a-zA-Z0-9]+)", err_str)
+        location = final_res.headers.get("Location", "")
+        log.info(f"Redirect location: {location[:80]}")
+        m = re.search(r"request_token=([a-zA-Z0-9]+)", location)
         if m:
-            log.info("request_token extracted from error URL")
+            log.info("request_token from Location header")
+            return m.group(1)
+    except Exception as e:
+        m = re.search(r"request_token=([a-zA-Z0-9]+)", str(e))
+        if m:
             return m.group(1)
 
-    # Try to extract from redirect URL
-    m = re.search(r"request_token=([a-zA-Z0-9]+)", str(final_url))
-    if m:
-        return m.group(1)
-
-    # Last resort: try following with allow_redirects and catch connection error
+    # Strategy 2: allow_redirects=True — catch connection refused to 127.0.0.1
     try:
-        session.get(login_url, allow_redirects=True, timeout=5)
+        final_res = session.get(login_url, allow_redirects=True, timeout=5)
+        m = re.search(r"request_token=([a-zA-Z0-9]+)", final_res.url)
+        if m:
+            log.info("request_token from final URL")
+            return m.group(1)
     except Exception as e:
         err_str = str(e)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", err_str)
+        if m:
+            log.info("request_token from connection error URL")
+            return m.group(1)
+
+    # Strategy 3: check all response history
+    try:
+        s2 = requests.Session()
+        s2.headers.update(session.headers)
+        s2.cookies.update(session.cookies)
+        resp = s2.get(login_url, allow_redirects=True, timeout=10)
+        for r in resp.history:
+            m = re.search(r"request_token=([a-zA-Z0-9]+)", r.url)
+            if m:
+                log.info("request_token from redirect history")
+                return m.group(1)
+        m = re.search(r"request_token=([a-zA-Z0-9]+)", resp.url)
+        if m:
+            return m.group(1)
+    except Exception as e:
+        m = re.search(r"request_token=([a-zA-Z0-9]+)", str(e))
         if m:
             return m.group(1)
 
@@ -154,7 +173,7 @@ def save_to_db(access_token: str):
 
     conn.commit()
     conn.close()
-    log.info("Token saved to Neon platform_config")
+    log.info(f"Token saved to Neon platform_config")
 
 
 def get_token_from_db() -> str:
@@ -205,9 +224,7 @@ def main():
 
         save_to_db(access_token)
 
-        # FIXED Syntax block: single-line execution removes parenthesis leakage risk
-        is_valid = verify_token(access_token)
-        if is_valid:
+        if verify_token(access_token):
             log.info("✅ Token refresh complete — all pipelines will use new token")
         else:
             log.error("❌ Token saved but verification failed")
