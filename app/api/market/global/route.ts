@@ -96,39 +96,30 @@ async function getKiteIndia(sql: ReturnType<typeof db>) {
 // ── Yahoo Finance: global assets only ────────────────────────────────────────
 async function fetchYahooGlobal(): Promise<Record<string, any>> {
   const global: Record<string, any> = {}
-
-  for (const base of ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"]) {
+  const YF_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+  }
+  // v8 per-symbol works when v7 batch is rate-limited
+  await Promise.allSettled(GLOBAL_SYMBOLS.map(async (sym) => {
     try {
       const res = await fetch(
-        `${base}/v7/finance/quote?symbols=${encodeURIComponent(GLOBAL_SYMBOLS.join(","))}`,
-        {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-            "Accept": "application/json",
-            "Referer": "https://finance.yahoo.com",
-          },
-          cache: "no-store",
-          signal: AbortSignal.timeout(6000),
-        }
+        `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`,
+        { headers: YF_HEADERS, cache: "no-store", signal: AbortSignal.timeout(5000) }
       )
-      if (!res.ok) continue
-
+      if (!res.ok) return
       const data = await res.json()
-      for (const q of data?.quoteResponse?.result ?? []) {
-        const meta = META[q.symbol]
-        if (!meta) continue
-        global[q.symbol] = {
-          ...meta,
-          symbol:    q.symbol,
-          price:     toNum(q.regularMarketPrice),
-          change:    toNum(q.regularMarketChange),
-          changePct: toNum(q.regularMarketChangePercent),
-        }
-      }
-      if (Object.keys(global).length > 3) break
+      const m = data?.chart?.result?.[0]?.meta
+      if (!m) return
+      const price = toNum(m.regularMarketPrice)
+      const prev  = toNum(m.previousClose ?? m.chartPreviousClose)
+      if (!price) return
+      const changePct = prev ? toNum(((price - prev) / prev) * 100) : null
+      const meta = META[sym]
+      if (!meta) return
+      global[sym] = { ...meta, symbol: sym, price, changePct, change: prev ? toNum(price - prev) : null }
     } catch {}
-  }
-
+  }))
   return global
 }
 

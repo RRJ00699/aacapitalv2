@@ -1,121 +1,90 @@
 """
-Seed global markets cache in Neon using multiple free sources.
-Run locally: python _scripts/seed_global_cache.py
+_scripts/seed_global_cache.py
+Uses Yahoo Finance v8 (works) + CoinGecko for BTC/ETH
+Saves to Neon platform_config.global_cache for Vercel fallback
 """
 import os, json, time, psycopg2, requests
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Referer": "https://finance.yahoo.com/",
-    "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-site",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
 }
 
-SYMBOLS = [
-    "^GSPC","^NDX","^DJI",
-    "DX-Y.NYB","USDINR=X",
-    "GC=F","CL=F",
-    "BTC-USD",
-    "^N225","^HSI",
-    "^FTSE","^GDAXI",
-]
-
 META = {
-    "^GSPC":    {"label":"S&P 500",    "flag":"🇺🇸"},
-    "^NDX":     {"label":"Nasdaq 100", "flag":"🇺🇸"},
-    "^DJI":     {"label":"Dow Jones",  "flag":"🇺🇸"},
-    "DX-Y.NYB": {"label":"DXY",        "flag":"💵"},
-    "USDINR=X": {"label":"USD/INR",    "flag":"₹"},
-    "GC=F":     {"label":"Gold",       "flag":"🥇"},
-    "CL=F":     {"label":"Crude Oil",  "flag":"🛢"},
-    "BTC-USD":  {"label":"Bitcoin",    "flag":"₿"},
-    "^N225":    {"label":"Nikkei",     "flag":"🇯🇵"},
-    "^HSI":     {"label":"Hang Seng",  "flag":"🇭🇰"},
-    "^FTSE":    {"label":"FTSE 100",   "flag":"🇬🇧"},
-    "^GDAXI":   {"label":"DAX",        "flag":"🇩🇪"},
+    "^GSPC":    {"label": "S&P 500",    "flag": "🇺🇸", "region": "us"},
+    "^NDX":     {"label": "Nasdaq 100", "flag": "🇺🇸", "region": "us"},
+    "^DJI":     {"label": "Dow Jones",  "flag": "🇺🇸", "region": "us"},
+    "DX-Y.NYB": {"label": "DXY",        "flag": "💵", "region": "fx"},
+    "USDINR=X": {"label": "USD/INR",    "flag": "₹",  "region": "fx"},
+    "GC=F":     {"label": "Gold",       "flag": "🥇", "region": "commodity"},
+    "CL=F":     {"label": "Crude Oil",  "flag": "🛢", "region": "commodity"},
+    "^N225":    {"label": "Nikkei",     "flag": "🇯🇵", "region": "asia"},
+    "^HSI":     {"label": "Hang Seng",  "flag": "🇭🇰", "region": "asia"},
+    "^FTSE":    {"label": "FTSE 100",   "flag": "🇬🇧", "region": "europe"},
+    "^GDAXI":   {"label": "DAX",        "flag": "🇩🇪", "region": "europe"},
+    "BTC-USD":  {"label": "Bitcoin",    "flag": "₿",  "region": "crypto"},
 }
 
 global_data = {}
 
-# Try Yahoo Finance v8 (different endpoint)
-for base in ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"]:
+# ── Yahoo v8 for each symbol ──────────────────────────────────────────────────
+YF_SYMS = ["^GSPC","^NDX","^DJI","DX-Y.NYB","USDINR=X","GC=F","CL=F","^N225","^HSI","^FTSE","^GDAXI"]
+
+print("Fetching from Yahoo Finance v8...")
+for sym in YF_SYMS:
     try:
-        url = f"{base}/v8/finance/spark?symbols={','.join(SYMBOLS)}&range=1d&interval=1d"
-        r = requests.get(url, headers=headers, timeout=10)
-        print(f"[spark] {base}: {r.status_code}")
-        if r.status_code == 200 and r.text:
-            data = r.json()
-            for sym, info in data.get("spark", {}).get("result", {}).items() if isinstance(data.get("spark",{}).get("result"), dict) else []:
-                meta = META.get(sym, {})
-                global_data[sym] = {**meta, "symbol": sym, "price": None, "changePct": None}
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d"
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code != 200:
+            print(f"  {sym}: {r.status_code}")
+            continue
+        d = r.json()
+        meta_yf = d["chart"]["result"][0]["meta"]
+        price    = meta_yf.get("regularMarketPrice")
+        prev     = meta_yf.get("previousClose") or meta_yf.get("chartPreviousClose")
+        if not price:
+            continue
+        chg_pct  = round((price - prev) / prev * 100, 2) if prev else 0
+        chg      = round(price - prev, 2) if prev else 0
+        m        = META.get(sym, {"label": sym, "flag": "🌍", "region": "global"})
+        global_data[sym] = {**m, "symbol": sym, "price": price, "changePct": chg_pct, "change": chg}
+        print(f"  {m['label']:15} {price:>12.2f}  {chg_pct:+.2f}%")
+        time.sleep(0.2)
     except Exception as e:
-        print(f"[spark] error: {e}")
+        print(f"  {sym}: error — {e}")
 
-# Try Yahoo v7 with cookies
-if len(global_data) < 3:
-    try:
-        session = requests.Session()
-        # Get crumb first
-        cookie_res = session.get("https://fc.yahoo.com", headers=headers, timeout=5)
-        crumb_res = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=5)
-        crumb = crumb_res.text.strip()
-        print(f"[crumb] '{crumb}'")
+# ── CoinGecko for BTC ─────────────────────────────────────────────────────────
+print("\nFetching BTC from CoinGecko...")
+try:
+    r = requests.get(
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true",
+        headers=headers, timeout=8
+    )
+    btc = r.json().get("bitcoin", {})
+    price   = btc.get("usd")
+    chg_pct = round(btc.get("usd_24h_change", 0), 2)
+    if price:
+        global_data["BTC-USD"] = {
+            "label": "Bitcoin", "flag": "₿", "region": "crypto",
+            "symbol": "BTC-USD", "price": price,
+            "changePct": chg_pct, "change": round(price * chg_pct / 100, 2),
+        }
+        print(f"  Bitcoin         {price:>12,.0f}  {chg_pct:+.2f}%")
+except Exception as e:
+    print(f"  BTC error: {e}")
 
-        if crumb and crumb != "":
-            syms_str = "%2C".join(SYMBOLS)
-            url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={syms_str}&crumb={crumb}"
-            r = session.get(url, headers=headers, timeout=10)
-            print(f"[v7+crumb] status: {r.status_code}, len: {len(r.text)}")
-            if r.status_code == 200:
-                results = r.json().get("quoteResponse", {}).get("result", [])
-                print(f"[v7+crumb] got {len(results)} results")
-                for q in results:
-                    meta = META.get(q["symbol"], {})
-                    global_data[q["symbol"]] = {
-                        **meta,
-                        "symbol": q["symbol"],
-                        "price": q.get("regularMarketPrice"),
-                        "changePct": round(q.get("regularMarketChangePercent", 0), 2),
-                        "change": round(q.get("regularMarketChange", 0), 2),
-                    }
-    except Exception as e:
-        print(f"[crumb] error: {e}")
-
-print(f"\nGot {len(global_data)} symbols: {list(global_data.keys())[:5]}")
+# ── Save to Neon ──────────────────────────────────────────────────────────────
+print(f"\nTotal: {len(global_data)} symbols")
 
 if global_data:
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    cur = conn.cursor()
+    cur  = conn.cursor()
     cur.execute(
         "INSERT INTO platform_config(key,value,updated_at) VALUES(%s,%s,NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()",
         ["global_cache", json.dumps(global_data)]
     )
     conn.commit()
     conn.close()
-    print(f"✅ Saved {len(global_data)} symbols to Neon cache")
-    for k, v in list(global_data.items())[:4]:
-        print(f"  {k}: {v.get('price')} ({v.get('changePct')}%)")
+    print(f"✅ Saved {len(global_data)} symbols to Neon global_cache")
 else:
-    print("❌ No data from Yahoo — will use placeholder cache")
-    # Save placeholders so UI shows something
-    placeholders = {
-        sym: {**META.get(sym, {"label": sym, "flag": "🌍"}), "symbol": sym, "price": None, "changePct": None}
-        for sym in SYMBOLS
-    }
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO platform_config(key,value,updated_at) VALUES(%s,%s,NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()",
-        ["global_cache", json.dumps(placeholders)]
-    )
-    conn.commit()
-    conn.close()
-    print("Saved placeholder cache — prices will show when Yahoo accessible")
+    print("❌ No data retrieved")
