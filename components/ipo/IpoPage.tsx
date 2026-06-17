@@ -133,10 +133,10 @@ function LiveDecisionBoard({ ipos, selected, onSelect }: { ipos: any[]; selected
         </thead>
         <tbody>
           {ipos.map((ipo, i) => {
-            const lqi     = n(ipo.lqi_final ?? ipo.conviction_score ?? 0)
-            const gmpPct  = n(ipo.gmp_percentage ?? 0)
-            const totalX  = n(ipo.total_subscription_x ?? 0)
-            const qibX    = n(ipo.qib_subscription_x ?? 0)
+            const lqi     = n(ipo.lqi ?? ipo.lqi ?? ipo.lqi_final ?? ipo.conviction_score ?? 0)
+            const gmpPct  = n(ipo.gmp_pct ?? ipo.gmp_percentage ?? 0)
+            const totalX  = n(ipo.total_x ?? ipo.total_subscription_x ?? 0)
+            const qibX    = n(ipo.qib_x ?? ipo.qib_subscription_x ?? 0)
             const action  = actionCfg(lqi, gmpPct)
             const hniRisk = qibX > 50 ? "Low" : qibX > 20 ? "Medium" : "High"
             const isSelected = selected?.id === ipo.id || selected?.company_name === ipo.company_name
@@ -207,16 +207,16 @@ function LiveDecisionBoard({ ipos, selected, onSelect }: { ipos: any[]; selected
 // SECTION 2: IPO DETAIL CARD (right panel)
 // ─────────────────────────────────────────────────────────────────────────────
 function IpoDetailCard({ ipo }: { ipo: any }) {
-  const lqi    = n(ipo.lqi_final ?? ipo.conviction_score ?? 0)
-  const gmpPct = n(ipo.gmp_percentage ?? 0)
-  const qibX   = n(ipo.qib_subscription_x ?? 0)
-  const niiX   = n(ipo.nii_subscription_x ?? 0)
-  const riiX   = n(ipo.rii_subscription_x ?? 0)
-  const totalX = n(ipo.total_subscription_x ?? 0)
+  const lqi    = n(ipo.lqi ?? ipo.lqi ?? ipo.lqi_final ?? ipo.conviction_score ?? 0)
+  const gmpPct = n(ipo.gmp_pct ?? ipo.gmp_percentage ?? 0)
+  const qibX   = n(ipo.qib_x ?? ipo.qib_subscription_x ?? 0)
+  const niiX   = n(ipo.nii_x ?? ipo.nii_subscription_x ?? 0)
+  const riiX   = n(ipo.rii_x ?? ipo.rii_subscription_x ?? 0)
+  const totalX = n(ipo.total_x ?? ipo.total_subscription_x ?? 0)
   const action = actionCfg(lqi, gmpPct)
 
   // Probability estimates from LQI
-  const p10   = n(ipo.prob_10pct_profit ?? Math.min(95, lqi * 0.9 + 10))
+  const p10   = n(ipo.p_above_10 ?? ipo.prob_10pct_profit ?? Math.min(95, lqi * 0.9 + 10))
   const pFlat = Math.max(5, 100 - p10 - 15)
   const pLoss = Math.max(2, 100 - p10 - pFlat)
 
@@ -338,8 +338,8 @@ function HniSimulator({ ipo }: { ipo: any }) {
   const capital = 100000
   const total   = capital * leverage
   const ip      = n(ipo.issue_price ?? ipo.priceBandHigh ?? 0)
-  const lqi     = n(ipo.lqi_final ?? 0)
-  const p10     = n(ipo.prob_10pct_profit ?? Math.min(90, lqi))
+  const lqi     = n(ipo.lqi ?? ipo.lqi_final ?? 0)
+  const p10     = n(ipo.p_above_10 ?? ipo.prob_10pct_profit ?? Math.min(90, lqi))
   const pLoss   = Math.max(5, 20 - lqi / 10)
 
   const scenarios = [
@@ -654,8 +654,8 @@ function ValuationIntelligence({ ipo }: { ipo: any }) {
 // SECTION 8: GMP MOMENTUM
 // ─────────────────────────────────────────────────────────────────────────────
 function GmpMomentum({ ipo }: { ipo: any }) {
-  const gmpPct     = n(ipo.gmp_percentage ?? 38)
-  const gmpPrice   = n(ipo.gmp_price ?? 152)
+  const gmpPct     = n(ipo.gmp_pct ?? ipo.gmp_percentage ?? 38)
+  const gmpPrice   = n(ipo.gmp_price ?? ipo.gmp_pct ?? 152)
   const gmpMomentum = ipo.gmp_momentum || "RISING"
   const gmpQuality  = gmpPct >= 30 ? "High" : gmpPct >= 15 ? "Medium" : "Low"
   const gmpStability= gmpPct >= 20 ? "Strong" : "Moderate"
@@ -696,9 +696,9 @@ function GmpMomentum({ ipo }: { ipo: any }) {
 // SECTION 9: LISTING PLAYBOOK
 // ─────────────────────────────────────────────────────────────────────────────
 function ListingPlaybook({ ipo }: { ipo: any }) {
-  const lqi  = n(ipo.lqi_final ?? 70)
-  const qibX = n(ipo.qib_subscription_x ?? 0)
-  const gmp  = n(ipo.gmp_percentage ?? 0)
+  const lqi  = n(ipo.lqi ?? ipo.lqi_final ?? 70)
+  const qibX = n(ipo.qib_x ?? ipo.qib_subscription_x ?? 0)
+  const gmp  = n(ipo.gmp_pct ?? ipo.gmp_percentage ?? 0)
 
   const plays = [
     {

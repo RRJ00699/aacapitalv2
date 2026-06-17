@@ -113,17 +113,21 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       const snapshot = snapR?.data ?? {}
       const indiaRaw = globalR?.india ?? {}
       const india = {
-        nifty:        pickFirst(indiaRaw.nifty,        indiaRaw.nifty_price,          snapshot.nifty_price,          snapshot.nifty_close),
-        niftyChg:     pickFirst(indiaRaw.niftyChg,     indiaRaw.nifty_change_pct,     snapshot.nifty_change_pct),
-        bankNifty:    pickFirst(indiaRaw.bankNifty,    indiaRaw.banknifty_price,      snapshot.banknifty_price),
+        // Nifty - from Kite via global route (india.nifty) or snapshot (nifty_price)
+        nifty:        pickFirst(indiaRaw.nifty, indiaRaw.nifty_price, snapshot.nifty_price, snapshot.nifty_close),
+        niftyChg:     pickFirst(indiaRaw.niftyChg, indiaRaw.nifty_change_pct, snapshot.nifty_change_pct),
+        bankNifty:    pickFirst(indiaRaw.bankNifty, indiaRaw.banknifty_price, snapshot.banknifty_price),
         bankNiftyChg: pickFirst(indiaRaw.bankNiftyChg, indiaRaw.banknifty_change_pct, snapshot.banknifty_change_pct),
-        vix:          pickFirst(indiaRaw.vix,          indiaRaw.india_vix,            snapshot.vix,    snapshot.india_vix),
-        pcr:          pickFirst(indiaRaw.pcr,          snapshot.pcr,                  snapshot.nifty_pcr),
-        fii:          pickFirst(indiaRaw.fii,          indiaRaw.fii_flow,             snapshot.fii_flow,  snapshot.fii_net),
-        dii:          pickFirst(indiaRaw.dii,          indiaRaw.dii_flow,             snapshot.dii_flow,  snapshot.dii_net),
-        regime:       pickFirst(indiaRaw.regime,       snapshot.regime,               snapshot.market_regime),
-        deployMin:    pickFirst(snapshot.deploy_min,   indiaRaw.deployMin),
-        deployMax:    pickFirst(snapshot.deploy_max,   indiaRaw.deployMax),
+        // VIX - from Kite via global route or snapshot
+        vix:          pickFirst(indiaRaw.vix, indiaRaw.india_vix, snapshot.vix, snapshot.india_vix),
+        pcr:          pickFirst(indiaRaw.pcr, snapshot.pcr, snapshot.nifty_pcr),
+        // FII/DII - snapshot reads daily_institutional_flows
+        fii:          pickFirst(indiaRaw.fii, indiaRaw.fii_flow, snapshot.fii_flow, snapshot.fii_net),
+        dii:          pickFirst(indiaRaw.dii, indiaRaw.dii_flow, snapshot.dii_flow, snapshot.dii_net),
+        // Regime
+        regime:       pickFirst(indiaRaw.regime, snapshot.regime, snapshot.market_regime, "NORMAL"),
+        deployMin:    pickFirst(snapshot.deploy_min, indiaRaw.deployMin, 50),
+        deployMax:    pickFirst(snapshot.deploy_max, indiaRaw.deployMax, 70),
       }
 
       setRegime(normalizeRegime(india.regime))
@@ -203,7 +207,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const topSectors = sectors.slice(0, 3).map(s => s.name).filter(Boolean)
 
   return (
-    <div className="min-h-screen bg-[#F7F9FC] text-slate-900">
+    <div className="min-h-screen bg-[#F7F9FC] text-slate-900 overflow-x-hidden">
       <main className="mx-auto max-w-[1680px] space-y-4 px-4 py-4">
 
         {/* Date + refresh row */}
