@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "similarity:multibagger": "tsx _scripts/engines/multibagger_similarity_engine.ts --limit 500 --top 5"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

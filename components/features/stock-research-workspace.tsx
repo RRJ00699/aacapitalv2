@@ -8,6 +8,7 @@ import { colors } from "@/lib/design/tokens"
 import { PriceChart } from "./price-chart"
 import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
+import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
 
 
 interface StockDetail {
@@ -300,6 +301,14 @@ export function StockResearchWorkspace({
           <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 8, textAlign: "center" }}>
             Based on {prob.sample} similar historical setups in our 10Y database
           </div>
+        </Card>
+
+        {/* Historical Similarity Engine */}
+        <Card title="HISTORICAL SIMILARITY ENGINE">
+          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>
+            Current weekly structure compared with mined 2x/5x/10x historical multibagger bases.
+          </div>
+          <HistoricalSimilarityPanel symbol={detail.symbol} />
         </Card>
 
         {/* Technical Structure */}

@@ -1,3 +1,4 @@
+@import "tailwindcss";
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --navy: #0f172a; --blue: #1d4ed8; --green: #16a34a;
