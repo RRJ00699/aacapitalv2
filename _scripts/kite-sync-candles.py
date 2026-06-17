@@ -73,14 +73,14 @@ print(f"  {len(symbol_to_token)} NSE instruments loaded\n")
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(DATABASE_URL)
 
 def get_symbols():
     if args.symbol:
         return [args.symbol.upper()]
     conn = get_connection()
     cur  = conn.cursor()
-    cur.execute("SELECT symbol FROM company_master WHERE symbol IS NOT NULL ORDER BY symbol")
+    cur.execute("SELECT DISTINCT symbol FROM price_candles WHERE symbol IS NOT NULL ORDER BY symbol")
     symbols = [r[0] for r in cur.fetchall()]
     cur.close()
     conn.close()
