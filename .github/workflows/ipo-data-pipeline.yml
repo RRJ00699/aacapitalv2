@@ -1,48 +1,47 @@
-# .github/workflows/ipo-data-pipeline.yml
-# Runs daily at 8:00 AM IST (2:30 UTC) and 6:00 PM IST (12:30 UTC)
-# Fetches live IPO data from NSE + Chittorgarh GMP
-
 name: IPO Data Pipeline
 
 on:
   schedule:
-    - cron: '30 2 * * 1-5'   # 8:00 AM IST — morning before market open
-    - cron: '30 12 * * 1-5'  # 6:00 PM IST — evening after market close
+    - cron: '30 2 * * 1-5'    # 8:00 AM IST
+    - cron: '30 12 * * 1-5'   # 6:00 PM IST
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'Dry run'
-        required: false
         default: 'false'
-      source:
-        description: 'Source (nse/chittorgarh/both)'
-        required: false
-        default: 'both'
 
 jobs:
   fetch-live-ipos:
     name: Fetch Live IPO Data
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install curl_cffi beautifulsoup4 psycopg2-binary python-dotenv requests
+        run: pip install curl_cffi beautifulsoup4 psycopg2-binary python-dotenv requests openpyxl
 
-      - name: Fetch IPO data
+      - name: Fetch IPO data from NSE
         env:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: |
           DRY=${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
-          SRC=${{ github.event.inputs.source || 'both' }}
-          python _scripts/fetch_live_ipos.py $DRY --source $SRC
+          python _scripts/fetch_live_ipos.py $DRY --source nse
+        continue-on-error: true
+
+      - name: Score active IPOs
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python _scripts/engines/ipo_probability_engine.py --all
+        continue-on-error: true
 
       - name: Record job
         if: always()
@@ -50,15 +49,14 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JOB_STATUS:   ${{ job.status }}
         run: |
-          python - <<'EOF'
+          python3 -c "
           import os, psycopg2
-          db = os.getenv("DATABASE_URL")
+          db = os.getenv('DATABASE_URL')
           if not db: exit(0)
           try:
               conn = psycopg2.connect(db)
               cur  = conn.cursor()
-              cur.execute("INSERT INTO intelligence_jobs (job_type, status, completed_at) VALUES ('ipo_live_daily', %s, NOW())",
-                         (os.getenv("JOB_STATUS","unknown"),))
+              cur.execute(\"INSERT INTO intelligence_jobs (job_type, status, completed_at) VALUES ('ipo_live_daily', %s, NOW())\", (os.getenv('JOB_STATUS','unknown'),))
               conn.commit(); conn.close()
-          except: pass
-          EOF
+          except Exception as e: print(f'Job record failed: {e}')
+          "
