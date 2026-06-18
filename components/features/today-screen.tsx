@@ -153,16 +153,16 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const topSectors = sectors.slice(0, 3).map(s => s.name).filter(Boolean)
   const day = useMemo(() => new Date().toLocaleString("en-IN", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }), [])
 
-  return <div className="min-h-screen bg-[#F7F9FC] text-slate-900">
+  return <div className="h-screen bg-[#F7F9FC] text-slate-900 flex flex-col overflow-hidden">
 
 
-    <main className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 py-3">
+    <main className="flex-1 overflow-y-auto"><div className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 py-3 h-full">
       <div className="col-span-12 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
         <div><h1 className="text-[14px] font-bold text-slate-900">Today’s Market Brief</h1><p className="font-mono text-[10px] text-slate-500">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
         <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"><RefreshCw className={`h-3 w-3 text-teal-600 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
 
-      <div className="col-span-12 space-y-3 xl:col-span-8">
+      <div className="col-span-12 space-y-3 xl:col-span-8 min-h-0">
         {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#FFFFFF] p-5 shadow-sm`}>
           <div className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l ${rc.glow} to-transparent`} />
           <div className="relative flex items-start justify-between gap-6">
@@ -202,11 +202,11 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         </Section>
       </div>
 
-      <div className="col-span-12 space-y-3 xl:col-span-4">
+      <div className="col-span-12 space-y-3 xl:col-span-4 min-h-0">
         <Section title="Domestic Market" meta="Live / Cache" icon={<Activity className="h-3.5 w-3.5 text-teal-600" />}>
           {loading ? <Skeleton className="h-72" /> : <div className="grid grid-cols-2 gap-2">{market.map((m, idx) => <div key={m.label} className={idx < 2 ? "col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-3" : "rounded-xl border border-slate-200 bg-[#F9FAFB] p-3"}>
             <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-slate-900" : "font-mono text-[16px] font-black text-slate-900"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-slate-500">{m.note ?? ""}</div></div>
-            {idx < 2 && <div className="flex flex-col items-end gap-1"><span className={(m.change ?? 0) >= 0 ? "font-mono text-[12px] font-bold text-emerald-300" : "font-mono text-[12px] font-bold text-rose-300"}>{signed(m.change)}</span><Spark positive={(m.change ?? 0) >= 0} /></div>}
+            {idx < 2 && <div className="flex flex-col items-end gap-1"><span className={(m.change ?? 0) >= 0 ? "font-mono text-[12px] font-bold text-emerald-600" : "font-mono text-[12px] font-bold text-rose-600"}>{signed(m.change)}</span><Spark positive={(m.change ?? 0) >= 0} /></div>}
           </div>)}</div>}
         </Section>
 
@@ -214,6 +214,6 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
           {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-slate-600">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-slate-900">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-600" : "min-w-[50px] text-right text-[10px] font-bold text-rose-600"}>{signed(g.change)}</span></div></div>)}</div>}
         </Section>
       </div>
-    </main>
+    </div></main>
   </div>
 }
