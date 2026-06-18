@@ -42,8 +42,18 @@ export async function GET(req: NextRequest) {
   const es = eRows[0] || {}
   const sm = smRows[0] || {}
 
+  // If no data at all, return graceful empty response (not 404)
   if (!Object.keys(f).length && !Object.keys(cm).length && !Object.keys(ts).length) {
-    return NextResponse.json({ ok: false, error: `${symbol} not found in company_master/stock_fundamentals` }, { status: 404 })
+    return NextResponse.json({
+      ok: true,
+      symbol,
+      name: symbol,
+      current_price: 0,
+      industry: "Unknown",
+      scores: { technical_dna: 0, business_dna: 0, earnings: 50, smart_money: 50, convergence: 0 },
+      signals: { business: [], warnings: [`${symbol} not yet in fundamentals database`], earnings: [] },
+      conviction: { expected_6m: "—", expected_12m: "—", position_size: "—", risk: "—" },
+    })
   }
 
   const price = n(pick(f.current_price, ts.current_price, ts.close, w.close, 0))

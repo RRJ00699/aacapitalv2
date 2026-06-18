@@ -210,60 +210,87 @@ export function MultibaggerDiscovery({ simple = false, onStockSelect }: { simple
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      // Fetch intelligence data and cross-reference
-      const [dashRes, amfiRes] = await Promise.all([
+      // Primary: technical screener + management commentary (always has data)
+      // Secondary: intelligence dashboard (has data when earnings pipeline runs)
+      const [techRes, commRes, dashRes, amfiRes] = await Promise.all([
+        fetch("/api/technical/screener?timeframe=daily&limit=50", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+        fetch("/api/intelligence/commentary?limit=50").then(r => r.json()).catch(() => null),
         fetch("/api/intelligence/dashboard").then(r => r.json()).catch(() => null),
         fetch("/api/intelligence/amfi").then(r => r.json()).catch(() => null),
       ])
 
-      const amfiStatus = amfiRes?.data?.score?.liquidity_status || "NEUTRAL"
+      const amfiStatus   = amfiRes?.data?.score?.liquidity_status || "NEUTRAL"
       const amfiPositive = ["RISK_ON","SELECTIVE_RISK_ON"].includes(amfiStatus)
+      const SUPPRESS     = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
 
-      if (dashRes?.success) {
-        const earnings = (dashRes.data?.top_earnings || []) as any[]
-        const commentary = (dashRes.data?.top_commentary || []) as any[]
-        const cMap = new Map(commentary.map((c: any) => [c.symbol, c]))
+      // Build commentary map from management_commentary table
+      const commList = (commRes?.data ?? commRes ?? []) as any[]
+      const commArr  = Array.isArray(commList) ? commList : []
+      const cMap = new Map(commArr.map((c: any) => [c.symbol ?? c.nse_symbol, c]))
 
-        const candidates: MultibaggerCandidate[] = earnings
-          .map((e: any) => {
-            const c = cMap.get(e.symbol) as any
-            const earningsGood = ["ACCELERATING","TURNAROUND"].includes(e.acceleration_status)
-            const commGood = c && ["BULLISH","IMPROVING"].includes(c.commentary_status)
+      // Build earnings map from dashboard (if available)
+      const earningsArr = (dashRes?.data?.top_earnings ?? []) as any[]
+      const eMap = new Map(earningsArr.map((e: any) => [e.symbol, e]))
 
-            let enginesAligned = 0
-            if (earningsGood) enginesAligned++
-            if (commGood) enginesAligned++
-            if (amfiPositive) enginesAligned++
+      // Primary source: technical signals (always populated for recommended stocks)
+      const techList = (techRes?.data ?? []) as any[]
+      const filtered = techList.filter((x: any) => !SUPPRESS.test(String(x.symbol ?? "")))
 
-            const reasons: string[] = []
-            if (n(e.revenue_acceleration_score) > 20) reasons.push("Revenue accelerating strongly")
-            if (n(e.pat_acceleration_score) > 20) reasons.push("Profit momentum building")
-            if (n(e.consistency_score) > 20) reasons.push("Consistent execution track record")
-            if (commGood) reasons.push(`Management ${c?.commentary_status?.toLowerCase()} on outlook`)
-            if (n(c?.order_book_score) > 20) reasons.push("Order book coverage strong")
-            if (amfiPositive) reasons.push("Market liquidity supports new positions")
+      const candidates: MultibaggerCandidate[] = filtered.map((t: any) => {
+        const sym  = t.symbol ?? t.nse_symbol
+        const c    = cMap.get(sym) as any
+        const e    = eMap.get(sym) as any
 
-            const es = n(e.total_score)
-            const cs = n(c?.total_score)
-            const conviction = c ? (es * 0.5 + cs * 0.3 + (amfiPositive ? 20 : 0)) : (es * 0.7 + (amfiPositive ? 20 : 0))
+        const techScore    = n(t.buy_zone_score ?? t.convergence_score ?? t.score ?? 55)
+        const commScore    = n(c?.total_score ?? c?.mgmt_quality_score ?? 0)
+        const earningsScore= n(e?.total_score ?? 0)
 
-            return {
-              symbol: e.symbol, company_name: e.company_name,
-              conviction_score: Math.min(100, conviction),
-              earnings_status: e.acceleration_status, earnings_score: es,
-              commentary_status: c?.commentary_status || "NEUTRAL", commentary_score: cs,
-              amfi_status: amfiStatus,
-              enginesAligned, reasons,
-            } as MultibaggerCandidate & { enginesAligned: number }
-          })
-          .filter((c: any) => c.enginesAligned >= minEngines)
-          .sort((a: any, b: any) => b.conviction_score - a.conviction_score)
-          .slice(0, 20)
+        const techGood     = techScore >= 60
+        const commGood     = c && ["BULLISH","CAUTIOUSLY_OPTIMISTIC","IMPROVING"].includes(c.management_tone ?? c.commentary_status ?? "")
+        const earningsGood = e && ["ACCELERATING","TURNAROUND"].includes(e.acceleration_status ?? "")
 
-        setCandidates(candidates)
-        setLastUpdate(new Date())
-      }
-    } catch { /* silent */ }
+        let enginesAligned = 0
+        if (techGood)     enginesAligned++
+        if (commGood)     enginesAligned++
+        if (earningsGood) enginesAligned++
+        if (amfiPositive) enginesAligned++
+
+        const reasons: string[] = []
+        if (techScore >= 70)  reasons.push(`Technical score ${Math.round(techScore)}/100`)
+        if (t.nr7)            reasons.push("NR7 compression — breakout imminent")
+        if (t.volume_expansion) reasons.push("Volume expansion detected")
+        if (commGood)         reasons.push(`Management ${(c?.management_tone ?? "").toLowerCase()} — ${c?.guidance_direction ?? "stable"}`)
+        if (earningsGood)     reasons.push("Earnings accelerating")
+        if (amfiPositive)     reasons.push("Market liquidity supports positions")
+        if (c?.revenue_guidance) reasons.push(`Revenue guidance: ${c.revenue_guidance}`)
+
+        const conviction = Math.min(100,
+          techScore * 0.45 +
+          (commScore > 0 ? commScore * 0.25 : 0) +
+          (earningsScore > 0 ? earningsScore * 0.20 : 0) +
+          (amfiPositive ? 10 : 0)
+        )
+
+        return {
+          symbol: sym,
+          company_name: t.company_name ?? c?.company_name ?? sym,
+          conviction_score: Math.round(conviction),
+          earnings_status:  e?.acceleration_status ?? "STABLE",
+          earnings_score:   earningsScore,
+          commentary_status: c?.management_tone ?? c?.commentary_status ?? "NEUTRAL",
+          commentary_score:  commScore,
+          amfi_status: amfiStatus,
+          enginesAligned,
+          reasons,
+        } as MultibaggerCandidate & { enginesAligned: number }
+      })
+      .filter((c: any) => c.enginesAligned >= minEngines)
+      .sort((a: any, b: any) => b.conviction_score - a.conviction_score)
+      .slice(0, 30)
+
+      setCandidates(candidates)
+      setLastUpdate(new Date())
+    } catch (err) { console.error("MultibaggerDiscovery error:", err) }
     finally { setLoading(false) }
   }, [minEngines])
 
