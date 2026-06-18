@@ -1,0 +1,96 @@
+name: Management Commentary Pipeline
+
+on:
+  schedule:
+    # Score commentary: Every Monday 9AM IST (3:30 AM UTC) — start of week
+    - cron: '30 3 * * 1'
+    # Weekly purge: Every Sunday 2AM IST (8:30 PM Saturday UTC)
+    - cron: '30 20 * * 6'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'score'
+        type: choice
+        options:
+          - score        # score 30 stocks missing this quarter
+          - score-all    # score up to 100 stocks
+          - purge        # dry run purge
+          - purge-exec   # actually purge
+          - summary      # just show storage summary
+
+jobs:
+  management-commentary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary requests
+
+      - name: Run migration (ensure tables exist)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - << 'EOF'
+          import psycopg2, os
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          cur  = conn.cursor()
+          # Read and execute migration
+          with open("_scripts/migrations/management_commentary_schema.sql") as f:
+              sql = f.read()
+          # Execute each statement separately (skip empty)
+          for stmt in sql.split(";"):
+              stmt = stmt.strip()
+              if stmt and not stmt.startswith("--"):
+                  try:
+                      cur.execute(stmt)
+                  except Exception as e:
+                      print(f"  Note: {str(e)[:80]}")
+                      conn.rollback()
+          conn.commit()
+          cur.close()
+          conn.close()
+          print("Migration complete")
+          EOF
+
+      - name: Score management commentary (Monday scheduled)
+        if: github.event.schedule == '30 3 * * 1' || github.event.inputs.mode == 'score'
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python _scripts/score_management_commentary.py --all --limit 30
+
+      - name: Score all (manual score-all mode)
+        if: github.event.inputs.mode == 'score-all'
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python _scripts/score_management_commentary.py --all --limit 100
+
+      - name: Purge dry run (Sunday scheduled)
+        if: github.event.schedule == '30 20 * * 6' || github.event.inputs.mode == 'purge'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/purge_management_commentary.py
+
+      - name: Purge execute (manual purge-exec mode)
+        if: github.event.inputs.mode == 'purge-exec'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/purge_management_commentary.py --execute
+
+      - name: Storage summary
+        if: github.event.inputs.mode == 'summary'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/purge_management_commentary.py --summary

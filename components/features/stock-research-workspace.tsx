@@ -65,6 +65,7 @@ interface StockDetail {
     net_flow: number
     deal_count: number
   }
+  trade_plan?: { support: number[]; resistance: number[]; targets: number[]; stopLoss: number }
 }
 
 interface MultibaggerMatch {
@@ -162,7 +163,7 @@ export function StockResearchWorkspace({
     setLoading(true); setError(null); setDetail(null)
 
     Promise.all([
-      fetch(`/api/investment-command-center?symbol=${symbol}`).then(r => r.json()),
+      fetch(`/api/investment-command-center?symbol=${symbol}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/weekly-dna?symbol=${symbol}`).then(r => r.json()).catch(() => null),
     ]).then(([d, w]) => {
       if (d.ok) setDetail(d as StockDetail)
@@ -393,13 +394,17 @@ export function StockResearchWorkspace({
             {detail.scores?.convergence >= 55 ? (
               <>
                 <PlanRow icon="🟢" label="Entry Zone"
-                  value={`₹${(((Number(detail.current_price) ?? 0)) * 0.97).toFixed(0)} – ₹${Number(detail.current_price).toFixed(0)} (current or 3% dip)`} />
+                  value={`₹${(detail.trade_plan?.support?.[0] ?? ((Number(detail.current_price) ?? 0) * 0.97)).toFixed(0)} – ₹${Number(detail.current_price).toFixed(0)} (support to CMP)`} />
+                <PlanRow icon="🧱" label="Support / Resistance"
+                  value={`S1 ₹${(detail.trade_plan?.support?.[0] ?? ((Number(detail.current_price) ?? 0) * 0.94)).toFixed(0)} · S2 ₹${(detail.trade_plan?.support?.[1] ?? ((Number(detail.current_price) ?? 0) * 0.90)).toFixed(0)} · R1 ₹${(detail.trade_plan?.resistance?.[0] ?? ((Number(detail.current_price) ?? 0) * 1.08)).toFixed(0)} · R2 ₹${(detail.trade_plan?.resistance?.[1] ?? ((Number(detail.current_price) ?? 0) * 1.15)).toFixed(0)}`} />
                 <PlanRow icon="🔴" label="Stop Loss"
-                  value={`₹${(((Number(detail.current_price) ?? 0)) * 0.90).toFixed(0)} (−10% hard stop)`} />
+                  value={`₹${(detail.trade_plan?.stopLoss ?? ((Number(detail.current_price) ?? 0) * 0.90)).toFixed(0)} (close below support invalidates setup)`} />
                 <PlanRow icon="🎯" label="Target 1"
-                  value={`₹${(((Number(detail.current_price) ?? 0)) * 1.25).toFixed(0)} (+25%) — book 50%`} />
+                  value={`₹${(detail.trade_plan?.targets?.[0] ?? ((Number(detail.current_price) ?? 0) * 1.12)).toFixed(0)} — first profit zone`} />
                 <PlanRow icon="🎯" label="Target 2"
-                  value={`₹${(((Number(detail.current_price) ?? 0)) * 1.50).toFixed(0)} (+50%) — trail stop`} />
+                  value={`₹${(detail.trade_plan?.targets?.[1] ?? ((Number(detail.current_price) ?? 0) * 1.25)).toFixed(0)} — book/trail zone`} />
+                <PlanRow icon="🎯" label="Target 3"
+                  value={`₹${(detail.trade_plan?.targets?.[2] ?? ((Number(detail.current_price) ?? 0) * 1.50)).toFixed(0)} — let winner run`} />
                 <PlanRow icon="⏱" label="Holding Period"
                   value={detail.scores.convergence >= 70 ? "6–18 months (let it run)" : "3–6 months"} />
                 <PlanRow icon="🚪" label="Exit Signal"

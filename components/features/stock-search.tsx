@@ -72,7 +72,10 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
         const d   = await res.json()
         setResults(d.results ?? [])
         setOpen(true)
-      } catch {}
+      } catch {
+        setResults([])
+        setOpen(true)
+      }
       finally { setLoading(false) }
     }, 300)
     return () => clearTimeout(timer.current)
@@ -93,7 +96,14 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
           value={query}
           onChange={e => setQuery(e.target.value)}
           onFocus={() => { if (results.length > 0) setOpen(true) }}
-          onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery("") } }}
+          onKeyDown={e => {
+            if (e.key === "Escape") { setOpen(false); setQuery("") }
+            if (e.key === "Enter") {
+              e.preventDefault()
+              const first = results[0]?.symbol || query.trim().toUpperCase()
+              if (first) handleSelect(first)
+            }
+          }}
           placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
@@ -230,8 +240,23 @@ export function StockSearch({ onSelect, placeholder = "Search symbol or company 
           borderRadius: 10, padding: "14px", textAlign: "center",
           fontSize: 12, color: C.gray, zIndex: 99999,
         }}>
-          No stocks found for "{query}"
+          No exact DB match for "{query}"
         </div>
+      )}
+
+      {open && query.length >= 2 && results.length === 0 && !loading && (
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); handleSelect(query.trim().toUpperCase()) }}
+          style={{
+            position: "absolute", top: "calc(100% + 52px)", left: 0, right: 0,
+            background: "#EFF6FF", border: `1px solid ${C.blue}`,
+            borderRadius: 10, padding: "10px 14px", textAlign: "center",
+            fontSize: 12, color: C.blue, fontWeight: 700, zIndex: 99999, cursor: "pointer",
+          }}
+        >
+          Open {query.trim().toUpperCase()} research workspace
+        </button>
       )}
     </div>
   )

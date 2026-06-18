@@ -1,80 +1,104 @@
-// app/api/search/route.ts — V2 with convergence V3 scoring inline
 import { NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { sql } from "@/lib/db"
 
-function db() { return neon(process.env.DATABASE_URL!) }
+export const dynamic = "force-dynamic"
 
-function hasOrderBook(industry: string): boolean {
-  const lower = (industry ?? "").toLowerCase()
-  return ["infrastructure","defence","capital goods","construction","power",
-    "railways","real estate","it services","electrical equipment",
-    "compressors","water supply","engineering","aerospace"].some(s => lower.includes(s))
+const n = (v: any, f = 0) => { const x = Number(v); return Number.isFinite(x) ? x : f }
+const clean = (s: any) => String(s ?? "").trim().toUpperCase()
+const has = (v: any) => v !== null && v !== undefined && String(v) !== ""
+
+type Row = Record<string, any>
+
+async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
+  try { return await p } catch { return fallback }
+}
+
+function mapRow(r: Row) {
+  const symbol = clean(r.symbol ?? r.nse_symbol ?? r.tradingsymbol)
+  const price = n(r.current_price ?? r.close ?? r.last_price ?? 0)
+  const business = n(r.business_dna_score ?? r.business_score ?? 50)
+  const earnings = n(r.earnings_score ?? r.earnings_momentum_score ?? 50)
+  const smart = n(r.smart_money_score ?? 50)
+  const stage = r.stage ?? null
+  const isNr7 = !!(r.is_nr7 ?? r.nr7)
+  const breakout = !!(r.breakout_ready ?? r.volume_expansion)
+  const convergence = Math.max(0, Math.min(100, Math.round(
+    n(r.convergence_score, NaN) || n(r.convergence, NaN) ||
+    (business * 0.35 + earnings * 0.25 + smart * 0.15 + (isNr7 ? 12 : 0) + (breakout ? 8 : 0) + 15)
+  )))
+
+  return {
+    symbol,
+    name: r.name ?? r.company_name ?? symbol,
+    industry: r.industry ?? r.sector ?? "—",
+    price,
+    market_cap: n(r.market_cap ?? r.market_cap_cr ?? 0),
+    convergence,
+    business_grade: r.business_dna_grade ?? (business >= 80 ? "A+" : business >= 65 ? "A" : business >= 50 ? "B" : "C"),
+    business_score: business,
+    earnings_score: earnings,
+    sm_score: smart,
+    sm_signal: r.smart_money_signal ?? "Neutral",
+    ob_score: has(r.ob_score) ? n(r.ob_score) : null,
+    ob_coverage: r.ob_coverage ?? r.coverage_tier ?? null,
+    current_ob_cr: has(r.current_ob_cr) ? n(r.current_ob_cr) : null,
+    earnings_momentum: has(r.earnings_momentum_score) ? n(r.earnings_momentum_score) : null,
+    consecutive_beats: has(r.consecutive_beats) ? n(r.consecutive_beats) : null,
+    is_nr7: isNr7,
+    stage,
+    breakout_ready: breakout,
+  }
 }
 
 export async function GET(req: NextRequest) {
-  const q = req.nextUrl.searchParams.get("q")?.trim()
-  if (!q || q.length < 2) return NextResponse.json({ results: [] })
+  const q = req.nextUrl.searchParams.get("q")?.trim() || ""
+  if (q.length < 1) return NextResponse.json({ ok: true, results: [] })
 
-  const sql = db()
-  const search = `%${q.toUpperCase()}%`
-  const nameSearch = `%${q}%`
+  const uq = q.toUpperCase()
+  const like = `%${uq}%`
+  const results: any[] = []
+  const seen = new Set<string>()
 
-  try {
-    const rows = await sql`
-      SELECT f.nse_symbol, f.name, f.industry,
-        f.current_price, f.market_cap,
-        f.business_dna_score, f.business_dna_grade,
-        f.earnings_score, f.smart_money_score, f.smart_money_signal,
-        f.sector_rotation_score, f.return_3m, f.return_6m,
-        obs.ob_score, obs.coverage_tier AS ob_coverage, obs.current_ob_cr,
-        es.earnings_momentum_score, es.consecutive_beats,
-        w.is_nr7, w.stage, w.breakout_ready, w.rs_vs_nifty_4w,
-        CASE WHEN UPPER(f.nse_symbol) = ${q.toUpperCase()} THEN 1
-             WHEN UPPER(f.nse_symbol) LIKE ${search} THEN 2
-             WHEN UPPER(f.name) LIKE ${nameSearch.toUpperCase()} THEN 3
-             ELSE 4 END AS match_rank
-      FROM stock_fundamentals f
-      LEFT JOIN order_book_signals obs ON obs.nse_symbol = f.nse_symbol
-      LEFT JOIN earnings_signals   es  ON es.nse_symbol  = f.nse_symbol
-      LEFT JOIN weekly_dna         w   ON w.tradingsymbol = f.nse_symbol
-      WHERE UPPER(f.nse_symbol) LIKE ${search}
-         OR UPPER(f.name)       LIKE ${nameSearch.toUpperCase()}
-         OR UPPER(f.industry)   LIKE ${nameSearch.toUpperCase()}
-      ORDER BY match_rank ASC, f.business_dna_score DESC NULLS LAST
-      LIMIT 10
-    `
-
-    const results = rows.map(r => {
-      const e1 = Math.min(100, Math.max(0, Number(r.business_dna_score ?? 50)))
-      const e2 = Math.min(100, Math.max(0, Math.round(50 + Number(r.return_3m ?? 0) * 0.8 + Number(r.return_6m ?? 0) * 0.4)))
-      const stage = Number(r.stage ?? 2)
-      const e3 = Math.min(100, Math.max(0, Math.round((stage===1?35:stage===2?25:10) + (r.is_nr7?20:0) + (r.breakout_ready?15:0) + (Number(r.rs_vs_nifty_4w??0)>5?15:8))))
-      const e4 = r.earnings_momentum_score ? Math.min(100, Number(r.earnings_momentum_score)) : Math.min(100, Number(r.earnings_score ?? 50))
-      const e5 = Math.min(100, Number(r.smart_money_score ?? 50))
-      const e6 = Math.min(100, Number(r.sector_rotation_score ?? 50))
-      const eligibleOB = hasOrderBook(r.industry ?? "")
-      const e9 = eligibleOB && r.ob_score ? Math.min(100, Number(r.ob_score)) : 0
-      const w9 = eligibleOB ? 10 : 0
-      const mult = w9 === 0 ? 100/90 : 1
-      const convergence = Math.min(100, Math.max(0, Math.round((e1*25+e2*15+e3*12+e4*16+e5*13+e6*9)*mult/100+(e9*w9)/100)))
-
-      return {
-        symbol: r.nse_symbol, name: r.name, industry: r.industry,
-        price: Number(r.current_price ?? 0), market_cap: Number(r.market_cap ?? 0),
-        convergence, business_grade: r.business_dna_grade,
-        business_score: Number(r.business_dna_score ?? 0),
-        earnings_score: Number(r.earnings_score ?? 0),
-        sm_score: Number(r.smart_money_score ?? 0), sm_signal: r.smart_money_signal,
-        ob_score: r.ob_score ? Number(r.ob_score) : null,
-        ob_coverage: r.ob_coverage ?? null, current_ob_cr: r.current_ob_cr ? Number(r.current_ob_cr) : null,
-        earnings_momentum: r.earnings_momentum_score ? Number(r.earnings_momentum_score) : null,
-        consecutive_beats: r.consecutive_beats ? Number(r.consecutive_beats) : null,
-        is_nr7: r.is_nr7 ?? false, stage: r.stage ?? null, breakout_ready: r.breakout_ready ?? false,
-      }
-    })
-
-    return NextResponse.json({ ok: true, query: q, count: results.length, results })
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
+  const add = (rows: Row[]) => {
+    for (const row of rows) {
+      const item = mapRow(row)
+      if (!item.symbol || seen.has(item.symbol)) continue
+      seen.add(item.symbol)
+      results.push(item)
+    }
   }
+
+  // 1) Best case: existing rich stock_fundamentals table.
+  add(await safe(sql`
+    SELECT nse_symbol AS symbol, name, industry, current_price, market_cap,
+           business_dna_score, business_dna_grade, earnings_score,
+           smart_money_score, smart_money_signal, sector_rotation_score,
+           return_3m, return_6m
+    FROM stock_fundamentals
+    WHERE UPPER(nse_symbol) LIKE ${like} OR UPPER(name) LIKE ${like} OR UPPER(COALESCE(industry,'')) LIKE ${like}
+    ORDER BY CASE WHEN UPPER(nse_symbol) = ${uq} THEN 0 WHEN UPPER(nse_symbol) LIKE ${like} THEN 1 ELSE 2 END,
+             business_dna_score DESC NULLS LAST
+    LIMIT 12
+  `, [] as Row[]))
+
+  // 2) Current documented baseline: company_master.
+  if (results.length < 10) add(await safe(sql`
+    SELECT symbol, company_name AS name, NULL::text AS industry, market_cap_cr AS market_cap
+    FROM company_master
+    WHERE UPPER(symbol) LIKE ${like} OR UPPER(company_name) LIKE ${like}
+    ORDER BY CASE WHEN UPPER(symbol) = ${uq} THEN 0 WHEN UPPER(symbol) LIKE ${like} THEN 1 ELSE 2 END,
+             market_cap_cr DESC NULLS LAST
+    LIMIT 15
+  `, [] as Row[]))
+
+  // 3) If only technical_signals exists, keep search usable.
+  if (results.length < 10) add(await safe(sql`
+    SELECT symbol, symbol AS name, NULL::text AS smart_money_signal, NULL::numeric AS convergence_score
+    FROM technical_signals
+    WHERE UPPER(symbol) LIKE ${like}
+    ORDER BY symbol ASC
+    LIMIT 10
+  `, [] as Row[]))
+
+  return NextResponse.json({ ok: true, query: q, count: results.length, results: results.slice(0, 10) })
 }
