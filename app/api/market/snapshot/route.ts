@@ -3,39 +3,46 @@ import { sql } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
+const n = (v: any, f: any = null) => { const x = Number(v); return Number.isFinite(x) ? x : f }
+const pick = (...vals: any[]) => vals.find(v => v !== null && v !== undefined && String(v) !== "") ?? null
+const safe = async <T,>(p: Promise<T>, f: T): Promise<T> => { try { return await p } catch { return f } }
+
 export async function GET() {
-  try {
-    const [snapshot, regime, flows] = await Promise.all([
-      sql`SELECT market_regime,nifty_price,banknifty_price,vix,fii_flow,dii_flow,pcr,breadth_pct,last_updated FROM market_snapshot WHERE id=1 LIMIT 1`.catch(()=>[]),
-      sql`SELECT active_regime,nifty_close,nifty_ema_200,breadth_percentage,recommended_allocation_min,recommended_allocation_max,evaluation_date FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`.catch(()=>[]),
-      sql`SELECT fii_net,dii_net,trade_date FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`.catch(()=>[]),
-    ])
+  const [snapshot, regime, flows] = await Promise.all([
+    safe(sql`SELECT * FROM market_snapshot WHERE id=1 LIMIT 1`, [] as any[]),
+    safe(sql`SELECT * FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`, [] as any[]),
+    safe(sql`SELECT * FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`, [] as any[]),
+  ])
 
-    const snap = snapshot[0] as any || {}
-    const reg  = regime[0]   as any || {}
-    const flow = flows[0]    as any || {}
+  const snap = snapshot[0] || {}
+  const reg = regime[0] || {}
+  const flow = flows[0] || {}
+  const payload = typeof snap.payload === "string" ? (() => { try { return JSON.parse(snap.payload) } catch { return {} } })() : (snap.payload || {})
 
-    return NextResponse.json({
-      ok: true,
-      data: {
-        regime:      reg.active_regime || snap.market_regime || "NORMAL",
-        nifty_price: snap.nifty_price  || reg.nifty_close,
-        nifty_ema200:reg.nifty_ema_200,
-        breadth_pct: reg.breadth_percentage || snap.breadth_pct,
-        deploy_min:  reg.recommended_allocation_min  ?? 50,
-        deploy_max:  reg.recommended_allocation_max  ?? 70,
-        vix:         snap.vix,
-        fii_flow:    flow.fii_net || snap.fii_flow,
-        dii_flow:    flow.dii_net || snap.dii_flow,
-        last_updated:snap.last_updated || reg.evaluation_date,
-      }
-    })
-  } catch (error: unknown) {
-    // Never crash the Today screen — return safe default
-    return NextResponse.json({
-      ok: true,
-      data: { regime:"NORMAL", deploy_min:50, deploy_max:70 },
-      error: String(error),
-    })
-  }
+  const regimeName = pick(reg.active_regime, snap.market_regime, "NORMAL")
+  const deployMin = n(pick(reg.recommended_allocation_min, snap.deploy_min, payload.deploy_min), regimeName === "BEARISH" ? 10 : 50)
+  const deployMax = n(pick(reg.recommended_allocation_max, snap.deploy_max, payload.deploy_max), regimeName === "BEARISH" ? 30 : 70)
+
+  return NextResponse.json({
+    ok: true,
+    data: {
+      regime: regimeName,
+      market_regime: regimeName,
+      nifty_price: n(pick(snap.nifty_price, reg.nifty_close, payload.nifty_price)),
+      nifty_change_pct: n(pick(snap.nifty_change_pct, payload.nifty_change_pct)),
+      sensex_price: n(pick(snap.sensex_price, payload.sensex_price)),
+      sensex_change_pct: n(pick(snap.sensex_change_pct, payload.sensex_change_pct)),
+      banknifty_price: n(pick(snap.banknifty_price, payload.banknifty_price)),
+      banknifty_change_pct: n(pick(snap.banknifty_change_pct, payload.banknifty_change_pct)),
+      nifty_ema200: n(pick(reg.nifty_ema_200, payload.ema200)),
+      breadth_pct: n(pick(reg.breadth_percentage, snap.breadth_pct, payload.breadth)),
+      deploy_min: deployMin,
+      deploy_max: deployMax,
+      vix: n(pick(snap.vix, snap.india_vix, reg.india_vix, payload.vix)),
+      pcr: n(pick(snap.pcr, snap.nifty_pcr, payload.pcr)),
+      fii_flow: n(pick(flow.fii_net, snap.fii_flow, payload.fii_flow)),
+      dii_flow: n(pick(flow.dii_net, snap.dii_flow, payload.dii_flow)),
+      last_updated: pick(snap.last_updated, reg.evaluation_date),
+    }
+  })
 }
