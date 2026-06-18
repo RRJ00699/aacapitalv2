@@ -9,7 +9,6 @@ import { PriceChart } from "./price-chart"
 import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
 import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
-import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 
 
 interface StockDetail {
@@ -241,7 +240,7 @@ export function StockResearchWorkspace({
         </div>
 
 {/* Price Chart + Order Book — hidden on Commentary tab */}
-        <div style={{display:activeTab==="commentary"?"none":"block"}}>
+        <div style={{display:activeTab==="technical"?"block":"none"}}>
           <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>PRICE CHART</div>
             <PriceChart symbol={detail.symbol} height={240} />
@@ -337,6 +336,32 @@ export function StockResearchWorkspace({
         </Card>
 
         {/* Business DNA */}
+        <Card title="ENTRY · EXIT · HOLDING PLAN">
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div style={{background:"#FEF2F2",borderRadius:10,padding:12,border:"1px solid #FECACA"}}>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>STOP LOSS</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#DC2626"}}>₹{(detail.trade_plan?.stopLoss ?? ((Number(detail.current_price)||0)*0.90)).toFixed(0)}</div>
+              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Close below = exit</div>
+            </div>
+            <div style={{background:"#F0FDF4",borderRadius:10,padding:12,border:"1px solid #BBF7D0"}}>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 1 (+12%)</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#16A34A"}}>₹{(detail.trade_plan?.targets?.[0] ?? ((Number(detail.current_price)||0)*1.12)).toFixed(0)}</div>
+              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Book partial profit</div>
+            </div>
+            <div style={{background:"#EFF6FF",borderRadius:10,padding:12,border:"1px solid #BFDBFE"}}>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 2 (+25%)</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#2563EB"}}>₹{(detail.trade_plan?.targets?.[1] ?? ((Number(detail.current_price)||0)*1.25)).toFixed(0)}</div>
+              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Trail stop loss</div>
+            </div>
+            <div style={{background:"#F5F3FF",borderRadius:10,padding:12,border:"1px solid #E9D5FF"}}>
+              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 3 (+50%)</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#7C3AED"}}>₹{(detail.trade_plan?.targets?.[2] ?? ((Number(detail.current_price)||0)*1.50)).toFixed(0)}</div>
+              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Let winner run</div>
+            </div>
+          </div>
+          <InfoRow label="Hold Period" value={"6–18 months"} />
+          <InfoRow label="Position Size" value={detail.conviction?.position_size ?? "1–3% portfolio"} />
+        </Card>
         </div>
 
         <div style={{display:activeTab==="fundamentals"?"block":"none"}}>
@@ -434,7 +459,6 @@ export function StockResearchWorkspace({
         </Card>
 
         {/* Management Commentary — Sprint 11 */}
-          <Phase1WorkspacePanels symbol={symbol} />
         </div>
 
         <div style={{display:activeTab==="commentary"?"block":"none"}}>

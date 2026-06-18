@@ -89,16 +89,20 @@ export function ManagementCommentaryPanel({ symbol, quarter }: Props) {
     setExtracting(true)
     setError(null)
     try {
-      const res = await fetch("/api/management-commentary", {
+      // Uses Screener.in scraper — no Claude API credits needed
+      const res = await fetch("/api/management-commentary/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, force_refresh: false }),
+        body: JSON.stringify({ symbol, force: true }),
       })
       const body = await res.json()
-      if (!res.ok) { setError(body.error ?? "Extraction failed"); return }
-      if (body.data) setData(body.data as Commentary)
+      if (!res.ok || !body.ok) {
+        setError(body.error ?? `Run locally: python _scripts/score_management_commentary.py --symbols ${symbol}`)
+        return
+      }
+      setData(null); setError(null); setTimeout(()=>window.location.reload(), 500)
     } catch {
-      setError("Extraction failed")
+      setError(`Run locally: python _scripts/score_management_commentary.py --symbols ${symbol}`)
     } finally {
       setExtracting(false)
     }
@@ -126,7 +130,7 @@ export function ManagementCommentaryPanel({ symbol, quarter }: Props) {
           background: extracting ? C.gray : C.blue, color: "#fff",
           border: "none", borderRadius: 6, cursor: extracting ? "not-allowed" : "pointer" }}
       >
-        {extracting ? "Extracting via AI..." : "Extract Commentary"}
+        {extracting ? "Scraping Screener.in..." : "Extract Commentary"}
       </button>
       {error && <div style={{ color: C.red, fontSize: 11, marginTop: 6 }}>{error}</div>}
     </div>
@@ -268,7 +272,7 @@ export function ManagementCommentaryPanel({ symbol, quarter }: Props) {
           style={{ fontSize: 10, color: C.blue, background: "none", border: "none",
             cursor: "pointer", textDecoration: "underline" }}
         >
-          {extracting ? "Extracting..." : "Re-extract"}
+          {extracting ? "Scraping..." : "Re-extract"}
         </button>
       </div>
       {error && <div style={{ color: C.red, fontSize: 11 }}>{error}</div>}
