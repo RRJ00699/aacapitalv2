@@ -160,6 +160,6 @@ export async function GET() {
     })
   } catch (err: any) {
     console.error("Global market error:", err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ ok: false, global: {}, india: {}, error: err.message }, { status: 200 })
   }
 }

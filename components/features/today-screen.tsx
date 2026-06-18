@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw, Search, Shield, TrendingDown, TrendingUp, Zap } from "lucide-react"
+import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw, Shield, TrendingDown, TrendingUp, Zap } from "lucide-react"
 
 type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN"
 type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM"
@@ -38,14 +38,14 @@ function Spark({ positive = true }: { positive?: boolean }) {
 }
 
 function Skeleton({ className = "h-20" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-xl border border-[#1F2226] bg-[#12161A] ${className}`} />
+  return <div className={`animate-pulse rounded-xl border border-slate-100 bg-slate-50 ${className}`} />
 }
 
 function Section({ title, meta, icon, children }: { title: string; meta?: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return <section className="rounded-2xl border border-[#1F2226] bg-[#11161C] p-3 shadow-[0_12px_35px_rgba(0,0,0,0.22)]">
-    <div className="mb-3 flex items-center justify-between border-b border-[#1F2226] pb-2">
-      <h2 className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.14em] text-white">{icon}{title}</h2>
-      {meta && <span className="font-mono text-[10px] text-[#636B76]">{meta}</span>}
+  return <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2.5">
+      <h2 className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-slate-900">{icon}{title}</h2>
+      {meta && <span className="font-mono text-[10px] text-slate-400">{meta}</span>}
     </div>
     {children}
   </section>
@@ -137,42 +137,24 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const topSectors = sectors.slice(0, 3).map(s => s.name).filter(Boolean)
   const day = useMemo(() => new Date().toLocaleString("en-IN", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }), [])
 
-  return <div className="min-h-screen bg-[#080A0D] text-[#D9DEE7]">
-    <div className="sticky top-0 z-40 border-b border-[#1F2226] bg-[#080A0D]/90 px-4 py-2 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1700px] items-center gap-4">
-        <div className="mr-2">
-          <div className="text-[15px] font-black tracking-tight text-white">AA<span className="text-teal-300">Capital</span></div>
-          <div className="text-[9px] font-bold uppercase tracking-[0.24em] text-[#626B76]">Institutional OS</div>
-        </div>
-        <nav className="hidden items-center gap-1 text-[12px] font-semibold text-[#838C99] lg:flex">
-          {['Today','Discovery','Portfolio','IPO DNA','Mirror','Settings','System'].map((t, i) => <span key={t} className={i === 0 ? "rounded-lg border border-[#2A3038] bg-[#171C23] px-3 py-1.5 text-white" : "rounded-lg px-3 py-1.5 hover:bg-[#12161C] hover:text-white"}>{t}</span>)}
-        </nav>
-        <div className="relative ml-auto hidden max-w-xl flex-1 md:block">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#555D68]" />
-          <input className="w-full rounded-lg border border-[#232932] bg-[#11161C] py-2 pl-9 pr-4 text-[12px] text-white outline-none placeholder:text-[#555D68] focus:border-teal-500/40" placeholder="Search stocks, sectors, IPOs, signals..." />
-        </div>
-        <div className="hidden items-center gap-3 border-l border-[#1F2226] pl-4 font-mono text-[11px] lg:flex">
-          <span className="text-[#65707D]">Broker</span>
-          <span className={brokerConnected ? "text-emerald-300" : brokerConnected === false ? "text-amber-300" : "text-[#838C99]"}>● {brokerConnected ? "Connected" : brokerConnected === false ? "Reconnect" : "Checking"}</span>
-        </div>
-      </div>
-    </div>
+  return <div className="min-h-screen bg-[#F7F9FC] text-slate-900">
 
-    <main className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 p-3">
-      <div className="col-span-12 flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#10151B] px-3 py-2">
-        <div><h1 className="text-[14px] font-bold text-white">Today’s Market Brief</h1><p className="font-mono text-[10px] text-[#65707D]">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
-        <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-[#2A3038] bg-[#171C23] px-3 py-1.5 text-[11px] font-bold text-white hover:bg-[#202734]"><RefreshCw className={`h-3 w-3 text-teal-300 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
+
+    <main className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 py-3">
+      <div className="col-span-12 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div><h1 className="text-[14px] font-bold text-slate-900">Today’s Market Brief</h1><p className="font-mono text-[10px] text-slate-500">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
+        <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"><RefreshCw className={`h-3 w-3 text-teal-300 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
 
       <div className="col-span-12 space-y-3 xl:col-span-8">
-        {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#10151B] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)]`}>
+        {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#FFFFFF] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)]`}>
           <div className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l ${rc.glow} to-transparent`} />
           <div className="relative flex items-start justify-between gap-6">
             <div>
               <div className="mb-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#626B76]">System Macro Regime</div>
               <div className={`text-[42px] font-black leading-none tracking-tight ${rc.text}`}>{rc.title}</div>
               <p className="mt-2 max-w-2xl text-[15px] font-semibold text-white">{rc.advice}</p>
-              <div className="mt-4 flex flex-wrap gap-2">{topSectors.length ? topSectors.map(s => <span key={s} className="rounded-md border border-white/5 bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white/85">{s}</span>) : <span className="text-[12px] text-[#65707D]">Sector rotation import pending</span>}</div>
+              <div className="mt-4 flex flex-wrap gap-2">{topSectors.length ? topSectors.map(s => <span key={s} className="rounded-md border border-white/5 bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white/85">{s}</span>) : <span className="text-[12px] text-slate-500">Sector rotation import pending</span>}</div>
             </div>
             <div className="min-w-[150px] rounded-xl border border-white/5 bg-black/25 p-3 text-right">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#75808D]">Deployment</div>
@@ -187,33 +169,33 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
           <Section title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}>
             {loading ? <Skeleton className="h-36" /> : opps.length ? <div className="space-y-1.5">{opps.map(o => <button key={o.symbol} onClick={() => onStockSelect?.(o.symbol)} className="group flex w-full items-center justify-between rounded-xl border border-transparent p-2 text-left hover:border-[#29313B] hover:bg-[#171D25]">
               <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[13px] font-black text-white group-hover:text-teal-300">{o.symbol}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-[#8D98A6]">Score {o.score}</span></div><div className="truncate text-[11px] text-[#687382]">{o.reasons?.slice(0, 2).join(" · ")}</div></div>
-              <div className="flex items-center gap-3"><Spark positive={o.action !== "AVOID"} /><ActionPill action={o.action} /><ChevronRight className="h-3.5 w-3.5 text-[#65707D]" /></div>
-            </button>)}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">No technical signals yet. Wire/import <span className="font-mono">technical_signals</span>.</div>}
+              <div className="flex items-center gap-3"><Spark positive={o.action !== "AVOID"} /><ActionPill action={o.action} /><ChevronRight className="h-3.5 w-3.5 text-slate-500" /></div>
+            </button>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">No technical signals yet. Wire/import <span className="font-mono">technical_signals</span>.</div>}
           </Section>
 
           <Section title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-300" />}>
             {loading ? <Skeleton className="h-36" /> : ipos.length ? <div className="space-y-1.5">{ipos.map(i => {
               const rec = String(i.recommendation ?? "WATCH").toUpperCase(); const action: Action = rec.includes("APPLY") ? "APPLY" : rec.includes("SKIP") || rec.includes("AVOID") ? "SKIP" : "WATCH"
               return <div key={i.name} className="flex items-center justify-between rounded-xl p-2 hover:bg-[#171D25]"><div className="min-w-0"><div className="truncate text-[13px] font-bold text-white">{i.name}</div><div className="font-mono text-[10px] text-[#687382]">Conviction {i.score ? Math.round(num(i.score)) : "—"}</div></div><ActionPill action={action} /></div>
-            })}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">No open IPOs.</div>}
+            })}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">No open IPOs.</div>}
           </Section>
         </div>
 
         <Section title="Sector Leadership" meta="Rotation Engine" icon={<BarChart2 className="h-3.5 w-3.5 text-indigo-300" />}>
-          {loading ? <Skeleton className="h-28" /> : sectors.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s => <div key={s.name} className="flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#0C1015] p-2.5"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-white">{s.name}</div><div className="text-[10px] text-[#687382]">{s.signal ?? "Leadership improving"}</div></div><div className="flex items-center gap-3 font-mono"><span className={num(s.performance) >= 0 ? "text-[11px] font-bold text-emerald-300" : "text-[11px] font-bold text-rose-300"}>{signed(s.performance)}</span><span className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-300">{s.score ?? "—"}</span></div></div>)}</div> : <div className="rounded-xl bg-[#0C1015] p-5 text-center text-[12px] text-[#687382]">Sector rotation data pending. Run import script.</div>}
+          {loading ? <Skeleton className="h-28" /> : sectors.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s => <div key={s.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-2.5"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-white">{s.name}</div><div className="text-[10px] text-[#687382]">{s.signal ?? "Leadership improving"}</div></div><div className="flex items-center gap-3 font-mono"><span className={num(s.performance) >= 0 ? "text-[11px] font-bold text-emerald-300" : "text-[11px] font-bold text-rose-300"}>{signed(s.performance)}</span><span className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-300">{s.score ?? "—"}</span></div></div>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">Sector rotation data pending. Run import script.</div>}
         </Section>
       </div>
 
       <div className="col-span-12 space-y-3 xl:col-span-4">
         <Section title="Domestic Market" meta="Live / Cache" icon={<Activity className="h-3.5 w-3.5 text-teal-300" />}>
-          {loading ? <Skeleton className="h-72" /> : <div className="grid grid-cols-2 gap-2">{market.map((m, idx) => <div key={m.label} className={idx < 2 ? "col-span-2 flex items-center justify-between rounded-xl border border-[#1F2226] bg-[#0C1015] p-3" : "rounded-xl border border-[#1F2226] bg-[#0C1015] p-3"}>
-            <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-[#65707D]">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-white" : "font-mono text-[16px] font-black text-white"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-[#687382]">{m.note ?? ""}</div></div>
+          {loading ? <Skeleton className="h-72" /> : <div className="grid grid-cols-2 gap-2">{market.map((m, idx) => <div key={m.label} className={idx < 2 ? "col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-3" : "rounded-xl border border-slate-200 bg-[#F9FAFB] p-3"}>
+            <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-white" : "font-mono text-[16px] font-black text-white"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-[#687382]">{m.note ?? ""}</div></div>
             {idx < 2 && <div className="flex flex-col items-end gap-1"><span className={(m.change ?? 0) >= 0 ? "font-mono text-[12px] font-bold text-emerald-300" : "font-mono text-[12px] font-bold text-rose-300"}>{signed(m.change)}</span><Spark positive={(m.change ?? 0) >= 0} /></div>}
           </div>)}</div>}
         </Section>
 
         <Section title="Global Markets" meta="Macro Overlay" icon={<Globe className="h-3.5 w-3.5 text-blue-300" />}>
-          {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-[#1F2226] bg-[#0C1015] px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-[#AAB3C2]">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-white">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-300" : "min-w-[50px] text-right text-[10px] font-bold text-rose-300"}>{signed(g.change)}</span></div></div>)}</div>}
+          {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-slate-600">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-slate-900">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-300" : "min-w-[50px] text-right text-[10px] font-bold text-rose-300"}>{signed(g.change)}</span></div></div>)}</div>}
         </Section>
       </div>
     </main>
