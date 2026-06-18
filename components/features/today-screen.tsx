@@ -343,7 +343,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
                       <span className="text-[12px] font-semibold text-slate-700">{g.label}</span>
                       <div className="flex items-center gap-3 font-mono">
                         <span className="text-[12px] font-bold text-slate-900">{g.value??"—"}</span>
-                        <span className={`min-w-[52px] text-right text-[11px] font-bold ${(g.change??0)>=0?"text-emerald-600":"text-rose-600"}`}>{sgn(g.change)}</span>
+                        <span className={`text-[11px] font-bold ${(g.change??0)>=0?"text-emerald-600":"text-rose-600"}`}>{sgn(g.change)}</span>
                       </div>
                     </div>
                   ))}
