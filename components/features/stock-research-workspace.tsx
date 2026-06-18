@@ -157,6 +157,7 @@ export function StockResearchWorkspace({
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [weeklyDNA, setWeeklyDNA] = useState<Record<string, unknown> | null>(null)
+  const [activeTab, setActiveTab] = useState<string>("technical")
 
   useEffect(() => {
     if (!symbol) return
@@ -231,16 +232,26 @@ export function StockResearchWorkspace({
           </button>
         </div>
 
-{/* Price Chart */}
-        <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>PRICE CHART</div>
-          <PriceChart symbol={detail.symbol} height={240} />
+        {/* Tab navigation */}
+        <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",marginBottom:16}}>
+          {[["technical","📈 Technical"],["fundamentals","🏢 Fundamentals"],["commentary","💬 Commentary"]].map(([id,label])=>(
+            <button key={id} onClick={()=>setActiveTab(id)} style={{padding:"9px 16px",border:"none",fontSize:12,cursor:"pointer",fontWeight:activeTab===id?700:500,color:activeTab===id?"#2563EB":"#6B7280",background:"transparent",borderBottom:activeTab===id?"2px solid #2563EB":"2px solid transparent"}}>{label}</button>
+          ))}
         </div>
-        <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
-  <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>ORDER BOOK</div>
-  <OrderBookPanel symbol={detail.symbol} />
-</div>
+
+{/* Price Chart + Order Book — hidden on Commentary tab */}
+        <div style={{display:activeTab==="commentary"?"none":"block"}}>
+          <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>PRICE CHART</div>
+            <PriceChart symbol={detail.symbol} height={240} />
+          </div>
+          <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>ORDER BOOK</div>
+            <OrderBookPanel symbol={detail.symbol} />
+          </div>
+        </div>
         {/* 6 Engine Scores */}
+        <div style={{display:activeTab==="technical"?"block":"none"}}>
         <Card title="6-ENGINE CONVERGENCE">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 14 }}>
             {[
@@ -325,6 +336,9 @@ export function StockResearchWorkspace({
         </Card>
 
         {/* Business DNA */}
+        </div>
+
+        <div style={{display:activeTab==="fundamentals"?"block":"none"}}>
         <Card title={`BUSINESS DNA [${detail.scores?.business_grade ?? "—"}]`}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
             <InfoRow label="ROCE" value={`${Number(detail.fundamentals?.roce).toFixed(1) ?? "—"}%`} highlight={(detail.fundamentals?.roce ?? 0) >= 18} />
@@ -419,9 +433,13 @@ export function StockResearchWorkspace({
         </Card>
 
         {/* Management Commentary — Sprint 11 */}
-        <Card title="MANAGEMENT COMMENTARY">
-          <ManagementCommentaryPanel symbol={symbol} />
-        </Card>
+        </div>
+
+        <div style={{display:activeTab==="commentary"?"block":"none"}}>
+          <Card title="MANAGEMENT COMMENTARY">
+            <ManagementCommentaryPanel symbol={symbol} />
+          </Card>
+        </div>
       </div>
     </Overlay>
   )
