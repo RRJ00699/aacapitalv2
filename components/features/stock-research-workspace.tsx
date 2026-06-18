@@ -9,6 +9,7 @@ import { PriceChart } from "./price-chart"
 import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
 import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
+import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 
 
 interface StockDetail {
@@ -433,6 +434,7 @@ export function StockResearchWorkspace({
         </Card>
 
         {/* Management Commentary — Sprint 11 */}
+          <Phase1WorkspacePanels symbol={symbol} />
         </div>
 
         <div style={{display:activeTab==="commentary"?"block":"none"}}>

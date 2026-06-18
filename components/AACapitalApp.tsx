@@ -18,6 +18,7 @@ import { InvestmentCommandCenter } from "./features/investment-command-center"
 import { SectorRotationScreen } from "./features/sector-rotation"
 import { TradeJournalScreen, CapitalDeploymentOptimizer, MultibaggerDiscoveryEngine } from "./features/sprint8-features"
 import { DNALabScreen } from "./features/dna-lab"
+import { EarningsScreen } from "./features/earnings-screen"
 import { StockSearch } from "./features/stock-search"
 import { CronMonitor } from "./features/cron-monitor"
 import { IntelligenceDashboard } from "./features/intelligence-dashboard"
@@ -2892,6 +2893,7 @@ setMarketFetched(true);
                 {id:"multibagger",  label:simpleMode?"Potential multibaggers":"Multibagger discovery"},
                 {id:"intelligence", label:simpleMode?"Stock intelligence":"Intelligence dashboard"},
                 {id:"technical",    label:simpleMode?"Technical setups":"Technical screener"},
+                {id:"earnings",     label:"Earnings"},
                 {id:"sector",       label:"Sector leaders"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setOppView(t.id as any)}
@@ -2909,6 +2911,7 @@ setMarketFetched(true);
           {oppView==="multibagger"  && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="intelligence" && <div style={{maxWidth:960,margin:"0 auto",padding:16}}><IntelligenceDashboard/></div>}
           {oppView==="technical"    && <TechnicalScreener simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="earnings"    && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
         </div>
       )}
