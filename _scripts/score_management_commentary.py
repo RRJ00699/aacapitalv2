@@ -162,17 +162,29 @@ def score_text(text: str, company: str = "", industry: str = "") -> dict:
     score = 0
     bulls, bears = [], []
 
+    def extract_snippet(pattern: str, text: str, max_len: int = 60) -> str:
+        """Extract actual matched text snippet instead of regex pattern."""
+        m = re.search(pattern, text)
+        if m:
+            start = max(0, m.start() - 15)
+            end   = min(len(text), m.end() + 30)
+            return "..." + text[start:end].strip().replace("\n", " ") + "..."
+        return pattern[:45]
+
     for p, w in BULLISH:
-        if re.search(p, t): score += w; bulls.append(p[:45])
+        m = re.search(p, t)
+        if m: score += w; bulls.append(extract_snippet(p, t))
     for p, w in BEARISH:
-        if re.search(p, t): score += w; bears.append(p[:45])
+        m = re.search(p, t)
+        if m: score += w; bears.append(extract_snippet(p, t))
 
     sector = detect_sector(text, company, industry)
     if sector in SECTOR_SIGNALS:
         for p, w in SECTOR_SIGNALS[sector]:
-            if re.search(p, t):
+            m = re.search(p, t)
+            if m:
                 score += w
-                bulls.append(f"[{sector.upper()}] {p[:35]}")
+                bulls.append(f"[{sector.upper()}] {extract_snippet(p, t)}")
 
     score = max(-100, min(100, score))
     tone = ("BULLISH" if score >= 40 else "CAUTIOUSLY_OPTIMISTIC" if score >= 15 else

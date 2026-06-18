@@ -166,9 +166,15 @@ export function StockResearchWorkspace({
     Promise.all([
       fetch(`/api/investment-command-center?symbol=${symbol}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/weekly-dna?symbol=${symbol}`).then(r => r.json()).catch(() => null),
-    ]).then(([d, w]) => {
-      if (d.ok) setDetail(d as StockDetail)
-      else setError(d.error ?? "Not found")
+      fetch(`/api/broker/quote?sym=${symbol}&exchange=NSE`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
+    ]).then(([d, w, q]) => {
+      if (d.ok) {
+        // Inject live price from Kite if available
+        if (q?.last_price && q.last_price > 0) {
+          d.current_price = q.last_price
+        }
+        setDetail(d as StockDetail)
+      } else setError(d.error ?? "Not found")
       if (w?.ok) setWeeklyDNA(w.data)
     }).catch(e => setError(e.message))
     .finally(() => setLoading(false))
@@ -360,7 +366,7 @@ export function StockResearchWorkspace({
             </div>
           </div>
           <InfoRow label="Hold Period" value={"6–18 months"} />
-          <InfoRow label="Position Size" value={detail.conviction?.position_size ?? "1–3% portfolio"} />
+          <InfoRow label="Position Size" value={detail.conviction?.position_size ?? "1–3% of portfolio"} />
         </Card>
         </div>
 

@@ -18,7 +18,9 @@ import { InvestmentCommandCenter } from "./features/investment-command-center"
 import { SectorRotationScreen } from "./features/sector-rotation"
 import { TradeJournalScreen, CapitalDeploymentOptimizer, MultibaggerDiscoveryEngine } from "./features/sprint8-features"
 import { DNALabScreen } from "./features/dna-lab"
-import { EarningsScreen } from "./features/earnings-screen"
+import { EarningsScreen }   from "./features/earnings-screen"
+import { WeeklyDNAScreen }  from "./features/weekly-dna-screen"
+import { BacktestScreen }   from "./features/backtest-screen"
 import { StockSearch } from "./features/stock-search"
 import { CronMonitor } from "./features/cron-monitor"
 import { IntelligenceDashboard } from "./features/intelligence-dashboard"
@@ -2984,6 +2986,8 @@ setMarketFetched(true);
           </div>
           {discoveryView==="convergence" && <InvestmentCommandCenter/>}
           {discoveryView==="dna"         && <DNALabScreen/>}
+          {discoveryView==="weekly-dna"  && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {discoveryView==="backtest"    && <BacktestScreen/>}
           {discoveryView==="sector"      && <SectorRotationScreen/>}
           {discoveryView==="journal"     && <TradeJournalScreen/>}
           {discoveryView==="cron"        && <CronMonitor/>}
