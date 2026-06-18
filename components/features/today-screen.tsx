@@ -156,9 +156,9 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   return <div className="h-screen bg-[#F7F9FC] text-slate-900 flex flex-col overflow-hidden">
 
 
-    <main className="flex-1 overflow-y-auto"><div className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 py-3 h-full">
-      <div className="col-span-12 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-        <div><h1 className="text-[14px] font-bold text-slate-900">Today’s Market Brief</h1><p className="font-mono text-[10px] text-slate-500">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
+    <main className="flex-1 overflow-y-auto"><div className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 pt-2 pb-3">
+      <div className="col-span-12 flex items-center justify-between py-0.5">
+        <div><p className="font-mono text-[10px] text-slate-400">{day} IST{updatedAt ? ` · Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : ""}</p></div>
         <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"><RefreshCw className={`h-3 w-3 text-teal-600 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
 
