@@ -26,7 +26,7 @@ const moneyCr = (v: unknown) => {
 
 const REGIME: Record<Regime, { title: string; advice: string; tone: string; deploy: string; pct: number; border: string; text: string; glow: string }> = {
   HOT: { title: "HOT", advice: "Risk ON. Aggressively deploy capital into top-ranked sectors.", tone: "Aggressive deployment", deploy: "75–95%", pct: 92, border: "border-emerald-500/25", text: "text-emerald-300", glow: "from-emerald-500/20" },
-  NORMAL: { title: "NORMAL", advice: "Deploy selectively. Focus only on high-conviction names.", tone: "Selective deployment", deploy: "50–70%", pct: 72, border: "border-teal-500/25", text: "text-teal-300", glow: "from-teal-500/20" },
+  NORMAL: { title: "NORMAL", advice: "Deploy selectively. Focus only on high-conviction names.", tone: "Selective deployment", deploy: "50–70%", pct: 72, border: "border-teal-500/25", text: "text-teal-600", glow: "from-teal-500/20" },
   CAUTION: { title: "CAUTION", advice: "Protect capital. Avoid fresh leveraged positions.", tone: "Defensive selection", deploy: "25–45%", pct: 42, border: "border-amber-500/25", text: "text-amber-300", glow: "from-amber-500/20" },
   COLD: { title: "COLD", advice: "Preserve capital. Wait for breadth and liquidity to improve.", tone: "Low deployment", deploy: "10–30%", pct: 24, border: "border-blue-500/25", text: "text-blue-300", glow: "from-blue-500/20" },
   FROZEN: { title: "FROZEN", advice: "Risk OFF. Hold cash and avoid new positions.", tone: "Cash protocol", deploy: "0–15%", pct: 8, border: "border-rose-500/25", text: "text-rose-300", glow: "from-rose-500/20" },
@@ -85,12 +85,28 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         fetch("/api/broker/status", { cache: "no-store" }).then(r => r.json()).catch(() => null),
       ])
 
-      const india = globalR?.india ?? snapR?.data ?? {}
+      const snap = snapR?.data ?? {}
+      const indiaGlobal = globalR?.india ?? {}
+      const india = {
+        nifty:          indiaGlobal.nifty         ?? snap.nifty_price,
+        bankNifty:      indiaGlobal.bankNifty      ?? snap.banknifty_price,
+        vix:            indiaGlobal.vix            ?? snap.vix ?? snap.india_vix,
+        fii:            indiaGlobal.fii            ?? snap.fii_flow ?? snap.fii_cash_flow,
+        dii:            indiaGlobal.dii            ?? snap.dii_flow ?? snap.dii_cash_flow,
+        pcr:            indiaGlobal.pcr            ?? snap.pcr,
+        niftyChg:       indiaGlobal.niftyChg       ?? snap.nifty_change_pct,
+        bankNiftyChg:   indiaGlobal.bankNiftyChg   ?? snap.banknifty_change_pct,
+        regime:         indiaGlobal.regime         ?? snap.regime ?? snap.market_regime,
+        nifty_price:    snap.nifty_price,
+        banknifty_price:snap.banknifty_price,
+        fii_flow:       snap.fii_flow,
+        dii_flow:       snap.dii_flow,
+      }
       const r = String(india.regime ?? snapR?.data?.regime ?? "NORMAL").toUpperCase() as Regime
       if (REGIME[r]) setRegime(r)
 
       setMarket([
-        { label: "NIFTY", value: india.nifty ? nf.format(num(india.nifty)) : india.nifty_price ? nf.format(num(india.nifty_price)) : "—", change: india.niftyChg ?? null },
+        { label: "NIFTY", value: india.nifty ?? india.nifty_price ? nf.format(num(india.nifty ?? india.nifty_price)) : "—", change: india.niftyChg ?? null },
         { label: "BANK NIFTY", value: india.bankNifty ? nf.format(num(india.bankNifty)) : india.banknifty_price ? nf.format(num(india.banknifty_price)) : "—", change: india.bankNiftyChg ?? null },
         { label: "VIX", value: india.vix ? n2.format(num(india.vix)) : "—", note: num(india.vix) < 14 ? "LOW VOL" : num(india.vix) > 18 ? "HIGH VOL" : "NORMAL" },
         { label: "FII", value: moneyCr(india.fii ?? india.fii_flow), note: "Cash flow" },
@@ -143,59 +159,59 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
     <main className="mx-auto grid max-w-[1700px] grid-cols-12 gap-3 px-4 py-3">
       <div className="col-span-12 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
         <div><h1 className="text-[14px] font-bold text-slate-900">Today’s Market Brief</h1><p className="font-mono text-[10px] text-slate-500">{day} IST · {updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}` : "Loading live state"}</p></div>
-        <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"><RefreshCw className={`h-3 w-3 text-teal-300 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
+        <button onClick={() => load(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"><RefreshCw className={`h-3 w-3 text-teal-600 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
 
       <div className="col-span-12 space-y-3 xl:col-span-8">
-        {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#FFFFFF] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.28)]`}>
+        {loading ? <Skeleton className="h-48" /> : <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-[#FFFFFF] p-5 shadow-sm`}>
           <div className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l ${rc.glow} to-transparent`} />
           <div className="relative flex items-start justify-between gap-6">
             <div>
-              <div className="mb-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#626B76]">System Macro Regime</div>
+              <div className="mb-1 text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">System Macro Regime</div>
               <div className={`text-[42px] font-black leading-none tracking-tight ${rc.text}`}>{rc.title}</div>
-              <p className="mt-2 max-w-2xl text-[15px] font-semibold text-white">{rc.advice}</p>
-              <div className="mt-4 flex flex-wrap gap-2">{topSectors.length ? topSectors.map(s => <span key={s} className="rounded-md border border-white/5 bg-black/25 px-2.5 py-1 text-[11px] font-semibold text-white/85">{s}</span>) : <span className="text-[12px] text-slate-500">Sector rotation import pending</span>}</div>
+              <p className="mt-2 max-w-2xl text-[15px] font-semibold text-slate-700">{rc.advice}</p>
+              <div className="mt-4 flex flex-wrap gap-2">{topSectors.length ? topSectors.map(s => <span key={s} className="rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{s}</span>) : <span className="text-[12px] text-slate-500">Sector rotation import pending</span>}</div>
             </div>
-            <div className="min-w-[150px] rounded-xl border border-white/5 bg-black/25 p-3 text-right">
-              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#75808D]">Deployment</div>
+            <div className="min-w-[150px] rounded-xl border border-white/5 bg-slate-900/25 p-3 text-right">
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Deployment</div>
               <div className={`text-[30px] font-black ${rc.text}`}>{rc.deploy}</div>
               <div className="mt-2 h-2 rounded-full bg-white/10"><div style={{ width: `${rc.pct}%` }} className="h-full rounded-full bg-current opacity-70" /></div>
-              <div className="mt-2 text-[11px] text-[#8B95A3]">{rc.tone}</div>
+              <div className="mt-2 text-[11px] text-slate-500">{rc.tone}</div>
             </div>
           </div>
         </section>}
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <Section title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-3.5 w-3.5 text-orange-400" />}>
-            {loading ? <Skeleton className="h-36" /> : opps.length ? <div className="space-y-1.5">{opps.map(o => <button key={o.symbol} onClick={() => onStockSelect?.(o.symbol)} className="group flex w-full items-center justify-between rounded-xl border border-transparent p-2 text-left hover:border-[#29313B] hover:bg-[#171D25]">
-              <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[13px] font-black text-white group-hover:text-teal-300">{o.symbol}</span><span className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px] text-[#8D98A6]">Score {o.score}</span></div><div className="truncate text-[11px] text-[#687382]">{o.reasons?.slice(0, 2).join(" · ")}</div></div>
+            {loading ? <Skeleton className="h-36" /> : opps.length ? <div className="space-y-1.5">{opps.map(o => <button key={o.symbol} onClick={() => onStockSelect?.(o.symbol)} className="group flex w-full items-center justify-between rounded-xl border border-transparent p-2 text-left hover:border-slate-200 hover:bg-slate-50">
+              <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[13px] font-black text-slate-900 group-hover:text-teal-600">{o.symbol}</span><span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">Score {o.score}</span></div><div className="truncate text-[11px] text-slate-500">{o.reasons?.slice(0, 2).join(" · ")}</div></div>
               <div className="flex items-center gap-3"><Spark positive={o.action !== "AVOID"} /><ActionPill action={o.action} /><ChevronRight className="h-3.5 w-3.5 text-slate-500" /></div>
-            </button>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">No technical signals yet. Wire/import <span className="font-mono">technical_signals</span>.</div>}
+            </button>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#6B7280]">No technical signals yet. Wire/import <span className="font-mono">technical_signals</span>.</div>}
           </Section>
 
-          <Section title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-300" />}>
+          <Section title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-600" />}>
             {loading ? <Skeleton className="h-36" /> : ipos.length ? <div className="space-y-1.5">{ipos.map(i => {
               const rec = String(i.recommendation ?? "WATCH").toUpperCase(); const action: Action = rec.includes("APPLY") ? "APPLY" : rec.includes("SKIP") || rec.includes("AVOID") ? "SKIP" : "WATCH"
-              return <div key={i.name} className="flex items-center justify-between rounded-xl p-2 hover:bg-[#171D25]"><div className="min-w-0"><div className="truncate text-[13px] font-bold text-white">{i.name}</div><div className="font-mono text-[10px] text-[#687382]">Conviction {i.score ? Math.round(num(i.score)) : "—"}</div></div><ActionPill action={action} /></div>
-            })}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">No open IPOs.</div>}
+              return <div key={i.name} className="flex items-center justify-between rounded-xl p-2 hover:bg-slate-50"><div className="min-w-0"><div className="truncate text-[13px] font-bold text-slate-900">{i.name}</div><div className="font-mono text-[10px] text-slate-500">Conviction {i.score ? Math.round(num(i.score)) : "—"}</div></div><ActionPill action={action} /></div>
+            })}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#6B7280]">No open IPOs.</div>}
           </Section>
         </div>
 
         <Section title="Sector Leadership" meta="Rotation Engine" icon={<BarChart2 className="h-3.5 w-3.5 text-indigo-300" />}>
-          {loading ? <Skeleton className="h-28" /> : sectors.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s => <div key={s.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-2.5"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-white">{s.name}</div><div className="text-[10px] text-[#687382]">{s.signal ?? "Leadership improving"}</div></div><div className="flex items-center gap-3 font-mono"><span className={num(s.performance) >= 0 ? "text-[11px] font-bold text-emerald-300" : "text-[11px] font-bold text-rose-300"}>{signed(s.performance)}</span><span className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-300">{s.score ?? "—"}</span></div></div>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#687382]">Sector rotation data pending. Run import script.</div>}
+          {loading ? <Skeleton className="h-28" /> : sectors.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s => <div key={s.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-2.5"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-slate-900">{s.name}</div><div className="text-[10px] text-slate-500">{s.signal ?? "Leadership improving"}</div></div><div className="flex items-center gap-3 font-mono"><span className={num(s.performance) >= 0 ? "text-[11px] font-bold text-emerald-600" : "text-[11px] font-bold text-rose-600"}>{signed(s.performance)}</span><span className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">{s.score ?? "—"}</span></div></div>)}</div> : <div className="rounded-xl bg-[#F9FAFB] p-5 text-center text-[12px] text-[#6B7280]">Sector rotation data pending. Run import script.</div>}
         </Section>
       </div>
 
       <div className="col-span-12 space-y-3 xl:col-span-4">
-        <Section title="Domestic Market" meta="Live / Cache" icon={<Activity className="h-3.5 w-3.5 text-teal-300" />}>
+        <Section title="Domestic Market" meta="Live / Cache" icon={<Activity className="h-3.5 w-3.5 text-teal-600" />}>
           {loading ? <Skeleton className="h-72" /> : <div className="grid grid-cols-2 gap-2">{market.map((m, idx) => <div key={m.label} className={idx < 2 ? "col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-[#F9FAFB] p-3" : "rounded-xl border border-slate-200 bg-[#F9FAFB] p-3"}>
-            <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-white" : "font-mono text-[16px] font-black text-white"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-[#687382]">{m.note ?? ""}</div></div>
+            <div><div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{m.label}</div><div className={idx < 2 ? "font-mono text-[22px] font-black text-slate-900" : "font-mono text-[16px] font-black text-slate-900"}>{m.value}</div><div className="mt-1 text-[10px] font-bold text-slate-500">{m.note ?? ""}</div></div>
             {idx < 2 && <div className="flex flex-col items-end gap-1"><span className={(m.change ?? 0) >= 0 ? "font-mono text-[12px] font-bold text-emerald-300" : "font-mono text-[12px] font-bold text-rose-300"}>{signed(m.change)}</span><Spark positive={(m.change ?? 0) >= 0} /></div>}
           </div>)}</div>}
         </Section>
 
         <Section title="Global Markets" meta="Macro Overlay" icon={<Globe className="h-3.5 w-3.5 text-blue-300" />}>
-          {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-slate-600">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-slate-900">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-300" : "min-w-[50px] text-right text-[10px] font-bold text-rose-300"}>{signed(g.change)}</span></div></div>)}</div>}
+          {loading ? <Skeleton className="h-56" /> : <div className="space-y-1.5">{globalRows.map(g => <div key={g.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-mono"><span className="font-sans text-[11px] font-bold text-slate-600">{g.label}</span><div className="flex items-center gap-3"><span className="text-[11px] font-bold text-slate-900">{g.value ?? "—"}</span><span className={(g.change ?? 0) >= 0 ? "min-w-[50px] text-right text-[10px] font-bold text-emerald-600" : "min-w-[50px] text-right text-[10px] font-bold text-rose-600"}>{signed(g.change)}</span></div></div>)}</div>}
         </Section>
       </div>
     </main>
