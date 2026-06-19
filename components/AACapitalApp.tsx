@@ -1,5 +1,5 @@
 "use client"
-import { TrendingUp, BarChart2, Zap, Home, RefreshCw, Activity, Briefcase, Settings2, Users } from "lucide-react"
+import { TrendingUp, BarChart2, Zap, Home, RefreshCw, Activity, Briefcase, Settings2, Users, Award } from "lucide-react"
 import {
   calcConviction, calcEV, allocPct,
   ConvictionPanel, CapitalGoalEngine, ModeTracker, CompoundTab,
@@ -2840,8 +2840,9 @@ setMarketFetched(true);
         {[
   {v:"today",         l:"Today",        icon:<Home        size={13}/>},
   {v:"opportunities", l:"Opportunities", icon:<TrendingUp   size={13}/>},
-  {v:"portfolio",     l:"Portfolio",     icon:<Briefcase    size={13}/>},
   {v:"ipo",           l:"IPO",           icon:<Zap          size={13}/>},
+  {v:"watchlist",     l:"Watchlist",     icon:<Award        size={13}/>},
+  {v:"portfolio",     l:"Portfolio",     icon:<Briefcase    size={13}/>},
   {v:"research",      l:"Research",      icon:<BarChart2    size={13}/>},
 ].map(({v,l,icon})=>(
   <button key={v} onClick={()=>setTab(v)} style={{
@@ -2856,10 +2857,8 @@ setMarketFetched(true);
     {icon}{l}
   </button>
 ))}
-        <button onClick={()=>setTab("calc")} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #e5e7eb",background:tab==="calc"?"#fef3c7":"transparent",color:tab==="calc"?"#92400e":"#d97706",fontFamily:"'IBM Plex Mono',monospace",fontSize:10,cursor:"pointer",transition:"all .15s",whiteSpace:"nowrap",fontWeight:tab==="calc"?700:400}}>🧮</button>
-        <button onClick={()=>{const n=!simpleMode;setSimpleMode(n);localStorage.setItem("aac_simple_mode",String(n));}} style={{padding:"4px 10px",borderRadius:14,border:"1px solid #E5E7EB",background:simpleMode?"#2563EB":"transparent",color:simpleMode?"#fff":"#6B7280",fontSize:10,cursor:"pointer",fontWeight:500,whiteSpace:"nowrap"}}>
-          {simpleMode?"Simple":"Advanced"}
-        </button>
+        
+        
         {refreshTime&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#374151"}}>↻{refreshTime}</div>}
       </div>
 
@@ -2892,11 +2891,11 @@ setMarketFetched(true);
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px"}}>
               {([
-                {id:"multibagger",  label:simpleMode?"Potential multibaggers":"Multibagger discovery"},
-                {id:"intelligence", label:simpleMode?"Stock intelligence":"Intelligence dashboard"},
-                {id:"technical",    label:simpleMode?"Technical setups":"Technical screener"},
+                {id:"multibagger",  label:"Multibagger discovery"},
+                {id:"technical",    label:"Technical screener"},
                 {id:"earnings",     label:"Earnings"},
-                {id:"sector",       label:"Sector leaders"},
+                {id:"weekly-dna",   label:"Weekly DNA"},
+                {id:"sector",       label:"Sector rotation"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setOppView(t.id as any)}
                   style={{padding:"10px 14px",border:"none",fontSize:12,
@@ -2911,10 +2910,32 @@ setMarketFetched(true);
             </div>
           </div>
           {oppView==="multibagger"  && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
-          {oppView==="intelligence" && <div style={{maxWidth:960,margin:"0 auto",padding:16}}><IntelligenceDashboard/></div>}
           {oppView==="technical"    && <TechnicalScreener simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
-          {oppView==="earnings"    && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="weekly-dna"   && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
+        </div>
+      )}
+
+      {tab==="watchlist"&&(
+        <div style={{background:"#F7F9FC",minHeight:"100vh"}}>
+          <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"16px 20px",position:"sticky",top:52,zIndex:9}}>
+            <div style={{fontSize:20,fontWeight:700,color:"#0F172A",marginBottom:2}}>Watchlist</div>
+            <div style={{fontSize:12,color:"#64748B"}}>Track stocks · get alerted when convergence changes</div>
+          </div>
+          <div style={{maxWidth:720,margin:"0 auto",padding:"20px 16px"}}>
+            <div style={{background:"#fff",border:"1px dashed #E5E7EB",borderRadius:16,padding:"48px 24px",textAlign:"center"as const}}>
+              <div style={{fontSize:36,marginBottom:12}}>⭐</div>
+              <div style={{fontSize:16,fontWeight:600,color:"#0F172A",marginBottom:6}}>No stocks in watchlist yet</div>
+              <div style={{fontSize:13,color:"#64748B",marginBottom:20}}>Search any stock and click "Add to watchlist" — we track convergence score daily and alert you when it changes significantly</div>
+              <div style={{background:"#F7F9FC",border:"1px solid #E5E7EB",borderRadius:10,padding:"12px 16px",fontSize:12,color:"#64748B",textAlign:"left"as const}}>
+                <div style={{fontWeight:600,marginBottom:8}}>Coming alerts:</div>
+                <div>🔔 NR7 compression detected on your watchlist stock</div>
+                <div>📈 Convergence score upgraded from 52 → 70</div>
+                <div>💰 Price crossed your target ₹350</div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2961,16 +2982,14 @@ setMarketFetched(true);
         <div style={{background:"#FAFAF8",minHeight:"100vh"}}>
           <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",position:"sticky",top:52,zIndex:9}}>
             <div style={{padding:"12px 16px 0"}}>
-              <div style={{fontSize:18,fontWeight:800,color:"#111827",marginBottom:2}}>Research lab</div>
-              <div style={{fontSize:11,color:"#6B7280",marginBottom:10}}>Advanced tools</div>
+              <div style={{fontSize:18,fontWeight:700,color:"#0F172A",marginBottom:2}}>Research</div>
+              <div style={{fontSize:11,color:"#64748B",marginBottom:10}}>Backtest · Trade journal · Settings</div>
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px",overflowX:"auto"}}>
               {([
-                {id:"convergence", label:"⚡ Convergence"},
-                {id:"dna",         label:"🧬 DNA lab"},
-                {id:"journal",     label:"📓 Journal"},
-                {id:"cron",        label:"⚙ System"},
-                {id:"settings",    label:"🔧 Settings"},
+                {id:"backtest",    label:"Backtest"},
+                {id:"journal",     label:"Trade journal"},
+                {id:"settings",    label:"Settings"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setDiscoveryView(t.id)}
                   style={{padding:"10px 14px",border:"none",fontSize:12,
@@ -2984,13 +3003,8 @@ setMarketFetched(true);
               ))}
             </div>
           </div>
-          {discoveryView==="convergence" && <InvestmentCommandCenter/>}
-          {discoveryView==="dna"         && <DNALabScreen/>}
-          {discoveryView==="weekly-dna"  && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {discoveryView==="backtest"    && <BacktestScreen/>}
-          {discoveryView==="sector"      && <SectorRotationScreen/>}
           {discoveryView==="journal"     && <TradeJournalScreen/>}
-          {discoveryView==="cron"        && <CronMonitor/>}
           {discoveryView==="settings"    && <SettingsTab/>}
         </div>
       )}

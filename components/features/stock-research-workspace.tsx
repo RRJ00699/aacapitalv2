@@ -1,181 +1,143 @@
 "use client"
-// components/features/stock-research-workspace.tsx
-// Opens as full-screen overlay when any stock is clicked anywhere in the app
-// Shows all 6 engines + probability + IPO archetype similarity + entry/exit plan
+// Stock Research Workspace — full redesign
+// Clean light theme, consistent with Today screen
+// Key data above the fold: price, conviction, scores
+// Technical / Fundamentals / Commentary tabs
 
 import { useState, useEffect } from "react"
-import { colors } from "@/lib/design/tokens"
 import { PriceChart } from "./price-chart"
 import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
 import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
+import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 
-
-interface StockDetail {
-  symbol: string
-  name: string
-  current_price: number
-  market_cap: number
-  industry: string
-  scores: {
-    technical_dna: number
-    business_dna: number
-    business_grade: string
-    earnings: number
-    earnings_category: string
-    smart_money: number
-    smart_money_signal: string
-    convergence: number
-  }
-  conviction: {
-    rating: string
-    expected_6m: string
-    expected_12m: string
-    risk: string
-    position_size: string
-  }
-  fundamentals: {
-    roce: number
-    roe: number
-    sales_cagr_3y: number
-    eps_cagr_3y: number
-    debt_equity: number
-    interest_cover: number
-    pat_growth: number
-  }
-  technical: {
-    base_months: number
-    vol_compression: number
-    momentum_6m: number
-    is_nr7: boolean
-    pct_below_high: number
-    predicted_tier: string
-    stage?: number
-    stage_label?: string
-    weeks_in_base?: number
-  }
-  signals: {
-    business: string[]
-    warnings: string[]
-    earnings: string[]
-  }
-  bulk_deals: {
-    buy_qty: number
-    sell_qty: number
-    net_flow: number
-    deal_count: number
-  }
-  trade_plan?: { support: number[]; resistance: number[]; targets: number[]; stopLoss: number }
+// ── Design tokens (same as Today screen) ─────────────────────────────────────
+const T = {
+  bg:       "#F7F9FC",
+  surface:  "#FFFFFF",
+  border:   "#E5E7EB",
+  border2:  "#F1F5F9",
+  text:     "#0F172A",
+  textSub:  "#64748B",
+  textMeta: "#94A3B8",
+  green:    "#16A34A", greenBg:  "#F0FDF4", greenBd: "#BBF7D0",
+  blue:     "#2563EB", blueBg:   "#EFF6FF", blueBd:  "#BFDBFE",
+  amber:    "#D97706", amberBg:  "#FFFBEB", amberBd: "#FDE68A",
+  red:      "#DC2626", redBg:    "#FEF2F2", redBd:   "#FECACA",
+  purple:   "#7C3AED", purpleBg: "#F5F3FF", purpleBd:"#E9D5FF",
+  teal:     "#0D9488", tealBg:   "#F0FDFA",
 }
 
-interface MultibaggerMatch {
-  tradingsymbol: string
-  max_return: number
-  classification: string
-  base_date: string
-}
+const n = (v: unknown) => parseFloat(String(v ?? 0)) || 0
+const fmt = (v: unknown, d = 1) => Number.isFinite(n(v)) && n(v) !== 0 ? n(v).toFixed(d) : "—"
+const pct = (v: unknown) => n(v) !== 0 ? `${n(v) >= 0 ? "+" : ""}${n(v).toFixed(1)}%` : "—"
+const inr = (v: unknown) => n(v) > 0 ? `₹${n(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"
 
-// ── Archetype patterns (historical multibaggers) ──────────────────────────────
-const ARCHETYPES = [
-  { name: "Kaynes Technology",  sector: "EMS/Defense Electronics", roce_min: 25, sales_min: 40, pattern: "Defense EMS" },
-  { name: "KPIT Technologies",  sector: "Auto Tech Software",       roce_min: 20, sales_min: 25, pattern: "Tech Software" },
-  { name: "Netweb Technologies",sector: "IT Hardware/AI Infra",     roce_min: 30, sales_min: 50, pattern: "AI Infrastructure" },
-  { name: "Dixon Technologies", sector: "EMS/Manufacturing",        roce_min: 20, sales_min: 35, pattern: "EMS Manufacturing" },
-  { name: "Polycab India",      sector: "Electrical/Cables",        roce_min: 18, sales_min: 15, pattern: "Electrical Infrastructure" },
-  { name: "Astral Limited",     sector: "Building Materials",       roce_min: 22, sales_min: 20, pattern: "Building Products" },
-  { name: "Page Industries",    sector: "Consumer Brand",           roce_min: 50, sales_min: 15, pattern: "Premium Consumer" },
-  { name: "Genus Power",        sector: "Smart Metering/Power",     roce_min: 15, sales_min: 30, pattern: "Power Infrastructure" },
-]
-
-function matchArchetypes(detail: StockDetail): Array<{ name: string; similarity: number; pattern: string }> {
-  const roce = detail.fundamentals?.roce ?? 0
-  const salesCagr = detail.fundamentals?.sales_cagr_3y ?? 0
-  const industry = (detail.industry ?? "").toLowerCase()
-
-  return ARCHETYPES.map(a => {
-    let sim = 0
-    if (roce >= a.roce_min)         sim += 35
-    else if (roce >= a.roce_min * 0.7) sim += 20
-    if (salesCagr >= a.sales_min)    sim += 30
-    else if (salesCagr >= a.sales_min * 0.6) sim += 15
-    // Industry keyword match
-    const keywords = a.sector.toLowerCase().split("/")
-    if (keywords.some(k => industry.includes(k.trim().split(" ")[0]))) sim += 35
-    return { name: a.name, similarity: Math.min(sim, 95), pattern: a.pattern }
-  })
-  .filter(a => a.similarity >= 30)
-  .sort((a, b) => b.similarity - a.similarity)
-  .slice(0, 3)
-}
-
-// ── Probability Engine (from historical DNA data) ─────────────────────────────
-function calcProbability(detail: StockDetail): { p20: number; p50: number; p100: number; sample: number } {
-  const conv = detail.scores?.convergence ?? 0
-  const dna  = detail.scores?.technical_dna ?? 0
-  const biz  = detail.scores?.business_dna ?? 0
-
-  // Base rates from our 10Y multibagger database
-  // Calibrated: 1x (50%+) → 1,819 stocks | 2x → 1,704 | 3x → 1,516 | 5x → 1,154 | 10x → 658
-  // Out of 1,942 total = base rates: 1x=94%, 2x=88%, 3x=78%, 5x=59%, 10x=34%
-  // These get adjusted by current DNA signals
-
-  const signal = (conv + dna * 0.5 + biz * 0.5) / 2 / 100 // 0 to 1
-
-  const p20  = Math.round(Math.min(95, 40 + signal * 55))   // P(+20% in 6M)
-  const p50  = Math.round(Math.min(85, 20 + signal * 60))   // P(+50% in 12M)
-  const p100 = Math.round(Math.min(70, 10 + signal * 55))   // P(+100% in 24M)
-  const sample = Math.round(30 + signal * 40)
-
-  return { p20, p50, p100, sample }
-}
-
-// ── Score Ring ────────────────────────────────────────────────────────────────
-function ScoreRing({ score, color, size = 52 }: { score: number; color: string; size?: number }) {
-  const inner = size * 0.72
+// ── Score ring ────────────────────────────────────────────────────────────────
+function Ring({ score, size = 44, color = T.blue }: { score: number; size?: number; color?: string }) {
+  const r = size / 2 - 5
+  const circ = 2 * Math.PI * r
+  const fill = (score / 100) * circ
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0,
-      background: `conic-gradient(${color} ${score}%, #F3F4F6 0%)`,
-      display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: inner, height: inner, borderRadius: "50%", background: "#fff",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: size * 0.22, fontWeight: 800, color }}>
-        {score}
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.border} strokeWidth={4} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4}
+        strokeDasharray={`${fill} ${circ - fill}`} strokeLinecap="round" />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central"
+        style={{ transform: "rotate(90deg)", transformOrigin: "center",
+                 fontSize: size < 40 ? 9 : 11, fontWeight: 700, fill: color }}>
+        {Math.round(score)}
+      </text>
+    </svg>
+  )
+}
+
+// ── Key-value row ─────────────────────────────────────────────────────────────
+function KV({ label, value, highlight, color }: { label: string; value: string; highlight?: boolean; color?: string }) {
+  return (
+    <div style={{ background: highlight ? T.greenBg : T.surface,
+      border: `1px solid ${highlight ? T.greenBd : T.border2}`,
+      borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ fontSize: 10, color: T.textMeta, fontWeight: 600,
+        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: color ?? T.text }}>{value}</div>
+    </div>
+  )
+}
+
+// ── Section card ─────────────────────────────────────────────────────────────
+function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`,
+      borderRadius: 16, padding: "14px 16px", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+        borderBottom: `1px solid ${T.border2}`, paddingBottom: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.textSub,
+          textTransform: "uppercase", letterSpacing: "0.1em" }}>{title}</span>
+        {action}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ── Holding bar ───────────────────────────────────────────────────────────────
+function HoldingBar({ label, pct: p, color }: { label: string; pct: number; color: string }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+        <span style={{ fontSize: 11, color: T.textSub }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color }}>{p > 0 ? `${p.toFixed(1)}%` : "—"}</span>
+      </div>
+      <div style={{ height: 5, background: T.border2, borderRadius: 3 }}>
+        <div style={{ height: 5, width: `${Math.min(100, p)}%`, background: color, borderRadius: 3 }} />
       </div>
     </div>
   )
 }
 
-// ── Main workspace ─────────────────────────────────────────────────────────────
-export function StockResearchWorkspace({
-  symbol,
-  onClose,
-}: {
-  symbol: string
-  onClose: () => void
-}) {
-  const [detail, setDetail]   = useState<StockDetail | null>(null)
+// ── Overlay ───────────────────────────────────────────────────────────────────
+function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(2px)" }}
+        onClick={onClose} />
+      <div style={{ position: "relative", background: T.bg, borderRadius: "20px 20px 0 0",
+        overflowY: "auto", maxHeight: "94vh", marginTop: "auto",
+        boxShadow: "0 -8px 40px rgba(0,0,0,0.15)" }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+export function StockResearchWorkspace({ symbol, onClose }:
+  { symbol: string; onClose: () => void }) {
+
+  const [detail, setDetail]   = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
-  const [weeklyDNA, setWeeklyDNA] = useState<Record<string, unknown> | null>(null)
+  const [wdna, setWdna]       = useState<any>(null)
+  const [livePrice, setLivePrice] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<string>("technical")
 
   useEffect(() => {
     if (!symbol) return
     setLoading(true); setError(null); setDetail(null)
-
     Promise.all([
       fetch(`/api/investment-command-center?symbol=${symbol}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/weekly-dna?symbol=${symbol}`).then(r => r.json()).catch(() => null),
       fetch(`/api/broker/quote?sym=${symbol}&exchange=NSE`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
     ]).then(([d, w, q]) => {
-      if (d.ok) {
-        // Inject live price from Kite if available
-        if (q?.last_price && q.last_price > 0) {
-          d.current_price = q.last_price
-        }
-        setDetail(d as StockDetail)
-      } else setError(d.error ?? "Not found")
-      if (w?.ok) setWeeklyDNA(w.data)
+      if (d?.ok) {
+        if (q?.last_price && q.last_price > 0) d.current_price = q.last_price
+        setDetail(d)
+        if (q?.last_price) setLivePrice(q.last_price)
+      } else {
+        setError(d?.error ?? "Stock not found")
+      }
+      if (w?.ok) setWdna(w.data)
     }).catch(e => setError(e.message))
     .finally(() => setLoading(false))
   }, [symbol])
@@ -183,349 +145,271 @@ export function StockResearchWorkspace({
   if (loading) return (
     <Overlay onClose={onClose}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
-        height: "60vh", flexDirection: "column", gap: 16, color: "#9CA3AF" }}>
-        <div style={{ fontSize: 40 }}>⚡</div>
-        <div>Loading all 6 engines for {symbol}…</div>
+        height: "60vh", flexDirection: "column", gap: 12, color: T.textMeta }}>
+        <div style={{ fontSize: 36 }}>⚡</div>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Loading {symbol}…</div>
       </div>
     </Overlay>
   )
 
   if (error || !detail) return (
     <Overlay onClose={onClose}>
-      <div style={{ padding: 20, color: "#DC2626" }}>
-        {error || "Stock not found. Run fundamentals-import.mjs first."}
+      <div style={{ padding: 24 }}>
+        <div style={{ color: T.red, fontSize: 14 }}>{error || "Not found"}</div>
+        <button onClick={onClose} style={{ marginTop: 12, padding: "8px 16px", borderRadius: 8,
+          border: `1px solid ${T.border}`, background: T.surface, cursor: "pointer" }}>Close</button>
       </div>
     </Overlay>
   )
 
-  const conv    = detail.scores?.convergence ?? 0
-  const cc      = conv >= 75 ? "#7c3aed" : conv >= 60 ? "#2563EB" : conv >= 45 ? "#D97706" : "#6b7280"
-  const archs   = matchArchetypes(detail)
-  const prob    = calcProbability(detail)
-  const isNR7   = detail.technical?.is_nr7 || (weeklyDNA as Record<string,unknown>)?.is_nr7
-  const stage   = (weeklyDNA as Record<string,unknown>)?.stage_label ?? `Base ${detail.technical?.base_months ?? "—"}M`
+  const price   = livePrice ?? n(detail.current_price)
+  const conv    = n(detail.scores?.convergence)
+  const convColor = conv >= 75 ? T.purple : conv >= 60 ? T.blue : conv >= 45 ? T.amber : T.textSub
+  const f       = detail.fundamentals ?? {}
+  const isNR7   = detail.technical?.is_nr7 || wdna?.is_nr7
+  const stage   = wdna?.stage_label ?? `Stage ${detail.technical?.stage ?? "—"}`
+
+  // Live price targets
+  const sl  = (detail.trade_plan?.stopLoss  ?? price * 0.90).toFixed(0)
+  const t1  = (detail.trade_plan?.targets?.[0] ?? price * 1.12).toFixed(0)
+  const t2  = (detail.trade_plan?.targets?.[1] ?? price * 1.25).toFixed(0)
+  const t3  = (detail.trade_plan?.targets?.[2] ?? price * 1.50).toFixed(0)
 
   return (
     <Overlay onClose={onClose}>
-      <div style={{ padding: 20 }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between",
-          alignItems: "flex-start", marginBottom: 20 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 22, fontWeight: 800, color: colors.textPrimary }}>
-                {detail.symbol}
-              </span>
-              <span style={{ background: cc + "18", color: cc, fontSize: 12,
-                fontWeight: 700, padding: "3px 10px", borderRadius: 7 }}>
-                {detail.conviction?.rating}
-              </span>
-              {isNR7 && (
-                <span style={{ background: "#f3e8ff", color: "#7c3aed",
-                  fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>
-                  NR7 🎯
-                </span>
+      <div style={{ padding: "0 0 24px" }}>
+
+        {/* ── Hero header ── */}
+        <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`,
+          padding: "16px 20px 0", position: "sticky", top: 0, zIndex: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 22, fontWeight: 900, color: T.text, letterSpacing: "-0.5px" }}>{symbol}</span>
+                <span style={{ background: `${convColor}15`, color: convColor, fontSize: 11,
+                  fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{detail.conviction?.rating}</span>
+                {isNR7 && <span style={{ background: T.purpleBg, color: T.purple,
+                  fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>NR7 🎯</span>}
+                {livePrice && <span style={{ background: T.greenBg, color: T.green,
+                  fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 20 }}>● LIVE</span>}
+              </div>
+              <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                {detail.name} · {detail.industry}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 26, fontWeight: 900, color: T.text, letterSpacing: "-0.5px" }}>
+                {inr(price)}
+              </div>
+              <div style={{ fontSize: 11, color: T.textMeta }}>
+                MCap ₹{(n(f.market_cap) / 100).toFixed(0)}Cr
+              </div>
+            </div>
+          </div>
+
+          {/* Convergence bar */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: T.textMeta, fontWeight: 600 }}>CONVERGENCE SCORE</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: convColor }}>{conv}/100</span>
+            </div>
+            <div style={{ height: 5, background: T.border2, borderRadius: 3 }}>
+              <div style={{ height: 5, width: `${conv}%`, background: convColor, borderRadius: 3,
+                transition: "width 0.5s ease" }} />
+            </div>
+          </div>
+
+          {/* Tab nav */}
+          <div style={{ display: "flex", gap: 0 }}>
+            {[["technical","📈 Technical"],["fundamentals","🏢 Fundamentals"],["commentary","💬 Commentary"]].map(([id,label]) => (
+              <button key={id} onClick={() => setActiveTab(id)} style={{
+                padding: "9px 18px", border: "none", fontSize: 12, cursor: "pointer",
+                fontWeight: activeTab === id ? 700 : 500,
+                color: activeTab === id ? T.blue : T.textSub,
+                background: "transparent",
+                borderBottom: activeTab === id ? `2px solid ${T.blue}` : "2px solid transparent",
+              }}>{label}</button>
+            ))}
+            <button onClick={onClose} style={{ marginLeft: "auto", background: T.bg,
+              border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 14px",
+              fontSize: 12, cursor: "pointer", color: T.textSub, marginBottom: 2 }}>✕ Close</button>
+          </div>
+        </div>
+
+        <div style={{ padding: "16px 20px 0" }}>
+
+          {/* ── TECHNICAL TAB ── */}
+          <div style={{ display: activeTab === "technical" ? "block" : "none" }}>
+
+            {/* 6-engine scores */}
+            <Section title="6-Engine Convergence">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 12 }}>
+                {[
+                  { label: "Technical DNA",  score: n(detail.scores?.technical_dna), color: T.blue   },
+                  { label: "Business DNA",   score: n(detail.scores?.business_dna),  color: T.purple  },
+                  { label: "Earnings Intel", score: n(detail.scores?.earnings),      color: T.green   },
+                  { label: "Smart Money",    score: n(detail.scores?.smart_money),   color: T.amber   },
+                  { label: "Sector Score",   score: 50,                              color: T.textSub },
+                  { label: "CONVERGENCE",    score: conv,                             color: convColor },
+                ].map(({ label, score, color }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+                    <Ring score={score} color={color} size={52} />
+                    <div style={{ fontSize: 9, color: T.textMeta, textAlign: "center", fontWeight: 600 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+
+            {/* Price chart */}
+            <Section title="Price Chart">
+              <PriceChart symbol={symbol} height={200} />
+            </Section>
+
+            {/* Entry/Exit */}
+            <Section title="Entry · Exit · Targets">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ background: T.redBg, border: `1px solid ${T.redBd}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>STOP LOSS</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: T.red }}>₹{sl}</div>
+                  <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Close below = exit</div>
+                </div>
+                <div style={{ background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 1 · +12%</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: T.green }}>₹{t1}</div>
+                  <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Book partial profit</div>
+                </div>
+                <div style={{ background: T.blueBg, border: `1px solid ${T.blueBd}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 2 · +25%</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: T.blue }}>₹{t2}</div>
+                  <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Trail stop loss up</div>
+                </div>
+                <div style={{ background: T.purpleBg, border: `1px solid ${T.purpleBd}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 3 · +50%</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: T.purple }}>₹{t3}</div>
+                  <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Let winner run</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                <KV label="Position Size" value={detail.conviction?.position_size ?? "1–3%"} />
+                <KV label="Hold Period"   value="6–18 months" />
+              </div>
+            </Section>
+
+            {/* Technical structure */}
+            <Section title="Technical Structure">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                <KV label="Stage"        value={String(stage)} />
+                <KV label="Base Length"  value={`${n(detail.technical?.base_months) || 0}M`} />
+                <KV label="Momentum 6M"  value={pct(detail.technical?.momentum_6m)}
+                  color={n(detail.technical?.momentum_6m) >= 0 ? T.green : T.red} />
+                <KV label="Vol Compress" value={`${fmt(detail.technical?.vol_compression, 2)}x`} />
+                <KV label="Below 52W Hi" value={`${fmt(detail.technical?.pct_below_high)}%`} />
+                <KV label="NR7 Signal"   value={isNR7 ? "✓ Coiling" : "—"}
+                  highlight={isNR7} color={isNR7 ? T.green : T.textSub} />
+              </div>
+            </Section>
+
+            {/* Expected returns */}
+            <Section title="Expected Returns">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <div style={{ background: `${T.green}10`, border: `1px solid ${T.green}30`,
+                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: T.green }}>
+                    {conv >= 70 ? "70%" : conv >= 55 ? "55%" : "40%"}
+                  </div>
+                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+20% in 6M)</div>
+                </div>
+                <div style={{ background: `${T.blue}10`, border: `1px solid ${T.blue}30`,
+                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: T.blue }}>
+                    {conv >= 70 ? "53%" : conv >= 55 ? "40%" : "28%"}
+                  </div>
+                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+50% in 12M)</div>
+                </div>
+                <div style={{ background: `${T.purple}10`, border: `1px solid ${T.purple}30`,
+                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: T.purple }}>
+                    {conv >= 70 ? "40%" : conv >= 55 ? "28%" : "15%"}
+                  </div>
+                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+100% in 24M)</div>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Historical Similarity">
+              <HistoricalSimilarityPanel symbol={symbol} />
+            </Section>
+          </div>
+
+          {/* ── FUNDAMENTALS TAB ── */}
+          <div style={{ display: activeTab === "fundamentals" ? "block" : "none" }}>
+
+            {/* Shareholding */}
+            <Section title="Shareholding Pattern">
+              <HoldingBar label="Promoter" pct={n(f.promoter_holding)} color={T.blue} />
+              {n(f.promoter_pledge) > 0 && (
+                <HoldingBar label="Promoter Pledge ⚠️" pct={n(f.promoter_pledge)} color={T.red} />
               )}
-            </div>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 3 }}>
-              {detail.name} · ₹{Number(detail.current_price).toFixed(0)} · {detail.industry}
-            </div>
-          </div>
-          <button onClick={onClose}
-            style={{ background: "#F3F4F6", border: "none", borderRadius: 8,
-              padding: "8px 14px", fontSize: 13, cursor: "pointer", color: "#374151" }}>
-            ✕
-          </button>
-        </div>
+              <HoldingBar label="FII / Foreign" pct={n(f.fii_holding)} color={T.green} />
+              <HoldingBar label="DII / Domestic Inst" pct={n(f.dii_holding)} color={T.purple} />
+              <HoldingBar label="Public / Retail"
+                pct={Math.max(0, 100 - n(f.promoter_holding) - n(f.fii_holding) - n(f.dii_holding))}
+                color={T.amber} />
+            </Section>
 
-        {/* Tab navigation */}
-        <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",marginBottom:16}}>
-          {[["technical","📈 Technical"],["fundamentals","🏢 Fundamentals"],["commentary","💬 Commentary"]].map(([id,label])=>(
-            <button key={id} onClick={()=>setActiveTab(id)} style={{padding:"9px 16px",border:"none",fontSize:12,cursor:"pointer",fontWeight:activeTab===id?700:500,color:activeTab===id?"#2563EB":"#6B7280",background:"transparent",borderBottom:activeTab===id?"2px solid #2563EB":"2px solid transparent"}}>{label}</button>
-          ))}
-        </div>
-
-{/* Price Chart + Order Book — hidden on Commentary tab */}
-        <div style={{display:activeTab==="technical"?"block":"none"}}>
-          <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>PRICE CHART</div>
-            <PriceChart symbol={detail.symbol} height={240} />
-          </div>
-          <div style={{ marginBottom: 16, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>ORDER BOOK</div>
-            <OrderBookPanel symbol={detail.symbol} />
-          </div>
-        </div>
-        {/* 6 Engine Scores */}
-        <div style={{display:activeTab==="technical"?"block":"none"}}>
-        <Card title="6-ENGINE CONVERGENCE">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 14 }}>
-            {[
-              { label: "Technical DNA",  score: detail.scores?.technical_dna ?? 0,  color: "#2563EB" },
-              { label: "Business DNA",   score: detail.scores?.business_dna ?? 0,   color: "#7c3aed" },
-              { label: "Earnings Intel", score: detail.scores?.earnings ?? 0,       color: "#16A34A" },
-              { label: "Smart Money",    score: detail.scores?.smart_money ?? 50,   color: "#D97706" },
-              { label: "Sector",         score: 50,                                  color: "#6b7280" },
-              { label: "CONVERGENCE",    score: conv,                                color: cc },
-            ].map(({ label, score, color }) => (
-              <div key={label} style={{ display: "flex", flexDirection: "column",
-                alignItems: "center", gap: 6 }}>
-                <ScoreRing score={score} color={color} size={48} />
-                <div style={{ fontSize: 9, color: "#9CA3AF", textAlign: "center" }}>{label}</div>
+            {/* Valuation */}
+            <Section title="Valuation">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                <KV label="P/E Ratio"   value={n(f.pe_ratio) > 0 ? `${fmt(f.pe_ratio)}x` : "—"} />
+                <KV label="P/B Ratio"   value={n(f.pb_ratio) > 0 ? `${fmt(f.pb_ratio)}x` : "—"} />
+                <KV label="Div Yield"   value={n(f.dividend_yield) > 0 ? `${fmt(f.dividend_yield)}%` : "—"} />
               </div>
-            ))}
-          </div>
-          <div style={{ fontSize: 11, color: cc, textAlign: "center", fontWeight: 600 }}>
-            {detail.signals?.business?.slice(0, 3).join(" · ")}
-          </div>
-        </Card>
+            </Section>
 
-        {/* Conviction + Expected Returns */}
-        <Card title="CONVICTION & EXPECTED RETURNS">
-          <div style={{ background: cc + "10", border: `1px solid ${cc}30`,
-            borderRadius: 10, padding: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-              {[
-                { label: "Expected 6M",    value: detail.conviction?.expected_6m },
-                { label: "Expected 12M",   value: detail.conviction?.expected_12m },
-                { label: "Position Size",  value: detail.conviction?.position_size },
-                { label: "Risk",           value: detail.conviction?.risk },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 10, color: "#6b7280" }}>{label}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: cc }}>{value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        {/* Probability Engine */}
-        <Card title="PROBABILITY ENGINE">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-            {[
-              { label: "P(+20% in 6M)",  value: prob.p20, color: "#16A34A" },
-              { label: "P(+50% in 12M)", value: prob.p50, color: "#2563EB" },
-              { label: "P(+100% in 24M)",value: prob.p100, color: "#7c3aed" },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: color + "10",
-                border: `1px solid ${color}30`, borderRadius: 10,
-                padding: "12px", textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color }}>{value}%</div>
-                <div style={{ fontSize: 9, color: "#9CA3AF", marginTop: 4 }}>{label}</div>
+            {/* Business DNA */}
+            <Section title={`Business DNA [${detail.scores?.business_grade ?? "—"}]`}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                <KV label="ROCE"         value={n(f.roce) > 0 ? `${fmt(f.roce)}%` : "—"}
+                  highlight={n(f.roce) >= 15} color={n(f.roce) >= 15 ? T.green : T.text} />
+                <KV label="ROE"          value={n(f.roe) > 0 ? `${fmt(f.roe)}%` : "—"}
+                  highlight={n(f.roe) >= 15} />
+                <KV label="Op Margin"    value={n(f.operating_margin) > 0 ? `${fmt(f.operating_margin)}%` : "—"} />
+                <KV label="Rev CAGR 3Y"  value={n(f.sales_cagr_3y) !== 0 ? pct(f.sales_cagr_3y) : "—"}
+                  color={n(f.sales_cagr_3y) >= 0 ? T.green : T.red} />
+                <KV label="EPS CAGR 3Y"  value={n(f.eps_cagr_3y) !== 0 ? pct(f.eps_cagr_3y) : "—"}
+                  color={n(f.eps_cagr_3y) >= 0 ? T.green : T.red} />
+                <KV label="PAT Growth"   value={n(f.pat_growth) !== 0 ? pct(f.pat_growth) : "—"}
+                  color={n(f.pat_growth) >= 0 ? T.green : T.red} />
+                <KV label="D/E Ratio"    value={n(f.debt_equity) >= 0 ? fmt(f.debt_equity) : "—"}
+                  highlight={n(f.debt_equity) < 0.5} color={n(f.debt_equity) < 0.5 ? T.green : n(f.debt_equity) > 1 ? T.red : T.amber} />
+                <KV label="Int. Cover"   value={n(f.interest_cover) > 0 ? `${fmt(f.interest_cover)}x` : "—"} />
+                <KV label="MCap"         value={n(f.market_cap) > 0 ? `₹${(n(f.market_cap)/100).toFixed(0)}Cr` : "—"} />
               </div>
-            ))}
-          </div>
-          <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 8, textAlign: "center" }}>
-            Based on {prob.sample} similar historical setups in our 10Y database
-          </div>
-        </Card>
+            </Section>
 
-        {/* Historical Similarity Engine */}
-        <Card title="HISTORICAL SIMILARITY ENGINE">
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>
-            Current weekly structure compared with mined 2x/5x/10x historical multibagger bases.
-          </div>
-          <HistoricalSimilarityPanel symbol={detail.symbol} />
-        </Card>
-
-        {/* Technical Structure */}
-        <Card title="TECHNICAL STRUCTURE">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
-            <InfoRow label="Stage" value={String(stage)} />
-            <InfoRow label="Base Length" value={`${detail.technical?.base_months ?? "—"} months`} />
-            <InfoRow label="Vol Compression" value={Number(detail.technical?.vol_compression).toFixed(2) ?? "—"} />
-            <InfoRow label="Momentum 6M" value={`${Number(detail.technical?.momentum_6m).toFixed(1) ?? "—"}%`} />
-            <InfoRow label="Below 52W High" value={`${Number(detail.technical?.pct_below_high).toFixed(1) ?? "—"}%`} />
-            <InfoRow label="NR7 Signal" value={isNR7 ? "✓ Yes — coiling" : "No"} highlight={!!isNR7} />
-          </div>
-        </Card>
-
-        {/* Business DNA */}
-        <Card title="ENTRY · EXIT · HOLDING PLAN">
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-            <div style={{background:"#FEF2F2",borderRadius:10,padding:12,border:"1px solid #FECACA"}}>
-              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>STOP LOSS</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#DC2626"}}>₹{(detail.trade_plan?.stopLoss ?? ((Number(detail.current_price)||0)*0.90)).toFixed(0)}</div>
-              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Close below = exit</div>
-            </div>
-            <div style={{background:"#F0FDF4",borderRadius:10,padding:12,border:"1px solid #BBF7D0"}}>
-              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 1 (+12%)</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#16A34A"}}>₹{(detail.trade_plan?.targets?.[0] ?? ((Number(detail.current_price)||0)*1.12)).toFixed(0)}</div>
-              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Book partial profit</div>
-            </div>
-            <div style={{background:"#EFF6FF",borderRadius:10,padding:12,border:"1px solid #BFDBFE"}}>
-              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 2 (+25%)</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#2563EB"}}>₹{(detail.trade_plan?.targets?.[1] ?? ((Number(detail.current_price)||0)*1.25)).toFixed(0)}</div>
-              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Trail stop loss</div>
-            </div>
-            <div style={{background:"#F5F3FF",borderRadius:10,padding:12,border:"1px solid #E9D5FF"}}>
-              <div style={{fontSize:10,color:"#6B7280",marginBottom:4}}>TARGET 3 (+50%)</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#7C3AED"}}>₹{(detail.trade_plan?.targets?.[2] ?? ((Number(detail.current_price)||0)*1.50)).toFixed(0)}</div>
-              <div style={{fontSize:10,color:"#6B7280",marginTop:2}}>Let winner run</div>
-            </div>
-          </div>
-          <InfoRow label="Hold Period" value={"6–18 months"} />
-          <InfoRow label="Position Size" value={detail.conviction?.position_size ?? "1–3% of portfolio"} />
-        </Card>
-        </div>
-
-        <div style={{display:activeTab==="fundamentals"?"block":"none"}}>
-        <Card title={`BUSINESS DNA [${detail.scores?.business_grade ?? "—"}]`}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-            <InfoRow label="ROCE" value={`${Number(detail.fundamentals?.roce).toFixed(1) ?? "—"}%`} highlight={(detail.fundamentals?.roce ?? 0) >= 18} />
-            <InfoRow label="ROE"  value={`${Number(detail.fundamentals?.roe).toFixed(1) ?? "—"}%`}  highlight={(detail.fundamentals?.roe ?? 0) >= 15} />
-            <InfoRow label="Rev CAGR 3Y" value={`${Number(detail.fundamentals?.sales_cagr_3y).toFixed(1) ?? "—"}%`} highlight={(detail.fundamentals?.sales_cagr_3y ?? 0) >= 15} />
-            <InfoRow label="EPS CAGR 3Y" value={`${Number(detail.fundamentals?.eps_cagr_3y).toFixed(1) ?? "—"}%`} highlight={(detail.fundamentals?.eps_cagr_3y ?? 0) >= 15} />
-            <InfoRow label="D/E Ratio" value={Number(detail.fundamentals?.debt_equity).toFixed(2) ?? "—"} highlight={(detail.fundamentals?.debt_equity ?? 99) < 0.5} />
-            <InfoRow label="Int. Cover" value={Number(detail.fundamentals?.interest_cover).toFixed(1) ?? "—"} />
-          </div>
-          {detail.signals?.warnings && detail.signals.warnings.length > 0 && (
-            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap" as const, gap: 5 }}>
-              {detail.signals.warnings.map(w => (
-                <span key={w} style={{ background: "#FEF3C7", color: "#D97706",
-                  fontSize: 10, fontWeight: 600, padding: "2px 7px",
-                  borderRadius: 5 }}>⚠ {w}</span>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* Smart Money */}
-        <Card title="SMART MONEY (10Y NSE DATA)">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
-            <InfoRow label="Signal" value={detail.scores?.smart_money_signal ?? "Neutral"} />
-            <InfoRow label="Score" value={`${detail.scores?.smart_money ?? 50}/100`} />
-            <InfoRow label="Total Deals" value={String(detail.bulk_deals?.deal_count ?? 0)} />
-            <InfoRow label="Net Flow" value={
-              (detail.bulk_deals?.net_flow ?? 0) > 0
-              ? `+${((detail.bulk_deals?.net_flow ?? 0) / 10000000).toFixed(1)}Cr`
-              : `${((detail.bulk_deals?.net_flow ?? 0) / 10000000).toFixed(1)}Cr`} />
-          </div>
-        </Card>
-
-        {/* Multibagger Archetype */}
-        {archs.length > 0 && (
-          <Card title="MULTIBAGGER SIMILARITY">
-            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>
-              This stock's fundamentals most resemble:
-            </div>
-            {archs.map((a, i) => (
-              <div key={a.name} style={{ display: "flex", justifyContent: "space-between",
-                alignItems: "center", marginBottom: 8, padding: "8px 10px",
-                background: "#F9FAFB", borderRadius: 8 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: colors.textPrimary }}>
-                    {a.name}
-                  </div>
-                  <div style={{ fontSize: 10, color: "#9CA3AF" }}>{a.pattern}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ height: 6, width: 60, background: "#E5E7EB",
-                    borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${a.similarity}%`, height: "100%",
-                      background: "#7c3aed", borderRadius: 3 }} />
-                  </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed",
-                    minWidth: 32 }}>{a.similarity}%</span>
-                </div>
+            {/* Smart Money */}
+            <Section title="Smart Money">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <KV label="Signal" value={detail.scores?.smart_money_signal ?? "—"} />
+                <KV label="Score"  value={`${n(detail.scores?.smart_money)}/100`} />
               </div>
-            ))}
-          </Card>
-        )}
+            </Section>
 
-        {/* Entry / Exit Plan */}
-        <Card title="ENTRY · EXIT · HOLDING PLAN">
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {detail.scores?.convergence >= 55 ? (
-              <>
-                <PlanRow icon="🟢" label="Entry Zone"
-                  value={`₹${(detail.trade_plan?.support?.[0] ?? ((Number(detail.current_price) ?? 0) * 0.97)).toFixed(0)} – ₹${Number(detail.current_price).toFixed(0)} (support to CMP)`} />
-                <PlanRow icon="🧱" label="Support / Resistance"
-                  value={`S1 ₹${(detail.trade_plan?.support?.[0] ?? ((Number(detail.current_price) ?? 0) * 0.94)).toFixed(0)} · S2 ₹${(detail.trade_plan?.support?.[1] ?? ((Number(detail.current_price) ?? 0) * 0.90)).toFixed(0)} · R1 ₹${(detail.trade_plan?.resistance?.[0] ?? ((Number(detail.current_price) ?? 0) * 1.08)).toFixed(0)} · R2 ₹${(detail.trade_plan?.resistance?.[1] ?? ((Number(detail.current_price) ?? 0) * 1.15)).toFixed(0)}`} />
-                <PlanRow icon="🔴" label="Stop Loss"
-                  value={`₹${(detail.trade_plan?.stopLoss ?? ((Number(detail.current_price) ?? 0) * 0.90)).toFixed(0)} (close below support invalidates setup)`} />
-                <PlanRow icon="🎯" label="Target 1"
-                  value={`₹${(detail.trade_plan?.targets?.[0] ?? ((Number(detail.current_price) ?? 0) * 1.12)).toFixed(0)} — first profit zone`} />
-                <PlanRow icon="🎯" label="Target 2"
-                  value={`₹${(detail.trade_plan?.targets?.[1] ?? ((Number(detail.current_price) ?? 0) * 1.25)).toFixed(0)} — book/trail zone`} />
-                <PlanRow icon="🎯" label="Target 3"
-                  value={`₹${(detail.trade_plan?.targets?.[2] ?? ((Number(detail.current_price) ?? 0) * 1.50)).toFixed(0)} — let winner run`} />
-                <PlanRow icon="⏱" label="Holding Period"
-                  value={detail.scores.convergence >= 70 ? "6–18 months (let it run)" : "3–6 months"} />
-                <PlanRow icon="🚪" label="Exit Signal"
-                  value="Stage 3 breakout OR DNA score drops below 50 OR SM turns Distribution" />
-              </>
-            ) : (
-              <div style={{ fontSize: 12, color: "#6b7280", padding: "8px 0" }}>
-                Convergence too low for a high-conviction entry. Monitor for improvement.
-              </div>
-            )}
+            {/* Order Book + MF + Ownership */}
+            <Section title="Order Book">
+              <OrderBookPanel symbol={symbol} />
+            </Section>
+
+            <Phase1WorkspacePanels symbol={symbol} />
           </div>
-        </Card>
 
-        {/* Management Commentary — Sprint 11 */}
-        </div>
-
-        <div style={{display:activeTab==="commentary"?"block":"none"}}>
-          <Card title="MANAGEMENT COMMENTARY">
+          {/* ── COMMENTARY TAB ── */}
+          <div style={{ display: activeTab === "commentary" ? "block" : "none" }}>
             <ManagementCommentaryPanel symbol={symbol} />
-          </Card>
+          </div>
+
         </div>
       </div>
     </Overlay>
   )
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex",
-      flexDirection: "column" }}>
-      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }}
-        onClick={onClose} />
-      <div style={{ position: "relative", background: "#fff", borderRadius: "16px 16px 0 0",
-        overflowY: "auto", maxHeight: "92vh", marginTop: "auto",
-        boxShadow: "0 -8px 32px rgba(0,0,0,0.2)" }}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB",
-      borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF",
-        letterSpacing: "0.5px", marginBottom: 10 }}>{title}</div>
-      {children}
-    </div>
-  )
-}
-
-function InfoRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div style={{ background: highlight ? "#F0FDF4" : "#fff",
-      border: `1px solid ${highlight ? "#BBF7D0" : "#E5E7EB"}`,
-      borderRadius: 8, padding: "8px 10px" }}>
-      <div style={{ fontSize: 9, color: "#9CA3AF" }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 700,
-        color: highlight ? "#16A34A" : colors.textPrimary }}>{value}</div>
-    </div>
-  )
-}
-
-function PlanRow({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-      <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF" }}>{label}</div>
-        <div style={{ fontSize: 12, color: colors.textPrimary }}>{value}</div>
-      </div>
-    </div>
-  )
-}
-
-
