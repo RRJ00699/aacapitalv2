@@ -120,7 +120,39 @@ export function StockResearchWorkspace({ symbol, onClose }:
   const [error, setError]     = useState<string | null>(null)
   const [wdna, setWdna]       = useState<any>(null)
   const [livePrice, setLivePrice] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState<string>("technical")
+  const [activeTab,    setActiveTab]    = useState<string>("technical")
+  const [inWatchlist,  setInWatchlist]  = useState(false)
+  const [addingWatch,  setAddingWatch]  = useState(false)
+
+  useEffect(() => {
+    // Check if stock is in watchlist
+    fetch("/api/watchlists").then(r => r.json()).then(d => {
+      const list = d.stocks ?? []
+      setInWatchlist(list.some((s: any) => s.symbol === symbol))
+    }).catch(() => {})
+  }, [symbol])
+
+  async function toggleWatchlist() {
+    setAddingWatch(true)
+    try {
+      if (inWatchlist) {
+        await fetch("/api/watchlists", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        })
+        setInWatchlist(false)
+      } else {
+        await fetch("/api/watchlists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        })
+        setInWatchlist(true)
+      }
+    } catch {}
+    finally { setAddingWatch(false) }
+  }
 
   useEffect(() => {
     if (!symbol) return
@@ -230,7 +262,16 @@ export function StockResearchWorkspace({ symbol, onClose }:
                 borderBottom: activeTab === id ? `2px solid ${T.blue}` : "2px solid transparent",
               }}>{label}</button>
             ))}
-            <button onClick={onClose} style={{ marginLeft: "auto", background: T.bg,
+            <button onClick={toggleWatchlist} disabled={addingWatch}
+              style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5,
+                background: inWatchlist ? T.amberBg : T.bg,
+                border: `1px solid ${inWatchlist ? T.amber : T.border}`,
+                borderRadius: 8, padding: "6px 12px", fontSize: 11,
+                color: inWatchlist ? T.amber : T.textSub,
+                cursor: "pointer", marginBottom: 2, fontWeight: inWatchlist ? 700 : 400 }}>
+              {inWatchlist ? "★ Watching" : "☆ Watch"}
+            </button>
+            <button onClick={onClose} style={{ background: T.bg,
               border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 14px",
               fontSize: 12, cursor: "pointer", color: T.textSub, marginBottom: 2 }}>✕ Close</button>
           </div>

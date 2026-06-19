@@ -20,6 +20,9 @@ import { TradeJournalScreen, CapitalDeploymentOptimizer, MultibaggerDiscoveryEng
 import { DNALabScreen } from "./features/dna-lab"
 import { EarningsScreen }   from "./features/earnings-screen"
 import { WeeklyDNAScreen }  from "./features/weekly-dna-screen"
+import { WatchlistScreen }  from "./features/watchlist-screen"
+import { PriceAlertsScreen } from "./features/price-alerts-screen"
+import { MobileApp }         from "./MobileApp"
 import { BacktestScreen }   from "./features/backtest-screen"
 import { StockSearch } from "./features/stock-search"
 import { CronMonitor } from "./features/cron-monitor"
@@ -1005,6 +1008,7 @@ const scoreIpo=(ipo)=>{
 // ─── LIVE TAPE (stub - Phase 2 upgrade) ─────────
 function LiveTape({ ipo }: { ipo: any }) {
   const ip = ipo.priceBandHigh || ipo.priceBandLow || 0
+
   return (
     <div style={{ border:"1px solid #e5e7eb", borderRadius:14, padding:16, background:"#fff", marginBottom:12 }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:8, letterSpacing:"0.05em" }}>LISTING-DAY LIVE TAPE ENGINE</div>
@@ -2529,6 +2533,12 @@ export default function App(){
   // V10 new state
   const [oppView,setOppView]=useState("multibagger");
   const [portView,setPortView]=useState("doctor");
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<768)
+    check(); window.addEventListener("resize",check)
+    return ()=>window.removeEventListener("resize",check)
+  },[])
   const [simpleMode,setSimpleMode]=useState(false);
   const [sym,setSym]=useState("");
   const [inp,setInp]=useState("");
@@ -2806,6 +2816,8 @@ setMarketFetched(true);
   const buyZoneColor=(bz)=>bz>=91?"#7c3aed":bz>=76?"#16a34a":bz>=61?"#1d4ed8":bz>=41?"#d97706":"#dc2626";
   const buyZoneLabel=(bz)=>bz>=91?"⚡ High Conviction Buy":bz>=76?"✅ Buy Zone":bz>=61?"📌 Accumulate":bz>=41?"👁 Watchlist":"❌ Avoid";
 
+
+  if (isMobile) return <MobileApp/>
   return(
     <div style={{background:"#FAFAF8",minHeight:"100vh",fontFamily:"'DM Sans',sans-serif",color:"#111827"}}>
       <style>{`
@@ -2918,25 +2930,7 @@ setMarketFetched(true);
       )}
 
       {tab==="watchlist"&&(
-        <div style={{background:"#F7F9FC",minHeight:"100vh"}}>
-          <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"16px 20px",position:"sticky",top:52,zIndex:9}}>
-            <div style={{fontSize:20,fontWeight:700,color:"#0F172A",marginBottom:2}}>Watchlist</div>
-            <div style={{fontSize:12,color:"#64748B"}}>Track stocks · get alerted when convergence changes</div>
-          </div>
-          <div style={{maxWidth:720,margin:"0 auto",padding:"20px 16px"}}>
-            <div style={{background:"#fff",border:"1px dashed #E5E7EB",borderRadius:16,padding:"48px 24px",textAlign:"center"as const}}>
-              <div style={{fontSize:36,marginBottom:12}}>⭐</div>
-              <div style={{fontSize:16,fontWeight:600,color:"#0F172A",marginBottom:6}}>No stocks in watchlist yet</div>
-              <div style={{fontSize:13,color:"#64748B",marginBottom:20}}>Search any stock and click "Add to watchlist" — we track convergence score daily and alert you when it changes significantly</div>
-              <div style={{background:"#F7F9FC",border:"1px solid #E5E7EB",borderRadius:10,padding:"12px 16px",fontSize:12,color:"#64748B",textAlign:"left"as const}}>
-                <div style={{fontWeight:600,marginBottom:8}}>Coming alerts:</div>
-                <div>🔔 NR7 compression detected on your watchlist stock</div>
-                <div>📈 Convergence score upgraded from 52 → 70</div>
-                <div>💰 Price crossed your target ₹350</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <WatchlistScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>
       )}
 
       {tab==="portfolio"&&(
@@ -2949,6 +2943,7 @@ setMarketFetched(true);
               {([
                 {id:"doctor",   label:simpleMode?"What to do":"Portfolio doctor"},
                 {id:"holdings", label:"Holdings"},
+                {id:"alerts",   label:"Price alerts"},
                 {id:"deploy",   label:"Deploy capital"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setPortView(t.id as any)}
@@ -2965,6 +2960,7 @@ setMarketFetched(true);
           </div>
           {portView==="doctor"   && <PortfolioDoctor simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {portView==="holdings" && <PortfolioTab/>}
+          {portView==="alerts"   && <PriceAlertsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {portView==="deploy"   && <CapitalDeploymentOptimizer/>}
         </div>
       )}
