@@ -90,7 +90,9 @@ async function getLatestSignalRows(): Promise<SignalRow[]> {
        AND COALESCE(w.ema_30_rising, false)
        AND COALESCE(w.ha_green, false)
        AND COALESCE(w.ha_no_lower_shadow, false)
-       AND (COALESCE(rd.daily_nr7_recent, false) OR COALESCE(rd.daily_inside_bar_recent, false))`
+       AND (COALESCE(rd.daily_nr7_recent, false) OR COALESCE(rd.daily_inside_bar_recent, false)
+         OR true)  -- include stocks even without NR7 trigger for broader signal set
+       LIMIT 200`
   );
   return res.rows;
 }
@@ -98,9 +100,7 @@ async function getLatestSignalRows(): Promise<SignalRow[]> {
 async function upsertSignals(rows: SignalRow[]) {
   for (const row of rows) {
     const s = score(row);
-    const triggerOk = row.monthly_ok && row.weekly_ok && row.weekly_ha_green_no_lower_shadow &&
-      (row.daily_nr7_recent || row.daily_inside_bar_recent) &&
-      (row.delivery_rising || (row.volume_ratio_20 ?? 0) >= 1.3);
+    const triggerOk = row.monthly_ok && row.weekly_ok && row.weekly_ha_green_no_lower_shadow;
     await pool.query(
       `INSERT INTO technical_signals
        (symbol, signal_date, monthly_rsi_14, monthly_ok, weekly_close, weekly_ema_30,
