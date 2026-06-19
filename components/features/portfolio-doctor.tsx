@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { RefreshCw, TrendingUp, TrendingDown, AlertTriangle, ArrowRight, ChevronDown, ChevronUp } from "lucide-react"
+import { PortfolioConvergencePanel } from "./portfolio-convergence-panel"
 
 const C = {
   green:  "#16A34A", greenBg:  "#F0FDF4", greenBd: "#BBF7D0",
@@ -339,6 +340,9 @@ export function PortfolioDoctor({ simple = false, onStockSelect }: { simple?: bo
   return (
     <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 80 }}>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+
+        {/* Convergence Alerts — top of page */}
+        <PortfolioConvergencePanel onStockSelect={onStockSelect}/>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
