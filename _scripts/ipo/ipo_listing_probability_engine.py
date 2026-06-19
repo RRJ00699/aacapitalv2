@@ -293,25 +293,7 @@ def compute_score(row, base, sec):
 
     confidence = clamp(confidence, 20, 95)
 
-    # Strong live-data checks based on already-normalized numeric values.
-    # This avoids Decimal('NaN') / string NaN edge cases after pandas merge.
-    has_gmp = abs(gmp_pct) > 0.01
-    has_subscription = abs(total - 1) > 0.01
-    has_symbol = (
-        row.get("symbol") is not None
-        and not pd.isna(row.get("symbol"))
-        and str(row.get("symbol")).strip() != ""
-    )
-
-    has_live_data = has_gmp and has_subscription
-
-    if not has_live_data:
-        confidence = min(confidence, 55)
-
-    if not has_symbol:
-        confidence = min(confidence, 60)
-
-    if has_live_data and p_gain_10 >= 68 and p_loss <= 30 and expected >= 8:
+    if p_gain_10 >= 68 and p_loss <= 30 and expected >= 8:
         decision = "APPLY"
     elif p_loss >= 48 or expected < 0:
         decision = "AVOID"
@@ -335,12 +317,6 @@ def compute_score(row, base, sec):
         },
         "sector_baseline": sec,
         "base_historical": base,
-        "data_quality": {
-            "has_gmp": bool(has_gmp),
-            "has_subscription": bool(has_subscription),
-            "has_symbol": bool(has_symbol),
-            "has_live_data": bool(has_live_data),
-        },
     }
 
     features = {
@@ -365,7 +341,7 @@ def compute_score(row, base, sec):
         "confidence": round(confidence, 2),
         "reasons": reasons,
         "feature_json": features,
-        "model_version": "ipo_listing_probability_v2_strict_live_gate",
+        "model_version": "ipo_listing_probability_v2",
     }
 
 

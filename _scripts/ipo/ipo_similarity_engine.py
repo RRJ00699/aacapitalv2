@@ -135,12 +135,13 @@ def load_data(conn):
     )
 
     live["ipo_id_num"] = pd.to_numeric(live["ipo_id"], errors="coerce")
+
     current = master.merge(
-    live.drop(columns=["ipo_id"], errors="ignore"),
-    left_on="ipo_id",
-    right_on="ipo_id_num",
-    how="left",
-)
+        live.drop(columns=["ipo_id"], errors="ignore"),
+        left_on="ipo_id",
+        right_on="ipo_id_num",
+        how="left",
+    )
 
     logging.info("Loaded current=%s historical=%s", len(current), len(hist))
     return current, hist
