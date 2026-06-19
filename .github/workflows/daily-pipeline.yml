@@ -1,0 +1,88 @@
+name: Daily Data Pipeline
+
+on:
+  schedule:
+    - cron: '30 11 * * 1-5'   # 5:00 PM IST Mon–Fri (after market close)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'What to run'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full           # candles + signals + purge
+          - signals_only   # just regenerate signals (fast, ~2 min)
+          - purge_only     # just run purge
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: pip install psycopg2-binary requests beautifulsoup4
+
+      # ── Step 1: Sync candles (skip on signals_only / purge_only) ──────────
+      - name: Sync candles to Neon
+        if: ${{ github.event.inputs.mode != 'signals_only' && github.event.inputs.mode != 'purge_only' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Syncing top 200 stocks, last 30 days of candles"
+          python _scripts/sync_candles_to_neon.py --top 200 --days 30
+        continue-on-error: true
+
+      # ── Step 2: Generate signals from Neon price_candles ──────────────────
+      - name: Generate signals
+        if: ${{ github.event.inputs.mode != 'purge_only' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Computing NR7/EMA200/momentum signals for all stocks"
+          python _scripts/generate_signals.py --limit 500
+        continue-on-error: false
+
+      # ── Step 3: Purge stale data ──────────────────────────────────────────
+      - name: Purge stale data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Running purge automation (dry-run on schedule, execute on manual)"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python _scripts/purge_automation.py --dry-run
+          else
+            python _scripts/purge_automation.py --execute
+          fi
+        continue-on-error: true
+
+      # ── Step 4: Score management commentary for top stocks ────────────────
+      - name: Score management commentary
+        if: ${{ github.event.inputs.mode == 'full' || github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+          SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
+        run: |
+          echo "Scoring commentary for top 10 stocks (Monday only)"
+          if [ "$(date +%u)" = "1" ]; then
+            python _scripts/score_management_commentary.py \
+              --symbols RELIANCE HDFCBANK ICICIBANK INFY TCS KOTAKBANK LT AXISBANK WIPRO HCLTECH
+          else
+            echo "Skipping commentary (runs Mondays only)"
+          fi
+        continue-on-error: true
+
+      - name: Pipeline summary
+        run: |
+          echo "=============================="
+          echo "Pipeline complete: $(date '+%Y-%m-%d %H:%M IST')"
+          echo "Mode: ${{ github.event.inputs.mode || 'scheduled-full' }}"
+          echo "=============================="

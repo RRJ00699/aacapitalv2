@@ -1,87 +1,92 @@
 """
 _scripts/generate_signals.py
 ==============================
-Generates technical signals directly from price_candles in local Postgres.
-Bypasses the TypeScript screener which requires monthly indicators.
+Generates technical signals from price_candles in Neon DB.
+Works fully in cloud — no local Postgres needed.
+Runs daily via GitHub Actions after market close.
 
-Computes per stock:
-- Buy zone score (0-100)
-- NR7 detection
-- EMA200 position
-- Momentum 6M
-- Volume expansion
-- Stage classification
+Pipeline:
+  Neon price_candles → compute signals → write technical_signals (Neon)
 
-Writes to technical_signals (local) then you run sync-signals-to-neon.ts
+Retention / Purge strategy:
+  technical_signals: keep 1 signal per stock (upsert by symbol only, no date conflict)
+  price_candles: retain 5Y rolling (purge_automation.py handles this)
 
 Usage:
-  python _scripts/generate_signals.py
-  python _scripts/generate_signals.py --symbols RELIANCE INFY TCS
-  python _scripts/generate_signals.py --min-candles 60
+  python _scripts/generate_signals.py                # all stocks in price_candles
+  python _scripts/generate_signals.py --limit 500    # top N stocks
+  python _scripts/generate_signals.py --symbols RELIANCE INFY
 """
 
 import os, sys, logging, argparse, datetime
 import psycopg2, psycopg2.extras
-import statistics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-LOCAL_URL = os.environ.get("LOCAL_DATABASE_URL") or \
-            "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable"
+# Works with either local or Neon depending on what's set
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL") or
+    os.environ.get("NEON_DATABASE_URL") or
+    os.environ.get("LOCAL_DATABASE_URL") or
+    "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable"
+)
 
-def get_symbols(conn, limit: int) -> list[str]:
+def get_conn():
+    return psycopg2.connect(DATABASE_URL, connect_timeout=15)
+
+def get_symbols(conn, limit: int) -> list:
     cur = conn.cursor()
     cur.execute("""
-        SELECT DISTINCT symbol FROM price_candles
+        SELECT symbol, COUNT(*) as cnt
+        FROM price_candles
         WHERE symbol NOT IN ('ANTELOPUS','ACUTAAS')
-        ORDER BY symbol
+        GROUP BY symbol
+        HAVING COUNT(*) >= 30
+        ORDER BY cnt DESC
         LIMIT %s
     """, (limit,))
     syms = [r[0] for r in cur.fetchall()]
     cur.close()
+    log.info(f"Found {len(syms)} symbols with >= 30 candles")
     return syms
 
-def get_candles(conn, symbol: str, days: int = 365) -> list[dict]:
+def get_candles(conn, symbol: str) -> list:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT date, open, high, low, close, volume
         FROM price_candles
         WHERE symbol = %s
-        ORDER BY date DESC
-        LIMIT %s
-    """, (symbol, days))
+        ORDER BY date ASC
+    """, (symbol,))
     rows = [dict(r) for r in cur.fetchall()]
     cur.close()
-    return list(reversed(rows))  # oldest first
+    return rows
 
-def ema(prices: list[float], period: int) -> list[float | None]:
-    result: list[float | None] = [None] * len(prices)
+def ema(prices: list, period: int) -> list:
+    result = [None] * len(prices)
     if len(prices) < period:
         return result
     k = 2 / (period + 1)
-    # seed with SMA
-    seed = sum(prices[:period]) / period
+    seed = sum(float(p) for p in prices[:period]) / period
     result[period - 1] = seed
     for i in range(period, len(prices)):
-        result[i] = prices[i] * k + (result[i-1] or seed) * (1 - k)
+        prev = result[i-1] if result[i-1] is not None else seed
+        result[i] = float(prices[i]) * k + prev * (1 - k)
     return result
 
-def true_ranges(candles: list[dict]) -> list[float]:
+def true_ranges(candles: list) -> list:
     trs = []
     for i, c in enumerate(candles):
+        h, l = float(c['high']), float(c['low'])
         if i == 0:
-            trs.append(float(c['high']) - float(c['low']))
+            trs.append(h - l)
         else:
-            prev_close = float(candles[i-1]['close'])
-            trs.append(max(
-                float(c['high']) - float(c['low']),
-                abs(float(c['high']) - prev_close),
-                abs(float(c['low'])  - prev_close),
-            ))
+            pc = float(candles[i-1]['close'])
+            trs.append(max(h - l, abs(h - pc), abs(l - pc)))
     return trs
 
-def compute_signal(symbol: str, candles: list[dict]) -> dict | None:
+def compute_signal(symbol: str, candles: list) -> dict | None:
     if len(candles) < 30:
         return None
 
@@ -90,173 +95,114 @@ def compute_signal(symbol: str, candles: list[dict]) -> dict | None:
     lows    = [float(c['low'])    for c in candles]
     volumes = [float(c['volume'] or 0) for c in candles]
     trs     = true_ranges(candles)
-
     price   = closes[-1]
     today   = candles[-1]['date']
 
     # EMA200
-    ema200_series = ema(closes, 200)
-    ema200        = ema200_series[-1]
-    above_ema200  = price > ema200 if ema200 else False
+    ema200_s = ema(closes, 200)
+    ema200   = ema200_s[-1]
+    above_200 = price > ema200 if ema200 else False
 
     # EMA50
-    ema50_series  = ema(closes, 50)
-    ema50         = ema50_series[-1]
+    ema50_s  = ema(closes, 50)
+    ema50    = ema50_s[-1]
 
-    # Momentum 6M (126 trading days)
-    momentum_6m = 0.0
-    if len(closes) >= 126:
-        momentum_6m = (price / closes[-126] - 1) * 100
+    # Momentum
+    mom_6m = ((price / closes[-126] - 1) * 100) if len(closes) >= 126 else 0.0
+    mom_3m = ((price / closes[-63]  - 1) * 100) if len(closes) >= 63  else 0.0
 
-    # NR7 — narrowest range in last 7 days
+    # NR7
     recent_trs = trs[-7:]
     is_nr7 = len(recent_trs) == 7 and recent_trs[-1] == min(recent_trs)
 
-    # Volume expansion — today vs 20-day avg
-    vol_avg_20   = sum(volumes[-21:-1]) / 20 if len(volumes) >= 21 else None
+    # Volume
+    vol_avg_20   = (sum(volumes[-21:-1]) / 20) if len(volumes) >= 21 else None
     vol_expansion = (volumes[-1] / vol_avg_20) if vol_avg_20 and vol_avg_20 > 0 else 1.0
+    vol_compress  = round(1 / vol_expansion, 3) if vol_expansion > 0 else 1.0
 
-    # 52-week high
+    # 52W high
     high_52w     = max(highs[-252:]) if len(highs) >= 252 else max(highs)
     pct_below_hi = (high_52w - price) / high_52w * 100 if high_52w > 0 else 0
 
-    # Base months — count consecutive weeks within 30% of current price
+    # Base months
     base_months = 0
     if len(closes) >= 20:
-        base_close = closes[-1]
-        weeks = 0
         for i in range(len(closes)-1, max(0, len(closes)-104), -5):
-            if abs(closes[i] / base_close - 1) < 0.30:
-                weeks += 1
+            if abs(closes[i] / price - 1) < 0.30:
+                base_months += 1
             else:
                 break
-        base_months = round(weeks * 5 / 21)
+        base_months = round(base_months * 5 / 21)
 
-    # ── Score (0–100) ──────────────────────────────────────────────────
+    # ── Score ─────────────────────────────────────────────────────────
     score = 0
 
-    # EMA200 position (30 pts)
-    if above_ema200:
-        score += 30
+    if above_200:                         score += 30
+    if mom_6m >= 20:                      score += 20
+    elif mom_6m >= 10:                    score += 12
+    elif mom_6m >= 0:                     score += 5
+    if is_nr7:                            score += 15
+    if vol_expansion >= 1.5:              score += 10
+    elif vol_expansion >= 1.2:            score += 5
+    if pct_below_hi <= 5:                 score += 10
+    elif pct_below_hi <= 15:              score += 5
+    if base_months >= 6:                  score += 15
+    elif base_months >= 3:                score += 8
 
-    # Momentum 6M (20 pts)
-    if momentum_6m >= 20:
-        score += 20
-    elif momentum_6m >= 10:
-        score += 12
-    elif momentum_6m >= 0:
-        score += 5
-
-    # NR7 (15 pts)
-    if is_nr7:
-        score += 15
-
-    # Volume expansion (10 pts)
-    if vol_expansion >= 1.5:
-        score += 10
-    elif vol_expansion >= 1.2:
-        score += 5
-
-    # Near 52W high (10 pts)
-    if pct_below_hi <= 5:
-        score += 10
-    elif pct_below_hi <= 15:
-        score += 5
-
-    # Base building (15 pts)
-    if base_months >= 6:
-        score += 15
-    elif base_months >= 3:
-        score += 8
-
-    # Stage classification
-    if above_ema200 and momentum_6m >= 15:
-        stage = "2"
-        stage_label = "Stage 2: Markup"
-    elif above_ema200:
-        stage = "1"
-        stage_label = "Stage 1: Accumulation"
-    elif momentum_6m < -20:
-        stage = "4"
-        stage_label = "Stage 4: Decline"
+    # Stage
+    if above_200 and mom_6m >= 15:
+        stage, stage_label = "2", "Stage 2: Markup"
+    elif above_200:
+        stage, stage_label = "1", "Stage 1: Accumulation"
+    elif mom_6m < -20:
+        stage, stage_label = "4", "Stage 4: Decline"
     else:
-        stage = "3"
-        stage_label = "Stage 3: Distribution"
+        stage, stage_label = "3", "Stage 3: Distribution"
 
-    action = "ACCUMULATE" if score >= 75 else \
-             "WATCH_FOR_BREAKOUT" if score >= 60 else \
-             "WATCH" if score >= 40 else "IGNORE"
+    action = ("ACCUMULATE"        if score >= 75 else
+              "WATCH_FOR_BREAKOUT" if score >= 60 else
+              "WATCH"              if score >= 40 else "IGNORE")
+
+    strength = ("VERY_HIGH" if score >= 80 else
+                "HIGH"      if score >= 65 else
+                "MEDIUM"    if score >= 50 else "LOW")
 
     return {
         "symbol":           symbol,
         "signal_date":      today,
-        "close":            price,
+        "close":            round(price, 2),
         "buy_zone_score":   score,
-        "convergence_score": score,
         "probability_score": score,
-        "signal_strength":  "VERY_HIGH" if score >= 80 else "HIGH" if score >= 65 else "MEDIUM" if score >= 50 else "LOW",
+        "signal_strength":  strength,
         "action_label":     action,
         "is_nr7":           is_nr7,
         "nr7":              is_nr7,
-        "above_ema200":     above_ema200,
+        "above_ema200":     above_200,
         "ema200":           round(ema200, 2) if ema200 else None,
-        "momentum_6m":      round(momentum_6m, 2),
-        "vol_compression":  round(1 / vol_expansion, 2) if vol_expansion > 0 else 1.0,
-        "volume_expansion": round(vol_expansion, 2),
+        "momentum_6m":      round(mom_6m, 2),
+        "vol_compression":  vol_compress,
         "base_months":      base_months,
         "stage":            stage,
         "stage_label":      stage_label,
         "pct_below_high":   round(pct_below_hi, 2),
     }
 
-def upsert_signal(conn, sig: dict):
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO technical_signals (
-            symbol, signal_date, close, buy_zone_score,
-            probability_score, signal_strength, action_label,
-            nr7, above_ema200, ema200, momentum_6m,
-            base_months, stage, stage_label,
-            all_criteria_met, updated_at
-        ) VALUES (
-            %(symbol)s, %(signal_date)s, %(close)s, %(buy_zone_score)s,
-            %(probability_score)s, %(signal_strength)s, %(action_label)s,
-            %(nr7)s, %(above_ema200)s, %(ema200)s, %(momentum_6m)s,
-            %(base_months)s, %(stage)s, %(stage_label)s,
-            %(above_ema200)s, NOW()
-        )
-        ON CONFLICT (symbol, signal_date) DO UPDATE SET
-            close           = EXCLUDED.close,
-            buy_zone_score  = EXCLUDED.buy_zone_score,
-            probability_score = EXCLUDED.probability_score,
-            signal_strength = EXCLUDED.signal_strength,
-            action_label    = EXCLUDED.action_label,
-            nr7             = EXCLUDED.nr7,
-            above_ema200    = EXCLUDED.above_ema200,
-            momentum_6m     = EXCLUDED.momentum_6m,
-            stage           = EXCLUDED.stage,
-            stage_label     = EXCLUDED.stage_label,
-            updated_at      = NOW()
-    """, sig)
-    conn.commit()
-    cur.close()
-
 def ensure_columns(conn):
-    cur = conn.cursor()
-    for col, typ in [
+    additions = [
         ("buy_zone_score",   "NUMERIC"),
-        ("convergence_score","NUMERIC"),
         ("above_ema200",     "BOOLEAN"),
         ("ema200",           "NUMERIC"),
         ("momentum_6m",      "NUMERIC"),
-        ("volume_expansion", "NUMERIC"),
         ("vol_compression",  "NUMERIC"),
         ("base_months",      "INTEGER"),
         ("stage",            "TEXT"),
         ("stage_label",      "TEXT"),
         ("pct_below_high",   "NUMERIC"),
         ("is_nr7",           "BOOLEAN"),
-    ]:
+        ("convergence_score","NUMERIC"),
+    ]
+    cur = conn.cursor()
+    for col, typ in additions:
         try:
             cur.execute(f"ALTER TABLE technical_signals ADD COLUMN IF NOT EXISTS {col} {typ}")
             conn.commit()
@@ -264,20 +210,87 @@ def ensure_columns(conn):
             conn.rollback()
     cur.close()
 
+def upsert_signal(conn, sig: dict):
+    cur = conn.cursor()
+    # Upsert by symbol only — one row per stock, always latest
+    cur.execute("""
+        INSERT INTO technical_signals (
+            symbol, signal_date, close, buy_zone_score, convergence_score,
+            probability_score, signal_strength, action_label,
+            is_nr7, nr7, above_ema200, ema200, momentum_6m,
+            vol_compression, base_months, stage, stage_label,
+            pct_below_high, updated_at
+        ) VALUES (
+            %(symbol)s, %(signal_date)s, %(close)s, %(buy_zone_score)s, %(buy_zone_score)s,
+            %(probability_score)s, %(signal_strength)s, %(action_label)s,
+            %(is_nr7)s, %(nr7)s, %(above_ema200)s, %(ema200)s, %(momentum_6m)s,
+            %(vol_compression)s, %(base_months)s, %(stage)s, %(stage_label)s,
+            %(pct_below_high)s, NOW()
+        )
+        ON CONFLICT (symbol) DO UPDATE SET
+            signal_date      = EXCLUDED.signal_date,
+            close            = EXCLUDED.close,
+            buy_zone_score   = EXCLUDED.buy_zone_score,
+            convergence_score= EXCLUDED.buy_zone_score,
+            probability_score= EXCLUDED.probability_score,
+            signal_strength  = EXCLUDED.signal_strength,
+            action_label     = EXCLUDED.action_label,
+            is_nr7           = EXCLUDED.is_nr7,
+            nr7              = EXCLUDED.nr7,
+            above_ema200     = EXCLUDED.above_ema200,
+            ema200           = EXCLUDED.ema200,
+            momentum_6m      = EXCLUDED.momentum_6m,
+            vol_compression  = EXCLUDED.vol_compression,
+            base_months      = EXCLUDED.base_months,
+            stage            = EXCLUDED.stage,
+            stage_label      = EXCLUDED.stage_label,
+            pct_below_high   = EXCLUDED.pct_below_high,
+            updated_at       = NOW()
+    """, sig)
+    conn.commit()
+    cur.close()
+
+def purge_old_signals(conn):
+    """Keep only 1 signal per stock (latest). Remove signals older than 30 days."""
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM technical_signals
+        WHERE signal_date < NOW() - INTERVAL '30 days'
+          AND symbol NOT IN (
+              SELECT DISTINCT symbol FROM technical_signals
+              WHERE signal_date >= NOW() - INTERVAL '30 days'
+          )
+    """)
+    deleted = cur.rowcount
+    conn.commit()
+    cur.close()
+    if deleted > 0:
+        log.info(f"Purged {deleted} stale signal rows")
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--symbols",     nargs="+")
     p.add_argument("--limit",       type=int, default=500)
     p.add_argument("--min-candles", type=int, default=30)
+    p.add_argument("--purge-only",  action="store_true")
     args = p.parse_args()
 
-    conn = psycopg2.connect(LOCAL_URL, connect_timeout=10)
-    log.info("Local Postgres connected")
+    if not DATABASE_URL:
+        log.error("DATABASE_URL not set"); sys.exit(1)
+
+    conn = get_conn()
+    source = "Neon" if "neon.tech" in DATABASE_URL else "Local Postgres"
+    log.info(f"Connected to {source}")
 
     ensure_columns(conn)
 
+    if args.purge_only:
+        purge_old_signals(conn)
+        conn.close()
+        return
+
     symbols = args.symbols or get_symbols(conn, args.limit)
-    log.info(f"Processing {len(symbols)} stocks")
+    log.info(f"Generating signals for {len(symbols)} stocks")
     log.info("=" * 60)
 
     ok = 0; skipped = 0
@@ -290,13 +303,14 @@ def main():
         if sig:
             upsert_signal(conn, sig)
             ok += 1
-            if ok % 25 == 0:
+            if ok % 50 == 0:
                 log.info(f"  [{i+1}/{len(symbols)}] {ok} signals written…")
 
+    purge_old_signals(conn)
     conn.close()
+
     log.info("=" * 60)
-    log.info(f"Done. {ok} signals written, {skipped} skipped (insufficient candles)")
-    log.info("Now run: npx tsx _scripts/sync-signals-to-neon.ts")
+    log.info(f"Done. {ok} signals written, {skipped} skipped")
 
 if __name__ == "__main__":
     main()

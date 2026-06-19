@@ -67,6 +67,107 @@ function TextInput({ value, onChange, type = "text", placeholder = "" }: any) {
   )
 }
 
+
+// ── Pipeline Control Panel ────────────────────────────────────────────────────
+function PipelineControl() {
+  const [running, setRunning] = useState<string | null>(null)
+  const [result,  setResult]  = useState<string | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
+  const [dbStats, setDbStats] = useState<any>(null)
+
+  useEffect(() => {
+    fetch("/api/pipeline/status").then(r => r.json()).then(d => {
+      if (d.ok) setDbStats(d)
+    }).catch(() => {})
+  }, [])
+
+  async function trigger(mode: string, label: string) {
+    setRunning(label); setResult(null); setError(null)
+    try {
+      const r = await fetch("/api/pipeline/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      })
+      const d = await r.json()
+      if (d.ok) {
+        setResult(d.message ?? `${label} triggered — check GitHub Actions for progress`)
+      } else {
+        setError(d.error ?? "Failed to trigger")
+      }
+    } catch (e: any) { setError(e.message) }
+    finally { setRunning(null) }
+  }
+
+  return (
+    <div>
+      {/* DB Stats */}
+      {dbStats && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+          {[
+            { label: "Candle rows",    value: dbStats.candles?.toLocaleString() ?? "—"  },
+            { label: "Signal stocks",  value: dbStats.signals?.toLocaleString() ?? "—"  },
+            { label: "Commentary",     value: dbStats.commentary?.toLocaleString() ?? "—"},
+          ].map(s => (
+            <div key={s.label} style={{ background: T.grayBg, borderRadius: 8, padding: "10px 12px",
+              border: `1px solid ${T.border}` }}>
+              <div style={{ fontSize: 10, color: T.gray, marginBottom: 3 }}>{s.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Buttons */}
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+        {[
+          { mode: "full",         label: "⚡ Run full pipeline",     sub: "Candles + signals + commentary (~5 min)", color: T.blue,  bg: T.blueBg  },
+          { mode: "signals_only", label: "📈 Regenerate signals",    sub: "NR7/EMA200/momentum for all stocks (~2 min)", color: T.green, bg: T.greenBg },
+          { mode: "purge_only",   label: "🗑 Run purge",             sub: "Clean stale data per retention policy", color: T.amber, bg: T.amberBg },
+        ].map(btn => (
+          <button key={btn.mode}
+            onClick={() => trigger(btn.mode, btn.label)}
+            disabled={running !== null}
+            style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "12px 16px", borderRadius: 10, border: `1px solid ${btn.color}30`,
+              background: running === btn.label ? btn.bg : T.white,
+              cursor: running ? "not-allowed" : "pointer", textAlign: "left" as const,
+              opacity: running && running !== btn.label ? 0.5 : 1,
+            }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: btn.color, marginBottom: 2 }}>
+                {running === btn.label ? "Running…" : btn.label}
+              </div>
+              <div style={{ fontSize: 11, color: T.gray }}>{btn.sub}</div>
+            </div>
+            <div style={{ fontSize: 18 }}>
+              {running === btn.label ? "⏳" : "▶"}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {result && (
+        <div style={{ marginTop: 10, padding: "10px 14px", background: T.greenBg,
+          borderRadius: 8, fontSize: 12, color: T.green, border: `1px solid #BBF7D0` }}>
+          ✓ {result}
+        </div>
+      )}
+      {error && (
+        <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2",
+          borderRadius: 8, fontSize: 12, color: T.red, border: "1px solid #FECACA" }}>
+          ✗ {error}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: T.gray, marginTop: 10, lineHeight: 1.6 }}>
+        Pipeline runs automatically at 5PM IST Mon–Fri via GitHub Actions.
+        Use these buttons to trigger manually at any time.
+      </div>
+    </div>
+  )
+}
+
 export function SettingsTab() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT)
   const [loading,  setLoading]  = useState(true)
@@ -274,6 +375,12 @@ export function SettingsTab() {
             Leave blank to disable Telegram.
           </div>
         </div>
+      </Card>
+
+      {/* Data Pipeline Control */}
+      <Card>
+        <SectionTitle text="⚡ Data Pipeline" />
+        <PipelineControl />
       </Card>
 
       {/* Broker & Data status */}
