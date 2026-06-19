@@ -32,14 +32,10 @@ export default function MFIntelligencePanel({ symbol }: Props) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Metric label="MF Score" value={latest?.accumulation_score ?? 'N/A'} />
-        <Metric label="Signal" value={latest?.signal ?? 'N/A'} />
-        <Metric label="Fund Count" value={latest?.fund_count ?? 'N/A'} />
-        <Metric label="AMC Count" value={latest?.amc_count ?? 'N/A'} />
-        <Metric label="MF Value" value={cr(latest?.total_mf_value_cr)} />
-        <Metric label="MoM Change" value={pct(latest?.mom_value_change_pct)} />
-        <Metric label="Added Funds" value={latest?.net_added_funds ?? 'N/A'} />
-        <Metric label="Exited Funds" value={latest?.net_exited_funds ?? 'N/A'} />
+        <Metric label="Funds Holding" value={latest?.fund_count ?? 'N/A'} highlight={Number(latest?.fund_count) >= 10} />
+        <Metric label="AMC Count"     value={latest?.amc_count ?? 'N/A'} />
+        <Metric label="Signal"        value={latest?.signal ?? 'N/A'} />
+        <Metric label="Avg Weight"    value={funds.length > 0 ? pct(funds.reduce((s: number, f: any) => s + Number(f.portfolio_weight_pct || 0), 0) / funds.length) : 'N/A'} />
       </div>
 
       <div className="overflow-x-auto">
@@ -58,6 +54,6 @@ export default function MFIntelligencePanel({ symbol }: Props) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: any }) { return <div className="rounded-lg bg-black/5 p-3"><div className="text-xs opacity-60">{label}</div><div className="font-semibold">{value}</div></div>; }
+function Metric({ label, value, highlight }: { label: string; value: any; highlight?: boolean }) { return <div className={`rounded-lg p-3 ${highlight ? "bg-emerald-50 border border-emerald-200" : "bg-black/5"}`}><div className="text-xs opacity-60">{label}</div><div className={`font-semibold ${highlight ? "text-emerald-700" : ""}`}>{value}</div></div>; }
 function pct(v: any) { const n = Number(v); return Number.isFinite(n) ? `${n.toFixed(2)}%` : 'N/A'; }
 function cr(v: any) { const n = Number(v); return Number.isFinite(n) ? `₹${n.toFixed(1)} Cr` : 'N/A'; }
