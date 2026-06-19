@@ -221,7 +221,7 @@ export function MultibaggerDiscovery({ simple = false, onStockSelect }: { simple
 
       const amfiStatus   = amfiRes?.data?.score?.liquidity_status || "NEUTRAL"
       const amfiPositive = ["RISK_ON","SELECTIVE_RISK_ON"].includes(amfiStatus)
-      const SUPPRESS     = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
+      const SUPPRESS     = /^(ANTELOP|ACUTAAS|BMWVENTURE|UNKNOWN)/i
 
       // Build commentary map from management_commentary table
       const commList = (commRes?.data ?? commRes ?? []) as any[]
@@ -284,7 +284,7 @@ export function MultibaggerDiscovery({ simple = false, onStockSelect }: { simple
           reasons,
         } as MultibaggerCandidate & { enginesAligned: number }
       })
-      .filter((c: any) => c.enginesAligned >= minEngines)
+      .filter((c: any) => c.enginesAligned >= minEngines && c.conviction_score >= 35)
       .sort((a: any, b: any) => b.conviction_score - a.conviction_score)
       .slice(0, 30)
 

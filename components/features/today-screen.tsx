@@ -159,6 +159,22 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
 
   useEffect(() => { load() }, [load])
 
+  // Auto-refresh every 60s during market hours (9:15AM – 3:30PM IST)
+  useEffect(() => {
+    const isMarketHours = () => {
+      const now = new Date()
+      const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }))
+      const h = ist.getHours(), m = ist.getMinutes()
+      const mins = h * 60 + m
+      const day = ist.getDay()
+      return day >= 1 && day <= 5 && mins >= 555 && mins <= 930 // 9:15 to 15:30
+    }
+    const interval = setInterval(() => {
+      if (isMarketHours()) load(true)
+    }, 60000) // every 60 seconds
+    return () => clearInterval(interval)
+  }, [load])
+
   const rc  = REGIME[regime]
   const day = useMemo(() => new Date().toLocaleString("en-IN",{weekday:"long",day:"numeric",month:"short",timeZone:"Asia/Kolkata"}), [])
 
