@@ -80,6 +80,38 @@ jobs:
           fi
         continue-on-error: true
 
+      # ── Step 5: AMFI MF holdings (1st of month only) ─────────────────────
+      - name: Scrape AMFI MF holdings
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          DAY=$(date +%d)
+          if [ "$DAY" = "01" ] || [ "$DAY" = "02" ]; then
+            echo "1st/2nd of month — scraping AMFI holdings"
+            python _scripts/scrape_amfi.py --schemes 50
+          else
+            echo "Skipping AMFI (runs on 1st/2nd of month only)"
+          fi
+        continue-on-error: true
+
+      # ── Step 6: Shareholding patterns (quarterly — runs in Jan/Apr/Jul/Oct) ─
+      - name: Scrape shareholding patterns
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          MONTH=$(date +%m)
+          DAY=$(date +%d)
+          # Run in first week of Jan, Apr, Jul, Oct (after quarterly filings)
+          if [[ "$MONTH" =~ ^(01|04|07|10)$ ]] && [ "$DAY" -le "07" ]; then
+            echo "Quarterly month — scraping shareholding patterns"
+            python _scripts/scrape_shareholding.py --limit 100
+          else
+            echo "Skipping shareholding (runs quarterly only)"
+          fi
+        continue-on-error: true
+
       - name: Pipeline summary
         run: |
           echo "=============================="
