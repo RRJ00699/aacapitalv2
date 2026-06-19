@@ -46,6 +46,12 @@ jobs:
       - name: Install Node deps
         run: npm ci --ignore-scripts
 
+      - name: Generate signals from candles
+        env:
+          LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
+        run: python _scripts/generate_signals.py --limit 500
+        continue-on-error: true
+
       - name: Sync signals Local → Neon
         env:
           NEON_DATABASE_URL:  ${{ secrets.DATABASE_URL }}
