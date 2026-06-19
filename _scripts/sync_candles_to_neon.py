@@ -41,8 +41,8 @@ def get_top_symbols(local_conn, n: int) -> list[str]:
         log.warning(f"Could not get from stock_fundamentals: {e}")
         # Fallback: get distinct symbols from price_candles
         cur.execute("""
-            SELECT DISTINCT tradingsymbol FROM price_candles
-            ORDER BY tradingsymbol LIMIT %s
+            SELECT DISTINCT symbol FROM price_candles
+            ORDER BY symbol LIMIT %s
         """, (n,))
         return [r[0] for r in cur.fetchall()]
     finally:
@@ -54,7 +54,7 @@ def ensure_neon_table(neon_conn):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS price_candles (
             id              SERIAL PRIMARY KEY,
-            tradingsymbol   VARCHAR(20) NOT NULL,
+            symbol   VARCHAR(20) NOT NULL,
             date            DATE NOT NULL,
             open            NUMERIC(12,2),
             high            NUMERIC(12,2),
@@ -63,10 +63,10 @@ def ensure_neon_table(neon_conn):
             volume          BIGINT,
             interval        VARCHAR(10) DEFAULT 'day',
             created_at      TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE (tradingsymbol, date, interval)
+            UNIQUE (symbol, date)
         )
     """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_pc_sym_date ON price_candles (tradingsymbol, date DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pc_sym_date ON price_candles (symbol, date DESC)")
     neon_conn.commit()
     cur.close()
 
@@ -75,9 +75,9 @@ def sync_symbol(local_conn, neon_conn, symbol: str, days: int) -> int:
     cutoff = datetime.date.today() - datetime.timedelta(days=days)
     local_cur = local_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     local_cur.execute("""
-        SELECT tradingsymbol, date, open, high, low, close, volume
+        SELECT symbol, date, open, high, low, close, volume
         FROM price_candles
-        WHERE tradingsymbol = %s AND date >= %s
+        WHERE symbol = %s AND date >= %s
         ORDER BY date ASC
     """, (symbol, cutoff))
     rows = local_cur.fetchall()
@@ -88,15 +88,15 @@ def sync_symbol(local_conn, neon_conn, symbol: str, days: int) -> int:
 
     neon_cur = neon_conn.cursor()
     psycopg2.extras.execute_values(neon_cur, """
-        INSERT INTO price_candles (tradingsymbol, date, open, high, low, close, volume, interval)
+        INSERT INTO price_candles (symbol, date, open, high, low, close, volume)
         VALUES %s
-        ON CONFLICT (tradingsymbol, date, interval) DO UPDATE SET
+        ON CONFLICT (symbol, date) DO UPDATE SET
             open   = EXCLUDED.open,
             high   = EXCLUDED.high,
             low    = EXCLUDED.low,
             close  = EXCLUDED.close,
             volume = EXCLUDED.volume
-    """, [(r['tradingsymbol'], r['date'], r['open'], r['high'], r['low'], r['close'], r['volume'], 'day')
+    """, [(r['symbol'], r['date'], r['open'], r['high'], r['low'], r['close'], r['volume'])
            for r in rows])
     neon_conn.commit()
     neon_cur.close()
