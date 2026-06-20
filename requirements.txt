@@ -1,0 +1,6 @@
+psycopg2-binary>=2.9
+requests>=2.31
+beautifulsoup4>=4.12
+pandas>=2.0
+openpyxl>=3.1
+yahooquery>=2.3

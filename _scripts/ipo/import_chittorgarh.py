@@ -86,9 +86,17 @@ def safe_bool(v) -> bool | None:
 
 def parse_date(v) -> datetime.date | None:
     if v is None: return None
-    if isinstance(v, (datetime.date, datetime.datetime)): return v.date() if hasattr(v,'date') else v
+    # Handle pandas NaT
     try:
-        return pd.to_datetime(str(v), dayfirst=True).date()
+        import pandas as pd
+        if pd.isna(v): return None
+    except: pass
+    if isinstance(v, (datetime.date, datetime.datetime)): 
+        return v.date() if hasattr(v, 'date') else v
+    s = str(v).strip()
+    if s in ('', 'NaT', 'nan', 'None', 'NaN'): return None
+    try:
+        return pd.to_datetime(s, dayfirst=True).date()
     except:
         return None
 
@@ -597,13 +605,18 @@ def upsert_row(cur, row: pd.Series, derived: dict, play: dict):
     placeholders = ', '.join(['%s'] * len(cols))
     updates = ', '.join([f"{c} = EXCLUDED.{c}" for c in cols if c != 'company_name'])
 
-    sql = f"""
-        INSERT INTO ipo_intelligence ({', '.join(cols)})
-        VALUES ({placeholders})
-        ON CONFLICT (company_name)
-        DO UPDATE SET {updates}
-    """
-    cur.execute(sql, vals)
+    # Check if row exists by company_name
+    cur.execute("SELECT id FROM ipo_intelligence WHERE company_name = %s LIMIT 1", (company,))
+    existing = cur.fetchone()
+    
+    if existing:
+        # UPDATE existing row
+        set_clause = ', '.join([f"{c} = %s" for c in cols if c != 'company_name'])
+        update_vals = [data[c] for c in cols if c != 'company_name'] + [company]
+        cur.execute(f"UPDATE ipo_intelligence SET {set_clause} WHERE company_name = %s", update_vals)
+    else:
+        # INSERT new row
+        cur.execute(f"INSERT INTO ipo_intelligence ({', '.join(cols)}) VALUES ({placeholders})", vals)
     return True
 
 def main():
