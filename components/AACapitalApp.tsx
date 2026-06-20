@@ -9,7 +9,8 @@ import {
 } from "./features/sprint-features"
 import { SettingsTab } from "./features/settings-tab"
 import { PortfolioTab } from "./features/portfolio-tab"
-import { IpoCalendar } from "./features/ipo-calendar"
+import { IpoCalendar }       from "./features/ipo-calendar"
+import { IpoPlaybookScreen } from "./features/ipo-playbook"
 import { AnchorLockupTracker }  from "./features/anchor-lockup"
 import { GlobalMacroScreen } from "./features/market-global-screen"
 import { CommandCenter } from "./features/command-center"
@@ -2533,6 +2534,7 @@ export default function App(){
   // V10 new state
   const [oppView,setOppView]=useState("multibagger");
   const [portView,setPortView]=useState("doctor");
+  const [ipoView,setIpoView]=useState("command");
   const [isMobile, setIsMobile] = useState(false)
   useEffect(()=>{
     const check=()=>setIsMobile(window.innerWidth<768)
@@ -2967,10 +2969,32 @@ setMarketFetched(true);
 
       {tab==="ipo"&&(
         <div>
-          <IpoCommandCenter simple={simpleMode}/>
-          <div style={{maxWidth:720,margin:"0 auto",padding:"0 16px 16px"}}>
-            <AnchorLockupTracker/>
+          {/* IPO sub-nav */}
+          <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"8px 20px",
+            display:"flex",gap:6,position:"sticky",top:44,zIndex:9}}>
+            {[
+              {id:"command",  label:"⚡ Command Center"},
+              {id:"playbook", label:"🎯 Quick Profit Playbook"},
+              {id:"calendar", label:"📅 Calendar"},
+            ].map(t=>(
+              <button key={t.id} onClick={()=>setIpoView(t.id)}
+                style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${ipoView===t.id?"#2563EB":"#E5E7EB"}`,
+                  background:ipoView===t.id?"#EFF6FF":"transparent",
+                  color:ipoView===t.id?"#2563EB":"#64748B",
+                  fontSize:12,fontWeight:ipoView===t.id?700:400,cursor:"pointer"}}>
+                {t.label}
+              </button>
+            ))}
           </div>
+          {ipoView==="command"  && <IpoCommandCenter simple={simpleMode}/>}
+          {ipoView==="playbook" && <IpoPlaybookScreen/>}
+          {ipoView==="calendar" && (
+            <div style={{maxWidth:720,margin:"0 auto",padding:"16px 16px"}}>
+              <IpoCalendar/>
+              <AnchorLockupTracker/>
+            </div>
+          )}
+          {!ipoView && <IpoCommandCenter simple={simpleMode}/>}
         </div>
       )}
 
