@@ -146,6 +146,9 @@ def ensure_columns(conn):
         ("play_target_pct","NUMERIC"),("play_hold_window","TEXT"),
         ("play_updated_at","TIMESTAMPTZ"),
         ("chittorgarh_imported","BOOLEAN DEFAULT FALSE"),
+        ("revenue_cr","NUMERIC"),("pat_cr","NUMERIC"),
+        ("ebitda_cr","NUMERIC"),("net_worth_cr","NUMERIC"),
+        ("total_debt_cr","NUMERIC"),("anchor_qib_alloc_cr","NUMERIC"),
     ]
     cur = conn.cursor()
     for col, typ in cols:
@@ -323,7 +326,29 @@ def main():
                 kpi_count += 1
     log.info(f"  KPIs: {kpi_count}")
 
-    # ── 5. BRLM track records ─────────────────────────────────────────────────
+    # ── 5. Key Financial Details ─────────────────────────────────
+    fin_count = 0
+    for year in [2021,2022,2023,2024,2025,2026]:
+        f = f"{args.dir}/Mainboard_IPOs_Key_Financial_Details_{year}.xlsx"
+        if not os.path.exists(f): continue
+        headers, rows = read_file(f)
+        if not headers: continue
+        for row in rows:
+            company = str(row[0] or '').strip()
+            if not company or company == 'Company': continue
+            vals = [str(c or '').strip() for c in row]
+            if company in ipos:
+                ipos[company].update({
+                    'revenue_cr':    n(vals[5]) if len(vals)>5 else None,
+                    'pat_cr':        n(vals[6]) if len(vals)>6 else None,
+                    'ebitda_cr':     n(vals[7]) if len(vals)>7 else None,
+                    'net_worth_cr':  n(vals[8]) if len(vals)>8 else None,
+                    'total_debt_cr': n(vals[10]) if len(vals)>10 else None,
+                })
+                fin_count += 1
+    log.info(f"  Financials: {fin_count}")
+
+    # ── 6. BRLM track records ─────────────────────────────────────────────────
     brlm_raw = defaultdict(lambda: {'issues':0,'positive':0,'negative':0,'gains':[]})
     for year in range(2021, 2027):
         f = f"{args.dir}/Lead_Managers_By_No_and_Performance_of_Mainboard_IPOs_managed_{year}.xlsx"
