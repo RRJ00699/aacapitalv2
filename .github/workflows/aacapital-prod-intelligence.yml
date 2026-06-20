@@ -55,6 +55,7 @@ jobs:
           KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
           KITE_ACCESS_TOKEN: ${{ secrets.KITE_ACCESS_TOKEN }}
         run: python _scripts/prod/kite_sync_and_predict.py --mode ${{ github.event.inputs.mode || 'all' }}
+        continue-on-error: true
 
       - name: Train multibagger model
         if: ${{ github.event.schedule == '30 2 * * 0' || github.event.inputs.mode == 'ml' || github.event.inputs.mode == 'all' }}
@@ -63,6 +64,7 @@ jobs:
           NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
         run: python _scripts/ml/train_multibagger_model.py
+        continue-on-error: true
 
       - name: Ingest management commentary
         if: ${{ github.event.inputs.mode == 'commentary' || github.event.inputs.mode == 'all' }}
@@ -71,6 +73,7 @@ jobs:
           NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
         run: python _scripts/prod/management_commentary_pipeline.py --transcript-dir data/transcripts
+        continue-on-error: true
 
       - name: Weekly commentary archive
         if: ${{ github.event.schedule == '30 2 * * 0' }}
@@ -79,6 +82,7 @@ jobs:
           NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LOCAL_DATABASE_URL: ${{ secrets.LOCAL_DATABASE_URL }}
         run: python _scripts/prod/management_commentary_pipeline.py --archive --purge-days 21
+        continue-on-error: true
 
       - name: Build verification
         run: npm run build
