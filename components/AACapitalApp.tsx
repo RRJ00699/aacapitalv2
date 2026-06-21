@@ -35,6 +35,7 @@ import { TodayScreen } from "./features/today-screen"
 import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { BreakoutWatchScreen } from "./features/breakout-watch"  // SESSION 9
+import { StocksDiscovery } from "./features/stocks-discovery"      // SESSION 9
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2862,12 +2863,10 @@ setMarketFetched(true);
           <StockSearch onSelect={(sym)=>setWorkspaceSymbol(sym)} placeholder="Search stock..." />
         </div>
         {[
-  {v:"today",         l:"Today",        icon:<Home        size={13}/>},
-  {v:"opportunities", l:"Opportunities", icon:<TrendingUp   size={13}/>},
-  {v:"ipo",           l:"IPO",           icon:<Zap          size={13}/>},
-  {v:"watchlist",     l:"Watchlist",     icon:<Award        size={13}/>},
-  {v:"portfolio",     l:"Portfolio",     icon:<Briefcase    size={13}/>},
-  {v:"research",      l:"Research",      icon:<BarChart2    size={13}/>},
+  {v:"today",     l:"Today",     icon:<Home      size={13}/>},
+  {v:"stocks",    l:"Stocks",    icon:<TrendingUp size={13}/>},
+  {v:"ipo",       l:"IPO",       icon:<Zap        size={13}/>},
+  {v:"portfolio", l:"Portfolio", icon:<Briefcase  size={13}/>},
 ].map(({v,l,icon})=>(
   <button key={v} onClick={()=>setTab(v)} style={{
     display:"flex",alignItems:"center",gap:5,
@@ -2955,6 +2954,7 @@ setMarketFetched(true);
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px"}}>
               {([
+                {id:"roi",      label:"📊 ROI Tracker"},
                 {id:"doctor",   label:simpleMode?"What to do":"Portfolio doctor"},
                 {id:"holdings", label:"Holdings"},
                 {id:"alerts",   label:"Price alerts"},
@@ -2972,6 +2972,7 @@ setMarketFetched(true);
               ))}
             </div>
           </div>
+          {portView==="roi"      && <RoiTracker/>}
           {portView==="doctor"   && <PortfolioDoctor simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {portView==="holdings" && <PortfolioTab/>}
           {portView==="alerts"   && <PriceAlertsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
@@ -2979,7 +2980,10 @@ setMarketFetched(true);
         </div>
       )}
 
-      {tab==="ipo"&&(
+      {tab==="stocks"&&(
+        <StocksDiscovery onStockSelect={(s)=>{ setWorkspaceSymbol(s); setTab("stocks") }}/>
+      )}
+            {tab==="ipo"&&(
         <div>
           {/* IPO sub-nav */}
           <div style={{background:"#fff",borderBottom:"1px solid #E5E7EB",padding:"8px 20px",
