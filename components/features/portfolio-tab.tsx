@@ -38,11 +38,6 @@ export function PortfolioTab(){
   const[loading,setLoading]=useState(true)
   const[error,setError]=useState("")
   const[sort,setSort]=useState<"value"|"pnl"|"pct">("value")
-  const[manualHoldings,setManualHoldings]=useState<any[]>([])
-  const[showManualForm,setShowManualForm]=useState(false)
-  const[manualSym,setManualSym]=useState("")
-  const[manualQty,setManualQty]=useState("")
-  const[manualAvg,setManualAvg]=useState("")
 
   useEffect(()=>{
     Promise.all([
@@ -276,32 +271,5 @@ export function PortfolioTab(){
         </div>
       </Card>
     </div>
-
-  // Merge manual + zerodha holdings
-  const allHoldings = [...holdings, ...manualHoldings]
-
-  // Manual form
-  const ManualForm = () => showManualForm ? (
-    <Card style={{border:`1px solid ${T.blueBd}`,background:T.blueBg,marginBottom:12}}>
-      <div style={{fontSize:13,fontWeight:700,color:T.blue,marginBottom:10}}>Add Holding Manually</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
-        <input value={manualSym} onChange={e=>setManualSym(e.target.value.toUpperCase())}
-          placeholder="Symbol (e.g. RELIANCE)" style={{flex:2,minWidth:120,padding:"8px 10px",borderRadius:8,border:`1px solid ${T.border}`,fontSize:13}}/>
-        <input value={manualQty} onChange={e=>setManualQty(e.target.value)} type="number"
-          placeholder="Qty" style={{flex:1,minWidth:70,padding:"8px 10px",borderRadius:8,border:`1px solid ${T.border}`,fontSize:13}}/>
-        <input value={manualAvg} onChange={e=>setManualAvg(e.target.value)} type="number"
-          placeholder="Avg price" style={{flex:1,minWidth:90,padding:"8px 10px",borderRadius:8,border:`1px solid ${T.border}`,fontSize:13}}/>
-        <button onClick={addManualHolding}
-          style={{padding:"8px 16px",background:T.blue,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>
-          Add
-        </button>
-      </div>
-      {manualHoldings.length > 0 && (
-        <div style={{marginTop:8,fontSize:11,color:T.gray}}>
-          {manualHoldings.length} manual holding(s) added. These won't persist after page refresh.
-        </div>
-      )}
-    </Card>
-  ) : null
   )
 }
