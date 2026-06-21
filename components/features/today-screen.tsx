@@ -191,6 +191,10 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
           <button onClick={()=>load(true)} className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing?"animate-spin text-teal-500":"text-slate-400"}`}/> Refresh
           </button>
+          <button onClick={()=>{const s=prompt("Search stock (e.g. RELIANCE)");if(s)(window as any).sendPrompt?.(`Open ${s.trim().toUpperCase()} in workspace`)}} 
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50">
+            🔍 Search
+          </button>
         </div>
 
         {/* ── Main 2-col grid ── */}

@@ -284,7 +284,7 @@ export function MultibaggerDiscovery({ simple = false, onStockSelect }: { simple
           reasons,
         } as MultibaggerCandidate & { enginesAligned: number }
       })
-      .filter((c: any) => c.enginesAligned >= minEngines && c.conviction_score >= 35)
+      .filter((c: any) => c.enginesAligned >= minEngines && c.conviction_score >= 40)
       .sort((a: any, b: any) => b.conviction_score - a.conviction_score)
       .slice(0, 30)
 

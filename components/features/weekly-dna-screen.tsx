@@ -24,6 +24,7 @@ export function WeeklyDNAScreen({ onStockSelect }: { onStockSelect?: (s: string)
   const [loading, setLoading]   = useState(true)
   const [stocks, setStocks]     = useState<any[]>([])
   const [filter, setFilter]     = useState<"all"|"nr7"|"breakout"|"stage2">("all")
+  const [groupBySector, setGroupBySector] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date|null>(null)
 
   const load = useCallback(async () => {
@@ -107,7 +108,18 @@ export function WeeklyDNAScreen({ onStockSelect }: { onStockSelect?: (s: string)
             <div style={{fontSize:14,fontWeight:600}}>No stocks match this filter</div>
             <div style={{fontSize:12,marginTop:4}}>Run candle sync + signals engine to populate</div>
           </div>
-        ) : filtered.map((s:any) => (
+        ) : (groupBySector
+            ? [...filtered].sort((a:any,b:any) => (a.sector||"").localeCompare(b.sector||""))
+            : filtered
+          ).map((s:any, i:number, arr:any[]) => (<>
+            {groupBySector && (i===0 || arr[i-1].sector !== s.sector) && (
+              <div style={{padding:"6px 16px 4px",background:C.grayBg,
+                borderBottom:`1px solid ${C.border}`,fontSize:11,fontWeight:700,
+                color:C.gray,letterSpacing:"0.06em",textTransform:"uppercase" as const,
+                display:"flex",justifyContent:"space-between"}}>
+                <span>{s.sector||"Other"}</span>
+              </div>
+            )}
           <div key={s.symbol} onClick={()=>onStockSelect?.(s.symbol)}
             style={{background:C.surface,border:`1px solid ${C.border}`,borderLeft:`3px solid ${s.is_nr7||s.daily_nr7?C.purple:n(s.buy_zone_score)>=70?C.green:C.gray}`,borderRadius:12,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{flex:1,minWidth:0}}>
@@ -131,7 +143,15 @@ export function WeeklyDNAScreen({ onStockSelect }: { onStockSelect?: (s: string)
               <TrendingUp size={14} color={C.gray}/>
             </div>
           </div>
-        ))}
+          </>))}
+        <button onClick={() => setGroupBySector(g => !g)}
+          style={{ marginLeft: "auto", padding: "5px 12px", borderRadius: 20, fontSize: 11,
+            fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" as const,
+            border: `1px solid ${groupBySector ? C.purple : C.border}`,
+            background: groupBySector ? C.purpleBg : C.surface,
+            color: groupBySector ? C.purple : C.gray }}>
+          {groupBySector ? "✓ By Sector" : "Group by Sector"}
+        </button>
       </div>
     </div>
   )

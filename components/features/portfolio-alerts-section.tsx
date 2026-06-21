@@ -429,7 +429,13 @@ export function PortfolioAlertsSection() {
           textAlign: "center",
         }}
       >
-        No holdings found — connect Zerodha in Settings to see portfolio alerts.
+        No holdings found.{" "}
+        <a href="/api/auth/zerodha" style={{color:"#FF6600",fontWeight:600}}>Connect Zerodha</a>
+        {" "}or go to{" "}
+        <span style={{color:"#2563EB",fontWeight:600,cursor:"pointer"}}
+          onClick={()=>(window as any).sendPrompt?.("Open portfolio tab to add holdings manually")}>
+          Portfolio → Add Holdings Manually
+        </span>
       </div>
     );
   }

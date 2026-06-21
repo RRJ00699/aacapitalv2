@@ -135,9 +135,9 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
   const s = snap ?? {}
   const regime      = (s.regime ?? s.active_regime ?? s.market_regime ?? "NORMAL").toString().toUpperCase()
   const regimeColor = regime === "HOT" ? T.red : regime === "NORMAL" ? T.teal : T.amber
-  const nifty       = n(s.nifty_price ?? s.index_price)
-  const bankNifty   = n(s.banknifty_price)
-  const vix         = n(s.vix ?? s.india_vix)
+  const nifty       = n(s.nifty_price ?? s.nifty ?? s.index_price ?? s.nifty50)
+  const bankNifty   = n(s.banknifty_price ?? s.banknifty ?? s.bank_nifty)
+  const vix         = n(s.vix ?? s.india_vix ?? s.vix_index)
   const pcr         = n(s.pcr)
   const fiiNet      = n(s.fii_net ?? s.fii_cash_flow ?? s.fii_flow)
   const diiNet      = n(s.dii_net ?? s.dii_cash_flow ?? s.dii_flow)
@@ -147,7 +147,7 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
   if (global && typeof global === "object") {
     const entries = Array.isArray(global) ? global :
       Object.entries(global).map(([k, v]: any) => ({ label: v?.name ?? k, changePct: v?.changePct ?? v?.change_pct }))
-    entries.slice(0, 4).forEach((e: any) => {
+    entries.slice(0, 20).forEach((e: any) => {
       const label = e.label ?? e.name ?? e.symbol ?? ""
       const chg   = n(e.changePct ?? e.change_pct ?? e.changePercent)
       if (label) globalList.push({ label, chg })
@@ -177,7 +177,7 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
       {/* Indices */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
         {[
-          { label: "NIFTY 50",   value: nifty > 0 ? nifty.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—", color: T.text },
+          { label: "NIFTY 50",   value: nifty > 0 ? nifty.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—", color: T.text, live: true },
           { label: "BANK NIFTY", value: bankNifty > 0 ? bankNifty.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—", color: T.text },
           { label: "VIX",   value: vix > 0 ? vix.toFixed(2) : "—", color: vix > 20 ? T.red : T.green },
           { label: "PCR",   value: pcr > 0 ? pcr.toFixed(2) : "—", color: pcr > 1 ? T.green : T.red },
@@ -207,8 +207,12 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
       {/* Top signals */}
       {signals.length > 0 && (
         <MCard>
-          <MLabel>Top signals</MLabel>
-          {signals.slice(0, 5).map((sig: any) => (
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <MLabel>Top signals</MLabel>
+            <span style={{fontSize:10,color:T.textMeta}}>{signals.length} stocks</span>
+          </div>
+          <div style={{maxHeight:280,overflowY:"auto" as const}}>
+          {signals.map((sig: any) => (
             <div key={sig.symbol} onClick={() => onStockSelect(sig.symbol)}
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                 padding: "9px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
@@ -228,6 +232,7 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
               </div>
             </div>
           ))}
+          </div>
         </MCard>
       )}
 
@@ -235,6 +240,7 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
       {globalList.length > 0 && (
         <MCard>
           <MLabel>Global markets</MLabel>
+          <div style={{maxHeight:200,overflowY:"auto" as const}}>
           {globalList.map(g => (
             <div key={g.label} style={{ display: "flex", justifyContent: "space-between",
               padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
@@ -244,6 +250,7 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
               </span>
             </div>
           ))}
+          </div>
         </MCard>
       )}
     </div>
@@ -251,6 +258,91 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
 }
 
 // ── Opportunities (mobile) ────────────────────────────────────────────────────
+// ── IPO (mobile) ─────────────────────────────────────────────────────────────
+function MobileIPO({ onStockSelect }: { onStockSelect: (s: string) => void }) {
+  const [ipos, setIpos] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/ipo/playbook?limit=20", { cache: "no-store" })
+      .then(r => r.json())
+      .then(d => {
+        setIpos(d.rows ?? d.ipos ?? [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const PLAY_COLOR: Record<string, string> = {
+    BUY_AT_OPEN: "#16A34A", WAIT_FOR_VWAP: "#2563EB",
+    BUY_AFTER_DAY3: "#7C3AED", AVOID: "#DC2626",
+  }
+
+  if (loading) return (
+    <div style={{ padding: "60px 16px", textAlign: "center" as const, color: T.textMeta }}>
+      <div style={{ fontSize: 28, marginBottom: 8 }}>🚀</div>
+      <div>Loading IPOs…</div>
+    </div>
+  )
+
+  return (
+    <div style={{ padding: "12px 14px", paddingBottom: 80 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMeta,
+        textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 10 }}>
+        Upcoming & Recent IPOs
+      </div>
+      {ipos.length === 0 ? (
+        <div style={{ padding: "40px 0", textAlign: "center" as const, color: T.textMeta }}>
+          No IPO data — run sync script
+        </div>
+      ) : ipos.map((ipo: any) => {
+        const play = ipo.play_recommendation || "—"
+        const playColor = PLAY_COLOR[play] || T.textMeta
+        const isUpcoming = !ipo.listing_date || new Date(ipo.listing_date) >= new Date()
+        return (
+          <div key={ipo.id ?? ipo.company_name}
+            style={{ background: T.surface, border: `1px solid ${T.border}`,
+              borderLeft: `3px solid ${playColor}`,
+              borderRadius: 12, padding: "11px 13px", marginBottom: 7 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2 }}>
+                  {ipo.company_name}
+                </div>
+                <div style={{ fontSize: 11, color: T.textSub }}>
+                  ₹{ipo.issue_price || "?"} · ₹{ipo.issue_size_cr || "?"}Cr
+                </div>
+                {isUpcoming && ipo.close_date && (
+                  <div style={{ fontSize: 10, color: T.amber, marginTop: 2 }}>
+                    Closes {ipo.close_date}
+                  </div>
+                )}
+                {ipo.listing_date && !isUpcoming && (
+                  <div style={{ fontSize: 10, color: T.textMeta, marginTop: 2 }}>
+                    Listed {ipo.listing_date}
+                    {ipo.return_listing_open ? ` · +${ipo.return_listing_open?.toFixed(1)}% open` : ""}
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: "right" as const, marginLeft: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: playColor,
+                  background: `${playColor}15`, padding: "2px 8px", borderRadius: 20 }}>
+                  {play.replace(/_/g, " ")}
+                </div>
+                {ipo.play_confidence && (
+                  <div style={{ fontSize: 10, color: T.textMeta, marginTop: 3 }}>
+                    {ipo.play_confidence}% conf
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function MobileOpportunities({ onStockSelect }: { onStockSelect: (s: string) => void }) {
   const [stocks,  setStocks]  = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -262,7 +354,7 @@ function MobileOpportunities({ onStockSelect }: { onStockSelect: (s: string) => 
       .then(d => {
         const data = (d?.data ?? []).filter((x: any) =>
           !SUPPRESS.test(x.symbol || "") &&
-          (x.buy_zone_score || x.probability_score || 0) >= 35
+          ((x.buy_zone_score || 0) >= 35 || (x.conviction_score || 0) >= 40 || (x.probability_score || 0) >= 35)
         )
         setStocks(data)
         setLoading(false)
@@ -391,13 +483,7 @@ export function MobileApp() {
         {tab === "today" && <MobileToday onStockSelect={setWorkspace}/>}
         {tab === "opps"  && <MobileOpportunities onStockSelect={setWorkspace}/>}
         {tab === "watch" && <WatchlistScreen onStockSelect={setWorkspace}/>}
-        {tab === "ipo"   && (
-          <div style={{ padding: "20px 14px", textAlign: "center" as const, color: T.textSub }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>🚀</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>IPO Terminal</div>
-            <div style={{ fontSize: 13 }}>Open on desktop for the full IPO intelligence view</div>
-          </div>
-        )}
+        {tab === "ipo"   && <MobileIPO onStockSelect={setWorkspace}/>}
       </div>
 
       {/* Bottom nav */}

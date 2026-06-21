@@ -23,16 +23,37 @@ export async function GET() {
   const deployMin = n(pick(reg.recommended_allocation_min, snap.deploy_min, payload.deploy_min), regimeName === "BEARISH" ? 10 : 50)
   const deployMax = n(pick(reg.recommended_allocation_max, snap.deploy_max, payload.deploy_max), regimeName === "BEARISH" ? 30 : 70)
 
+  // Live price fetch from Yahoo (fallback when DB has stale/null data)
+  let liveNifty = 0, liveBankNifty = 0, liveVix = 0
+  try {
+    const [nRes, bRes, vRes] = await Promise.all([
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1d",
+        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEBANK?interval=1d&range=1d",
+        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=1d",
+        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+    ])
+    const price = (d: any) => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? 0
+    liveNifty     = price(nRes)
+    liveBankNifty = price(bRes)
+    liveVix       = price(vRes)
+  } catch {}
+
+  const finalNifty     = liveNifty     || n(pick(snap.nifty_price, reg.nifty_close, payload.nifty_price))
+  const finalBankNifty = liveBankNifty || n(pick(snap.banknifty_price, payload.banknifty_price))
+  const finalVix       = liveVix       || n(pick(snap.vix, snap.india_vix, payload.vix))
+
   return NextResponse.json({
     ok: true,
     data: {
       regime: regimeName,
       market_regime: regimeName,
-      nifty_price: n(pick(snap.nifty_price, reg.nifty_close, payload.nifty_price)),
+      nifty_price: finalNifty,
       nifty_change_pct: n(pick(snap.nifty_change_pct, payload.nifty_change_pct)),
       sensex_price: n(pick(snap.sensex_price, payload.sensex_price)),
       sensex_change_pct: n(pick(snap.sensex_change_pct, payload.sensex_change_pct)),
-      banknifty_price: n(pick(snap.banknifty_price, payload.banknifty_price)),
+      banknifty_price: finalBankNifty,
       banknifty_change_pct: n(pick(snap.banknifty_change_pct, payload.banknifty_change_pct)),
       nifty_ema200: n(pick(reg.nifty_ema_200, payload.ema200)),
       breadth_pct: n(pick(reg.breadth_percentage, snap.breadth_pct, payload.breadth)),

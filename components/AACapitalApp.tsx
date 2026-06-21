@@ -454,6 +454,12 @@ const predictGain = (aScore, qibX) => {
 
 // ─── IPO PIPELINE ─────────────────────────────────────────────────
 const DEFAULT_IPOS = [
+  // Currently open / upcoming — June 2026
+  {name:"Turtlemint Fintech Solutions",sector:"Fintech / InsurTech",size:883,band:"₹144–152",listing:"TBA",status:"OPEN",gmp:"—",qib:"—",hni:"—",retail:"—",anchor:[],drhp:true,ofsP:0,closeDate:"23-Jun-2026"},
+  {name:"Advit Jewels",sector:"Jewellery / Retail",size:165,band:"₹130–138",listing:"TBA",status:"OPEN",gmp:"—",qib:"—",hni:"—",retail:"—",anchor:[],drhp:false,ofsP:0,closeDate:"25-Jun-2026"},
+  {name:"Waterways Leisure Tourism",sector:"Tourism / Hospitality",size:585,band:"₹769–808",listing:"TBA",status:"OPEN",gmp:"—",qib:"—",hni:"—",retail:"—",anchor:[],drhp:true,ofsP:0,closeDate:"25-Jun-2026"},
+  {name:"CSM Technologies",sector:"IT Services",size:146,band:"₹107–113",listing:"TBA",status:"OPEN",gmp:"—",qib:"—",hni:"—",retail:"—",anchor:[],drhp:true,ofsP:0,closeDate:"29-Jun-2026"},
+  {name:"Aastha Spintex",sector:"Textiles",size:30,band:"₹170",listing:"TBA",status:"UPCOMING",gmp:"—",qib:"—",hni:"—",retail:"—",anchor:[],drhp:false,ofsP:0,openDate:"29-Jun-2026"},
   // Recently listed — June 2026
   {name:"CMR Green Technologies",sector:"Metals - Recycling",size:631,band:"₹182–192",listing:"10-Jun-2026",status:"LISTED",gmp:"+30%",qib:"—",hni:"—",retail:"—",anchor:[],drhp:true,ofsP:0},
   {name:"Hexagon Nutrition",sector:"FMCG / Nutrition",size:180,band:"₹42–45",listing:"12-Jun-2026",status:"LISTED",gmp:"+8%",qib:"—",hni:"—",retail:"—",anchor:[],drhp:false,ofsP:0},
@@ -2385,7 +2391,7 @@ function IpoPage() {
     // Try live BSE data first, fall back to DB data
     Promise.all([
       fetch("/api/ipo/live").then(r=>r.json()).catch(()=>null),
-      fetch("/api/ipo").then(r=>r.json()).catch(()=>null),
+      fetch("/api/ipo/playbook?limit=30").then(r=>r.json()).catch(()=>null),
     ]).then(([liveData, dbData]) => {
       if (liveData?.ok && liveData.ipos?.length > 0) {
         // Map live BSE data to IpoPage format
@@ -2407,14 +2413,14 @@ function IpoPage() {
           listingGainPct: ipo.listing_gain_pct ?? null,
         }))
         // Add any DB ipos not in live feed (historical scored ones)
-        const dbIpos = (dbData?.ipos || []).filter((d:any) =>
+        const dbIpos = (dbData?.rows || dbData?.ipos || []).filter((d:any) =>
           !mapped.find((m:any) => m.name.toLowerCase().includes(d.name?.toLowerCase()?.slice(0,8)))
         )
         setIpos([...mapped, ...dbIpos])
         setDash(dbData?.dashboard || null)
       } else {
         // Fall back to DB data
-        setIpos(dbData?.ipos || DEFAULT_IPOS)
+        setIpos(dbData?.rows || dbData?.ipos || DEFAULT_IPOS)
         setDash(dbData?.dashboard || null)
       }
       setLoad(false)
@@ -2976,6 +2982,7 @@ setMarketFetched(true);
             display:"flex",gap:6,position:"sticky",top:44,zIndex:9}}>
             {[
               {id:"command",  label:"⚡ Command Center"},
+              {id:"live",       label:"📊 Live"},
               {id:"playbook",   label:"🎯 Quick Profit Playbook"},
               {id:"evaluator",  label:"📈 Trade Evaluator"},
               {id:"calendar",   label:"📅 Calendar"},

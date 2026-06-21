@@ -54,6 +54,52 @@ function inrCr(n: number) {
   return `₹${n.toFixed(0)} Cr`
 }
 
+
+// ── Momentum bars view ────────────────────────────────────────────────────────
+function MomentumBarsView({ sectors }: { sectors: SectorRow[] }) {
+  const sorted = [...sectors].sort((a, b) => (b.rotation_score ?? 0) - (a.rotation_score ?? 0))
+  const maxScore = Math.max(...sorted.map(s => s.rotation_score ?? 0), 1)
+
+  return (
+    <div style={{ padding: "16px 20px" }}>
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+        Sector momentum score — higher = more institutional flow + price strength
+      </div>
+      {sorted.map(s => {
+        const score = s.rotation_score ?? 0
+        const pct = Math.round((score / maxScore) * 100)
+        const color = score >= 60 ? "#16A34A" : score >= 40 ? "#D97706" : "#6B7280"
+        const bg    = score >= 60 ? "#F0FDF4"  : score >= 40 ? "#FFFBEB"  : "#F9FAFB"
+        const ret3m = Number(s.return_3m ?? 0)
+        return (
+          <div key={s.industry_group} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between",
+              alignItems: "center", marginBottom: 3 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>
+                {s.industry_group}
+              </span>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: ret3m >= 0 ? "#16A34A" : "#DC2626" }}>
+                  {ret3m >= 0 ? "+" : ""}{ret3m.toFixed(1)}% 3M
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color,
+                  minWidth: 28, textAlign: "right" as const }}>
+                  {Math.round(score)}
+                </span>
+              </div>
+            </div>
+            <div style={{ height: 8, background: "#F3F4F6", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%",
+                background: color, borderRadius: 4,
+                transition: "width 0.4s ease" }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function SectorRotationScreen() {
   const [sectors, setSectors]       = useState<SectorRow[]>([])
   const [flowMap, setFlowMap]       = useState<SectorRow[]>([])
@@ -133,6 +179,7 @@ export function SectorRotationScreen() {
             { key: "rankings", label: "📊 Rankings" },
             { key: "flow",     label: "💰 Capital Flow" },
             { key: "hot",      label: "🔥 Hot Sectors" },
+            { key: "momentum", label: "📈 Momentum" },
           ].map(t => (
             <button key={t.key} onClick={() => { setView(t.key as typeof view); setSelected(null) }}
               style={{ flex: 1, padding: "11px 4px", fontSize: 12,

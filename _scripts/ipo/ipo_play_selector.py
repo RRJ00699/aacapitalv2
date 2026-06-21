@@ -236,9 +236,9 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
     today = datetime.date.today()
     open_date   = ipo.get('open_date')
     close_date  = ipo.get('close_date')
-    is_pre_sub  = (qib == 0 and
+    is_pre_sub  = ((qib == 0 or qib is None) and
                    open_date is not None and
-                   (close_date is None or (hasattr(close_date, '__ge__') and close_date >= today)))
+                   (close_date is None or close_date >= today))
 
     if is_pre_sub:
         # Use pre-subscription scoring (brlm + size + fundamentals)
@@ -526,6 +526,7 @@ def main():
                qib_subscription_x, nii_subscription_x, rii_subscription_x,
                total_subscription_x,
                listing_date, listing_open,
+               open_date, close_date,
                return_listing_open, return_day1_close,
                return_day7, return_day30, return_day90, return_day365,
                max_upside_30d, max_drawdown_30d,
