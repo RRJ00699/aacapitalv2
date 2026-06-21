@@ -83,9 +83,12 @@ export function PortfolioTab(){
     <div style={{maxWidth:480,margin:"60px auto",textAlign:"center",padding:16}}>
       <div style={{fontSize:40,marginBottom:12}}>🔌</div>
       <div style={{fontSize:15,fontWeight:700,color:T.red,marginBottom:8}}>{error}</div>
-      <div style={{fontSize:12,color:T.gray,marginBottom:20,lineHeight:1.6}}>Connect Zerodha to see your live portfolio.</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap" as const,justifyContent:"center",marginTop:8}}>
-      <a href="/api/auth/zerodha" style={{display:"inline-block",padding:"10px 24px",background:"#FF6600",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,textDecoration:"none"}}>Connect Zerodha →</a>
+      <div style={{fontSize:12,color:T.gray,marginBottom:20,lineHeight:1.6}}>
+        Connect Zerodha to see your live portfolio
+      </div>
+      <a href="/api/auth/zerodha" style={{display:"inline-block",padding:"10px 24px",background:"#FF6600",borderRadius:8,color:"#fff",fontSize:13,fontWeight:600,textDecoration:"none"}}>
+        Connect Zerodha
+      </a>
     </div>
   )
   if(!summary)return null
