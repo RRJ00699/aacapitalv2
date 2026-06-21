@@ -231,6 +231,43 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
     if listing_open > 0 and issue_price > 0:
         listing_premium = (listing_open / issue_price - 1) * 100
 
+    # ── PRE-SUBSCRIPTION IPO — no QIB yet ────────────────────────────────────
+    import datetime
+    today = datetime.date.today()
+    open_date   = ipo.get('open_date')
+    close_date  = ipo.get('close_date')
+    is_pre_sub  = (qib == 0 and
+                   open_date is not None and
+                   (close_date is None or (hasattr(close_date, '__ge__') and close_date >= today)))
+
+    if is_pre_sub:
+        # Use pre-subscription scoring (brlm + size + fundamentals)
+        brlm_s = n(ipo.get('brlm_score'), 50)
+        roe    = n(ipo.get('roe'))
+        pre_score = brlm_s
+        if size >= 500:  pre_score += 8
+        elif size < 200: pre_score -= 10
+        if roe > 20:     pre_score += 5
+
+        cd_str = str(close_date) if close_date else "TBD"
+        if pre_score >= 70:
+            return _play("WAIT_FOR_VWAP", min(pre_score, 68),
+                [f"Subscription open until {cd_str} — BRLM score {brlm_s:.0f}, watch QIB",
+                 f"Issue size ₹{size:.0f}Cr | ROE {roe:.0f}%",
+                 "⚠️ Pre-subscription estimate — final play on Day 3 close"],
+                5, 15, "Update after Day 3 sub closes")
+        elif pre_score >= 55:
+            return _play("BUY_AFTER_DAY3", min(pre_score, 62),
+                [f"Subscription open until {cd_str} — watch final QIB",
+                 f"BRLM score {brlm_s:.0f} | ₹{size:.0f}Cr",
+                 "⚠️ Pre-subscription estimate — update after Day 3"],
+                5, 10, "Update after Day 3 sub closes")
+        else:
+            return _play("AVOID", min(pre_score+10, 65),
+                [f"Weak pre-subscription signals — BRLM {brlm_s:.0f}/100, wait for QIB",
+                 f"⚠️ Update after subscription closes {cd_str}"],
+                0, 0, "Check Day 3 subscription")
+
     # ── INSTANT REJECT ────────────────────────────────────────────────────────
     if size > 0 and size < 150:
         return _play("AVOID", 92, ["Issue size ₹{:.0f}Cr — 5% circuit band, operator trap".format(size)], 0, 0, "—")

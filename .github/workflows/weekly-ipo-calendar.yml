@@ -16,14 +16,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install psycopg2-binary openpyxl requests beautifulsoup4
+        run: pip install psycopg2-binary beautifulsoup4 requests
 
-      - name: Sync IPO calendar from Chittorgarh
+      - name: Report IPO calendar status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python _scripts/ipo/sync_ipo_calendar.py
+        run: python _scripts/ipo/sync_ipo_calendar.py --report-only
 
-      - name: Run play selector on new IPOs
+      - name: Run play selector on all IPOs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python _scripts/ipo/ipo_play_selector.py

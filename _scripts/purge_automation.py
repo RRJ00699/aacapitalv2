@@ -34,17 +34,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
-LOCAL_URL    = os.environ.get("LOCAL_DATABASE_URL")
+LOCAL_URL    = os.environ.get("LOCAL_DATABASE_URL") or os.environ.get("LOCAL_POSTGRES_URL")
+# LOCAL_URL is your local postgres at postgresql://postgres:password@localhost:5432/aacapital
+# Set in .env.local: LOCAL_DATABASE_URL=postgresql://postgres:Ashrith@2820@localhost:5432/aacapital
+# When LOCAL_URL is not set, archive strategy falls back to DELETE (data is lost)
+# IMPORTANT: Always set LOCAL_DATABASE_URL in .env.local on your Windows machine
 
 
 PURGE_RULES = [
     # (table, date_column, retention_days, strategy, description)
-    ("price_candles",              "date",         365*5,  "delete_old",  "Keep 5Y of daily candles"),
+    ("price_candles",              "date",         365*2,  "archive",     "Archive 2Y+ candles to local, keep 2Y in Neon"),
     ("management_commentary",      "updated_at",   365*2,  "archive",     "Keep 2Y commentary, archive older"),
     ("transcript_documents",       "created_at",   90,     "null_text",   "Clear raw_text after 90 days"),
-    ("transcript_intelligence",    "updated_at",   365*2,  "delete_old",  "Keep 2Y transcript intel"),
+    ("transcript_intelligence",    "updated_at",   365*2,  "archive",     "Archive 2Y+ transcript intel to local"),
     ("daily_institutional_flows",  "trade_date",   365*3,  "delete_old",  "Keep 3Y FII/DII flows"),
-    ("earnings_acceleration_scores","updated_at",  365*2,  "delete_old",  "Keep 2Y earnings scores"),
+    ("earnings_acceleration_scores","updated_at",  365*2,  "archive",     "Archive 2Y+ earnings scores to local"),
     ("audit_log",                  "created_at",   90,     "delete_old",  "Keep 90 days audit logs"),
     ("backtest_runs",              None,           50,     "keep_last_n", "Keep last 50 backtest runs"),
 ]
