@@ -97,7 +97,7 @@ function StockRow({
           <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{sym}</span>
           {signals.slice(0, 3).map(s => <Pill key={s.t} text={s.t} color={s.c} />)}
         </div>
-        <div style={{ fontSize: 10, color: T.meta, truncate: true, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: 200 }}>
+        <div style={{ fontSize: 10, color: T.meta, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: 200 }}>
           {name}
         </div>
       </div>
