@@ -40,7 +40,3 @@ jobs:
           fi
           python _scripts/purge_automation.py --execute $TABLE_FLAG
 
-      - name: Schema sync check
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python _scripts/schema_sync.py --dry-run
