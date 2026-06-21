@@ -333,8 +333,8 @@ export function IpoListingDashboard() {
               <div style={{ fontWeight: 600, color: T.text, marginBottom: 6 }}>
                 10:30 AM decision rules (data-proven)
               </div>
-              <div>✅ Price > VWAP + FTR > 80% + QIB 20-50x → <strong>HOLD 7 days</strong></div>
-              <div>🚨 Price < VWAP or FTR &lt; 40% → <strong>EXIT by EOD</strong></div>
+              <div>✅ Price &gt; VWAP + FTR &gt; 80% + QIB 20-50x → <strong>HOLD 7 days</strong></div>
+              <div>🚨 Price &lt; VWAP or FTR &lt; 40% → <strong>EXIT by EOD</strong></div>
               <div>🔴 Hit UC Day 1 → <strong>HOLD — +25.9% avg next 7 days</strong></div>
               <div>🔵 Hit LC Day 1 → <strong>EXIT immediately — -19.2% avg next 7 days</strong></div>
             </div>

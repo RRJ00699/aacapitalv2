@@ -212,40 +212,59 @@ def ensure_columns(conn):
 
 def upsert_signal(conn, sig: dict):
     cur = conn.cursor()
-    # Upsert by symbol only — one row per stock, always latest
+
+    # Compute mb_score from available signals (multibagger filter needs this >= 40)
+    score = 0
+    if sig.get('above_ema200'):       score += 25
+    if sig.get('stage') in [2, '2']:  score += 20
+    if sig.get('is_nr7') or sig.get('nr7'): score += 15
+    mom = float(sig.get('momentum_6m') or 0)
+    if mom > 10:  score += 15
+    elif mom > 0: score += 8
+    vc = float(sig.get('vol_compression') or 0)
+    if vc > 5:    score += 10
+    elif vc > 2:  score += 5
+    pct_hi = float(sig.get('pct_below_high') or 100)
+    if pct_hi < 5:  score += 15  # near 52W high
+    elif pct_hi < 15: score += 8
+    sig.setdefault('volume_ratio_20', None)
+    sig.setdefault('stage', None)
+    sig.setdefault('stage_label', None)
+    sig.setdefault('is_nr7', False)
+    sig.setdefault('nr7', False)
+    sig.setdefault('above_ema200', False)
+    sig.setdefault('ema200', None)
+    sig.setdefault('momentum_6m', None)
+    sig.setdefault('vol_compression', None)
+    sig.setdefault('base_months', None)
+    sig.setdefault('pct_below_high', None)
+    sig['mb_score']           = min(score, 95)
+    sig['buy_zone_score']     = min(score, 95)
+    sig['price_above_ema30']  = sig.get('above_ema200', False)
+    sig['conviction']         = sig.get('action_label', 'WATCH')
+    sig['all_criteria_met']   = score >= 40
+    sig['volume_ratio_20']    = sig.get('volume_ratio_20', None)
+
+    # Use DELETE + INSERT to avoid constraint issues
+    sig.setdefault('timeframe', 'daily')
+    cur.execute("DELETE FROM technical_signals WHERE symbol = %(symbol)s AND timeframe = %(timeframe)s", sig)
     cur.execute("""
         INSERT INTO technical_signals (
-            symbol, signal_date, close, buy_zone_score, convergence_score,
-            probability_score, signal_strength, action_label,
+            symbol, signal_date, timeframe, close, buy_zone_score, mb_score,
+            convergence_score, probability_score, signal_strength, action_label,
+            conviction, all_criteria_met, price_above_ema30,
             is_nr7, nr7, above_ema200, ema200, momentum_6m,
             vol_compression, base_months, stage, stage_label,
-            pct_below_high, updated_at
+            pct_below_high, volume_ratio_20, updated_at, synced_at
         ) VALUES (
-            %(symbol)s, %(signal_date)s, %(close)s, %(buy_zone_score)s, %(buy_zone_score)s,
+            %(symbol)s, %(signal_date)s, %(timeframe)s, %(close)s,
+            %(buy_zone_score)s, %(mb_score)s, %(buy_zone_score)s,
             %(probability_score)s, %(signal_strength)s, %(action_label)s,
+            %(conviction)s, %(all_criteria_met)s, %(price_above_ema30)s,
             %(is_nr7)s, %(nr7)s, %(above_ema200)s, %(ema200)s, %(momentum_6m)s,
             %(vol_compression)s, %(base_months)s, %(stage)s, %(stage_label)s,
-            %(pct_below_high)s, NOW()
+            %(pct_below_high)s, %(volume_ratio_20)s, NOW(), NOW()
         )
-        ON CONFLICT (symbol) DO UPDATE SET
-            signal_date      = EXCLUDED.signal_date,
-            close            = EXCLUDED.close,
-            buy_zone_score   = EXCLUDED.buy_zone_score,
-            convergence_score= EXCLUDED.buy_zone_score,
-            probability_score= EXCLUDED.probability_score,
-            signal_strength  = EXCLUDED.signal_strength,
-            action_label     = EXCLUDED.action_label,
-            is_nr7           = EXCLUDED.is_nr7,
-            nr7              = EXCLUDED.nr7,
-            above_ema200     = EXCLUDED.above_ema200,
-            ema200           = EXCLUDED.ema200,
-            momentum_6m      = EXCLUDED.momentum_6m,
-            vol_compression  = EXCLUDED.vol_compression,
-            base_months      = EXCLUDED.base_months,
-            stage            = EXCLUDED.stage,
-            stage_label      = EXCLUDED.stage_label,
-            pct_below_high   = EXCLUDED.pct_below_high,
-            updated_at       = NOW()
     """, sig)
     conn.commit()
     cur.close()
