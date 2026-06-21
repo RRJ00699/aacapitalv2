@@ -381,12 +381,10 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
               {loading ? <Skeleton className="h-48"/> : (
                 <div className="space-y-1 max-h-96 overflow-y-auto pr-1">
                   {globalRows.map(g => (
-                    <div key={g.label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                      <span className="text-[12px] font-semibold text-slate-700">{g.label}</span>
-                      <div className="flex items-center gap-3 font-mono">
-                        <span className="text-[12px] font-bold text-slate-900">{g.value??"—"}</span>
-                        <span className={`text-[11px] font-bold ${(g.change??0)>=0?"text-emerald-600":"text-rose-600"}`}>{sgn(g.change)}</span>
-                      </div>
+                    <div key={g.label} className="flex items-center rounded-xl border border-slate-100 bg-slate-50 px-3 py-2" style={{gap:0}}>
+                      <span className="text-[11px] font-semibold text-slate-600 flex-1 truncate">{g.label}</span>
+                      <span className="text-[12px] font-bold text-slate-900 font-mono text-right" style={{minWidth:"72px"}}>{g.value??"—"}</span>
+                      <span className={`text-[11px] font-bold font-mono text-right ${(g.change??0)>=0?"text-emerald-600":"text-rose-600"}`} style={{minWidth:"52px"}}>{sgn(g.change)}</span>
                     </div>
                   ))}
                 </div>

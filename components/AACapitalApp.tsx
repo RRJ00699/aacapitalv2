@@ -3000,7 +3000,7 @@ setMarketFetched(true);
               </button>
             ))}
           </div>
-          {ipoView==="command"  && <IpoCommandCenter simple={simpleMode}/>}
+          {ipoView==="command"  && <IpoListingDashboard/>}
           {ipoView==="playbook"  && <IpoPlaybookScreen/>}
           {ipoView==="evaluator" && <IpoTradeEvaluator/>}
           {ipoView==="calendar" && (
@@ -3009,7 +3009,7 @@ setMarketFetched(true);
               <AnchorLockupTracker/>
             </div>
           )}
-          {!ipoView && <IpoCommandCenter simple={simpleMode}/>}
+          {!ipoView && <IpoListingDashboard/>}
         </div>
       )}
 
