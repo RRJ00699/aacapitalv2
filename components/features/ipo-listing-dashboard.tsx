@@ -5,7 +5,7 @@
 // Data: /api/ipo/playbook  (rich: GMP, subscription x, BRLM score, returns)
 
 import { useState, useEffect, useCallback } from "react"
-import { RefreshCw, TrendingUp, Clock, BarChart2, Award, AlertTriangle, Zap } from "lucide-react"
+import { RefreshCw, TrendingUp, Zap } from "lucide-react"
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -392,6 +392,10 @@ const TABS = [
   { id:"brlm",     label:"🏆 BRLM Rank",  desc:"Banker track record" },
 ]
 
+function Skeleton({ h = 80 }: { h?: number }) {
+  return <div style={{ background:"#F1F5F9", borderRadius: 12, height: h, marginBottom: 10, opacity: 0.7 }}/>
+}
+
 export function IpoListingDashboard() {
   const [ipos,     setIpos]     = useState<any[]>([])
   const [loading,  setLoading]  = useState(true)
@@ -417,22 +421,19 @@ export function IpoListingDashboard() {
 
   const command  = all.filter(i => ["BUY_AT_OPEN","WAIT_FOR_VWAP"].includes(i.play_recommendation)
     && statusOf(i) !== "LISTED").slice(0, 8)
-  const open     = all.filter(i => statusOf(i) === "OPEN")
+  const openIpos = all.filter(i => statusOf(i) === "OPEN")
   const upcoming = all.filter(i => statusOf(i) === "UPCOMING")
   const listed   = all.filter(i => statusOf(i) === "LISTED" || statusOf(i) === "ALLOTMENT")
     .sort((a, b) => new Date(b.listing_date).getTime() - new Date(a.listing_date).getTime())
     .slice(0, 20)
 
-  const lists: Record<string, any[]> = { command, open, upcoming, listed }
+  const lists: Record<string, any[]> = { command, open: openIpos, upcoming, listed }
   const active = lists[tab] ?? all
 
   const tabCounts: Record<string, number> = {
-    command: command.length, open: open.length, upcoming: upcoming.length, listed: listed.length,
+    command: command.length, open: openIpos.length, upcoming: upcoming.length, listed: listed.length,
   }
 
-  const Skeleton = ({ h = 80 }: { h?: number }) => (
-    <div style={{ background:"#F1F5F9", borderRadius: 12, height: h, marginBottom: 10, opacity: 0.7 }}/>
-  )
 
   return (
     <div style={{ background: C.bg, minHeight:"100vh", paddingBottom: 80 }}>

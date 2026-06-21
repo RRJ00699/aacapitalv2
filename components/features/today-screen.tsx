@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw } from "lucide-react"
 
-type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN"
+type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN" | "BEARISH"
 type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM"
 
 interface Opportunity { symbol: string; name?: string; score: number; action: Action; reasons?: string[] }
@@ -25,6 +25,7 @@ const REGIME: Record<Regime, { title: string; advice: string; tone: string; depl
   NORMAL:  { title:"NORMAL",  advice:"Deploy selectively. Focus only on high-conviction names.",     tone:"Selective deployment",  deploy:"50–70%", pct:72, border:"border-slate-200",   text:"text-teal-600",   glow:"from-teal-50",    bar:"bg-teal-500"    },
   CAUTION: { title:"CAUTION", advice:"Protect capital. Avoid fresh leveraged positions.",             tone:"Defensive selection",   deploy:"25–45%", pct:42, border:"border-amber-200",  text:"text-amber-600",  glow:"from-amber-50",   bar:"bg-amber-500"   },
   COLD:    { title:"COLD",    advice:"Preserve capital. Wait for breadth and liquidity to improve.", tone:"Low deployment",         deploy:"10–30%", pct:24, border:"border-blue-200",   text:"text-blue-600",   glow:"from-blue-50",    bar:"bg-blue-500"    },
+  BEARISH: { title:"BEARISH", advice:"Risk-OFF. Hold cash. No fresh positions.",                   tone:"Capital preservation", deploy:"5–20%",  pct:10, border:"border-rose-200",   text:"text-rose-600",   glow:"from-rose-50",    bar:"bg-rose-500"    },
   FROZEN:  { title:"FROZEN",  advice:"Risk OFF. Hold cash and avoid new positions.",                 tone:"Cash protocol",          deploy:"0–15%",  pct:8,  border:"border-rose-200",   text:"text-rose-600",   glow:"from-rose-50",    bar:"bg-rose-500"    },
 }
 
