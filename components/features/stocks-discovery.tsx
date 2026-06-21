@@ -1,7 +1,7 @@
 "use client"
 // components/features/stocks-discovery.tsx
 // THE unified discovery screen — powered by real 9-engine convergence
-// Primary source: /api/multibagger-discovery (6-factor DNA, 10yr backtested)
+// Primary source: /api/technical/screener (technical_signals + stock_fundamentals JOIN)
 // Filters: All | 5x Candidates | 2x Candidates | Smart Money | Earnings | Technical | Watchlist
 
 import { useState, useEffect, useCallback, useRef } from "react"
@@ -260,15 +260,43 @@ export function StocksDiscovery({ onStockSelect }: { onStockSelect: (s: string) 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [mbRes, wRes, wlRes, snapRes] = await Promise.all([
-        fetch("/api/multibagger-discovery?limit=100&min_score=30", { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
-        fetch("/api/technical/screener?timeframe=weekly&limit=40",  { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
-        fetch("/api/watchlists",  { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
-        fetch("/api/market/snapshot", { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
+      const [dRes, bwRes, wlRes, snapRes] = await Promise.all([
+        fetch("/api/technical/screener?limit=150&timeframe=daily", { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
+        fetch("/api/breakout-watch",                                { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
+        fetch("/api/watchlists",                                    { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
+        fetch("/api/market/snapshot",                               { cache:"no-store" }).then(r=>r.json()).catch(()=>null),
       ])
       const suppress = /^(ANTELOP|ACUTAAS|BMV)/i
-      setStocks((mbRes?.candidates ?? mbRes?.data ?? []).filter((s:any) => !suppress.test(s.tradingsymbol ?? "")))
-      setWeekly((wRes?.data ?? []).filter((s:any) => !suppress.test(s.symbol ?? "")))
+      // Merge screener (technical_signals + stock_fundamentals JOIN) with breakout-watch
+      const bwMap: Record<string, any> = {}
+      ;(bwRes?.data ?? []).forEach((s:any) => { bwMap[s.symbol] = s })
+      const raw = (dRes?.data ?? []).filter((s:any) => !suppress.test(s.symbol ?? ""))
+      // Normalise: map symbol→tradingsymbol so the rest of the component works
+      const merged = raw.map((s:any) => ({
+        ...s,
+        tradingsymbol:      s.symbol,
+        name:               s.company_name,
+        dna_score:          Math.round(Number(s.mb_score ?? s.buy_zone_score ?? 0)),
+        predicted_tier:
+          Number(s.mb_score ?? 0) >= 70 && Number(s.momentum_6m ?? 0) > 10 ? "5x_candidate" :
+          Number(s.mb_score ?? 0) >= 45 ? "2x_candidate" : "watch",
+        // breakout-watch enrichment
+        breakout_watch_score: bwMap[s.symbol]?.breakout_watch_score ?? s.breakout_watch_score,
+        breakout_watch_tier:  bwMap[s.symbol]?.breakout_watch_tier  ?? s.breakout_watch_tier,
+        is_nr7: s.is_nr7 ?? s.nr7 ?? false,
+        signals: [
+          s.nr7 || s.is_nr7      ? "NR7 compression" : null,
+          s.above_ema200         ? "Above EMA200"    : null,
+          Number(s.momentum_6m ?? 0) > 15 ? `+${Number(s.momentum_6m).toFixed(0)}% 6M` : null,
+          s.volume_expansion     ? "Vol expansion"   : null,
+          (s.smart_money_signal ?? "").toLowerCase().includes("accum") ? "SM accumulation" : null,
+        ].filter(Boolean),
+        // stock_fundamentals fields come through directly from the JOIN
+      }))
+      setStocks(merged)
+      // Weekly: separate call for weekly timeframe
+      const wkRes = await fetch("/api/technical/screener?limit=80&timeframe=weekly", { cache:"no-store" }).then(r=>r.json()).catch(()=>null)
+      setWeekly((wkRes?.data ?? []).filter((s:any) => !suppress.test(s.symbol ?? "")))
       setWatchlist((wlRes?.stocks ?? []).map((s:any) => s.symbol))
       const reg = (snapRes?.data?.regime ?? snapRes?.data?.market_regime ?? "NORMAL").toUpperCase()
       setRegime(reg)
