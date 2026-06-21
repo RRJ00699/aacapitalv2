@@ -192,9 +192,11 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
     """
     Select the best play from 7 options using real historical data.
     """
-    qib      = n(ipo.get('qib_subscription_x'))
-    nii      = n(ipo.get('nii_subscription_x'))
-    ret_open = n(ipo.get('return_listing_open'))
+    qib          = n(ipo.get('qib_subscription_x'))
+    nii          = n(ipo.get('nii_subscription_x'))
+    ret_open     = n(ipo.get('return_listing_open'))
+    listing_open = n(ipo.get('listing_open'))
+    issue_price  = n(ipo.get('issue_price'))
     ret_30   = n(ipo.get('return_day30'))
     ret_90   = n(ipo.get('return_day90'))
     ret_365  = n(ipo.get('return_day365'))
@@ -223,6 +225,11 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
     sim_pct_positive = sum(1 for x in sim_opens if x > 5)/len(sim_opens)*100 if sim_opens else 50
 
     reasons = []
+
+    # ── COMPUTE LISTING PREMIUM (if we have data) ────────────────────────────
+    listing_premium = 0.0
+    if listing_open > 0 and issue_price > 0:
+        listing_premium = (listing_open / issue_price - 1) * 100
 
     # ── INSTANT REJECT ────────────────────────────────────────────────────────
     if size > 0 and size < 150:
@@ -313,24 +320,24 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
     hist_pct_pos = bucket.get('pct_positive_open', 50)
     hist_avg     = bucket.get('avg_open', 10)
 
-    if qib >= 100 and tier1 >= 15:
+    if qib >= 100:
         reasons = [
-            f"QIB {qib:.0f}x — ultra-high institutional demand",
-            f"{tier1:.0f} tier-1 anchors (LIC/SBI/ICICI/Nippon/ADIA)",
-            f"Historical: {hist_pct_pos:.0f}% of similar IPOs gave positive open",
-            f"Avg open for QIB 100x+: +{hist_avg:.1f}%",
+            f"QIB {qib:.0f}x — ultra-high demand BUT institutions sell on listing day",
+            f"Data: QIB 100x+ IPOs average -6.9% over 7 days from open",
+            f"Strategy: buy at open for quick gain, EXIT BY EOD — do not hold",
         ]
-        conf = min(90, 65 + qib/20 + tier1)
-        return _play("BUY_AT_OPEN", round(conf), reasons, 4, hist_avg + 5, "30min → EOD")
+        return _play("BUY_AT_OPEN", 72, reasons, 3, 8, "EXIT by EOD — do NOT hold")
 
     if qib >= 50 and tier1 >= 10:
+        # QIB 50-100x: good but check if premium will be too high
         reasons = [
             f"QIB {qib:.0f}x — strong institutional demand",
             f"Historical: {hist_pct_pos:.0f}% of QIB 50x+ IPOs gave positive open",
-            f"Avg open: +{hist_avg:.1f}%",
+            f"Hold 7 days only if listing premium is 25-50% above issue (data-proven +30%)",
         ]
         conf = min(84, 60 + qib/15)
-        return _play("BUY_AT_OPEN", round(conf), reasons, 4, hist_avg, "30min → EOD")
+        window = "30min → hold 7d if listed 25-50% above issue"
+        return _play("BUY_AT_OPEN", round(conf), reasons, 4, hist_avg, window)
 
     if qib >= 20:
         reasons = [
@@ -365,6 +372,11 @@ def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
 
 
 def _play(play, conf, reasons, stop_loss, target, window):
+    # Compute hold_7_days signal from window text
+    hold_7 = ("7" in str(window) or "week" in str(window).lower() or
+               "30" in str(window) or "month" in str(window).lower() or
+               "anchor" in str(window).lower())
+    eod_only = "EOD" in str(window) and "hold" not in str(window).lower()
     return {
         "play_recommendation": play,
         "play_confidence":     min(95, max(30, round(conf))),
@@ -372,6 +384,8 @@ def _play(play, conf, reasons, stop_loss, target, window):
         "play_stop_loss_pct":  stop_loss,
         "play_target_pct":     target,
         "play_hold_window":    window,
+        "hold_7_days":         hold_7 and not eod_only,
+        "exit_eod":            eod_only,
         "play_updated_at":     datetime.datetime.now(datetime.timezone.utc),
     }
 

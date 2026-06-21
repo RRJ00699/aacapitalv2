@@ -106,12 +106,17 @@ async def fetch_nodriver_async(url: str, wait_selector: str = "table") -> str | 
         import nodriver as uc
         browser = await get_nd_browser()
         page = await browser.get(url)
-        # Wait for Cloudflare to clear and page to render
-        await asyncio.sleep(4)
-        try:
-            await page.wait_for(wait_selector, timeout=12)
-        except:
-            pass  # Table may not exist on all pages
+        # Wait for Cloudflare challenge + JS rendering
+        await asyncio.sleep(6)
+        # Try to wait for table or key content
+        for selector in [wait_selector, ".gmp-table", "#gmp", ".table", "tbody"]:
+            try:
+                await page.wait_for(selector, timeout=8)
+                break
+            except:
+                continue
+        # Extra wait for JS-rendered tables
+        await asyncio.sleep(3)
         html = await page.get_content()
         await page.close()
         return html if html and len(html) > 500 else None
@@ -145,9 +150,35 @@ def close_nodriver():
 # ── Parse GMP from HTML ───────────────────────────────────────────────────────
 
 def parse_gmp_from_html(html: str, company: str) -> list:
-    """Extract GMP history table from HTML."""
+    """Extract GMP history table from HTML — handles both server-rendered and JS tables."""
     soup = BeautifulSoup(html, 'html.parser')
     records = []
+
+    # Try 1: Look for JSON data in script tags (React/Next.js sites)
+    for script in soup.find_all('script'):
+        txt = script.string or ''
+        if 'gmp' in txt.lower() and ('date' in txt.lower() or 'price' in txt.lower()):
+            # Try to extract JSON arrays
+            import json
+            # Look for patterns like [{"date":"...","gmp":...}]
+            json_matches = re.findall(r'\[(\{[^[\]]{10,500}\}[,\{][^[\]]*\}*)\]', txt)
+            for jm in json_matches:
+                try:
+                    items = json.loads(f'[{jm}]')
+                    for item in items:
+                        keys = [k.lower() for k in item.keys()]
+                        if 'date' in keys or 'gmp' in keys:
+                            date_key = next((k for k in item if 'date' in k.lower()), None)
+                            gmp_key  = next((k for k in item if 'gmp' in k.lower()), None)
+                            if date_key and gmp_key:
+                                d = parse_date(str(item[date_key]))
+                                g = n(item[gmp_key])
+                                if d and g is not None:
+                                    records.append({'date': str(d), 'gmp': g})
+                except: pass
+            if records:
+                log.debug(f"  Found {len(records)} GMP records in JSON script")
+                return records
 
     for table in soup.find_all('table'):
         text = table.get_text().lower()
@@ -298,6 +329,7 @@ def get_ipos(conn, limit, year=None, company=None) -> list:
         FROM ipo_intelligence
         WHERE (gmp_pct_t1 IS NULL OR anchor_names IS NULL OR sub_day1_qib IS NULL)
           AND listing_date IS NOT NULL AND is_sme = FALSE
+          AND listing_date >= CURRENT_DATE - INTERVAL '18 months'
     """
     params = []
     if company:
@@ -310,7 +342,7 @@ def get_ipos(conn, limit, year=None, company=None) -> list:
     cur.close()
     return rows
 
-def scrape_ipo(fetch_fn, company: str, issue_price: float) -> dict:
+def scrape_ipo(fetch_fn, company: str, issue_price: float, debug: bool = False) -> dict:
     """Scrape one IPO — try InvestorGain first, then Chittorgarh."""
     slug = make_slug(company)
     data = {}
@@ -319,10 +351,18 @@ def scrape_ipo(fetch_fn, company: str, issue_price: float) -> dict:
         f"https://www.investorgain.com/gmp/{slug}-ipo/",
         f"https://www.chittorgarh.com/ipo/{slug}-ipo/",
         f"https://www.investorgain.com/report/ipo-grey-market-premium/{slug}/",
+        f"https://www.chittorgarh.com/report/ipo-grey-market-premium-gmp/{slug}/",
     ]
 
     for url in urls:
         html = fetch_fn(url)
+        if debug and html:
+            log.info(f"    DEBUG {url}: {len(html)}c | tables={html.count('<table')} | gmp={'gmp' in html.lower()}")
+            if html and len(html) > 100:
+                # Show page title
+                import re
+                title = re.search(r'<title>(.*?)</title>', html, re.I)
+                if title: log.info(f"    Title: {title.group(1)[:60]}")
         if not html or len(html) < 1000:
             continue
 
@@ -357,6 +397,8 @@ def main():
     p.add_argument("--year",    type=int)
     p.add_argument("--company", help="Filter by company name")
     p.add_argument("--delay",   type=float, default=2.0)
+    p.add_argument("--debug",   action="store_true", help="Show raw HTML debug info")
+    p.add_argument("--recent",  action="store_true", help="Only IPOs from last 6 months (live GMP)")
     args = p.parse_args()
 
     if not DATABASE_URL:
@@ -366,6 +408,11 @@ def main():
     ensure_columns(conn)
 
     ipos = get_ipos(conn, args.limit, args.year, args.company)
+    if args.recent:
+        from datetime import date, timedelta
+        cutoff = date.today() - timedelta(days=180)
+        ipos = [i for i in ipos if i.get('listing_date') and i['listing_date'] >= cutoff]
+        log.info(f"  Filtered to {len(ipos)} IPOs from last 6 months")
     log.info(f"Processing {len(ipos)} IPOs using method: {args.method}")
     log.info("=" * 60)
 
@@ -389,7 +436,7 @@ def main():
         log.info(f"  [{i+1}/{len(ipos)}] {company[:50]}")
 
         try:
-            data = scrape_ipo(fetch_fn, company, issue_price)
+            data = scrape_ipo(fetch_fn, company, issue_price, debug=args.debug)
             if data:
                 save(conn, company, data)
                 parts = []
