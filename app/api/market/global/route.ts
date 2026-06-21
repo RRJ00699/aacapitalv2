@@ -14,6 +14,7 @@ const YF_HEADERS = {
 
 // All global symbols — one batch call
 const SYMBOLS = [
+  "^NSEI","^NSEBANK","^INDIAVIX",          // India (Yahoo fallback when Zerodha offline)
   "^GSPC","^NDX","^DJI","^RUT",           // US
   "DX-Y.NYB","USDINR=X",                  // FX
   "GC=F","SI=F","CL=F","NG=F","HG=F",    // Commodities
@@ -111,11 +112,11 @@ export async function GET() {
     const iq = indiaLive.status === "fulfilled" ? indiaLive.value : null
 
     const india = {
-      nifty:        iq?.["NSE:NIFTY 50"]?.lastPrice    ?? snap?.nifty_price        ?? null,
-      niftyChg:     iq?.["NSE:NIFTY 50"]?.changePct     ?? snap?.nifty_change_pct   ?? null,
-      bankNifty:    iq?.["NSE:NIFTY BANK"]?.lastPrice   ?? snap?.banknifty_price    ?? null,
-      bankNiftyChg: iq?.["NSE:NIFTY BANK"]?.changePct   ?? snap?.banknifty_change_pct ?? null,
-      vix:          iq?.["NSE:INDIA VIX"]?.lastPrice    ?? snap?.india_vix          ?? null,
+      nifty:        iq?.["NSE:NIFTY 50"]?.lastPrice    ?? global["^NSEI"]?.price       ?? snap?.nifty_price        ?? null,
+      niftyChg:     iq?.["NSE:NIFTY 50"]?.changePct     ?? global["^NSEI"]?.changePct   ?? snap?.nifty_change_pct   ?? null,
+      bankNifty:    iq?.["NSE:NIFTY BANK"]?.lastPrice   ?? global["^NSEBANK"]?.price    ?? snap?.banknifty_price    ?? null,
+      bankNiftyChg: iq?.["NSE:NIFTY BANK"]?.changePct   ?? global["^NSEBANK"]?.changePct ?? snap?.banknifty_change_pct ?? null,
+      vix:          iq?.["NSE:INDIA VIX"]?.lastPrice    ?? global["^INDIAVIX"]?.price   ?? snap?.india_vix          ?? null,
       pcr:          snap?.pcr          ?? null,
       fii:          (flowRows.status === "fulfilled" ? ((flowRows.value as any[]) ?? [])[0]?.fii_net : null) ?? snap?.fii_cash_flow ?? null,
       dii:          (flowRows.status === "fulfilled" ? ((flowRows.value as any[]) ?? [])[0]?.dii_net : null) ?? snap?.dii_cash_flow ?? null,

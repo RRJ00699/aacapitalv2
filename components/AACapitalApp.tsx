@@ -17,6 +17,7 @@ import { AnchorLockupTracker }  from "./features/anchor-lockup"
 import { GlobalMacroScreen } from "./features/market-global-screen"
 import { CommandCenter } from "./features/command-center"
 import { StockResearchWorkspace } from "./features/stock-research-workspace"
+import { RoiTracker } from "./features/roi-tracker"  // SESSION 9
 import { InvestmentCommandCenter } from "./features/investment-command-center"
 import { SectorRotationScreen } from "./features/sector-rotation"
 import { TradeJournalScreen, CapitalDeploymentOptimizer, MultibaggerDiscoveryEngine } from "./features/sprint8-features"
@@ -33,6 +34,7 @@ import { IntelligenceDashboard } from "./features/intelligence-dashboard"
 import { TodayScreen } from "./features/today-screen"
 import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
+import { BreakoutWatchScreen } from "./features/breakout-watch"  // SESSION 9
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2913,11 +2915,12 @@ setMarketFetched(true);
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px"}}>
               {([
-                {id:"multibagger",  label:"Multibagger discovery"},
-                {id:"technical",    label:"Technical screener"},
-                {id:"earnings",     label:"Earnings"},
-                {id:"weekly-dna",   label:"Weekly DNA"},
-                {id:"sector",       label:"Sector rotation"},
+                {id:"multibagger",     label:"Multibagger discovery"},
+                {id:"breakout-watch",  label:"🔭 Breakout Watch"},
+                {id:"technical",       label:"Technical screener"},
+                {id:"earnings",        label:"Earnings"},
+                {id:"weekly-dna",      label:"Weekly DNA"},
+                {id:"sector",          label:"Sector rotation"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setOppView(t.id as any)}
                   style={{padding:"10px 14px",border:"none",fontSize:12,
@@ -2931,8 +2934,9 @@ setMarketFetched(true);
               ))}
             </div>
           </div>
-          {oppView==="multibagger"  && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
-          {oppView==="technical"    && <TechnicalScreener simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="technical"      && <TechnicalScreener simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="weekly-dna"   && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
@@ -3018,6 +3022,7 @@ setMarketFetched(true);
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px",overflowX:"auto"}}>
               {([
+                {id:"roi",        label:"📊 ROI Tracker"},
                 {id:"backtest",    label:"Backtest"},
                 {id:"journal",     label:"Trade journal"},
                 {id:"settings",    label:"Settings"},
@@ -3034,6 +3039,7 @@ setMarketFetched(true);
               ))}
             </div>
           </div>
+          {discoveryView==="roi"        && <RoiTracker/>}
           {discoveryView==="backtest"    && <BacktestScreen/>}
           {discoveryView==="journal"     && <TradeJournalScreen/>}
           {discoveryView==="settings"    && <SettingsTab/>}

@@ -82,7 +82,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       const [globalR, snapR, techR, sectorR, ipoR, brokerR] = await Promise.all([
         fetch("/api/market/global",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/market/snapshot",                             {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/technical/screener?timeframe=daily&limit=8",  {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+        fetch("/api/technical/screener?timeframe=daily&limit=15",  {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/sector-rotation?view=hot",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/ipo/intelligence?limit=5",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/broker/status",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
@@ -100,7 +100,8 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       const pcrVal     = first(g.pcr,       s.pcr)
       const niftyChg   = first(g.niftyChg,    s.nifty_change_pct)   as number|null
       const bnChg      = first(g.bankNiftyChg, s.banknifty_change_pct) as number|null
-      const regimeStr  = String(first(g.regime, s.regime, s.market_regime) ?? "NORMAL").toUpperCase() as Regime
+      // Snapshot route reads market_regimes.active_regime first — use it as authority
+      const regimeStr  = String(first(s.regime, s.market_regime, g.regime) ?? "NORMAL").toUpperCase() as Regime
 
       if (REGIME[regimeStr]) setRegime(regimeStr)
       setNifty    ({ val: fmt(niftyVal, 0), chg: has(niftyChg) ? num(niftyChg) : null })
@@ -110,26 +111,47 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       setDii(cr(diiVal))
       setPcr({ val: fmt(pcrVal, 2), note: !has(pcrVal) ? "" : num(pcrVal)>=1.1 ? "BULLISH" : num(pcrVal)<=0.8 ? "CAUTION" : "NEUTRAL" })
 
-      // ── Global markets ──
+      // ── Global markets — all 20 assets from API, grouped by region ──
       const gl = globalR?.global ?? {}
-      const pick = (key:string, label:string): GlobalRow => ({
-        label,
-        value:  has(gl[key]?.price) ? n2.format(num(gl[key].price)) : "—",
-        change: typeof gl[key]?.changePct === "number" ? gl[key].changePct : null,
+      const mkGrow = (sym: string, label: string, flag: string): GlobalRow => ({
+        label: `${flag} ${label}`,
+        value:  gl[sym]?.price != null ? n2.format(num(gl[sym].price)) : "—",
+        change: typeof gl[sym]?.changePct === "number" ? gl[sym].changePct : null,
       })
       setGlobalRows([
-        { label:"GIFT NIFTY", value: fmt(niftyVal,0), change: has(niftyChg) ? num(niftyChg) : null },
-        pick("^NDX",     "NASDAQ"),
-        pick("^GSPC",    "S&P 500"),
-        pick("DX-Y.NYB", "DXY"),
-        pick("GC=F",     "GOLD"),
-        pick("BTC-USD",  "BTC"),
-      ])
+        // India
+        { label: "🇮🇳 NIFTY",     value: fmt(niftyVal,0), change: has(niftyChg) ? num(niftyChg) : null },
+        { label: "🇮🇳 BANK NIFTY", value: fmt(bnVal,0),    change: has(bnChg)    ? num(bnChg)    : null },
+        // US
+        mkGrow("^GSPC",    "S&P 500",    "🇺🇸"),
+        mkGrow("^NDX",     "Nasdaq 100", "🇺🇸"),
+        mkGrow("^DJI",     "Dow Jones",  "🇺🇸"),
+        mkGrow("^RUT",     "Russell 2K", "🇺🇸"),
+        // Asia
+        mkGrow("^N225",    "Nikkei",     "🇯🇵"),
+        mkGrow("^HSI",     "Hang Seng",  "🇭🇰"),
+        mkGrow("000001.SS","Shanghai",   "🇨🇳"),
+        mkGrow("^KS11",    "KOSPI",      "🇰🇷"),
+        // Europe
+        mkGrow("^FTSE",    "FTSE 100",   "🇬🇧"),
+        mkGrow("^GDAXI",   "DAX",        "🇩🇪"),
+        mkGrow("^FCHI",    "CAC 40",     "🇫🇷"),
+        // FX
+        mkGrow("DX-Y.NYB", "DXY",        "💵"),
+        mkGrow("USDINR=X", "USD/INR",    "₹"),
+        // Commodities
+        mkGrow("GC=F",     "Gold",       "🥇"),
+        mkGrow("SI=F",     "Silver",     "🥈"),
+        mkGrow("CL=F",     "Crude Oil",  "🛢"),
+        mkGrow("NG=F",     "Nat Gas",    "🔥"),
+        // Crypto
+        mkGrow("BTC-USD",  "Bitcoin",    "₿"),
+      ].filter(r => r.value !== "—" || r.label.includes("NIFTY")))
 
       // ── Top convergence ──
       const SUPPRESS = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
       const tech = ((techR?.data ?? []) as any[]).filter((x:any) => !SUPPRESS.test(String(x.symbol??"")))
-      setOpps(tech.slice(0,5).map((x:any) => {
+      setOpps(tech.slice(0,10).map((x:any) => {
         const score  = Math.round(num(x.buy_zone_score ?? x.probability_score ?? 55))
         const action: Action = score>=75 || x.volume_expansion || x.nr7 ? "BUY" : score>=55 ? "WATCH" : "HOLD"
         return { symbol:x.symbol, name:x.company_name, score, action, reasons:[x.nr7?"NR7 compression":"Technical signal", x.volume_expansion?"Volume expansion":"Watch volume"] }
@@ -234,7 +256,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Card title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
                 {loading ? <Skeleton className="h-36"/> : opps.length
-                  ? <div className="space-y-1">{opps.map(o=>(
+                  ? <div className="space-y-1 max-h-72 overflow-y-auto pr-1">{opps.map(o=>(
                       <button key={o.symbol} onClick={()=>onStockSelect?.(o.symbol)}
                         className="group flex w-full items-center justify-between rounded-xl border border-transparent px-2 py-2.5 text-left hover:border-slate-200 hover:bg-slate-50">
                         <div className="min-w-0">
@@ -355,9 +377,9 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
             </Card>
 
             {/* Global Markets */}
-            <Card title="Global Markets" meta="Macro Overlay" icon={<Globe className="h-3.5 w-3.5 text-blue-500"/>}>
+            <Card title="Global Markets" meta="20 assets · Live" icon={<Globe className="h-3.5 w-3.5 text-blue-500"/>}>
               {loading ? <Skeleton className="h-48"/> : (
-                <div className="space-y-1">
+                <div className="space-y-1 max-h-96 overflow-y-auto pr-1">
                   {globalRows.map(g => (
                     <div key={g.label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
                       <span className="text-[12px] font-semibold text-slate-700">{g.label}</span>

@@ -38,7 +38,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--symbol",   help="Single symbol to sync")
 parser.add_argument("--backfill", action="store_true", help="Fetch full 3-year history")
 parser.add_argument("--days",     type=int, default=5, help="Days to sync (default 5)")
+parser.add_argument("--target",   choices=["local","neon"], default=None,
+                    help="Write target: local (default on Windows) or neon (for GitHub Actions)")
 args = parser.parse_args()
+
+# ── Write target: neon when --target neon OR when local DB is not configured ───
+# GitHub Actions: CANDLES_DATABASE_URL not set → DATABASE_URL is None → auto-routes to Neon
+# Windows local:  CANDLES_DATABASE_URL is set  → writes to local Postgres
+_force_neon = (args.target == "neon")
+WRITE_URL   = NEON_URL if (_force_neon or not DATABASE_URL) else DATABASE_URL
+if not WRITE_URL:
+    print("❌ No write target — set DATABASE_URL (Neon) or CANDLES_DATABASE_URL (local)")
+    sys.exit(1)
+_write_target = "Neon" if WRITE_URL == NEON_URL else "local Postgres"
+print(f"  Write target: {_write_target}")
 
 # ── Get Kite access token — from Neon DB first, env var fallback ───────────────
 def get_access_token() -> str:
@@ -99,7 +112,16 @@ print(f"  {len(symbol_to_token)} NSE instruments loaded\n")
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+    """Write connection — local Postgres on Windows, Neon in GitHub Actions."""
+    from urllib.parse import urlparse, unquote
+    p  = urlparse(WRITE_URL)
+    qs = dict(pair.split("=", 1) for pair in (p.query or "").split("&") if "=" in pair)
+    kw = dict(host=p.hostname, port=p.port or 5432,
+              dbname=p.path.lstrip("/"),
+              user=unquote(p.username or ""),
+              password=unquote(p.password or ""))
+    if "sslmode" in qs: kw["sslmode"] = qs["sslmode"]
+    return psycopg2.connect(**kw)
 
 def get_symbols():
     if args.symbol:

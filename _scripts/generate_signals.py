@@ -181,6 +181,7 @@ def compute_signal(symbol: str, candles: list) -> dict | None:
         "ema200":           round(ema200, 2) if ema200 else None,
         "momentum_6m":      round(mom_6m, 2),
         "vol_compression":  vol_compress,
+        "volume_ratio_20":  round(vol_expansion, 2),   # SESSION 9: added for breakout watch
         "base_months":      base_months,
         "stage":            stage,
         "stage_label":      stage_label,
@@ -189,17 +190,20 @@ def compute_signal(symbol: str, candles: list) -> dict | None:
 
 def ensure_columns(conn):
     additions = [
-        ("buy_zone_score",   "NUMERIC"),
-        ("above_ema200",     "BOOLEAN"),
-        ("ema200",           "NUMERIC"),
-        ("momentum_6m",      "NUMERIC"),
-        ("vol_compression",  "NUMERIC"),
-        ("base_months",      "INTEGER"),
-        ("stage",            "TEXT"),
-        ("stage_label",      "TEXT"),
-        ("pct_below_high",   "NUMERIC"),
-        ("is_nr7",           "BOOLEAN"),
-        ("convergence_score","NUMERIC"),
+        ("buy_zone_score",         "NUMERIC"),
+        ("above_ema200",           "BOOLEAN"),
+        ("ema200",                 "NUMERIC"),
+        ("momentum_6m",            "NUMERIC"),
+        ("vol_compression",        "NUMERIC"),
+        ("volume_ratio_20",        "NUMERIC"),   # SESSION 9
+        ("base_months",            "INTEGER"),
+        ("stage",                  "TEXT"),
+        ("stage_label",            "TEXT"),
+        ("pct_below_high",         "NUMERIC"),
+        ("is_nr7",                 "BOOLEAN"),
+        ("convergence_score",      "NUMERIC"),
+        ("breakout_watch_score",   "INTEGER"),   # SESSION 9
+        ("breakout_watch_tier",    "TEXT"),       # SESSION 9: COILED | BUILDING | EARLY
     ]
     cur = conn.cursor()
     for col, typ in additions:
@@ -209,6 +213,57 @@ def ensure_columns(conn):
         except Exception:
             conn.rollback()
     cur.close()
+
+def _compute_breakout_watch(sig: dict) -> tuple:
+    """
+    SESSION 9 — Breakout Watch scoring.
+    Surfaces ABCAPITAL-type setups BEFORE they break out.
+    Returns (score: int 0-100, tier: str|None)
+
+    Key difference from mb_score:
+      mb_score rewards momentum (already moving).
+      breakout_watch rewards anticipation: coiled under 52W high with building volume.
+    """
+    s = 0
+
+    # 1. Proximity to 52W high (32 pts)
+    pct = float(sig.get('pct_below_high') or 100)
+    if pct < 0:           s += 8    # just punched through — early continuation
+    elif pct <= 3:        s += int(32 * (1.0 - pct / 4.5))   # sweet spot
+    elif pct <= 8:        s += int(20 * (1.0 - (pct - 3) / 8))
+
+    # 2. Range compression — NR7 (16 pts) + quiet vol (10 pts)
+    if sig.get('is_nr7') or sig.get('nr7'):
+        s += 16
+    vc = float(sig.get('vol_compression') or 1.0)
+    # vol_compression = 1/vol_expansion; >1 means recent candle quieter than avg
+    if vc > 1.5:   s += min(10, int((vc - 1.0) * 5))
+    elif vc > 1.2: s += 4
+
+    # 3. Trend confirmation (18 pts)
+    if sig.get('above_ema200'):       s += 11
+    if sig.get('price_above_ema30'):  s += 7
+
+    # 4. Volume building — NOT blow-off (16 pts)
+    # volume_ratio_20 = today's vol / 20-day avg
+    vr = float(sig.get('volume_ratio_20') or 1.0)
+    if 1.3 <= vr <= 5.0:
+        frac = 1.0 - abs(vr - 2.5) / 3.0   # peaks at 2.5x (ABCAPITAL profile)
+        s += int(16 * max(0.3, min(1.0, frac)))
+    elif vr > 5.0:
+        s += 4   # blow-off top — move may have already fired
+
+    # 5. Stage (8 pts)
+    stage = str(sig.get('stage') or '')
+    if stage in ('1', '2'):
+        s += 8
+
+    score = min(100, max(0, s))
+    tier  = ('COILED'   if score >= 80 else
+             'BUILDING' if score >= 60 else
+             'EARLY'    if score >= 48 else None)
+    return score, tier
+
 
 def upsert_signal(conn, sig: dict):
     cur = conn.cursor()
@@ -245,6 +300,11 @@ def upsert_signal(conn, sig: dict):
     sig['all_criteria_met']   = score >= 40
     sig['volume_ratio_20']    = sig.get('volume_ratio_20', None)
 
+    # SESSION 9 — Breakout Watch
+    bw_score, bw_tier         = _compute_breakout_watch(sig)
+    sig['breakout_watch_score'] = bw_score
+    sig['breakout_watch_tier']  = bw_tier
+
     # Use DELETE + INSERT to avoid constraint issues
     sig.setdefault('timeframe', 'daily')
     cur.execute("DELETE FROM technical_signals WHERE symbol = %(symbol)s AND timeframe = %(timeframe)s", sig)
@@ -254,16 +314,18 @@ def upsert_signal(conn, sig: dict):
             convergence_score, probability_score, signal_strength, action_label,
             conviction, all_criteria_met, price_above_ema30,
             is_nr7, nr7, above_ema200, ema200, momentum_6m,
-            vol_compression, base_months, stage, stage_label,
-            pct_below_high, volume_ratio_20, updated_at, synced_at
+            vol_compression, volume_ratio_20, base_months, stage, stage_label,
+            pct_below_high, breakout_watch_score, breakout_watch_tier,
+            updated_at, synced_at
         ) VALUES (
             %(symbol)s, %(signal_date)s, %(timeframe)s, %(close)s,
             %(buy_zone_score)s, %(mb_score)s, %(buy_zone_score)s,
             %(probability_score)s, %(signal_strength)s, %(action_label)s,
             %(conviction)s, %(all_criteria_met)s, %(price_above_ema30)s,
             %(is_nr7)s, %(nr7)s, %(above_ema200)s, %(ema200)s, %(momentum_6m)s,
-            %(vol_compression)s, %(base_months)s, %(stage)s, %(stage_label)s,
-            %(pct_below_high)s, %(volume_ratio_20)s, NOW(), NOW()
+            %(vol_compression)s, %(volume_ratio_20)s, %(base_months)s, %(stage)s, %(stage_label)s,
+            %(pct_below_high)s, %(breakout_watch_score)s, %(breakout_watch_tier)s,
+            NOW(), NOW()
         )
     """, sig)
     conn.commit()
