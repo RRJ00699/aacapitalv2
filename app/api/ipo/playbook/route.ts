@@ -69,16 +69,22 @@ export async function GET(req: NextRequest) {
              OR suggested_action ILIKE ${'%' + play + '%'})
         AND (${search} = '' OR company_name ILIKE ${'%' + search + '%'})
       ORDER BY
+        -- Upcoming and recent first
+        CASE
+          WHEN listing_date IS NULL THEN 0
+          WHEN listing_date >= CURRENT_DATE THEN 1
+          WHEN listing_date >= CURRENT_DATE - INTERVAL '30 days' THEN 2
+          ELSE 3
+        END ASC,
+        -- Then by play quality within each group
         CASE WHEN play_recommendation = 'BUY_AT_OPEN'    THEN 1
              WHEN play_recommendation = 'BUY_PANIC_DIP'  THEN 2
              WHEN play_recommendation = 'WAIT_FOR_VWAP'  THEN 3
              WHEN play_recommendation = 'BUY_AFTER_DAY3' THEN 4
-             WHEN play_recommendation = 'BUY_PEER'       THEN 5
-             WHEN play_recommendation = 'AVOID'          THEN 9
-             ELSE 8 END ASC,
-        COALESCE(play_confidence, confidence_level, 0) DESC,
-        updated_at DESC NULLS LAST
-      LIMIT ${limit}
+             WHEN play_recommendation = 'AVOID'          THEN 6
+             ELSE 5
+        END ASC,
+        listing_date DESC NULLS LAST
     `.catch(() => [])
 
     return NextResponse.json({ ok: true, ipos: rows, total: rows.length })
