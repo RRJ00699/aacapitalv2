@@ -1,24 +1,25 @@
 """
 _scripts/ipo/ipo_play_selector.py
 ===================================
-AACapital IPO Play Selector — trained on real Kite post-listing returns.
+Runs the play selection engine on ALL IPOs in ipo_intelligence.
+Called by:
+  - weekly-ipo-calendar.yml (Sunday 6 PM IST)
+  - After import_chittorgarh.py
+  - Manually: python _scripts/ipo/ipo_play_selector.py
 
-Answers ONE question per IPO:
-  "Can I make money from this IPO in the next 1–5 trading sessions?"
-
-Uses 340 historical IPOs with real Day1/30/90/365 returns to:
-  1. Compute archetype (MOMENTUM / VALUE_DIP / OPERATOR_TRAP / QUALITY_GROWTH)
-  2. Select the best play (7 options)
-  3. Compute confidence from historical similarity
-  4. Update play_recommendation in ipo_intelligence
+What it does:
+  1. Reads all IPOs from ipo_intelligence
+  2. For each: runs the 7-answer play logic (BUY_AT_OPEN / WAIT / AVOID etc.)
+  3. Updates play_recommendation, play_confidence, play_reasons in Neon
+  4. Also computes archetype: MOMENTUM_CHASE / VALUE_DIP / OPERATOR_TRAP / QUALITY_GROWTH
 
 Usage:
-  python _scripts/ipo/ipo_play_selector.py              # update all IPOs
-  python _scripts/ipo/ipo_play_selector.py --company "Bajaj Housing"
-  python _scripts/ipo/ipo_play_selector.py --stats       # show model stats
+  python _scripts/ipo/ipo_play_selector.py               # all IPOs
+  python _scripts/ipo/ipo_play_selector.py --recent 30   # last 30 days only
+  python _scripts/ipo/ipo_play_selector.py --symbol NSDL # single IPO
 """
 
-import os, sys, math, json, logging, argparse, datetime
+import os, sys, json, math, logging, argparse, datetime
 import psycopg2, psycopg2.extras
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -26,574 +27,248 @@ log = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL, connect_timeout=15)
+TIER1_ANCHORS = {
+    "lic","life insurance","sbi mutual","sbi mf","icici prudential","icici pru",
+    "nippon","hdfc mutual","hdfc mf","kotak mutual","kotak mf","adia","abu dhabi",
+    "gic","singapore","norway","temasek","axis mutual","axis mf","dsp","mirae",
+    "franklin","motilal","canara robeco","tata mutual","tata mf","birla","uti mf",
+}
 
-def n(v, d=0.0):
+def n(v, default=0.0):
     try:
-        if v is None: return d
-        f = float(v)
-        return d if math.isnan(f) or math.isinf(f) else f
-    except: return d
+        if v is None or (isinstance(v, float) and math.isnan(v)): return default
+        return float(v)
+    except: return default
 
-# ── STEP 1: Compute historical base rates from real Kite data ─────────────────
+def get_db():
+    from urllib.parse import urlparse, unquote
+    p = urlparse(DATABASE_URL)
+    return psycopg2.connect(
+        host=p.hostname, port=p.port or 5432,
+        dbname=p.path.lstrip("/"),
+        user=unquote(p.username or ""),
+        password=unquote(p.password or ""),
+    )
 
-def compute_base_rates(conn) -> dict:
-    """
-    Compute base rates from 340 historical IPOs with real returns.
-    This IS the training data.
-    """
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        SELECT
-            company_name, sector, is_sme,
-            issue_size_cr, issue_price,
-            qib_subscription_x, nii_subscription_x, rii_subscription_x,
-            total_subscription_x,
-            return_listing_open, return_day1_close,
-            return_day7, return_day30, return_day90, return_day365,
-            max_upside_30d, max_drawdown_30d,
-            hit_uc_day1, hit_lc_day1,
-            anchor_lock30_date, anchor_lock90_date,
-            anchor_tier1_count, anchor_alloc_pct,
-            brlm_score, roe, roce, ipo_pe_post, peer_median_pe,
-            operator_risk_score, fresh_issue_ratio, ofs_pct
-        FROM ipo_intelligence
-        WHERE return_listing_open IS NOT NULL
-          AND is_sme = FALSE
-          AND issue_size_cr >= 150
-    """)
-    rows = [dict(r) for r in cur.fetchall()]
-    cur.close()
+# ── Archetype classification ───────────────────────────────────────────────────
+def classify_archetype(row: dict) -> str:
+    qib        = n(row.get("qib_subscription_x"))
+    gmp_trend  = str(row.get("gmp_momentum","")).upper()
+    anchor_t1  = n(row.get("anchor_tier1_count"))
+    issue_size = n(row.get("issue_size_cr"))
+    ofs_pct    = n(row.get("ofs_pct"))
+    retail_x   = n(row.get("rii_subscription_x"))
+    lqi        = n(row.get("lqi_final"))
+    list_vs_gmp= n(row.get("listing_vs_gmp_pct"))
 
-    log.info(f"Training on {len(rows)} historical IPOs with real returns")
-
-    # Bucket by QIB tier
-    qib_buckets = {
-        "ultra":  [r for r in rows if n(r['qib_subscription_x']) >= 100],
-        "high":   [r for r in rows if 50 <= n(r['qib_subscription_x']) < 100],
-        "medium": [r for r in rows if 20 <= n(r['qib_subscription_x']) < 50],
-        "low":    [r for r in rows if 5  <= n(r['qib_subscription_x']) < 20],
-        "weak":   [r for r in rows if n(r['qib_subscription_x']) < 5],
-    }
-
-    def stats(bucket):
-        if not bucket: return {}
-        opens = [n(r['return_listing_open']) for r in bucket if r['return_listing_open']]
-        d30   = [n(r['return_day30']) for r in bucket if r['return_day30']]
-        d365  = [n(r['return_day365']) for r in bucket if r['return_day365']]
-        ucs   = [r for r in bucket if r.get('hit_uc_day1')]
-        lcs   = [r for r in bucket if r.get('hit_lc_day1')]
-        return {
-            'count':        len(bucket),
-            'avg_open':     sum(opens)/len(opens) if opens else 0,
-            'avg_day30':    sum(d30)/len(d30) if d30 else 0,
-            'avg_day365':   sum(d365)/len(d365) if d365 else 0,
-            'pct_positive_open': sum(1 for x in opens if x > 5) / len(opens) * 100 if opens else 0,
-            'pct_negative_open': sum(1 for x in opens if x < -5) / len(opens) * 100 if opens else 0,
-            'pct_uc_day1':  len(ucs) / len(bucket) * 100,
-            'pct_lc_day1':  len(lcs) / len(bucket) * 100,
-        }
-
-    base_rates = {k: stats(v) for k, v in qib_buckets.items()}
-
-    # Overall stats
-    all_opens = [n(r['return_listing_open']) for r in rows if r['return_listing_open']]
-    base_rates['overall'] = {
-        'count':       len(rows),
-        'avg_open':    sum(all_opens)/len(all_opens) if all_opens else 0,
-        'pct_positive': sum(1 for x in all_opens if x > 5) / len(all_opens) * 100 if all_opens else 0,
-        'pct_negative': sum(1 for x in all_opens if x < -5) / len(all_opens) * 100 if all_opens else 0,
-    }
-
-    log.info(f"  QIB ultra (100x+): {base_rates['ultra'].get('count',0)} IPOs, "
-             f"avg open {base_rates['ultra'].get('avg_open',0):.1f}%")
-    log.info(f"  QIB high (50-100x): {base_rates['high'].get('count',0)} IPOs, "
-             f"avg open {base_rates['high'].get('avg_open',0):.1f}%")
-    log.info(f"  QIB medium (20-50x): {base_rates['medium'].get('count',0)} IPOs, "
-             f"avg open {base_rates['medium'].get('avg_open',0):.1f}%")
-    log.info(f"  Overall positive: {base_rates['overall']['pct_positive']:.0f}%")
-
-    return base_rates, rows
-
-# ── STEP 2: Archetype classifier ──────────────────────────────────────────────
-
-def classify_archetype(ipo: dict, base_rates: dict, historical: list) -> str:
-    """
-    Classify IPO into one of 4 archetypes using real historical patterns.
-    """
-    qib      = n(ipo.get('qib_subscription_x'))
-    ret_open = n(ipo.get('return_listing_open'))
-    ret_30   = n(ipo.get('return_day30'))
-    size     = n(ipo.get('issue_size_cr'))
-    op_risk  = n(ipo.get('operator_risk_score'))
-    tier1    = n(ipo.get('anchor_tier1_count'))
-
-    # OPERATOR_TRAP: small size, weak QIB, retail mania
-    if size < 300 and qib < 10 and op_risk > 50:
+    if issue_size < 300 and retail_x > 50 and qib < 5:
         return "OPERATOR_TRAP"
-
-    # Post-listing classification (if we have returns)
-    if ret_open != 0:
-        if ret_open > 20 and qib >= 20:
-            if n(ipo.get('return_day365')) > 30:
-                return "QUALITY_GROWTH"
-            return "MOMENTUM_CHASE"
-
-        if ret_open < -5 and tier1 >= 10 and n(ipo.get('return_day90')) > 10:
-            return "VALUE_DIP_BUY"
-
-        if ret_open < -10:
-            return "OPERATOR_TRAP"
-
-    # Pre-listing classification
-    if qib >= 50 and tier1 >= 15:
+    if qib >= 50 and gmp_trend in ("RISING","STABLE") and anchor_t1 >= 10:
         return "MOMENTUM_CHASE"
-    if qib >= 20 and n(ipo.get('roe')) > 15:
+    if list_vs_gmp < -5 and lqi >= 65:
+        return "VALUE_DIP_BUY"
+    if anchor_t1 >= 20 and ofs_pct < 60:
         return "QUALITY_GROWTH"
-    if qib < 5:
-        return "OPERATOR_TRAP"
+    return "WATCH"
 
-    return "VALUE_DIP_BUY"
+# ── Play selection (The 7 Answers from IPO Playbook) ──────────────────────────
+def compute_play(row: dict) -> dict:
+    issue_size   = n(row.get("issue_size_cr"))
+    op_risk      = n(row.get("operator_risk_score"))
+    gmp_trend    = str(row.get("gmp_momentum","")).upper()
+    gmp_t1       = n(row.get("gmp_pct_t1") or row.get("gmp_day_before_pct"))
+    qib_x        = n(row.get("qib_subscription_x"))
+    retail_x     = n(row.get("rii_subscription_x"))
+    anchor_t1    = n(row.get("anchor_tier1_count"))
+    lqi          = n(row.get("lqi_final"))
+    listing_vs_gmp = n(row.get("listing_vs_gmp_pct"))
+    listing_open = n(row.get("listing_open"))
+    issue_price  = n(row.get("issue_price"))
+    brlm_score   = n(row.get("brlm_score", 50))
+    pe_premium   = n(row.get("valuation_premium_pct"))
+    regime       = str(row.get("listing_regime") or "NORMAL").upper()
+    ftr          = n(row.get("float_turnover_ratio"))
 
-# ── STEP 3: Historical similarity ─────────────────────────────────────────────
-
-def find_similar_historical(ipo: dict, historical: list, n_similar: int = 10) -> list:
-    """Find most similar historical IPOs by QIB, size, sector, anchors."""
-    qib    = n(ipo.get('qib_subscription_x'))
-    size   = n(ipo.get('issue_size_cr'))
-    sector = str(ipo.get('sector') or '')
-    tier1  = n(ipo.get('anchor_tier1_count'))
-
-    scored = []
-    for h in historical:
-        if not h.get('return_listing_open'):
-            continue
-        h_qib    = n(h.get('qib_subscription_x'))
-        h_size   = n(h.get('issue_size_cr'))
-        h_sector = str(h.get('sector') or '')
-        h_tier1  = n(h.get('anchor_tier1_count'))
-
-        # Similarity score (lower = more similar)
-        qib_diff    = abs(qib - h_qib) / max(qib, h_qib, 1) * 40
-        size_diff   = abs(size - h_size) / max(size, h_size, 1) * 20
-        sector_same = 0 if sector == h_sector else 20
-        tier1_diff  = abs(tier1 - h_tier1) * 2
-
-        similarity = 100 - (qib_diff + size_diff + sector_same + tier1_diff)
-        scored.append((similarity, h))
-
-    scored.sort(key=lambda x: -x[0])
-    return [h for _, h in scored[:n_similar]]
-
-# ── STEP 4: Play selector ──────────────────────────────────────────────────────
-
-def select_play(ipo: dict, base_rates: dict, historical: list) -> dict:
-    """
-    Select the best play from 7 options using real historical data.
-    """
-    qib          = n(ipo.get('qib_subscription_x'))
-    nii          = n(ipo.get('nii_subscription_x'))
-    ret_open     = n(ipo.get('return_listing_open'))
-    listing_open = n(ipo.get('listing_open'))
-    issue_price  = n(ipo.get('issue_price'))
-    ret_30   = n(ipo.get('return_day30'))
-    ret_90   = n(ipo.get('return_day90'))
-    ret_365  = n(ipo.get('return_day365'))
-    size     = n(ipo.get('issue_size_cr'))
-    op_risk  = n(ipo.get('operator_risk_score'))
-    tier1    = n(ipo.get('anchor_tier1_count'))
-    brlm     = n(ipo.get('brlm_score'), 50)
-    roe      = n(ipo.get('roe'))
-    ipo_pe   = n(ipo.get('ipo_pe_post'))
-    peer_pe  = n(ipo.get('peer_median_pe'))
-    uc_day1  = ipo.get('hit_uc_day1')
-    lc_day1  = ipo.get('hit_lc_day1')
-    archetype = ipo.get('archetype', '')
-
-    # Get QIB bucket rates
-    if qib >= 100: bucket = base_rates.get('ultra', {})
-    elif qib >= 50: bucket = base_rates.get('high', {})
-    elif qib >= 20: bucket = base_rates.get('medium', {})
-    elif qib >= 5:  bucket = base_rates.get('low', {})
-    else:           bucket = base_rates.get('weak', {})
-
-    # Find similar IPOs
-    similar = find_similar_historical(ipo, historical)
-    sim_opens = [n(h['return_listing_open']) for h in similar if h.get('return_listing_open')]
-    sim_avg_open = sum(sim_opens)/len(sim_opens) if sim_opens else 0
-    sim_pct_positive = sum(1 for x in sim_opens if x > 5)/len(sim_opens)*100 if sim_opens else 50
-
-    reasons = []
-
-    # ── COMPUTE LISTING PREMIUM (if we have data) ────────────────────────────
-    listing_premium = 0.0
-    if listing_open > 0 and issue_price > 0:
-        listing_premium = (listing_open / issue_price - 1) * 100
-
-    # ── PRE-SUBSCRIPTION IPO — no QIB yet ────────────────────────────────────
-    import datetime
-    today = datetime.date.today()
-    open_date   = ipo.get('open_date')
-    close_date  = ipo.get('close_date')
-    is_pre_sub  = ((qib == 0 or qib is None) and
-                   open_date is not None and
-                   (close_date is None or close_date >= today))
-
-    if is_pre_sub:
-        # Use pre-subscription scoring (brlm + size + fundamentals)
-        brlm_s = n(ipo.get('brlm_score'), 50)
-        roe    = n(ipo.get('roe'))
-        pre_score = brlm_s
-        if size >= 500:  pre_score += 8
-        elif size < 200: pre_score -= 10
-        if roe > 20:     pre_score += 5
-
-        cd_str = str(close_date) if close_date else "TBD"
-        if pre_score >= 70:
-            return _play("WAIT_FOR_VWAP", min(pre_score, 68),
-                [f"Subscription open until {cd_str} — BRLM score {brlm_s:.0f}, watch QIB",
-                 f"Issue size ₹{size:.0f}Cr | ROE {roe:.0f}%",
-                 "⚠️ Pre-subscription estimate — final play on Day 3 close"],
-                5, 15, "Update after Day 3 sub closes")
-        elif pre_score >= 55:
-            return _play("BUY_AFTER_DAY3", min(pre_score, 62),
-                [f"Subscription open until {cd_str} — watch final QIB",
-                 f"BRLM score {brlm_s:.0f} | ₹{size:.0f}Cr",
-                 "⚠️ Pre-subscription estimate — update after Day 3"],
-                5, 10, "Update after Day 3 sub closes")
-        else:
-            return _play("AVOID", min(pre_score+10, 65),
-                [f"Weak pre-subscription signals — BRLM {brlm_s:.0f}/100, wait for QIB",
-                 f"⚠️ Update after subscription closes {cd_str}"],
-                0, 0, "Check Day 3 subscription")
-
-    # ── INSTANT REJECT ────────────────────────────────────────────────────────
-    if size > 0 and size < 150:
-        return _play("AVOID", 92, ["Issue size ₹{:.0f}Cr — 5% circuit band, operator trap".format(size)], 0, 0, "—")
+    # ── INSTANT REJECTS ───────────────────────────────────────────────────────
+    if issue_size > 0 and issue_size < 150:
+        return _play("AVOID", 95,
+            ["Issue size < ₹150 Cr — 5% circuit band, operator manipulation territory"], 0, 0, "—")
 
     if op_risk > 70:
-        return _play("AVOID", 82, [f"High operator risk score ({op_risk:.0f})"], 0, 0, "—")
+        return _play("AVOID", 85,
+            [f"Operator risk {op_risk:.0f}/100 — SME/manipulation pattern"], 0, 0, "—")
 
-    if brlm < 40:
-        return _play("AVOID", 75, [f"BRLM score {brlm:.0f}/100 — history of overpricing and abandonment"], 0, 0, "—")
+    if regime == "BLACK_SWAN":
+        return _play("AVOID", 90, ["Black swan event — all IPO trades suspended"], 0, 0, "—")
 
-    if lc_day1:
-        return _play("AVOID", 88, ["Hit lower circuit on Day 1 — trapped liquidity, no exit"], 0, 0, "—")
+    if gmp_trend == "COLLAPSING" or gmp_t1 < -5:
+        return _play("AVOID", 80, ["GMP collapsing — retail demand evaporating"], 0, 0, "—")
+
+    if brlm_score < 45:
+        return _play("AVOID", 70,
+            [f"BRLM score {brlm_score:.0f}/100 — history of overpricing and abandonment"], 0, 0, "—")
+
+    if qib_x < 5 and retail_x > 50:
+        return _play("AVOID", 75,
+            ["QIB < 5x but retail > 50x — no institutional conviction, retail mania"], 0, 0, "—")
 
     # ── BUY LISTED PEER ───────────────────────────────────────────────────────
-    if ipo_pe > 0 and peer_pe > 0 and ipo_pe > peer_pe * 3:
-        premium = (ipo_pe / peer_pe - 1) * 100
+    if pe_premium > 200 and lqi < 65:
         return _play("BUY_PEER", 70,
-            [f"IPO PE {ipo_pe:.0f}x vs sector PE {peer_pe:.0f}x (+{premium:.0f}%) — listed peers offer better value"],
-            4, 15, "normal")
+            [f"IPO PE {pe_premium:.0f}% above sector — listed peers offer better value"], 5, 15, "normal")
 
-    # ── POST-LISTING SIGNALS (historical IPO — for backtest label) ────────────
-    if ret_open != 0:
-        # UC Day 1 pattern
-        if uc_day1:
-            uc_d2_rate = base_rates['overall'].get('pct_uc_day1', 30)
-            return _play("BUY_AT_OPEN", 80,
-                ["Hit upper circuit Day 1 — high probability of gap-up Day 2",
-                 f"Similar IPOs avg open: +{sim_avg_open:.1f}%"],
-                4, ret_open + 10, "30min → EOD")
+    # ── LISTING DAY SIGNALS (if listing data available) ───────────────────────
+    if listing_open > 0 and issue_price > 0:
+        listing_vs_issue = (listing_open / issue_price - 1) * 100
+        gmp_price = issue_price * (1 + gmp_t1/100) if gmp_t1 else issue_price
 
-        # Listed below GMP with anchors = panic dip
-        if ret_open < -5 and tier1 >= 10:
-            reasons = [
-                f"Listed {ret_open:.1f}% — retail panic sell",
-                f"{tier1:.0f} tier-1 anchors = institutional support floor",
-                f"Historical: similar IPOs avg +{sim_avg_open:.1f}% open"
-            ]
-            # Check if Day30 recovers (from historical data)
-            good_recovery = ret_30 > 15 if ret_30 else sim_avg_open > 10
-            conf = 74 if good_recovery else 60
-            return _play("BUY_PANIC_DIP", conf, reasons, 6, max(20, abs(ret_open)), "Day 1-3")
+        # Euphoria trap — listed way above GMP
+        if listing_vs_issue > 30 and qib_x < 30:
+            return _play("AVOID", 78,
+                ["Listed 30%+ above GMP + weak QIB — euphoria trap, institutions will sell"], 0, 0, "—")
 
-        # Strong open + strong QIB
-        if ret_open > 10 and qib >= 30:
-            reasons = [
-                f"QIB {qib:.0f}x + listed +{ret_open:.0f}% — institutional demand confirmed",
-                f"Similar IPOs: {sim_pct_positive:.0f}% positive open",
-            ]
-            return _play("BUY_AT_OPEN", min(85, 55 + qib/5), reasons, 4, ret_open + 8, "30min → EOD")
+        # Float Turnover Ratio — absorption complete
+        if ftr > 0.8 and listing_open > issue_price:
+            return _play("BUY_AT_OPEN", 84,
+                [f"FTR {ftr:.2f} > 0.8 — weak hands absorbed, institutional accumulation confirmed",
+                 "Entry window: 10:15–10:25 AM IST"], 4, 18, "30 min → EOD")
 
-        if ret_open > 15:
-            return _play("WAIT_FOR_VWAP", 65,
-                [f"Listed +{ret_open:.1f}% — wait for VWAP confirmation",
-                 f"Avg similar: +{sim_avg_open:.1f}%"],
-                5, ret_open + 5, "10:30AM → EOD")
+        # Listed below GMP + strong anchors = panic dip
+        if listing_vs_gmp < -5 and anchor_t1 >= 10:
+            return _play("BUY_PANIC_DIP", 76,
+                [f"Listed {abs(listing_vs_gmp):.1f}% below GMP — retail panic selling",
+                 f"{anchor_t1:.0f} tier-1 anchors (LIC/SBI/ICICI) provide institutional floor",
+                 "Institutions accumulate into weakness — mean reversion within 3 days"], 6, 20, "Day 1–3")
 
-        if 0 < ret_open <= 15 and qib >= 10:
-            return _play("BUY_AFTER_DAY3", 62,
-                [f"Listed +{ret_open:.1f}% with QIB {qib:.0f}x — moderate setup, buy after Day 3 dip",
-                 f"Similar IPOs avg: +{sim_avg_open:.1f}%"],
-                5, 12, "1 week")
+        # VWAP setup
+        if ftr < 0.8:
+            return _play("WAIT_FOR_VWAP", 68,
+                ["FTR < 0.8 — weak hands not fully flushed yet",
+                 "Wait for VWAP crossover + 1.5x volume before entering"], 5, 15, "10:30 AM → EOD")
 
-        if 0 < ret_open <= 15:
-            return _play("WAIT_FOR_VWAP", 58,
-                [f"Listed +{ret_open:.1f}% — weak QIB {qib:.0f}x, VWAP confirmation needed"],
-                5, ret_open + 3, "10:30AM → EOD")
-
-        if -5 <= ret_open <= 0:
-            if tier1 >= 8:
-                return _play("BUY_PANIC_DIP", 60,
-                    [f"Listed flat/slight negative ({ret_open:.1f}%) with {tier1:.0f} tier-1 anchors"],
-                    6, 15, "Day 1-3")
-            return _play("BUY_AFTER_DAY3", 55,
-                [f"Listed near flat {ret_open:.1f}% — wait for Day 3 direction confirmation"],
-                5, 10, "1 week")
-
-        if ret_open < -5:
-            if roe > 15 and tier1 >= 5:
-                return _play("BUY_AFTER_DAY3", 60,
-                    [f"Listed {ret_open:.1f}% but ROE {roe:.0f}% + quality anchors — wait for stabilization"],
-                    5, 15, "1 week")
-            return _play("AVOID", 65,
-                [f"Negative listing {ret_open:.1f}% without strong institutional support"],
-                0, 0, "—")
-
-    # ── PRE-LISTING SIGNALS (upcoming IPO) ────────────────────────────────────
-    hist_pct_pos = bucket.get('pct_positive_open', 50)
-    hist_avg     = bucket.get('avg_open', 10)
-
-    if qib >= 100:
+    # ── PRE-LISTING SIGNALS (night before) ───────────────────────────────────
+    # Strong buy setup
+    if qib_x >= 50 and anchor_t1 >= 15 and gmp_trend in ("RISING","STABLE") and lqi >= 70:
+        conf = min(90, 55 + qib_x/10 + anchor_t1/2)
         reasons = [
-            f"QIB {qib:.0f}x — ultra-high demand BUT institutions sell on listing day",
-            f"Data: QIB 100x+ IPOs average -6.9% over 7 days from open",
-            f"Strategy: buy at open for quick gain, EXIT BY EOD — do not hold",
+            f"QIB {qib_x:.0f}x — strong institutional demand (threshold: 20x)",
+            f"{anchor_t1:.0f} tier-1 anchors (LIC, SBI MF, ICICI, Nippon, ADIA)",
+            f"GMP {gmp_trend.lower()} T-5 to T-1 — genuine retail demand",
+            f"LQI {lqi:.0f}/100 — high quality score",
         ]
-        return _play("BUY_AT_OPEN", 72, reasons, 3, 8, "EXIT by EOD — do NOT hold")
+        if regime == "HOT": reasons.append("HOT market regime — upgrade confidence +20%"); conf = min(90, conf + 10)
+        return _play("BUY_AT_OPEN", round(conf), reasons, 4, 20, "30 min → EOD")
 
-    if qib >= 50 and tier1 >= 10:
-        # QIB 50-100x: good but check if premium will be too high
-        reasons = [
-            f"QIB {qib:.0f}x — strong institutional demand",
-            f"Historical: {hist_pct_pos:.0f}% of QIB 50x+ IPOs gave positive open",
-            f"Hold 7 days only if listing premium is 25-50% above issue (data-proven +30%)",
-        ]
-        conf = min(84, 60 + qib/15)
-        window = "30min → hold 7d if listed 25-50% above issue"
-        return _play("BUY_AT_OPEN", round(conf), reasons, 4, hist_avg, window)
+    # Decent setup — wait for VWAP
+    if qib_x >= 20 and anchor_t1 >= 8 and gmp_trend in ("RISING","STABLE") and lqi >= 55:
+        return _play("WAIT_FOR_VWAP", 65,
+            [f"QIB {qib_x:.0f}x — decent institutional demand",
+             f"GMP {gmp_trend.lower()} — demand holding",
+             "Not strong enough for market open — confirm with VWAP crossover"], 5, 14, "10:30 AM → EOD")
 
-    if qib >= 20:
-        reasons = [
-            f"QIB {qib:.0f}x — decent institutional demand",
-            f"Historical: {hist_pct_pos:.0f}% positive open for this QIB range",
-            "Wait for VWAP before entry",
-        ]
-        return _play("WAIT_FOR_VWAP", 65, reasons, 5, hist_avg, "10:30AM → EOD")
+    # Good quality but GMP cooling = expect panic dip
+    if lqi >= 75 and gmp_trend in ("FALLING","STABLE") and anchor_t1 >= 12:
+        return _play("BUY_PANIC_DIP", 68,
+            [f"Strong fundamentals (LQI {lqi:.0f}) but GMP cooling — listing likely below GMP",
+             f"{anchor_t1:.0f} tier-1 anchors = institutional floor at issue price",
+             "Buy the panic dip, not the hype — avg +20% return within 3 days"], 6, 18, "Day 1–3")
 
-    if qib >= 5 and roe > 15 and tier1 >= 5:
-        return _play("BUY_AFTER_DAY3", 58,
-            [f"Moderate QIB {qib:.0f}x but strong fundamentals (ROE {roe:.0f}%)"],
-            5, 12, "1 week")
+    # Day 3 stabilization play
+    if lqi >= 75 and qib_x >= 25:
+        return _play("BUY_AFTER_DAY3", 62,
+            [f"Strong LQI {lqi:.0f} and QIB {qib_x:.0f}x but no clear listing signal",
+             "Let Day 1–2 distribution clear, enter Day 3 when selling slows",
+             "Entry trigger: Day 3 price > Day 2 close on declining volume"], 5, 12, "1 week")
 
-    if qib >= 5 and tier1 >= 15:
-        return _play("BUY_AFTER_ANCHOR", 55,
-            [f"Quality anchors ({tier1:.0f} tier-1) despite weak subscription — buy at T+30 dip"],
-            8, 25, "1 month")
+    # Anchor unlock play (post T+30)
+    if lqi >= 80:
+        return _play("BUY_AFTER_ANCHOR", 56,
+            [f"Quality IPO (LQI {lqi:.0f}) — best entry at anchor unlock window",
+             "T+30 and T+90 dates create supply pressure = buy the dip",
+             "NSDL, Bajaj Housing, HDB Financial pattern"], 8, 25, "1–4 weeks")
 
-    # Moderate setup — not strong enough for open, but not avoid
-    if qib >= 10 and tier1 >= 5:
-        return _play("BUY_AFTER_DAY3", 55,
-            [f"Moderate QIB {qib:.0f}x with {tier1:.0f} quality anchors — buy after Day 3 stabilization"],
-            5, 12, "1 week")
+    return _play("AVOID", 58, ["Insufficient conviction for any entry — no clear edge"], 0, 0, "—")
 
-    if tier1 >= 15 and size >= 500:
-        return _play("BUY_AFTER_ANCHOR", 55,
-            [f"Quality anchors ({tier1:.0f} tier-1), large IPO — buy at T+30 anchor unlock dip"],
-            8, 20, "1 month")
+def _play(p, conf, reasons, stop, target, hold):
+    return {"play": p, "confidence": conf, "reasons": reasons,
+            "stop_loss_pct": stop, "target_pct": target, "hold_window": hold}
 
-    return _play("AVOID", 60, ["Insufficient conviction — no clear edge in this IPO"], 0, 0, "—")
-
-
-def _play(play, conf, reasons, stop_loss, target, window):
-    # Compute hold_7_days signal from window text
-    hold_7 = ("7" in str(window) or "week" in str(window).lower() or
-               "30" in str(window) or "month" in str(window).lower() or
-               "anchor" in str(window).lower())
-    eod_only = "EOD" in str(window) and "hold" not in str(window).lower()
-    return {
-        "play_recommendation": play,
-        "play_confidence":     min(95, max(30, round(conf))),
-        "play_reasons":        json.dumps(reasons),
-        "play_stop_loss_pct":  stop_loss,
-        "play_target_pct":     target,
-        "play_hold_window":    window,
-        "hold_7_days":         hold_7 and not eod_only,
-        "exit_eod":            eod_only,
-        "play_updated_at":     datetime.datetime.now(datetime.timezone.utc),
-    }
-
-# ── STEP 5: Archetype labeling ────────────────────────────────────────────────
-
-def label_archetype_from_returns(ipo: dict) -> str:
-    """
-    Label historical IPOs with actual archetype based on realized returns.
-    This is the ground truth for ML training.
-    """
-    ret_open = n(ipo.get('return_listing_open'))
-    ret_30   = n(ipo.get('return_day30'))
-    ret_365  = n(ipo.get('return_day365'))
-    qib      = n(ipo.get('qib_subscription_x'))
-    size     = n(ipo.get('issue_size_cr'))
-    op_risk  = n(ipo.get('operator_risk_score'))
-    tier1    = n(ipo.get('anchor_tier1_count'))
-    lc       = ipo.get('hit_lc_day1')
-
-    if size < 200 and op_risk > 50:
-        return "OPERATOR_TRAP"
-    if lc:
-        return "OPERATOR_TRAP"
-    if ret_open < -10 and ret_30 < -15:
-        return "OPERATOR_TRAP"
-
-    if ret_open > 20 and qib >= 20 and ret_365 > 30:
-        return "QUALITY_GROWTH"
-    if ret_open > 15 and qib >= 30:
-        return "MOMENTUM_CHASE"
-    if ret_open < -5 and tier1 >= 10 and ret_30 > 10:
-        return "VALUE_DIP_BUY"
-    if ret_open > 5:
-        return "MOMENTUM_CHASE"
-
-    return "VALUE_DIP_BUY"
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-def show_stats(conn, base_rates):
-    """Print model statistics."""
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        SELECT play_recommendation, COUNT(*) as n,
-               AVG(return_listing_open) as avg_open,
-               AVG(return_day30) as avg_30d,
-               COUNT(CASE WHEN return_listing_open > 10 THEN 1 END) as positive,
-               COUNT(CASE WHEN return_listing_open < -5 THEN 1 END) as negative
-        FROM ipo_intelligence
-        WHERE play_recommendation IS NOT NULL
-          AND return_listing_open IS NOT NULL
-          AND is_sme = FALSE
-        GROUP BY play_recommendation
-        ORDER BY n DESC
-    """)
-    rows = cur.fetchall()
-    cur.close()
-
-    log.info("\n" + "="*70)
-    log.info("PLAY SELECTOR BACKTESTING RESULTS (on 340 historical IPOs)")
-    log.info("="*70)
-    for r in rows:
-        play = r['play_recommendation']
-        n_ipos = r['n']
-        avg_open = n(r['avg_open'])
-        avg_30d  = n(r['avg_30d'])
-        pos = r['positive'] or 0
-        neg = r['negative'] or 0
-        total = n_ipos
-        log.info(f"  {play:20s} {n_ipos:3d} IPOs | "
-                 f"avg open {avg_open:+6.1f}% | "
-                 f"avg 30d {avg_30d:+6.1f}% | "
-                 f"✅{pos:3d} ❌{neg:3d}")
-    log.info("="*70)
-
+# ── Main ───────────────────────────────────────────────────────────────────────
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--company", help="Filter by company name")
-    p.add_argument("--stats", action="store_true", help="Show model statistics only")
-    p.add_argument("--limit", type=int, default=500)
-    args = p.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--recent", type=int, help="Only IPOs listed in last N days")
+    ap.add_argument("--symbol", help="Single symbol/company name")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
 
     if not DATABASE_URL:
         log.error("DATABASE_URL not set"); sys.exit(1)
 
     conn = get_db()
-    log.info("Connected to Neon DB")
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    base_rates, historical_ipos = compute_base_rates(conn)
+    # Build WHERE clause
+    where = "WHERE 1=1"
+    if args.recent:
+        cutoff = (datetime.date.today() - datetime.timedelta(days=args.recent)).isoformat()
+        where += f" AND (listing_date >= '{cutoff}' OR listing_date IS NULL)"
+    if args.symbol:
+        s = args.symbol.replace("'","''")
+        where += f" AND (symbol ILIKE '{s}' OR company_name ILIKE '%{s}%')"
 
-    if args.stats:
-        show_stats(conn, base_rates)
-        conn.close()
-        return
-
-    # Load all IPOs to update
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    q = """
-        SELECT id, company_name, sector, is_sme,
-               issue_size_cr, issue_price, fresh_issue_ratio, ofs_pct,
-               qib_subscription_x, nii_subscription_x, rii_subscription_x,
-               total_subscription_x,
-               listing_date, listing_open,
-               open_date, close_date,
-               return_listing_open, return_day1_close,
-               return_day7, return_day30, return_day90, return_day365,
-               max_upside_30d, max_drawdown_30d,
-               hit_uc_day1, hit_lc_day1,
-               anchor_tier1_count, anchor_lock30_date, anchor_lock90_date,
-               brlm_score, brlm_names,
-               roe, roce, ipo_pe_post, peer_median_pe,
-               operator_risk_score, archetype,
-               gmp_pct_t1, gmp_momentum
-        FROM ipo_intelligence
-        WHERE is_sme = FALSE
-    """
-    params = []
-    if args.company:
-        q += " AND company_name ILIKE %s"
-        params.append(f"%{args.company}%")
-    q += " ORDER BY listing_date DESC NULLS LAST LIMIT %s"
-    params.append(args.limit)
-
-    cur.execute(q, params)
-    ipos = [dict(r) for r in cur.fetchall()]
-    cur.close()
-    log.info(f"Processing {len(ipos)} IPOs")
-    log.info("="*60)
+    cur.execute(f"""
+        SELECT id, company_name, symbol, issue_size_cr, operator_risk_score,
+               gmp_pct_t1, gmp_day_before_pct, gmp_momentum, qib_subscription_x,
+               rii_subscription_x, anchor_tier1_count, lqi_final, listing_vs_gmp_pct,
+               listing_open, issue_price, brlm_score, valuation_premium_pct,
+               float_turnover_ratio, listing_regime, ofs_pct
+        FROM ipo_intelligence {where}
+        ORDER BY listing_date DESC NULLS LAST
+        LIMIT 500
+    """)
+    rows = cur.fetchall()
+    log.info(f"Processing {len(rows)} IPOs")
 
     ok = 0
-    play_counts = {}
+    play_counts: dict[str, int] = {}
+    for row in rows:
+        d  = dict(row)
+        pl = compute_play(d)
+        at = classify_archetype(d)
+        play_counts[pl["play"]] = play_counts.get(pl["play"], 0) + 1
 
-    for ipo in ipos:
-        company = ipo['company_name']
+        if args.dry_run:
+            log.info(f"  {d['company_name']}: {pl['play']} ({pl['confidence']}%) — {at}")
+            continue
 
-        # Label archetype from real returns
-        if ipo.get('return_listing_open') is not None:
-            archetype = label_archetype_from_returns(ipo)
-        else:
-            archetype = classify_archetype(ipo, base_rates, historical_ipos)
-
-        # Select play
-        play_data = select_play(ipo, base_rates, historical_ipos)
-        play_data['archetype'] = archetype
-
-        # Update DB
-        cur2 = conn.cursor()
-        cols = list(play_data.keys())
-        vals = [play_data[c] for c in cols]
-        set_clause = ', '.join([f"{c} = %s" for c in cols])
-        try:
-            cur2.execute(f"UPDATE ipo_intelligence SET {set_clause} WHERE id = %s",
-                        vals + [ipo['id']])
+        with conn.cursor() as uc:
+            uc.execute("""
+                UPDATE ipo_intelligence SET
+                    play_recommendation = %s,
+                    play_confidence     = %s,
+                    play_reasons        = %s,
+                    play_stop_loss_pct  = %s,
+                    play_target_pct     = %s,
+                    play_hold_window    = %s,
+                    play_updated_at     = NOW(),
+                    archetype           = %s
+                WHERE id = %s
+            """, (pl["play"], pl["confidence"], json.dumps(pl["reasons"]),
+                  pl["stop_loss_pct"], pl["target_pct"], pl["hold_window"], at, d["id"]))
+        ok += 1
+        if ok % 50 == 0:
             conn.commit()
-            ok += 1
-            play = play_data['play_recommendation']
-            play_counts[play] = play_counts.get(play, 0) + 1
-        except Exception as e:
-            log.warning(f"  {company}: {e}")
-            conn.rollback()
-        finally:
-            cur2.close()
+            log.info(f"  {ok}/{len(rows)} updated")
 
+    if not args.dry_run:
+        conn.commit()
+        log.info(f"\n✅ Updated {ok} IPOs")
+        log.info("Play distribution:")
+        for play, count in sorted(play_counts.items(), key=lambda x: -x[1]):
+            log.info(f"  {play:20s}: {count}")
+    
+    cur.close()
     conn.close()
-
-    log.info("="*60)
-    log.info(f"Updated {ok}/{len(ipos)} IPOs")
-    log.info("\nPlay distribution:")
-    for play, count in sorted(play_counts.items(), key=lambda x: -x[1]):
-        log.info(f"  {play:22s}: {count}")
-    log.info("\nRun with --stats to see backtesting results")
 
 if __name__ == "__main__":
     main()

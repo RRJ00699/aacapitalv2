@@ -1,0 +1,83 @@
+name: IPO Data Pipeline
+
+# Daily scoring pipeline — runs after Chittorgarh import (done locally on Windows)
+# Also runs weekly-full to recompute BRLM scores from historical data
+
+on:
+  schedule:
+    - cron: '30 14 * * 1-5'  # 8:00 PM IST Mon-Fri (after market close + Chittorgarh import)
+    - cron: '30 12 * * 0'    # 6:00 PM IST Sunday (full BRLM recompute)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'What to run'
+        type: choice
+        default: 'score_only'
+        options:
+          - score_only       # Just rerun play_selector
+          - score_and_brlm   # Play selector + BRLM scores
+          - full             # Everything
+      days:
+        description: 'Score only IPOs listed/updated in last N days (0 = all)'
+        default: '60'
+
+jobs:
+  ipo-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary python-dotenv pandas openpyxl
+
+      # ── Step 1: Run play selector ─────────────────────────────────────────
+      - name: Run IPO play selector
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          DAYS=${{ github.event.inputs.days || '60' }}
+          if [ "$DAYS" = "0" ]; then
+            echo "Running play selector for ALL IPOs"
+            python _scripts/ipo/ipo_play_selector.py
+          else
+            echo "Running play selector for last ${DAYS} days"
+            python _scripts/ipo/ipo_play_selector.py --recent $DAYS
+          fi
+
+      # ── Step 2: Compute BRLM scores (from historical data) ───────────────
+      - name: Compute BRLM scores
+        if: ${{ github.event.inputs.mode != 'score_only' || github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/ipo/compute_brlm_scores.py
+        continue-on-error: true
+
+      # ── Step 3: Report summary ────────────────────────────────────────────
+      - name: Pipeline summary
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - << 'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          cur  = conn.cursor()
+          cur.execute("""
+            SELECT play_recommendation, COUNT(*) as n
+            FROM ipo_intelligence
+            WHERE play_updated_at >= NOW() - INTERVAL '2 days'
+            GROUP BY play_recommendation
+            ORDER BY n DESC
+          """)
+          rows = cur.fetchall()
+          print("\n=== IPO Play Distribution (last 2 days) ===")
+          for r in rows:
+            print(f"  {r[0]:20s}: {r[1]}")
+          cur.close(); conn.close()
+          PY
+        continue-on-error: true
