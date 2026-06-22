@@ -47,6 +47,11 @@ const statusOf = (ipo:any) => {
   if(l&&now>=l)          return "LISTED"
   if(c&&now>c&&l)        return "ALLOTMENT"
   if(o&&now>=o&&now<=c)  return "OPEN"
+  const hasListedData =
+    ipo.listing_open!=null || ipo.listing_day_close!=null ||
+    ipo.return_listing_open!=null || ipo.return_day1_close!=null ||
+    ipo.return_day7!=null || ipo.return_day30!=null
+  if(!o&&!c&&!l && hasListedData) return "LISTED"
   return "UPCOMING"
 }
 
