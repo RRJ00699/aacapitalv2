@@ -32,9 +32,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install deps
-        run: |
-          pip install -r requirements.txt
-          pip install kiteconnect pyotp numpy python-dotenv
+        run: pip install -r requirements.txt
 
       - name: Ensure prod schema on Neon
         run: python _scripts/apply_prod_schema.py
