@@ -84,8 +84,9 @@ export async function GET(req: NextRequest) {
              WHEN play_recommendation = 'AVOID'          THEN 6
              ELSE 5
         END ASC,
-       listing_date DESC NULLS LAST
+        listing_date DESC NULLS LAST
       LIMIT ${limit}
+    `
 
     return NextResponse.json({ ok: true, ipos: rows, total: rows.length })
 
