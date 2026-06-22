@@ -119,6 +119,17 @@ def score_ipo(row):
     """Return (recommendation, confidence, score, reasons[]).
     Each signal only fires when its data is present, so empty columns simply
     don't contribute rather than dragging everything to neutral."""
+    # ---- hard exclusions (user policy) -------------------------------------
+    # Not interested in SME at all. And mainboard issues < Rs 150 cr list in a
+    # 5% circuit band and get operator-manipulated (UC/LC games for 2-3 days),
+    # so the listing-day play is untradeable. Exclude both outright before any
+    # scoring so they never surface as candidates.
+    if str(row.get("is_sme")).strip().lower() in ("true", "1", "yes", "t"):
+        return "AVOID", 0, 0.0, ["EXCLUDED: SME"]
+    _sz = num(row.get("issue_size_cr"))
+    if _sz is not None and _sz < 150:
+        return "AVOID", 0, 0.0, ["EXCLUDED: issue Rs %.0fcr < 150 (5%% band / operator risk)" % _sz]
+
     score = 50.0
     reasons = []
 
