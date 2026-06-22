@@ -49,6 +49,10 @@ jobs:
 
       # 2) Score every (or recent) IPO with the PLAY engine.
       - name: Run play selector
+      - name: Apply validated thesis scoring
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/ipo/score_ipos_live.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |

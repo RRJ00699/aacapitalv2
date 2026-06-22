@@ -195,6 +195,9 @@ def score_ipo(row):
         bump(-3, f"VIX {vix:.0f}")
 
     score = max(0.0, min(100.0, score))
+    # A row with no populated signals can't be judged — don't pretend it's a buy.
+    if not reasons:
+        return "AVOID", round(score), score, ["insufficient data — not scored"]
     if   score >= BUY_AT_OPEN_MIN: rec = "BUY_AT_OPEN"
     elif score >= WAIT_VWAP_MIN:   rec = "WAIT_FOR_VWAP"
     elif score >= DAY3_MIN:        rec = "BUY_AFTER_DAY3"
