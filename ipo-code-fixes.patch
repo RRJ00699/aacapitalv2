@@ -1,0 +1,95 @@
+diff --git a/app/api/ipo/playbook/route.ts b/app/api/ipo/playbook/route.ts
+index 77e2769..c14c889 100644
+--- a/app/api/ipo/playbook/route.ts
++++ b/app/api/ipo/playbook/route.ts
+@@ -85,7 +85,8 @@ export async function GET(req: NextRequest) {
+              ELSE 5
+         END ASC,
+         listing_date DESC NULLS LAST
+-    `.catch(() => [])
++      LIMIT ${limit}
++    `
+ 
+     return NextResponse.json({ ok: true, ipos: rows, total: rows.length })
+ 
+diff --git a/components/features/ipo-listing-dashboard.tsx b/components/features/ipo-listing-dashboard.tsx
+index e0c65e1..c4985f4 100644
+--- a/components/features/ipo-listing-dashboard.tsx
++++ b/components/features/ipo-listing-dashboard.tsx
+@@ -47,6 +47,14 @@ const statusOf = (ipo:any) => {
+   if (l&&now>=l)          return "LISTED"
+   if (c&&now>c&&l)        return "ALLOTMENT"
+   if (o&&now>=o&&now<=c)  return "OPEN"
++  // Fallback: many historical rows have NULL open/close/listing dates but DO
++  // carry post-listing data. Without this they silently fall to "UPCOMING"
++  // and vanish from the Post-Listing tab (this was the empty-screen bug).
++  const hasListedData =
++    ipo.listing_open!=null || ipo.listing_day_close!=null ||
++    ipo.return_listing_open!=null || ipo.return_day1_close!=null ||
++    ipo.return_day7!=null || ipo.return_day30!=null
++  if (!o&&!c&&!l && hasListedData) return "LISTED"
+   return "UPCOMING"
+ }
+ 
+@@ -455,8 +463,14 @@ export function IpoListingDashboard() {
+   const command  = all.filter(i=>{const s=statusOf(i);const p=i.play_recommendation??"";return(s==="OPEN"||s==="UPCOMING"||s==="ALLOTMENT")&&p!=="AVOID"})
+   const openIpos = all.filter(i=>statusOf(i)==="OPEN")
+   const upcoming = all.filter(i=>statusOf(i)==="UPCOMING")
++  const listedKey= (i:any)=>new Date(i.listing_date??i.updated_at??0).getTime()
+   const listed   = all.filter(i=>{const s=statusOf(i);return s==="LISTED"||s==="ALLOTMENT"})
+-    .sort((a,b)=>new Date(b.listing_date??0).getTime()-new Date(a.listing_date??0).getTime())
++    .sort((a,b)=>listedKey(b)-listedKey(a))
++  // When there are no open/upcoming BUY plays, surface the latest listed IPOs
++  // so the Command tab never looks dead.
++  const recentListed   = listed.slice(0,8)
++  const commandFallback= command.length===0 && recentListed.length>0
++  const newestListedDt = listed.find(i=>i.listing_date)?.listing_date ?? null
+ 
+   const TABS=[
+     {id:"command", label:"⚡ Command",     count:command.length},
+@@ -466,7 +480,7 @@ export function IpoListingDashboard() {
+     {id:"brlm",    label:"🏆 BRLM",        count:null},
+   ]
+ 
+-  const active=tab==="command"?command:tab==="open"?openIpos:tab==="upcoming"?upcoming:tab==="listed"?listed:all
++  const active=tab==="command"?(command.length?command:recentListed):tab==="open"?openIpos:tab==="upcoming"?upcoming:tab==="listed"?listed:all
+ 
+   return (
+     <div style={{background:C.bg,minHeight:"100vh",paddingBottom:80}}>
+@@ -534,20 +548,28 @@ export function IpoListingDashboard() {
+               {tab==="command"?"No active BUY plays right now":`No ${tab} IPOs found`}
+             </div>
+             <div style={{fontSize:12}}>
+-              {tab==="command"?"All current IPOs are AVOID or already listed — check back during active IPO window":
++              {tab==="command"?"No IPOs open right now — check back during the next active IPO window":
+                tab==="open"?"No IPOs currently accepting applications":
+                tab==="upcoming"?"No upcoming IPOs in database":""}
+             </div>
+           </div>
+-        ):active.map((ipo,i)=>(
+-          <IpoCard key={ipo.id??i} ipo={ipo}
+-            expanded={expanded===(ipo.id??i).toString()}
+-            onToggle={()=>setExpanded(expanded===(ipo.id??i).toString()?null:(ipo.id??i).toString())}/>
+-        ))}
++        ):(<>
++          {tab==="command"&&commandFallback&&(
++            <div style={{fontSize:11,color:C.textMeta,marginBottom:10,padding:"8px 12px",
++              background:C.blueBg,border:`1px solid ${C.border}`,borderRadius:10}}>
++              No IPOs open right now{newestListedDt?` (newest listed ${newestListedDt})`:""} — showing latest listed IPOs.
++            </div>
++          )}
++          {active.map((ipo,i)=>(
++            <IpoCard key={ipo.id??i} ipo={ipo}
++              expanded={expanded===(ipo.id??i).toString()}
++              onToggle={()=>setExpanded(expanded===(ipo.id??i).toString()?null:(ipo.id??i).toString())}/>
++          ))}
++        </>)}
+ 
+         <div style={{fontSize:10,color:"#CBD5E1",textAlign:"center",marginTop:8,lineHeight:1.6}}>
+-          Engine accuracy: 333 historical IPOs · GMP from ipo_intelligence · Live prices via Yahoo Finance
+-          <br/>Not SEBI registered advice · Always verify on Chittorgarh before trading
++          Engine accuracy: 333 historical IPOs · Data from ipo_intelligence (NSE/BSE) · Live prices via broker quote
++          <br/>Not SEBI registered advice · Always verify on the exchange before trading
+         </div>
+       </div>
+     </div>

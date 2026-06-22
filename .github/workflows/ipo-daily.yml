@@ -1,0 +1,91 @@
+name: IPO Daily Pipeline
+
+# Single source of truth for the IPO pipeline. Replaces the three overlapping
+# workflows: ipo-pipeline.yml, weekly-ipo-calendar.yml, ipo-data-pipeline.yml.
+#
+# Flow: NSE public feed -> fetch_nse_ipos.py (upsert ipo_intelligence)
+#       -> ipo_play_selector.py (score) -> compute_brlm_scores.py -> summary.
+
+on:
+  schedule:
+    - cron: '30 2 * * 1-5'   # 08:00 IST Mon-Fri  (pre-market refresh)
+    - cron: '30 14 * * 1-5'  # 20:00 IST Mon-Fri  (post-close refresh)
+    - cron: '30 12 * * 0'    # 18:00 IST Sunday    (weekly full re-score + BRLM)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Fetch only, no DB writes'
+        type: boolean
+        default: false
+      score_all:
+        description: 'Re-score ALL IPOs (not just recent)'
+        type: boolean
+        default: false
+
+jobs:
+  ipo-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install curl_cffi psycopg2-binary python-dotenv pandas openpyxl
+
+      # 1) Pull open/upcoming IPOs from NSE public feeds into ipo_intelligence.
+      #    continue-on-error: a blocked NSE day must not stop scoring of
+      #    existing rows.
+      - name: Fetch live IPOs (NSE)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          DRY=${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          python _scripts/ipo/fetch_nse_ipos.py $DRY
+        continue-on-error: true
+
+      # 2) Score every (or recent) IPO with the PLAY engine.
+      - name: Run play selector
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ github.event.inputs.score_all }}" = "true" ] || [ "${{ github.event.schedule }}" = "30 12 * * 0" ]; then
+            echo "Scoring ALL IPOs"
+            python _scripts/ipo/ipo_play_selector.py
+          else
+            echo "Scoring IPOs from last 60 days"
+            python _scripts/ipo/ipo_play_selector.py --recent 60
+          fi
+
+      # 3) Recompute BRLM banker scores (Sunday or manual full run).
+      - name: Compute BRLM scores
+        if: ${{ github.event.schedule == '30 12 * * 0' || github.event.inputs.score_all == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python _scripts/ipo/compute_brlm_scores.py
+        continue-on-error: true
+
+      # 4) Print a play-distribution summary for the run.
+      - name: Pipeline summary
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - << 'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(os.environ["DATABASE_URL"])
+          cur  = conn.cursor()
+          cur.execute("""
+            SELECT play_recommendation, COUNT(*) n
+            FROM ipo_intelligence
+            WHERE updated_at >= NOW() - INTERVAL '2 days'
+            GROUP BY play_recommendation ORDER BY n DESC
+          """)
+          print("\n=== IPO play distribution (updated last 2 days) ===")
+          for rec, n in cur.fetchall():
+            print(f"  {str(rec):20s}: {n}")
+          cur.close(); conn.close()
+          PY
+        continue-on-error: true

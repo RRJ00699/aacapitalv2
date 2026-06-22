@@ -1,0 +1,65 @@
+name: Daily Candle Sync + Signals
+
+# Runs 30 min after kite-token-refresh.yml (which runs at 8:00 AM IST)
+# Token is already in Neon platform_config by then — no race condition.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1-5'    # 8:30 AM IST Mon-Fri (UTC 03:00)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days of candles to sync'
+        default: '5'
+        type: string
+      limit:
+        description: 'Max stocks for signal generation'
+        default: '500'
+        type: string
+      skip_candles:
+        description: 'Skip candle sync (just regenerate signals)'
+        default: 'false'
+        type: boolean
+
+jobs:
+  candle-sync-and-signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90       # 1412 stocks × ~0.35s × 2 (daily+weekly) ≈ 17 min + buffer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install kiteconnect psycopg2-binary python-dotenv pandas
+
+      - name: Sync candles → Neon
+        if: ${{ github.event.inputs.skip_candles != 'true' }}
+        env:
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          python _scripts/kite-sync-candles.py \
+            --days ${{ github.event.inputs.days || '5' }} \
+            --target neon
+        # No local Postgres in Actions — CANDLES_DATABASE_URL is unset,
+        # so --target neon (or even omitting it) routes writes to Neon automatically.
+
+      - name: Generate signals + Breakout Watch scores
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          python _scripts/generate_signals.py \
+            --limit ${{ github.event.inputs.limit || '500' }}
+
+      - name: Summary
+        run: |
+          echo "✅ Candle sync + signals complete — $(date -u '+%Y-%m-%d %H:%M UTC')"
+          echo "Breakout Watch scores now live in technical_signals table."

@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       const rows = await sql`
         SELECT
           ts.symbol,
-          cm.company_name,
+          COALESCE(cm.company_name, ts.symbol)  AS company_name,
           cm.sector,
           ts.close,
           ts.change_pct,
@@ -60,13 +60,36 @@ export async function GET(req: NextRequest) {
           ts.avg_volume_20,
           ts.ema200,
           ts.rsi,
-          ts.nr7,
+          COALESCE(ts.nr7,  ts.is_nr7, false)   AS nr7,
+          COALESCE(ts.is_nr7, ts.nr7, false)    AS is_nr7,
           ts.vr7,
           ts.volume_expansion,
           ts.ema_crossover,
-          ts.buy_zone_score
+          ts.buy_zone_score,
+          -- Session 9 columns written by generate_signals.py
+          ts.mb_score,
+          ts.breakout_watch_score,
+          ts.breakout_watch_tier,
+          ts.momentum_6m,
+          ts.pct_below_high,
+          ts.stage,
+          ts.stage_label,
+          ts.above_ema200,
+          ts.volume_ratio_20,
+          ts.vol_compression,
+          -- Fundamentals enrichment
+          sf.business_dna_score,
+          sf.business_dna_grade,
+          sf.smart_money_score,
+          sf.smart_money_signal,
+          sf.earnings_score,
+          sf.roce,
+          sf.market_cap,
+          sf.return_3m,
+          sf.return_6m
         FROM technical_signals ts
         LEFT JOIN company_master cm ON cm.symbol = ts.symbol
+        LEFT JOIN stock_fundamentals sf ON sf.nse_symbol = ts.symbol
         WHERE ts.timeframe = ${timeframe}
           AND ts.signal_date = (
             SELECT MAX(signal_date) FROM technical_signals WHERE timeframe = ${timeframe}
