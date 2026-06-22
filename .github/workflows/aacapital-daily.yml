@@ -1,0 +1,45 @@
+# AACapital — Daily cloud pipeline (GitHub Actions)
+# Runs everything that only needs CLOUD-reachable sources: Kite API, NSE, Neon.
+# Replaces: aacapital-prod-intelligence, daily-candle-sync, daily-intelligence,
+#           daily-pipeline, kite-token-refresh  (delete those five)
+name: AACapital Daily
+on:
+  schedule:
+    - cron: '0 11 * * 1-5'    # 16:30 IST Mon–Fri, after market close
+  workflow_dispatch:
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: aacapital-daily
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Install deps
+        run: |
+          pip install kiteconnect psycopg2-binary python-dotenv pandas requests beautifulsoup4 openpyxl curl_cffi pyotp
+          npm ci
+      # 1) Refresh Kite token FIRST (expires midnight IST) — every later step needs it
+      - name: Refresh Kite token
+        run: python _scripts/refresh_kite_token.py
+      # 2) Pull today's candles + delivery into Neon (recent slice the app serves)
+      - name: Sync candles to Neon
+        run: python _scripts/sync_candles_to_neon.py --top 200 --days 5
+      - name: Generate signals
+        run: python _scripts/generate_signals.py --limit 500
+      # 3) Market + flows
+      - name: FII/DII flows
+        run: python _scripts/fetch_fii_dii.py
+      - name: Market regime
+        run: python _scripts/engines/market_regime.py
+      - name: Global markets cache
+        run: python _scripts/seed_global_cache.py
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
+      KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
+      KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
