@@ -1,13 +1,17 @@
 name: AACapital Daily
 
-# Full end-of-day pipeline in dependency order. Step 1 (ensure schema) is self-healing:
-# it applies the idempotent prod migration so price_candles can never be "missing" again
-# — that was the root cause of the generate_signals crash. Replaces the old broken
-# ipo-daily.yml entirely.
+# Two automated runs that fill the entire Today page:
+#   • pre-open  08:15 IST  — refresh context before the market opens
+#   • post-close 19:00 IST — full EOD refresh (today's candle → signals)
+# Step order is dependency-correct: schema → token → candles → signals →
+# IPO data → regime → market snapshot (reads regime) → flows → global.
+# Core steps hard-fail; per-feed steps are continue-on-error so one bad feed
+# doesn't red the whole run.
 
 on:
   schedule:
-    - cron: "30 13 * * 1-5"     # 19:00 IST Mon–Fri, after market close
+    - cron: "45 2 * * 1-5"      # 08:15 IST Mon–Fri (pre-open)
+    - cron: "30 13 * * 1-5"     # 19:00 IST Mon–Fri (post-close)
   workflow_dispatch:
 
 jobs:
@@ -30,7 +34,7 @@ jobs:
       - name: Install deps
         run: |
           pip install -r requirements.txt
-          pip install kiteconnect pyotp numpy
+          pip install kiteconnect pyotp numpy python-dotenv
 
       - name: Ensure prod schema on Neon
         run: python _scripts/apply_prod_schema.py
@@ -39,19 +43,25 @@ jobs:
         run: python _scripts/refresh_kite_token.py
 
       - name: Sync candles Kite -> Neon
-        run: python _scripts/kite-sync-candles.py --days 5 --target neon
+        run: python _scripts/kite-sync-candles.py --days 1 --target neon
 
-      - name: Generate signals
+      - name: Generate signals (technical_signals)
         run: python _scripts/generate_signals.py --limit 500
 
-      - name: Fetch NSE IPOs
+      - name: Fetch NSE IPOs (ipo_intelligence)
         continue-on-error: true
         run: python _scripts/ipo/fetch_nse_ipos.py
 
-      - name: FII/DII flows
+      - name: Market regime (market_regimes)
+        run: python _scripts/engines/market_regime.py
+
+      - name: Market snapshot + IPO predictions (market_snapshot)
+        run: python _scripts/prod/kite_sync_and_predict.py --mode all
+
+      - name: FII/DII flows (daily_institutional_flows)
         continue-on-error: true
         run: python _scripts/fetch_fii_dii.py
 
-      - name: Market regime
+      - name: Global markets cache
         continue-on-error: true
-        run: python _scripts/engines/market_regime.py
+        run: python _scripts/seed_global_cache.py
