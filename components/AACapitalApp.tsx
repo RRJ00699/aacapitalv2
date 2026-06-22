@@ -9,11 +9,8 @@ import {
 } from "./features/sprint-features"
 import { SettingsTab } from "./features/settings-tab"
 import { PortfolioTab } from "./features/portfolio-tab"
-import { IpoCalendar }       from "./features/ipo-calendar"
 import { IpoPlaybookScreen }   from "./features/ipo-playbook"
-import { IpoTradeEvaluator }  from "./features/ipo-trade-evaluator"
 import { IpoListingDashboard } from "./features/ipo-listing-dashboard"
-import { AnchorLockupTracker }  from "./features/anchor-lockup"
 import { GlobalMacroScreen } from "./features/market-global-screen"
 import { CommandCenter } from "./features/command-center"
 import { StockResearchWorkspace } from "./features/stock-research-workspace"
@@ -2990,10 +2987,7 @@ setMarketFetched(true);
             display:"flex",gap:6,position:"sticky",top:44,zIndex:9}}>
             {[
               {id:"command",  label:"⚡ Command Center"},
-              {id:"live",       label:"📊 Live"},
               {id:"playbook",   label:"🎯 Quick Profit Playbook"},
-              {id:"evaluator",  label:"📈 Trade Evaluator"},
-              {id:"calendar",   label:"📅 Calendar"},
             ].map(t=>(
               <button key={t.id} onClick={()=>setIpoView(t.id)}
                 style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${ipoView===t.id?"#2563EB":"#E5E7EB"}`,
@@ -3006,13 +3000,6 @@ setMarketFetched(true);
           </div>
           {ipoView==="command"  && <IpoListingDashboard/>}
           {ipoView==="playbook"  && <IpoPlaybookScreen/>}
-          {ipoView==="evaluator" && <IpoTradeEvaluator/>}
-          {ipoView==="calendar" && (
-            <div style={{maxWidth:720,margin:"0 auto",padding:"16px 16px"}}>
-              <IpoCalendar/>
-              <AnchorLockupTracker/>
-            </div>
-          )}
           {!ipoView && <IpoListingDashboard/>}
         </div>
       )}

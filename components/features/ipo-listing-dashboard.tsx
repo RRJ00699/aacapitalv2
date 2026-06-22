@@ -427,18 +427,18 @@ export function IpoListingDashboard() {
         </div>
 
         {/* Accuracy strip */}
-        <div style={{background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:14,
+        <div style={{background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,
           padding:"12px 16px",marginBottom:14,display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
           <div>
             <div style={{fontSize:8,color:"#475569",textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:1}}>
-              AACapital IPO Engine · 333 IPOs backtested on Chittorgarh Pro data
+              AACapital IPO Engine · base rates measured on 333 IPOs
             </div>
-            <div style={{fontSize:12,fontWeight:900,color:"#F8FAFC"}}>7 plays · Calibrated on real outcomes</div>
+            <div style={{fontSize:12,fontWeight:900,color:"#0F172A"}}>Decision support · selection shows no reliable edge</div>
           </div>
-          {[{l:"BUY AT OPEN",v:"98%",s:"192/195"},{l:"GMP Disappoint Q≥80",v:"87%",s:"+28% 6M"},{l:"High Conviction",v:"87%",s:"QIB≥60x"}].map(s=>(
+          {[{l:"Buy at open → close",v:"+0.6%",s:"49% win · ≈ flat"},{l:"Below-GMP listing",v:"+8.5%",s:"≈ market (+8.7%)"},{l:"Above-GMP listing",v:"+13.3%",s:"6-mo avg"}].map(s=>(
             <div key={s.l} style={{textAlign:"center"}}>
               <div style={{fontSize:8,color:"#64748b",marginBottom:1}}>{s.l}</div>
-              <div style={{fontSize:17,fontWeight:900,color:"#f8fafc"}}>{s.v}</div>
+              <div style={{fontSize:17,fontWeight:900,color:"#0F172A"}}>{s.v}</div>
               <div style={{fontSize:8,color:"#475569"}}>{s.s}</div>
             </div>
           ))}

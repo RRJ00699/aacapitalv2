@@ -1,0 +1,34 @@
+name: Kite Token Refresh
+
+# The missing job. Refreshes the Zerodha Kite access token via TOTP (no browser)
+# and stores it in Neon platform_config(key='kite_access_token'). kite-sync-candles
+# reads it from there. Kite tokens expire each morning (~7:30 AM IST), so refresh
+# daily before any candle sync.
+
+on:
+  schedule:
+    - cron: "30 2 * * 1-5"     # 08:00 IST, Mon–Fri (markets open days)
+  workflow_dispatch:            # allow manual run
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install psycopg2-binary kiteconnect pyotp requests
+
+      - name: Refresh Kite token → Neon platform_config
+        env:
+          DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+          KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
+          KITE_USER_ID:     ${{ secrets.KITE_USER_ID }}
+          KITE_PASSWORD:    ${{ secrets.KITE_PASSWORD }}
+          KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
+        run: python _scripts/refresh_kite_token.py

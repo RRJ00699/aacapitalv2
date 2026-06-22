@@ -1,45 +1,64 @@
-# AACapital — Daily cloud pipeline (GitHub Actions)
-# Runs everything that only needs CLOUD-reachable sources: Kite API, NSE, Neon.
-# Replaces: aacapital-prod-intelligence, daily-candle-sync, daily-intelligence,
-#           daily-pipeline, kite-token-refresh  (delete those five)
 name: AACapital Daily
+
+# Runs the end-of-day pipeline in dependency order. The first step (ensure-schema)
+# is self-healing: it applies the idempotent prod migration so price_candles can
+# never be "missing" again — that was the root cause of the generate_signals crash.
+#
+# Order matters:
+#   token  → candles (Kite→Neon) → signals (Neon→technical_signals) → aux (fii/dii, regime)
+# The core chain hard-fails; the aux steps are continue-on-error so one bad feed
+# doesn't red the whole run.
+
 on:
   schedule:
-    - cron: '0 11 * * 1-5'    # 16:30 IST Mon–Fri, after market close
+    - cron: "30 13 * * 1-5"    # 19:00 IST Mon–Fri (after market close, EOD candle available)
   workflow_dispatch:
+
 jobs:
   daily:
     runs-on: ubuntu-latest
-    concurrency:
-      group: aacapital-daily
-      cancel-in-progress: true
+    env:
+      DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
+      KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
+      KITE_USER_ID:     ${{ secrets.KITE_USER_ID }}
+      KITE_PASSWORD:    ${{ secrets.KITE_PASSWORD }}
+      KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with:
+          python-version: "3.11"
+
       - name: Install deps
         run: |
-          pip install kiteconnect psycopg2-binary python-dotenv pandas requests beautifulsoup4 openpyxl curl_cffi pyotp
-          npm ci
-      # 1) Refresh Kite token FIRST (expires midnight IST) — every later step needs it
+          pip install -r requirements.txt
+          pip install kiteconnect pyotp numpy   # not in requirements.txt yet
+
+      # 0. Self-healing schema — applies the idempotent migration (creates price_candles
+      #    + 20 prod tables IF NOT EXISTS). Prevents the UndefinedTable failure for good.
+      - name: Ensure prod schema on Neon
+        run: python _scripts/apply_prod_schema.py
+
+      # 1. Make sure today's Kite token is valid (belt-and-suspenders; the standalone
+      #    Kite Token Refresh job runs at 08:00, this re-checks at run time).
       - name: Refresh Kite token
         run: python _scripts/refresh_kite_token.py
-      # 2) Pull today's candles + delivery into Neon (recent slice the app serves)
+
+      # 2. Pull recent candles Kite → Neon price_candles (auto-targets Neon in CI).
       - name: Sync candles to Neon
-        run: python _scripts/sync_candles_to_neon.py --top 200 --days 5
+        run: python _scripts/kite-sync-candles.py --days 5 --target neon
+
+      # 3. Compute signals from Neon price_candles → technical_signals.
       - name: Generate signals
         run: python _scripts/generate_signals.py --limit 500
-      # 3) Market + flows
+
+      # 4. Auxiliary feeds — independent, allowed to fail without failing the run.
       - name: FII/DII flows
+        continue-on-error: true
         run: python _scripts/fetch_fii_dii.py
+
       - name: Market regime
+        continue-on-error: true
         run: python _scripts/engines/market_regime.py
-      - name: Global markets cache
-        run: python _scripts/seed_global_cache.py
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      KITE_API_KEY: ${{ secrets.KITE_API_KEY }}
-      KITE_API_SECRET: ${{ secrets.KITE_API_SECRET }}
-      KITE_TOTP_SECRET: ${{ secrets.KITE_TOTP_SECRET }}

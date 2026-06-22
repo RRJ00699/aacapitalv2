@@ -1,0 +1,1052 @@
+nse_symbol,industry,quality_flag
+GODREJAGROVET,,CLEAN
+360ONE,Stockbroking & Allied,EXCLUDED
+3BBLACKBIO,Healthcare Service Provider,CLEAN
+3MINDIA,Diversified,CLEAN
+5PAISA,Stockbroking & Allied,EXCLUDED
+63MOONS,Computers - Software & Consulting,FLAGGED
+AADHARHFC,Housing Finance Company,EXCLUDED
+AARTIDRUGS,Pharmaceuticals,CLEAN
+AARTIIND,Specialty Chemicals,CLEAN
+AARTIPHARM,Pharmaceuticals,CLEAN
+AAVAS,Housing Finance Company,EXCLUDED
+ABANS,,CLEAN
+ABBOTINDIA,Pharmaceuticals,CLEAN
+ABB,Heavy Electrical Equipment,CLEAN
+ABCAPITAL,Investment Company,EXCLUDED
+ABFRL,Speciality Retail,FLAGGED
+ABLIFESTYLE,,CLEAN
+ABL,,CLEAN
+ABREALTY,,CLEAN
+ABREAL,,CLEAN
+ACCELYA,Computers - Software & Consulting,CLEAN
+ACCENTMIC,Pharmaceuticals,CLEAN
+ACC,Cement & Cement Products,CLEAN
+ACE,Construction Vehicles,CLEAN
+ACI,Specialty Chemicals,CLEAN
+ACJKEXPORTS,,CLEAN
+ACMESOLAR,Power Generation,CLEAN
+ACUTAAS,Pharmaceuticals,CLEAN
+ADANIENSOL,Power Distribution,CLEAN
+ADANIGREEN,Power Generation,CLEAN
+ADFFOODS,Packaged Foods,CLEAN
+ADITYAAMC,,CLEAN
+ADITYAINFOTECH,,FLAGGED
+ADIVISION,,CLEAN
+ADOR,Other Industrial Products,CLEAN
+ADVAIT,Cables - Electricals,CLEAN
+ADVENZYMES,Biotechnology,CLEAN
+AEGISLOG,Trading - Gas,CLEAN
+AEGISVOPAK,Oil Storage & Transportation,CLEAN
+AEQUS,Aerospace & Defense,FLAGGED
+AEROFLEX,Iron & Steel Products,FLAGGED
+AETHER,Specialty Chemicals,FLAGGED
+AFCONS,Civil Construction,CLEAN
+AFFLE,IT Enabled Services,CLEAN
+AGIGREENPAC,,CLEAN
+AGIIL,"Residential, Commercial Projects",CLEAN
+AGI,Packaging,CLEAN
+AHLUCONT,Civil Construction,CLEAN
+AIAENG,Castings & Forgings,CLEAN
+AIMTRON,Industrial Products,FLAGGED
+AJANTPHARM,Pharmaceuticals,CLEAN
+AJAXENGG,Construction Vehicles,CLEAN
+AJMERA,"Residential, Commercial Projects",FLAGGED
+AKCAPIT,Non Banking Financial Company (NBFC),EXCLUDED
+AKUMS,Pharmaceuticals,CLEAN
+ALEMBICLTD,"Residential, Commercial Projects",FLAGGED
+ALGOQUANT,Other Financial Services,EXCLUDED
+ALICON,Auto Components & Equipments,CLEAN
+ALIVUS,Pharmaceuticals,CLEAN
+ALKEM,Pharmaceuticals,CLEAN
+ALKYLAMINE,Specialty Chemicals,CLEAN
+ALLCARGO,Logistics Solution Provider,CLEAN
+ALLDIGI,Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO),CLEAN
+ALLTIME,Houseware,CLEAN
+ALOKINDS,Other Textile Products,FLAGGED
+ALPEXSOLAR,Other Electrical Equipment,FLAGGED
+AMARAJABAT,,CLEAN
+AMBER,Household Appliances,CLEAN
+AMBUJACEM,Cement & Cement Products,CLEAN
+AMBUJAEXP,,CLEAN
+AMNPLST,Commodity Chemicals,CLEAN
+AMRUTANJAN,Pharmaceuticals,CLEAN
+ANANTRAJ,"Residential, Commercial Projects",FLAGGED
+ANDHRAPAP,Paper & Paper Products,CLEAN
+ANDHRSUGAR,Commodity Chemicals,CLEAN
+ANDREWYU,Tea & Coffee,FLAGGED
+ANGELONE,Stockbroking & Allied,EXCLUDED
+ANTELOPUS,Oil Exploration & Production,CLEAN
+ANURAS,Specialty Chemicals,CLEAN
+APARINDS,Other Electrical Equipment,CLEAN
+APCOTEX,,CLEAN
+APEXFROZEN,,CLEAN
+APLAPOLLO,Iron & Steel Products,CLEAN
+APLLTD,Pharmaceuticals,CLEAN
+APOLLOHOSP,Hospital,CLEAN
+APOLLOMICRO,,FLAGGED
+APOLLOPIPE,Plastic Products - Industrial,CLEAN
+APOLLOTYRE,Tyres & Rubber Products,CLEAN
+APOLLO,Aerospace & Defense,FLAGGED
+APTUS,Housing Finance Company,EXCLUDED
+AQYLON,TV Broadcasting & Software Production,FLAGGED
+AREM,,CLEAN
+ARFIN,Aluminium,CLEAN
+ARIHANTCAP,Stockbroking & Allied,EXCLUDED
+ARMANFIN,Non Banking Financial Company (NBFC),EXCLUDED
+ARVINDFASN,Speciality Retail,CLEAN
+ARVINDSMART,,FLAGGED
+ARVIND,Garments & Apparels,CLEAN
+ASAHIINDIA,Auto Components & Equipments,CLEAN
+ASALCBR,Breweries & Distilleries,CLEAN
+ASHAPURMIN,Industrial Minerals,CLEAN
+ASHIANA,"Residential, Commercial Projects",FLAGGED
+ASHIKACRED,,FLAGGED
+ASHOKA,Civil Construction,CLEAN
+ASHOKLEY,Commercial Vehicles,FLAGGED
+ASIANENE,Oil Equipment & Services,CLEAN
+ASIANHOTNR,Hotels & Resorts,FLAGGED
+ASIANTILES,Ceramics,CLEAN
+ASKAUTO,,CLEAN
+ASTEC,Pesticides & Agrochemicals,CLEAN
+ASTERDM,Hospital,CLEAN
+ASTRAL,Plastic Products - Industrial,CLEAN
+ASTRAMICRO,Aerospace & Defense,CLEAN
+ASTRAZEN,Pharmaceuticals,CLEAN
+ATGL,LPG/CNG/PNG/LNG Supplier,CLEAN
+ATHER,,FLAGGED
+ATULAUTO,Commercial Vehicles,CLEAN
+ATUL,Specialty Chemicals,CLEAN
+AUBANK,Other Bank,EXCLUDED
+AURIONPRO,Computers - Software & Consulting,CLEAN
+AUROPHARMA,Pharmaceuticals,CLEAN
+AURUM,IT Enabled Services,FLAGGED
+AUTHUM,,CLEAN
+AUTOAXLES,Auto Components & Equipments,CLEAN
+AVALON,Other Electrical Equipment,CLEAN
+AVANTEL,Aerospace & Defense,CLEAN
+AVANTIFEED,Animal Feed,CLEAN
+AVENUESAI,,FLAGGED
+AVL,Speciality Retail,CLEAN
+AVTNATURP,,CLEAN
+AWFIS,Diversified Commercial Services,FLAGGED
+AWL,Edible Oil,CLEAN
+AXISCADES,Aerospace & Defense,CLEAN
+AYMSYNTEX,Other Textile Products,CLEAN
+AZAD,Heavy Electrical Equipment,FLAGGED
+BAJAJCON,Personal Care,CLEAN
+BAJAJELEC,Household Appliances,CLEAN
+BAJAJFINSV,Holding Company,FLAGGED
+BAJAJHCARE,Pharmaceuticals,CLEAN
+BAJAJHFL,Housing Finance Company,EXCLUDED
+BAJAJHIND,Sugar,CLEAN
+BAJAJHLDNG,Holding Company,FLAGGED
+BAJFINANCE,Non Banking Financial Company (NBFC),EXCLUDED
+BALAJITELE,Media & Entertainment,FLAGGED
+BALAMINES,Specialty Chemicals,CLEAN
+BALKRISIND,Tyres & Rubber Products,CLEAN
+BALMERLAW,,CLEAN
+BALMLAWRIE,Diversified,CLEAN
+BALRAMCHIN,Sugar,CLEAN
+BALUFORGE,Castings & Forgings,FLAGGED
+BANARISUG,Sugar,CLEAN
+BANCOINDIA,Auto Components & Equipments,CLEAN
+BANDHANBNK,Private Sector Bank,EXCLUDED
+BANKBARODA,Public Sector Bank,EXCLUDED
+BANKINDIA,Public Sector Bank,EXCLUDED
+BASF,Specialty Chemicals,CLEAN
+BATAINDIA,Footwear,CLEAN
+BAYERCROP,Pesticides & Agrochemicals,CLEAN
+BBOX,IT Enabled Services,CLEAN
+BBTC,Packaged Foods,CLEAN
+BCG,IT Enabled Services,CLEAN
+BCLIND,Breweries & Distilleries,CLEAN
+BDL,Aerospace & Defense,CLEAN
+BEL,Aerospace & Defense,CLEAN
+BEML,Construction Vehicles,CLEAN
+BENGALASM,Non Banking Financial Company (NBFC),EXCLUDED
+BERGEPAINT,Paints,CLEAN
+BETADRUGS,,CLEAN
+BFINVEST,Holding Company,FLAGGED
+BFUTILITIE,"Road AssetsToll, Annuity, Hybrid-Annuity",FLAGGED
+BGRENERGY,Civil Construction,FLAGGED
+BHAGIRADHA,,CLEAN
+BHANSALI,,CLEAN
+BHARATBIJL,,CLEAN
+BHARATFORG,Auto Components & Equipments,CLEAN
+BHARATRAS,Pesticides & Agrochemicals,CLEAN
+BHARATSEATS,,CLEAN
+BHARATWIRE,Iron & Steel Products,FLAGGED
+BHEL,Heavy Electrical Equipment,FLAGGED
+BIKAJI,Packaged Foods,CLEAN
+BIOCON,Pharmaceuticals,CLEAN
+BIRLACORPN,Cement & Cement Products,CLEAN
+BIRLANU,"Furniture, Home Furnishing",CLEAN
+BLACKBOXE,,CLEAN
+BLISSGVS,Pharmaceuticals,CLEAN
+BLKASHYAP,Civil Construction,CLEAN
+BLS,"Tour, Travel Related Services",CLEAN
+BLUEDART,Logistics Solution Provider,CLEAN
+BLUEJET,Pharmaceuticals,CLEAN
+BLUESTARCO,Household Appliances,CLEAN
+BNAGROIND,,FLAGGED
+BOMBDYEING,,CLEAN
+BORORENEW,Glass - Industrial,CLEAN
+BOROSIL,,CLEAN
+BOSCHLTD,Auto Components & Equipments,CLEAN
+BOSCHWRH,,CLEAN
+BPCL,Refineries & Marketing,CLEAN
+BRIGADE,"Residential, Commercial Projects",CLEAN
+BRITANNIA,Packaged Foods,CLEAN
+BSE,Exchange and Data Platform,CLEAN
+BSOFT,Computers - Software & Consulting,CLEAN
+BUTTERFLY,Household Appliances,CLEAN
+CAMLINFINESC,,CLEAN
+CAMPUS,Footwear,CLEAN
+CAMS,"Depositories, Clearing Houses and Other Intermediaries",CLEAN
+CANBK,Public Sector Bank,EXCLUDED
+CANFINHOME,Housing Finance Company,EXCLUDED
+CANTABIL,Garments & Apparels,CLEAN
+CAPACITEIN,,CLEAN
+CAPLIPOINT,Pharmaceuticals,CLEAN
+CARBORUNIV,Abrasives & Bearings,CLEAN
+CARERATING,Ratings,CLEAN
+CARTRADE,E-Retail/ E-Commerce,FLAGGED
+CARYSIL,Household Appliances,CLEAN
+CASTROLIND,Lubricants,CLEAN
+CCLPROD,,CLEAN
+CCL,Tea & Coffee,CLEAN
+CDSL,"Depositories, Clearing Houses and Other Intermediaries",CLEAN
+CEATLTD,Tyres & Rubber Products,CLEAN
+CEIGALL,Civil Construction,FLAGGED
+CEINSYS,Computers - Software & Consulting,CLEAN
+CELLO,Houseware,CLEAN
+CEMINDIA,,CLEAN
+CENTENKA,Other Textile Products,CLEAN
+CENTRALBK,Public Sector Bank,EXCLUDED
+CENTRUM,Other Financial Services,EXCLUDED
+CENTUM,Industrial Products,CLEAN
+CENTURYPLY,Plywood Boards/ Laminates,CLEAN
+CERA,Sanitary Ware,CLEAN
+CESC,Integrated Power Utilities,CLEAN
+CGCL,Non Banking Financial Company (NBFC),EXCLUDED
+CGPOWER,Heavy Electrical Equipment,CLEAN
+CHALET,Hotels & Resorts,CLEAN
+CHAMANSEQ,,FLAGGED
+CHAMBLFERT,Fertilizers,CLEAN
+CHEMPLASTS,Commodity Chemicals,CLEAN
+CHOICEIN,Holding Company,FLAGGED
+CHOLAFIN,Non Banking Financial Company (NBFC),EXCLUDED
+CIEINDIA,Auto Components & Equipments,CLEAN
+CIGNITI,,CLEAN
+CIPLA,Pharmaceuticals,CLEAN
+CLEAN,Specialty Chemicals,CLEAN
+CMSINFO,Diversified Commercial Services,CLEAN
+COCHINSHIP,Ship Building & Allied Services,CLEAN
+COFORGE,Computers - Software & Consulting,CLEAN
+COLPAL,Personal Care,CLEAN
+CONCORDBIO,Pharmaceuticals,CLEAN
+CONCOR,Logistics Solution Provider,CLEAN
+CONFIPET,LPG/CNG/PNG/LNG Supplier,CLEAN
+COROMANDEL,Fertilizers,CLEAN
+COSMOFIRST,Packaging,CLEAN
+CPCL,,CLEAN
+CRAFSMAN,,CLEAN
+CREATIVENE,,FLAGGED
+CREDITACC,Microfinance Institutions,EXCLUDED
+CREST,Non Banking Financial Company (NBFC),EXCLUDED
+CRISIL,Other Financial Services,EXCLUDED
+CROMPTON,Household Appliances,CLEAN
+CSBBANK,Private Sector Bank,EXCLUDED
+CUB,Private Sector Bank,EXCLUDED
+CUMMINSIND,"Compressors, Pumps & Diesel Engines",CLEAN
+CUPID,Personal Care,CLEAN
+CYIENTDLM,Industrial Products,FLAGGED
+CYIENT,IT Enabled Services,CLEAN
+DABUR,Personal Care,CLEAN
+DALBHARAT,Cement & Cement Products,CLEAN
+DATAMATICS,IT Enabled Services,CLEAN
+DATAPATTNS,Aerospace & Defense,FLAGGED
+DBCORP,Print Media,CLEAN
+DBL,Civil Construction,CLEAN
+DCAL,Pharmaceuticals,FLAGGED
+DCBBANK,Private Sector Bank,EXCLUDED
+DCMSHRIRAM,Diversified,CLEAN
+DCW,Petrochemicals,CLEAN
+DCXINDIA,Aerospace & Defense,FLAGGED
+DEEPAKFERT,Commodity Chemicals,CLEAN
+DEEPAKNTR,Specialty Chemicals,CLEAN
+DEEPINDS,Oil Equipment & Services,CLEAN
+DELHIVERY,Logistics Solution Provider,FLAGGED
+DELTACORP,Amusement Parks/ Other Recreation,CLEAN
+DEN,TV Broadcasting & Software Production,FLAGGED
+DHANBANK,Private Sector Bank,EXCLUDED
+DHANUKA,Pesticides & Agrochemicals,CLEAN
+DIAMONDPOW,,FLAGGED
+DIAMONDYD,Packaged Foods,FLAGGED
+DISA,,CLEAN
+DIVISLAB,Pharmaceuticals,CLEAN
+DIXON,Consumer Electronics,CLEAN
+DLF,"Residential, Commercial Projects",FLAGGED
+DLINK,,CLEAN
+DMART,Diversified Retail,CLEAN
+DOLATALGO,Stockbroking & Allied,EXCLUDED
+DOLLAR,Garments & Apparels,CLEAN
+DOMS,Stationary,CLEAN
+DPABHUSHAN,"Gems, Jewellery And Watches",FLAGGED
+DRAGARWAL,,CLEAN
+DREDGECORP,Dredging,FLAGGED
+DRREDDY,Pharmaceuticals,CLEAN
+DYCL,Cables - Electricals,CLEAN
+DYNAMATECH,Industrial Products,CLEAN
+E2E,IT Enabled Services,CLEAN
+EASEMYTRIP,"Tour, Travel Related Services",CLEAN
+ECLERX,Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO),CLEAN
+EDELWEISS,Holding Company,CLEAN
+EFCL,,CLEAN
+EIDPARRY,Other Food Products,CLEAN
+EIHAHOTELS,Hotels & Resorts,CLEAN
+EIHOTEL,Hotels & Resorts,CLEAN
+EKC,Industrial Products,CLEAN
+ELANTAS,Specialty Chemicals,CLEAN
+ELCIDINVST,,CLEAN
+ELCID,,CLEAN
+ELECON,Heavy Electrical Equipment,CLEAN
+ELECTCAST,Iron & Steel Products,CLEAN
+ELECTHERM,Iron & Steel Products,FLAGGED
+ELGIEQUIP,"Compressors, Pumps & Diesel Engines",CLEAN
+ELITECON,Cigarettes & Tobacco Products,FLAGGED
+ELLENBARRIE,,CLEAN
+ELPRO,,FLAGGED
+EMAMILTD,Personal Care,CLEAN
+EMBDL,"Residential, Commercial Projects",FLAGGED
+EMCURE,Pharmaceuticals,CLEAN
+EMUDHRA,IT Enabled Services,CLEAN
+ENDURANCE,Auto Components & Equipments,CLEAN
+ENGINERSIN,Civil Construction,CLEAN
+EPIGRAL,Specialty Chemicals,CLEAN
+EPL,Packaging,CLEAN
+EQUITASBNK,Other Bank,EXCLUDED
+ERIS,Pharmaceuticals,CLEAN
+ESABINDIA,Other Industrial Products,CLEAN
+ESCORTS,Tractors,CLEAN
+ETHOS,,CLEAN
+EVEREADY,Household Products,CLEAN
+EXCELINDUS,Specialty Chemicals,CLEAN
+EXIDEIND,Auto Components & Equipments,CLEAN
+EXPLEOSOL,IT Enabled Services,CLEAN
+FACT,Fertilizers,CLEAN
+FAZETHREE,,CLEAN
+FCL,Specialty Chemicals,CLEAN
+FDC,Pharmaceuticals,CLEAN
+FEDERALBNK,Private Sector Bank,EXCLUDED
+FEDERALMOGU,,CLEAN
+FIEMIND,Auto Components & Equipments,CLEAN
+FILATEX,Other Textile Products,CLEAN
+FINCABLES,Cables - Electricals,CLEAN
+FINEORG,Specialty Chemicals,CLEAN
+FINEOTEX,,CLEAN
+FINOPB,Other Bank,EXCLUDED
+FINPIPE,Plastic Products - Industrial,CLEAN
+FISCHERMED,,FLAGGED
+FLUOROCHEM,Specialty Chemicals,CLEAN
+FORCEMOT,Passenger Cars & Utility Vehicles,CLEAN
+FORTIS,Hospital,CLEAN
+FOSECOIND,Specialty Chemicals,CLEAN
+FRONTIER,,CLEAN
+FSL,Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO),CLEAN
+GABRIEL,Auto Components & Equipments,CLEAN
+GAIL,Gas Transmission/Marketing,CLEAN
+GALAXYSURF,Specialty Chemicals,CLEAN
+GALLANTT,Iron & Steel Products,CLEAN
+GANDHITUBE,Iron & Steel Products,CLEAN
+GANECOS,Other Textile Products,CLEAN
+GANESHHOUC,,CLEAN
+GARFIBRES,Other Textile Products,CLEAN
+GARWTECH,,CLEAN
+GAYAPROJ,Civil Construction,CLEAN
+GENESYS,IT Enabled Services,FLAGGED
+GENINSURE,,CLEAN
+GENUSPOWER,Other Electrical Equipment,FLAGGED
+GEOJITFSL,Stockbroking & Allied,EXCLUDED
+GEPIL,,CLEAN
+GESHIP,Shipping,CLEAN
+GEVERNOVA,,CLEAN
+GHCL,Commodity Chemicals,CLEAN
+GILLETTE,Personal Care,CLEAN
+GIPCL,Power Generation,CLEAN
+GKW,,FLAGGED
+GLAND,Pharmaceuticals,CLEAN
+GLAXO,Pharmaceuticals,CLEAN
+GLENMARK,Pharmaceuticals,CLEAN
+GLOBUSSPI,,CLEAN
+GMBREW,Breweries & Distilleries,CLEAN
+GMDC,,CLEAN
+GMMPFAUDLR,Industrial Products,CLEAN
+GMRAIRPORT,Airport & Airport services,FLAGGED
+GNA,Auto Components & Equipments,CLEAN
+GNFC,Commodity Chemicals,CLEAN
+GNRL,Oil Exploration & Production,FLAGGED
+GOCLCORP,Explosives,FLAGGED
+GODFRYPHLP,Cigarettes & Tobacco Products,CLEAN
+GODREJAGRO,Animal Feed,CLEAN
+GODREJCP,Personal Care,CLEAN
+GODREJPROP,"Residential, Commercial Projects",FLAGGED
+GOKALDAS,,CLEAN
+GOKULAGRO,Edible Oil,CLEAN
+GOLDIAM,"Gems, Jewellery And Watches",CLEAN
+GOODLUCK,Iron & Steel Products,CLEAN
+GOODYEAR,Tyres & Rubber Products,CLEAN
+GPIL,Iron & Steel Products,CLEAN
+GPPL,Port & Port services,CLEAN
+GPTINFRA,Civil Construction,CLEAN
+GRANDOAKCANYON,,FLAGGED
+GRANULES,Pharmaceuticals,CLEAN
+GRAPHITE,Electrodes & Refractories,CLEAN
+GRAUERWEIL,,CLEAN
+GRAVITA,Industrial Minerals,CLEAN
+GREAVESCOT,"Compressors, Pumps & Diesel Engines",CLEAN
+GREENLAM,Plywood Boards/ Laminates,CLEAN
+GREENPLY,Plywood Boards/ Laminates,CLEAN
+GRINDWELL,Abrasives & Bearings,CLEAN
+GRMOVERSEA,,FLAGGED
+GRSE,Aerospace & Defense,FLAGGED
+GSFC,Fertilizers,CLEAN
+GTLINFRA,Telecom - Infrastructure,FLAGGED
+GUFICBIO,Pharmaceuticals,CLEAN
+GUJALKALI,Commodity Chemicals,CLEAN
+GUJGASLTD,LPG/CNG/PNG/LNG Supplier,CLEAN
+GULFOILLUB,Lubricants,CLEAN
+GULPOLY,Other Agricultural Products,CLEAN
+HAL,Aerospace & Defense,CLEAN
+HAPPSTMNDS,Computers - Software & Consulting,CLEAN
+HAPPYFORGE,Castings & Forgings,CLEAN
+HATHWAY,TV Broadcasting & Software Production,FLAGGED
+HATSUN,Dairy Products,CLEAN
+HAVELLS,Consumer Electronics,CLEAN
+HAWKINCOOK,Houseware,CLEAN
+HBLPOWER,,CLEAN
+HDFCAMC,Asset Management Company,EXCLUDED
+HDFCLIFE,Life Insurance,EXCLUDED
+HEALTHGLOBAL,,CLEAN
+HEG,Electrodes & Refractories,CLEAN
+HEIDELBERG,Cement & Cement Products,CLEAN
+HERITGFOOD,Dairy Products,CLEAN
+HEROMOTOCO,2/3 Wheelers,CLEAN
+HESTERBIO,Pharmaceuticals,CLEAN
+HEXAWARE,,CLEAN
+HFCL,Telecom - Infrastructure,CLEAN
+HGINFRA,Civil Construction,FLAGGED
+HGS,Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO),CLEAN
+HIGHTGEAR,,CLEAN
+HIKAL,Pharmaceuticals,CLEAN
+HIMADRI,,CLEAN
+HINDCON,,CLEAN
+HINDCOPPER,Copper,CLEAN
+HINDOILEXP,Oil Exploration & Production,CLEAN
+HINDPETRO,Refineries & Marketing,CLEAN
+HINDRECTFR,,CLEAN
+HINDZINC,Zinc,CLEAN
+HITECH,Iron & Steel Products,CLEAN
+HLEGLAS,Industrial Products,CLEAN
+HMT,Industrial Products,FLAGGED
+HNDFDS,Diversified FMCG,CLEAN
+HOMEFIRST,Housing Finance Company,EXCLUDED
+HONAUT,Industrial Products,CLEAN
+HONDAPOWER,Industrial Products,CLEAN
+HPLELEC,,CLEAN
+HUBTOWN,"Residential, Commercial Projects",CLEAN
+HUDCO,Financial Institution,EXCLUDED
+HUHTAMAKI,Packaging,CLEAN
+IBULHSGFIN,,FLAGGED
+ICEMAKE,Industrial Products,CLEAN
+ICICIGI,General Insurance,EXCLUDED
+ICICIPRULI,Life Insurance,EXCLUDED
+ICIL,Other Textile Products,CLEAN
+ICRA,Ratings,CLEAN
+IDBI,Private Sector Bank,EXCLUDED
+IDEAFORGE,Aerospace & Defense,FLAGGED
+IDEA,Telecom - Cellular & Fixed line services,FLAGGED
+IDFCFIRSTB,Private Sector Bank,EXCLUDED
+IEX,Exchange and Data Platform,CLEAN
+IFBIND,Household Appliances,CLEAN
+IFCI,Financial Institution,EXCLUDED
+IFGLEXPOR,Electrodes & Refractories,CLEAN
+IGARASHI,Auto Components & Equipments,CLEAN
+IGL,LPG/CNG/PNG/LNG Supplier,CLEAN
+IGPL,Commodity Chemicals,CLEAN
+IIFL,Non Banking Financial Company (NBFC),EXCLUDED
+IMAGICAA,Amusement Parks/ Other Recreation,FLAGGED
+IMFA,Ferro & Silica Manganese,CLEAN
+INDEGENE,,CLEAN
+INDHOTEL,Hotels & Resorts,CLEAN
+INDIACEM,Cement & Cement Products,FLAGGED
+INDIAGLYCO,Breweries & Distilleries,CLEAN
+INDIAMART,Internet & Catalogue Retail,CLEAN
+INDIAMOTOR,,FLAGGED
+INDIANB,Public Sector Bank,EXCLUDED
+INDIANELEC,,CLEAN
+INDIANHUME,Industrial Products,CLEAN
+INDIGO,Airline,CLEAN
+INDIGRID,Power - Transmission,CLEAN
+INDOBORAX,Commodity Chemicals,CLEAN
+INDORAMA,Other Textile Products,FLAGGED
+INDOSOLAR,,FLAGGED
+INDOTECH,Heavy Electrical Equipment,FLAGGED
+INDOTHAI,Stockbroking & Allied,EXCLUDED
+INDRAPRASTHA,,CLEAN
+INDSWFTLAB,Pharmaceuticals,CLEAN
+INDUSINDBK,Private Sector Bank,EXCLUDED
+INDUSTOWER,Telecom - Infrastructure,CLEAN
+INFOBEANS,,CLEAN
+INGERRAND,"Compressors, Pumps & Diesel Engines",CLEAN
+INOXWIND,Heavy Electrical Equipment,FLAGGED
+INSECTICID,Pesticides & Agrochemicals,CLEAN
+INTELLECT,Computers - Software & Consulting,CLEAN
+IOB,Public Sector Bank,EXCLUDED
+IOC,Refineries & Marketing,CLEAN
+IOLCP,Pharmaceuticals,CLEAN
+IONEXCHANG,Water Supply & Management,CLEAN
+IPCALAB,Pharmaceuticals,CLEAN
+IPRU,,FLAGGED
+IRBINVIT,"Road AssetsToll, Annuity, Hybrid-Annuity",FLAGGED
+IRB,Civil Construction,CLEAN
+IRCON,Civil Construction,FLAGGED
+IRCTC,"Tour, Travel Related Services",CLEAN
+IREDA,Financial Institution,EXCLUDED
+IRFC,Financial Institution,EXCLUDED
+ISGEC,Civil Construction,CLEAN
+ITCHOTELS,Hotels & Resorts,CLEAN
+ITDC,Hotels & Resorts,FLAGGED
+ITI,Telecom -  Equipment & Accessories,FLAGGED
+IZMO,IT Enabled Services,CLEAN
+JAGRAN,Print Media,CLEAN
+JAGSNPHARM,Pharmaceuticals,CLEAN
+JAIBALAJI,Iron & Steel,FLAGGED
+JAICORP,,FLAGGED
+JAMNAAUTO,Auto Components & Equipments,CLEAN
+JASH,Industrial Products,CLEAN
+JAYASWALST,,CLEAN
+JAYBARMARU,Auto Components & Equipments,CLEAN
+JAYKAY,Aerospace & Defense,FLAGGED
+JBCHEPHARM,Pharmaceuticals,CLEAN
+JBMA,Auto Components & Equipments,CLEAN
+JINDALDRIL,,FLAGGED
+JINDALPHOT,Investment Company,EXCLUDED
+JINDALPOLYF,,CLEAN
+JINDALSAW,Iron & Steel Products,CLEAN
+JINDALSTEL,Iron & Steel,CLEAN
+JINDALWRLD,,CLEAN
+JIOFIN,Investment Company,EXCLUDED
+JISLJALEQS,Plastic Products - Industrial,CLEAN
+JKBANK,,FLAGGED
+JKCEMENT,Cement & Cement Products,CLEAN
+JKLAKSHMI,Cement & Cement Products,CLEAN
+JKPAPER,Paper & Paper Products,CLEAN
+JKTYRE,Tyres & Rubber Products,CLEAN
+JKUMAR,,CLEAN
+JMFINANCIL,Holding Company,CLEAN
+JPOLYINVST,Investment Company,EXCLUDED
+JPPOWER,Power Generation,FLAGGED
+JSL,Iron & Steel,CLEAN
+JSWCEMENT,Cement & Cement Products,CLEAN
+JSWDULUX,Paints,CLEAN
+JSWENERGY,Power Generation,CLEAN
+JSWHL,Investment Company,EXCLUDED
+JSWINFRA,Port & Port services,CLEAN
+JTEKTINDIA,Auto Components & Equipments,CLEAN
+JTLIND,Iron & Steel Products,FLAGGED
+JUBLFOOD,Restaurants,CLEAN
+JUBLPHARMO,,CLEAN
+JUSTDIAL,Internet & Catalogue Retail,CLEAN
+JWL,Railway Wagons,FLAGGED
+JYOTHYLAB,Household Products,CLEAN
+JYOTISTRUC,Heavy Electrical Equipment,FLAGGED
+KAJARIACER,Ceramics,CLEAN
+KALYANIINV,,FLAGGED
+KALYANISTR,,CLEAN
+KALYANKJIL,"Gems, Jewellery And Watches",CLEAN
+KAMAHLDNG,,CLEAN
+KANSAINER,Paints,CLEAN
+KARURVYSYA,Private Sector Bank,EXCLUDED
+KAYNES,Industrial Products,FLAGGED
+KCP,Cement & Cement Products,CLEAN
+KDDL,"Gems, Jewellery And Watches",CLEAN
+KEC,Civil Construction,CLEAN
+KEI,Cables - Electricals,CLEAN
+KENNAMET,Industrial Products,CLEAN
+KERNEX,Transport Related Services,FLAGGED
+KEWALKIRAM,,CLEAN
+KFINTECH,"Depositories, Clearing Houses and Other Intermediaries",CLEAN
+KILBURN,,FLAGGED
+KINGFA,Plastic Products - Industrial,FLAGGED
+KIOCL,Sponge Iron,FLAGGED
+KIRIINDUS,Dyes And Pigments,CLEAN
+KIRLBROS,,CLEAN
+KIRLFER,Pig Iron,CLEAN
+KIRLOSIND,Other Industrial Products,CLEAN
+KITEX,Garments & Apparels,CLEAN
+KNRCON,Civil Construction,FLAGGED
+KOC,,FLAGGED
+KOLTEPATIL,"Residential, Commercial Projects",CLEAN
+KOTHARI,,FLAGGED
+KOVAI,Hospital,CLEAN
+KPENERGY,,CLEAN
+KPIL,Civil Construction,CLEAN
+KPITTECH,Computers - Software & Consulting,CLEAN
+KPRMILL,Other Textile Products,CLEAN
+KRBL,Other Agricultural Products,CLEAN
+KRISHNAPH,,FLAGGED
+KRSNAA,Healthcare Service Provider,CLEAN
+KSB,"Compressors, Pumps & Diesel Engines",CLEAN
+KSCL,Other Agricultural Products,CLEAN
+KTKBANK,Private Sector Bank,EXCLUDED
+KWALITYPHA,,CLEAN
+LALPATHLAB,Healthcare Service Provider,CLEAN
+LAOPALA,Glass - Consumer,CLEAN
+LAURUSLABS,Pharmaceuticals,CLEAN
+LGBBROSLTD,Auto Components & Equipments,CLEAN
+LICHSGFIN,Housing Finance Company,EXCLUDED
+LINCOLNPHL,,CLEAN
+LINDEINDIA,Industrial Gases,CLEAN
+LLOYDSENGG,Industrial Products,FLAGGED
+LLOYDSME,Industrial Minerals,CLEAN
+LMW,Industrial Products,CLEAN
+LODHA,"Residential, Commercial Projects",CLEAN
+LTFOODS,Other Agricultural Products,CLEAN
+LTF,Non Banking Financial Company (NBFC),EXCLUDED
+LTM,Computers - Software & Consulting,CLEAN
+LTTS,IT Enabled Services,CLEAN
+LUMAXIND,Auto Components & Equipments,CLEAN
+LUMAXTECH,Auto Components & Equipments,CLEAN
+LUPIN,Pharmaceuticals,CLEAN
+LUXIND,Garments & Apparels,CLEAN
+LXCHEM,Specialty Chemicals,CLEAN
+M&MFIN,Non Banking Financial Company (NBFC),EXCLUDED
+MAGELLANIC,,CLEAN
+MAHABANK,Public Sector Bank,EXCLUDED
+MAHAMAYA,,CLEAN
+MAHLIFE,"Residential, Commercial Projects",FLAGGED
+MAHLOG,Logistics Solution Provider,CLEAN
+MAHSCOOTER,Investment Company,EXCLUDED
+MAHSEAMLES,Iron & Steel Products,CLEAN
+MAITHANALL,Ferro & Silica Manganese,CLEAN
+MANAKCOAT,Iron & Steel Products,CLEAN
+MANALIPETC,Petrochemicals,CLEAN
+MANAPPURAM,Non Banking Financial Company (NBFC),EXCLUDED
+MANGLMCEM,Cement & Cement Products,CLEAN
+MANINDS,Iron & Steel Products,CLEAN
+MANINFRA,Civil Construction,CLEAN
+MANKIND,Pharmaceuticals,CLEAN
+MARATHON,"Residential, Commercial Projects",CLEAN
+MARICO,Edible Oil,CLEAN
+MARKSANS,Pharmaceuticals,CLEAN
+MASFIN,Non Banking Financial Company (NBFC),EXCLUDED
+MASTEK,Computers - Software & Consulting,CLEAN
+MAXHEALTH,Hospital,CLEAN
+MAYURUNIQ,Leather And Leather Products,CLEAN
+MAZDOCK,Ship Building & Allied Services,FLAGGED
+MBAGRO,,FLAGGED
+MCX,Exchange and Data Platform,CLEAN
+MEDANTA,Hospital,CLEAN
+MEDIAMATRX,,FLAGGED
+METROPOLIS,Healthcare Service Provider,CLEAN
+MFL,,CLEAN
+MFSL,Life Insurance,EXCLUDED
+MGL,LPG/CNG/PNG/LNG Supplier,CLEAN
+MHRIL,Hotels & Resorts,CLEAN
+MICEL,Other Industrial Products,FLAGGED
+MIDHANI,Aerospace & Defense,CLEAN
+MINDACORP,Auto Components & Equipments,CLEAN
+MMFORGINGS,,CLEAN
+MOIL,Industrial Minerals,CLEAN
+MOLDTKPAC,Packaging,CLEAN
+MONTECARLO,Garments & Apparels,CLEAN
+MOREPENLAB,Pharmaceuticals,FLAGGED
+MOSCHIP,Computers Hardware & Equipments,FLAGGED
+MOTHERSON,Auto Components & Equipments,CLEAN
+MOTILALOFS,Stockbroking & Allied,EXCLUDED
+MPHASIS,Computers - Software & Consulting,CLEAN
+MPSLTD,E-Learning,CLEAN
+MRF,Tyres & Rubber Products,CLEAN
+MRPL,Refineries & Marketing,CLEAN
+MSPSTEEL,,FLAGGED
+MTARTECH,Aerospace & Defense,CLEAN
+MTNL,Telecom - Cellular & Fixed line services,FLAGGED
+MUKANDLTD,Iron & Steel,CLEAN
+MUTHOOTFIN,Non Banking Financial Company (NBFC),EXCLUDED
+NACLIND,Pesticides & Agrochemicals,CLEAN
+NALWA,,FLAGGED
+NATCOPHARM,Pharmaceuticals,CLEAN
+NATIONALST,,FLAGGED
+NATIONALUM,Aluminium,CLEAN
+NAUKRI,Internet & Catalogue Retail,FLAGGED
+NAVA,Power Generation,CLEAN
+NAVINFLUOR,Specialty Chemicals,CLEAN
+NAVKARCORP,Logistics Solution Provider,FLAGGED
+NAVNETEDUL,Printing & Publication,CLEAN
+NAZARA,Digital Entertainment,FLAGGED
+NBCC,Civil Construction,CLEAN
+NCC,Civil Construction,CLEAN
+NELCAST,Castings & Forgings,CLEAN
+NELCO,Computers Hardware & Equipments,CLEAN
+NESCO,Diversified Commercial Services,CLEAN
+NETWEB,IT Enabled Services,CLEAN
+NETWORK18,Media & Entertainment,FLAGGED
+NEULANDLAB,Pharmaceuticals,CLEAN
+NEWGEN,Computers - Software & Consulting,CLEAN
+NFL,Fertilizers,CLEAN
+NGLFINECHEM,,CLEAN
+NHPC,Power Generation,CLEAN
+NH,Hospital,CLEAN
+NIACL,General Insurance,EXCLUDED
+NIBE,Aerospace & Defense,FLAGGED
+NIIT,,CLEAN
+NILKAMAL,Plastic Products - Consumer,CLEAN
+NINTEC,,CLEAN
+NIPPONLIFE,,CLEAN
+NIRLON,Diversified Commercial Services,CLEAN
+NITCO,Ceramics,FLAGGED
+NITINSPIN,Other Textile Products,CLEAN
+NITTAGELAT,,CLEAN
+NLCINDIA,Power Generation,CLEAN
+NMDC,Industrial Minerals,CLEAN
+NOCIL,Specialty Chemicals,CLEAN
+NOVARTIND,Pharmaceuticals,FLAGGED
+NRBBEARING,Auto Components & Equipments,CLEAN
+NTPCGREEN,Power Generation,FLAGGED
+NTPC,Power Generation,CLEAN
+NUCLEUS,Software Products,CLEAN
+NUVAMA,Stockbroking & Allied,EXCLUDED
+NYKAA,E-Retail/ E-Commerce,FLAGGED
+OBEROIRLTY,"Residential, Commercial Projects",CLEAN
+OFSS,Software Products,CLEAN
+OIL,Oil Exploration & Production,CLEAN
+OLAELEC,2/3 Wheelers,FLAGGED
+OLECTRA,Passenger Cars & Utility Vehicles,CLEAN
+OMAXE,"Residential, Commercial Projects",FLAGGED
+ONEPOINT,Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO),CLEAN
+OPTIEMUS,Telecom -  Equipment & Accessories,CLEAN
+ORCHPHARMA,Pharmaceuticals,FLAGGED
+ORIENTALAROM,,CLEAN
+ORIENTCEM,Cement & Cement Products,CLEAN
+ORIENTGREEN,,CLEAN
+ORIENTHOT,Hotels & Resorts,CLEAN
+ORISSAMINE,Industrial Minerals,FLAGGED
+PAGEIND,Garments & Apparels,CLEAN
+PAISALO,Non Banking Financial Company (NBFC),EXCLUDED
+PANACEABIO,Pharmaceuticals,FLAGGED
+PANAMAPET,Lubricants,CLEAN
+PARAGMILK,Dairy Products,CLEAN
+PARAMCABLE,,FLAGGED
+PARAS,Aerospace & Defense,FLAGGED
+PASHUPATI,Other Textile Products,CLEAN
+PATANJALI,Edible Oil,CLEAN
+PATELENG,Civil Construction,CLEAN
+PAUSHAK,,CLEAN
+PCBL,Carbon Black,CLEAN
+PCJEWELLER,"Gems, Jewellery And Watches",FLAGGED
+PDS,,CLEAN
+PEARLPOLY,,CLEAN
+PEL,,FLAGGED
+PENNARIND,,CLEAN
+PERSISTENT,Computers - Software & Consulting,CLEAN
+PETRONET,LPG/CNG/PNG/LNG Supplier,CLEAN
+PFC,Financial Institution,EXCLUDED
+PFIZER,Pharmaceuticals,CLEAN
+PGEL,Consumer Electronics,FLAGGED
+PGHH,Personal Care,CLEAN
+PHOENIXLTD,"Residential, Commercial Projects",CLEAN
+PHYSICSWALLAH,,FLAGGED
+PICCADILY,,CLEAN
+PIDILITIND,Specialty Chemicals,CLEAN
+PIIND,Pesticides & Agrochemicals,CLEAN
+PILANIINVS,Holding Company,FLAGGED
+PITTIENG,Industrial Products,CLEAN
+PIXTRANS,Rubber,CLEAN
+PNBGILTS,Investment Company,EXCLUDED
+PNBHOUSING,Housing Finance Company,EXCLUDED
+PNB,Public Sector Bank,EXCLUDED
+PNCINFRA,Civil Construction,CLEAN
+POKARNA,Granites & Marbles,CLEAN
+POLICYBZR,Financial Technology (Fintech),EXCLUDED
+POLYCAB,Cables - Electricals,CLEAN
+POLYMED,Medical Equipment & Supplies,CLEAN
+POLYPLEX,Packaging,CLEAN
+PONDYOX,,FLAGGED
+POONAWALLA,Non Banking Financial Company (NBFC),EXCLUDED
+POWERINDIA,Heavy Electrical Equipment,CLEAN
+POWERMECH,Civil Construction,CLEAN
+PRAJIND,Industrial Products,CLEAN
+PRAKASH,Iron & Steel,CLEAN
+PRECAM,Auto Components & Equipments,CLEAN
+PREMEXPLN,Explosives,CLEAN
+PREMIERENE,Other Electrical Equipment,CLEAN
+PRESTIGE,"Residential, Commercial Projects",CLEAN
+PRICOL,,CLEAN
+PRIMEFOCUS,,CLEAN
+PRIVISCL,Specialty Chemicals,CLEAN
+PRSMJOHNSN,Cement & Cement Products,CLEAN
+PSB,Public Sector Bank,EXCLUDED
+PSPPROJECT,Civil Construction,CLEAN
+PTCIL,Other Industrial Products,FLAGGED
+PTC,Power Trading,CLEAN
+PUNJABCHEM,Pesticides & Agrochemicals,CLEAN
+PURVA,"Residential, Commercial Projects",CLEAN
+PUSHKARCHEM,,CLEAN
+PVRINOX,"Film Production, Distribution & Exhibition",CLEAN
+QUESS,Diversified Commercial Services,CLEAN
+RACLGEAR,Auto Components & Equipments,CLEAN
+RADICO,Breweries & Distilleries,CLEAN
+RAGHAVPROD,,CLEAN
+RAILTEL,Other Telecom Services,CLEAN
+RAINBOW,Hospital,CLEAN
+RAIN,Petrochemicals,CLEAN
+RAJESHEXPO,"Gems, Jewellery And Watches",CLEAN
+RAJRATAN,Auto Components & Equipments,CLEAN
+RALLIS,Pesticides & Agrochemicals,CLEAN
+RAMCOCEM,Cement & Cement Products,CLEAN
+RAMCOINDS,,FLAGGED
+RAMCOSYS,Software Products,FLAGGED
+RAMRAT,Other Electrical Equipment,CLEAN
+RANEHOLDIN,Holding Company,CLEAN
+RATNAMANI,Iron & Steel Products,CLEAN
+RATTANINDIA,,FLAGGED
+RAYMOND,"Residential, Commercial Projects",FLAGGED
+RBLBANK,Private Sector Bank,EXCLUDED
+RCF,Fertilizers,CLEAN
+RECLTD,Financial Institution,EXCLUDED
+REDINGTON,Trading & Distributors,CLEAN
+REFEX,Industrial Gases,FLAGGED
+RELAXO,Footwear,CLEAN
+RELIGARE,Investment Company,EXCLUDED
+RELINFRA,Integrated Power Utilities,CLEAN
+RENAISSANC,,CLEAN
+REPCOHOME,Housing Finance Company,EXCLUDED
+RESPONIND,"Furniture, Home Furnishing",FLAGGED
+RHIM,Electrodes & Refractories,CLEAN
+RICOAUTO,Auto Components & Equipments,CLEAN
+RKFORGE,Auto Components & Equipments,CLEAN
+ROTOPUMP,,CLEAN
+RPGLIFE,Pharmaceuticals,CLEAN
+RPOWER,Power Generation,FLAGGED
+RSYSTEMS,IT Enabled Services,CLEAN
+RTNPOWER,Power Generation,CLEAN
+RUBYMILLS,Other Textile Products,FLAGGED
+RUPA,Garments & Apparels,CLEAN
+RVNL,Civil Construction,FLAGGED
+SAFARI,Plastic Products - Consumer,CLEAN
+SAGCEM,Cement & Cement Products,CLEAN
+SAGILITY,IT Enabled Services,FLAGGED
+SAILIFE,Pharmaceuticals,CLEAN
+SAIL,Iron & Steel,CLEAN
+SAKAR,Pharmaceuticals,CLEAN
+SAKSOFT,Computers - Software & Consulting,CLEAN
+SALASAR,Industrial Products,CLEAN
+SALZERELEC,Other Electrical Equipment,CLEAN
+SAMMAANCAP,Housing Finance Company,EXCLUDED
+SANDUMA,Coal,FLAGGED
+SANGAMIND,Other Textile Products,CLEAN
+SANGHVIMOV,Diversified Commercial Services,CLEAN
+SANOFI,Pharmaceuticals,CLEAN
+SARDAEN,Iron & Steel,CLEAN
+SAREGAMA,Media & Entertainment,CLEAN
+SASKEN,IT Enabled Services,CLEAN
+SATIN,Microfinance Institutions,EXCLUDED
+SAVITA,,CLEAN
+SBICARD,Non Banking Financial Company (NBFC),EXCLUDED
+SBILIFE,Life Insurance,EXCLUDED
+SCHAEFFLER,Auto Components & Equipments,CLEAN
+SCHNEIDER,Heavy Electrical Equipment,CLEAN
+SCI,Shipping,CLEAN
+SEAMECLTD,Shipping,CLEAN
+SENCO,"Gems, Jewellery And Watches",FLAGGED
+SEPC,Civil Construction,FLAGGED
+SERVOTECH,Other Electrical Equipment,FLAGGED
+SESHAPAPER,Paper & Paper Products,CLEAN
+SGFIN,Non Banking Financial Company (NBFC),EXCLUDED
+SGMART,Trading - Metals,FLAGGED
+SHAILY,Plastic Products - Industrial,CLEAN
+SHAKTIPUMP,"Compressors, Pumps & Diesel Engines",CLEAN
+SHALBY,Hospital,CLEAN
+SHANTIEDU,,FLAGGED
+SHANTIGEAR,Industrial Products,CLEAN
+SHARDACROP,Pesticides & Agrochemicals,CLEAN
+SHARDAMOTR,Auto Components & Equipments,CLEAN
+SHAREINDIA,Stockbroking & Allied,EXCLUDED
+SHILCHARTECH,,CLEAN
+SHILPAMED,Pharmaceuticals,CLEAN
+SHIVALIKBM,,CLEAN
+SHK,Specialty Chemicals,CLEAN
+SHOPERSTOP,Diversified Retail,CLEAN
+SHREECEM,Cement & Cement Products,CLEAN
+SHRIPISTON,Auto Components & Equipments,CLEAN
+SHYAMMETL,Iron & Steel Products,CLEAN
+SIEMENS,Heavy Electrical Equipment,CLEAN
+SILVTOUCH,,CLEAN
+SISSOFTWARE,,CLEAN
+SIS,Other Consumer Services,CLEAN
+SKFINDIA,Abrasives & Bearings,CLEAN
+SKIPPER,Heavy Electrical Equipment,CLEAN
+SKMEGGPROD,Meat Products including Poultry,CLEAN
+SMLISUZU,,CLEAN
+SOBHA,"Residential, Commercial Projects",CLEAN
+SOLARINDS,Explosives,CLEAN
+SOLARWORLD,Civil Construction,FLAGGED
+SOMANYCERA,Ceramics,CLEAN
+SOM,,CLEAN
+SONATSOFTW,Computers - Software & Consulting,CLEAN
+SOUTHBANK,Private Sector Bank,EXCLUDED
+SPAL,Garments & Apparels,CLEAN
+SPANDANA,Microfinance Institutions,EXCLUDED
+SPARC,Pharmaceuticals,FLAGGED
+SPICEJET,Airline,FLAGGED
+SPIC,Fertilizers,CLEAN
+SPORTKING,Other Textile Products,CLEAN
+SRF,Commodity Chemicals,CLEAN
+STARCEMENT,Cement & Cement Products,CLEAN
+STARHEALTH,General Insurance,EXCLUDED
+STAR,Pharmaceuticals,CLEAN
+STEL,Investment Company,EXCLUDED
+STLTECH,Telecom -  Equipment & Accessories,CLEAN
+STYLAMIND,Plywood Boards/ Laminates,CLEAN
+STYRENIX,Specialty Chemicals,CLEAN
+SUBROS,Other Industrial Products,CLEAN
+SUDARSCHEM,Dyes And Pigments,CLEAN
+SUNDARAMFIN,,FLAGGED
+SUNDRMFAST,Auto Components & Equipments,CLEAN
+SUNDROPBRAND,,CLEAN
+SUNPHARMA,Pharmaceuticals,CLEAN
+SUNTECK,"Residential, Commercial Projects",FLAGGED
+SUNTV,TV Broadcasting & Software Production,CLEAN
+SUPPETRO,,CLEAN
+SUPRAJIT,Auto Components & Equipments,CLEAN
+SUPREMEIND,Plastic Products - Industrial,CLEAN
+SURYAROSNI,Iron & Steel Products,CLEAN
+SUVEN,"Healthcare Research, Analytics & Technology",FLAGGED
+SUZLON,Heavy Electrical Equipment,CLEAN
+SWARAJENG,"Compressors, Pumps & Diesel Engines",CLEAN
+SWIGGY,E-Retail/ E-Commerce,FLAGGED
+SYMPHONY,Household Appliances,CLEAN
+SYNGENE,"Healthcare Research, Analytics & Technology",CLEAN
+SYRMA,Industrial Products,CLEAN
+TAALTECH,Airline,CLEAN
+TALBROSAUT,,CLEAN
+TANLA,Software Products,CLEAN
+TATACAPITAL,,FLAGGED
+TATACHEM,Commodity Chemicals,CLEAN
+TATACOMM,Telecom - Cellular & Fixed line services,CLEAN
+TATACONSUM,Tea & Coffee,CLEAN
+TATAELXSI,Computers - Software & Consulting,CLEAN
+TATAINVEST,Investment Company,EXCLUDED
+TATAMOTORS,,CLEAN
+TATAPOWER,Integrated Power Utilities,CLEAN
+TATATECH,IT Enabled Services,CLEAN
+TBZ,"Gems, Jewellery And Watches",CLEAN
+TCCCONCEPT,,CLEAN
+TCIEXP,Logistics Solution Provider,CLEAN
+TCIL,,CLEAN
+TCPLPACK,Packaging,CLEAN
+TDPOWERSYS,Heavy Electrical Equipment,CLEAN
+TEAMLEASE,Diversified Commercial Services,CLEAN
+TECHM,Computers - Software & Consulting,CLEAN
+TEJASNET,Telecom -  Equipment & Accessories,FLAGGED
+TEXRAILNG,,FLAGGED
+THANGAMAYL,"Gems, Jewellery And Watches",CLEAN
+THEJO,Industrial Products,CLEAN
+THEMISBIO,,CLEAN
+THERMAX,Heavy Electrical Equipment,CLEAN
+THIRUMALAI,,CLEAN
+THOMASCOOK,"Tour, Travel Related Services",CLEAN
+THYROCARE,Healthcare Service Provider,CLEAN
+TIINDIA,Auto Components & Equipments,CLEAN
+TILAKNAGARIND,,CLEAN
+TIMETECHNO,Plastic Products - Industrial,CLEAN
+TIMKEN,Abrasives & Bearings,CLEAN
+TIPSMUSIC,Media & Entertainment,CLEAN
+TITAGARH,Railway Wagons,FLAGGED
+TITAN,"Gems, Jewellery And Watches",CLEAN
+TORNTPHARM,Pharmaceuticals,CLEAN
+TORNTPOWER,Integrated Power Utilities,CLEAN
+TRENT,Speciality Retail,CLEAN
+TRIDENT,Other Textile Products,CLEAN
+TRITURBINE,Heavy Electrical Equipment,CLEAN
+TRIVENI,Sugar,CLEAN
+TTKPRESTIG,Household Appliances,CLEAN
+TUBEINVEST,,CLEAN
+TVSMOTOR,2/3 Wheelers,FLAGGED
+TVSSRICHAK,Tyres & Rubber Products,CLEAN
+UBL,Breweries & Distilleries,CLEAN
+UCOBANK,Public Sector Bank,EXCLUDED
+UFLEX,Packaging,CLEAN
+UGROCAP,Non Banking Financial Company (NBFC),EXCLUDED
+ULTRAMARINEPIG,,CLEAN
+UNICHEMLAB,Pharmaceuticals,FLAGGED
+UNIONBANK,Public Sector Bank,EXCLUDED
+UNITDSPR,Breweries & Distilleries,CLEAN
+UNITECH,"Residential, Commercial Projects",FLAGGED
+UNIVCABLES,Cables - Electricals,CLEAN
+UNOMINDA,Auto Components & Equipments,CLEAN
+UPL,Pesticides & Agrochemicals,CLEAN
+URBANCOMP,,FLAGGED
+USHAMART,Iron & Steel Products,CLEAN
+UTIAMC,Asset Management Company,EXCLUDED
+V2RETAIL,Speciality Retail,CLEAN
+VADILALIND,Dairy Products,CLEAN
+VAIBHAVGBL,"Gems, Jewellery And Watches",CLEAN
+VALORESTAT,,FLAGGED
+VBL,Other Beverages,CLEAN
+VDMHOLD,,FLAGGED
+VDMSPECIAL,,CLEAN
+VEDANT,,CLEAN
+VEDL,Diversified Metals,CLEAN
+VENKEYS,Meat Products including Poultry,CLEAN
+VENUSREM,Pharmaceuticals,CLEAN
+VESUVIUS,Electrodes & Refractories,CLEAN
+VGUARD,Household Appliances,CLEAN
+VIDHIING,Specialty Chemicals,CLEAN
+VIJAYA,Healthcare Service Provider,CLEAN
+VIKRAMSOLAR,,CLEAN
+VIMTALABS,"Healthcare Research, Analytics & Technology",CLEAN
+VINATIORGA,Specialty Chemicals,CLEAN
+VINDHYATEL,Telecom - Infrastructure,FLAGGED
+VINTAGECOF,,FLAGGED
+VIPIND,Plastic Products - Consumer,CLEAN
+VISHNU,Specialty Chemicals,CLEAN
+VMART,Diversified Retail,CLEAN
+VMM,Diversified Retail,CLEAN
+VOLTAMP,Heavy Electrical Equipment,CLEAN
+VOLTAS,Household Appliances,CLEAN
+VRLLOG,Logistics Solution Provider,CLEAN
+VSTIND,Cigarettes & Tobacco Products,CLEAN
+VSTTILLERS,Tractors,CLEAN
+VTL,Other Textile Products,CLEAN
+WAAREEENER,Other Electrical Equipment,CLEAN
+WAAREERTL,Other Electrical Equipment,CLEAN
+WABAG,Water Supply & Management,CLEAN
+WALCHANNAG,Industrial Products,FLAGGED
+WEALTH,Other Financial Services,EXCLUDED
+WEBELSOLAR,Other Electrical Equipment,CLEAN
+WELCORP,Iron & Steel Products,CLEAN
+WELENT,Civil Construction,FLAGGED
+WELSPUNLIV,Other Textile Products,CLEAN
+WELSPUNSP,,FLAGGED
+WENDT,Abrasives & Bearings,CLEAN
+WESTCOAST,,CLEAN
+WESTLIFE,Restaurants,FLAGGED
+WHEELS,Auto Components & Equipments,CLEAN
+WHIRLPOOL,Household Appliances,CLEAN
+WINDMACHIN,Industrial Products,FLAGGED
+WIPRO,Computers - Software & Consulting,CLEAN
+WOCKPHARMA,Pharmaceuticals,FLAGGED
+WONDERLA,Amusement Parks/ Other Recreation,CLEAN
+WPIL,Industrial Products,CLEAN
+XPROINDIA,Packaging,CLEAN
+YESBANK,Private Sector Bank,EXCLUDED
+ZEEL,TV Broadcasting & Software Production,CLEAN
+ZENSARTECH,Computers - Software & Consulting,CLEAN
+ZENTEC,Aerospace & Defense,FLAGGED
+ZFCVINDIA,Auto Components & Equipments,CLEAN
+ZOTA,Pharmaceuticals,FLAGGED
+ZYDUSLIFE,Pharmaceuticals,CLEAN
+ZYDUSWELL,Packaged Foods,FLAGGED
