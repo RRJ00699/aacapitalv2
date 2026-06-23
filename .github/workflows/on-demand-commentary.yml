@@ -1,0 +1,39 @@
+name: On-Demand Commentary
+
+# The missing target for the "Extract commentary" button in the UI.
+# app/api/management-commentary/scrape dispatches this with inputs {symbols, force}.
+# Runs the Screener.in scraper for one (or more) symbols and writes management_commentary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "NSE symbols, space-separated (e.g. TCS INFY)"
+        required: true
+        type: string
+      force:
+        description: "Re-score even if already done this quarter"
+        required: false
+        default: "false"
+        type: string
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Score commentary
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python _scripts/score_management_commentary.py --symbols ${{ inputs.symbols }} --force
+          else
+            python _scripts/score_management_commentary.py --symbols ${{ inputs.symbols }}
+          fi
