@@ -30,6 +30,9 @@ interface Candle {
 interface ChartPoint {
   date: string
   label: string
+  open: number
+  high: number
+  low: number
   close: number
   volume: number
   ma50?: number
@@ -42,6 +45,38 @@ const PERIODS = [
   { key: "5Y", months: 60, label: "5Y" },
   { key: "10Y", months: 120, label: "10Y" },
 ]
+
+const FRAMES = [
+  { key: "daily",   label: "D" },
+  { key: "weekly",  label: "W" },
+  { key: "monthly", label: "M" },
+]
+
+// Candlestick shape for a recharts floating Bar whose dataKey returns [low, high].
+// recharts maps low->(y+height) and high->y for us; we interpolate open/close inside
+// that pixel span, so candles render correctly at any yAxis scale.
+function Candle(props: any) {
+  const { x, y, width, height, payload } = props
+  if (!payload) return null
+  const hi = Number(payload.high), lo = Number(payload.low)
+  const op = Number(payload.open), cl = Number(payload.close)
+  if (![hi, lo, op, cl].every(Number.isFinite) || hi <= lo) return null
+  const pxPerPrice = height / (hi - lo)
+  const yOpen  = y + (hi - op) * pxPerPrice
+  const yClose = y + (hi - cl) * pxPerPrice
+  const up = cl >= op
+  const color = up ? "#16A34A" : "#DC2626"
+  const bodyTop = Math.min(yOpen, yClose)
+  const bodyH   = Math.max(1, Math.abs(yClose - yOpen))
+  const cx = x + width / 2
+  const bw = Math.max(2, width * 0.6)
+  return (
+    <g>
+      <line x1={cx} x2={cx} y1={y} y2={y + height} stroke={color} strokeWidth={1} />
+      <rect x={cx - bw / 2} y={bodyTop} width={bw} height={bodyH} fill={color} stroke={color} />
+    </g>
+  )
+}
 
 function computeMA(data: ChartPoint[], n: number): ChartPoint[] {
   return data.map((d, i) => {
@@ -74,6 +109,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div style={{ background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 8, padding: "8px 12px", fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
       <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>{d.label}</div>
+      {Number.isFinite(d.open) && (
+        <div style={{ color: C.gray, fontSize: 10 }}>
+          O ₹{Math.round(d.open).toLocaleString("en-IN")} · H ₹{Math.round(d.high).toLocaleString("en-IN")} · L ₹{Math.round(d.low).toLocaleString("en-IN")}
+        </div>
+      )}
       <div style={{ color: C.blue }}>Close: ₹{Number(d.close).toLocaleString("en-IN")}</div>
       {d.ma50  && <div style={{ color: "#F59E0B" }}>MA50: ₹{Math.round(d.ma50).toLocaleString("en-IN")}</div>}
       {d.ma200 && <div style={{ color: C.red }}>MA200: ₹{Math.round(d.ma200).toLocaleString("en-IN")}</div>}
@@ -90,6 +130,7 @@ interface Props {
 export function PriceChart({ symbol, height = 280 }: Props) {
   const [candles, setCandles] = useState<Candle[]>([])
   const [period, setPeriod] = useState("1Y")
+  const [timeframe, setTimeframe] = useState("weekly")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,20 +138,21 @@ export function PriceChart({ symbol, height = 280 }: Props) {
     if (!symbol) return
     setLoading(true)
     setError(null)
-    fetch(`/api/price-history?symbol=${symbol}&months=120`)
+    const monthsFor = PERIODS.find(p => p.key === period)?.months ?? 12
+    fetch(`/api/price-history?symbol=${symbol}&timeframe=${timeframe}&months=${monthsFor}`)
       .then(async r => {
         if (!r.ok) throw new Error(`${r.status}`)
         return r.json()
       })
       .then(d => {
-        setCandles(d.candles ?? d.data ?? [])
+        setCandles(d.data ?? d.candles ?? [])
         setLoading(false)
       })
       .catch(e => {
         setError(e.message)
         setLoading(false)
       })
-  }, [symbol])
+  }, [symbol, timeframe, period])
 
   if (loading) return (
     <div style={{ height, display: "flex", alignItems: "center",
@@ -137,6 +179,9 @@ export function PriceChart({ symbol, height = 280 }: Props) {
   let chartData: ChartPoint[] = filtered.map(c => ({
     date: c.date,
     label: formatDate(c.date, months),
+    open:  Number(c.open),
+    high:  Number(c.high),
+    low:   Number(c.low),
     close: Number(c.close),
     volume: Number(c.volume),
   }))
@@ -146,8 +191,10 @@ export function PriceChart({ symbol, height = 280 }: Props) {
   chartData = computeMA(chartData, 200)
 
   const prices = chartData.map(d => d.close)
-  const minPrice = Math.min(...prices) * 0.97
-  const maxPrice = Math.max(...prices) * 1.03
+  const lows   = chartData.map(d => d.low).filter(Number.isFinite)
+  const highs  = chartData.map(d => d.high).filter(Number.isFinite)
+  const minPrice = (lows.length  ? Math.min(...lows)  : Math.min(...prices)) * 0.97
+  const maxPrice = (highs.length ? Math.max(...highs) : Math.max(...prices)) * 1.03
   const firstPrice = prices[0]
   const lastPrice = prices[prices.length - 1]
   const changeAbs = lastPrice - firstPrice
@@ -177,6 +224,23 @@ export function PriceChart({ symbol, height = 280 }: Props) {
             padding: "2px 8px", borderRadius: 4 }}>
             {isPositive ? "+" : ""}{changePct}% ({period})
           </span>
+        </div>
+
+        {/* Frame (granularity) selector */}
+        <div style={{ display: "flex", gap: 4, marginRight: 8 }}>
+          {FRAMES.map(fr => (
+            <button key={fr.key} onClick={() => setTimeframe(fr.key)}
+              style={{
+                fontSize: 11, fontWeight: 700, padding: "3px 8px",
+                borderRadius: 5,
+                border: timeframe === fr.key ? `1px solid ${C.text}` : `1px solid ${C.border}`,
+                background: timeframe === fr.key ? C.text : C.surface,
+                color: timeframe === fr.key ? "#fff" : C.gray,
+                cursor: "pointer",
+              }}>
+              {fr.label}
+            </button>
+          ))}
         </div>
 
         {/* Period selector */}
@@ -229,6 +293,11 @@ export function PriceChart({ symbol, height = 280 }: Props) {
             fill={isPositive ? "#BBF7D0" : "#FECACA"}
             opacity={0.6} radius={[1, 1, 0, 0]} />
 
+          {/* Candlesticks (drawn first so MA lines sit on top) */}
+          <Bar yAxisId="price" dataKey={(d: any) => [d.low, d.high]}
+            shape={(props: any) => <Candle {...props} />}
+            isAnimationActive={false} />
+
           {/* MA200 */}
           <Line yAxisId="price" type="monotone" dataKey="ma200"
             stroke={C.red} strokeWidth={1} dot={false}
@@ -238,18 +307,13 @@ export function PriceChart({ symbol, height = 280 }: Props) {
           <Line yAxisId="price" type="monotone" dataKey="ma50"
             stroke="#F59E0B" strokeWidth={1} dot={false}
             connectNulls />
-
-          {/* Price line */}
-          <Line yAxisId="price" type="monotone" dataKey="close"
-            stroke={isPositive ? C.green : C.red}
-            strokeWidth={2} dot={false} />
         </ComposedChart>
       </ResponsiveContainer>
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 12, marginTop: 4, justifyContent: "flex-end" }}>
         {[
-          { color: isPositive ? C.green : C.red, label: "Price" },
+          { color: isPositive ? C.green : C.red, label: "Candles" },
           { color: "#F59E0B", label: "MA50" },
           { color: C.red, label: "MA200", dashed: true },
         ].map(l => (

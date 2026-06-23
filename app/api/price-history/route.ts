@@ -45,46 +45,48 @@ export async function GET(req: NextRequest) {
   const symbol  = req.nextUrl.searchParams.get("symbol")?.toUpperCase().trim()
   const period  = req.nextUrl.searchParams.get("period") ?? "3Y"
   const months_ = req.nextUrl.searchParams.get("months")
+  // daily | weekly | monthly — all aggregated from the full-history daily candles
+  const timeframe = (req.nextUrl.searchParams.get("timeframe") ?? "monthly").toLowerCase()
+  const unit = timeframe === "daily" ? null : timeframe === "weekly" ? "week" : "month"
   if (!symbol) return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 })
   const lookback = months_ ? parseInt(months_) : (months[period] ?? 36)
   const sql = db()
 
-  // 1. Try Neon tables
+  // 1. Build candles from the full-history daily price_candles table.
+  //    daily   -> raw daily rows
+  //    weekly  -> aggregated by date_trunc('week')
+  //    monthly -> aggregated by date_trunc('month')
+  //    OHLC aggregation: first open, max high, min low, last close, summed volume.
   try {
     let rows: any[] = []
-    let source = "price_monthly"
-    rows = await sql`
-      SELECT date, open, high, low, close, volume FROM price_monthly
-      WHERE symbol = ${symbol}
-        AND date >= NOW() - INTERVAL '1 month' * ${lookback}
-      ORDER BY date ASC`
-    if (!rows.length) {
-      source = "price_candles_monthly"
+    let source = `price_candles_${timeframe}`
+    if (unit === null) {
       rows = await sql`
-        SELECT date, open, high, low, close, volume FROM price_candles_monthly
-        WHERE symbol = ${symbol}
-          AND date >= NOW() - INTERVAL '1 month' * ${lookback}
-        ORDER BY date ASC`
-    }
-    if (!rows.length) {
-      // Daily price_candles IS populated by the daily sync — aggregate to monthly.
-      source = "price_candles_daily_agg"
-      rows = await sql`
-        SELECT date_trunc('month', date)::date AS date,
-               (array_agg(open  ORDER BY date ASC ))[1] AS open,
-               MAX(high) AS high,
-               MIN(low)  AS low,
-               (array_agg(close ORDER BY date DESC))[1] AS close,
-               SUM(volume) AS volume
+        SELECT date::text AS date, open, high, low, close, volume
         FROM price_candles
         WHERE symbol = ${symbol}
           AND date >= NOW() - INTERVAL '1 month' * ${lookback}
-        GROUP BY 1
-        ORDER BY 1 ASC`
+          AND close > 0
+        ORDER BY date ASC`
+    } else {
+      rows = await sql`
+        SELECT
+          date_trunc(${unit}, date)::date::text AS date,
+          (array_agg(open  ORDER BY date ASC ))[1] AS open,
+          MAX(high)  AS high,
+          MIN(low)   AS low,
+          (array_agg(close ORDER BY date DESC))[1] AS close,
+          SUM(volume) AS volume
+        FROM price_candles
+        WHERE symbol = ${symbol}
+          AND date >= NOW() - INTERVAL '1 month' * ${lookback}
+          AND close > 0
+        GROUP BY date_trunc(${unit}, date)
+        ORDER BY date_trunc(${unit}, date) ASC`
     }
-    if (rows.length >= 3) {
+    if (rows.length >= 2) {
       const data = mapRows(rows)
-      if (data.length >= 3) return NextResponse.json({ ok: true, source, data })
+      if (data.length >= 2) return NextResponse.json({ ok: true, source, data })
     }
   } catch {}
 
