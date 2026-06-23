@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const name   = searchParams.get("name") || ""
   const limit  = Math.min(50, parseInt(searchParams.get("limit") || "20"))
   const action = searchParams.get("action") || ""   // MOMENTUM CHASE, VALUE DIP BUY, AVOID
+  const scope  = searchParams.get("scope")  || ""   // "live" => only open/upcoming IPOs
 
   try {
     const rows = await sql`
@@ -72,6 +73,10 @@ export async function GET(req: NextRequest) {
       WHERE
         (${name} = '' OR company_name ILIKE ${'%' + name + '%'})
         AND (${action} = '' OR suggested_action = ${action})
+        AND (${scope} <> 'live' OR (
+              UPPER(COALESCE(status,'')) IN ('OPEN','UPCOMING','LIVE')
+              OR close_date >= CURRENT_DATE
+            ))
         AND lqi_final IS NOT NULL
       ORDER BY lqi_final DESC NULLS LAST
       LIMIT ${limit}

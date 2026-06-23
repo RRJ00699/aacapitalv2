@@ -128,7 +128,41 @@ async function processSymbol(symbol: string) {
   return { symbol, events };
 }
 
+async function ensureTables() {
+  // Self-heal: the miner writes these but no migration creates them.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS multibagger_events (
+      id          SERIAL PRIMARY KEY,
+      symbol      TEXT NOT NULL,
+      start_date  DATE NOT NULL,
+      end_date    DATE NOT NULL,
+      start_close NUMERIC(14,4),
+      end_close   NUMERIC(14,4),
+      return_pct  NUMERIC(12,2),
+      window_days INTEGER,
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (symbol, start_date, end_date)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS multibagger_patterns (
+      id                        SERIAL PRIMARY KEY,
+      symbol                    TEXT NOT NULL,
+      event_id                  INTEGER REFERENCES multibagger_events(id) ON DELETE CASCADE,
+      lookback_start            DATE,
+      lookback_end              DATE,
+      volatility_contraction    BOOLEAN,
+      high_low_compression_pct  NUMERIC(12,2),
+      accumulation_score        NUMERIC(12,2),
+      wyckoff_phase             JSONB,
+      normalized_shape          JSONB,
+      dtw_distance_to_centroid  NUMERIC(14,4),
+      created_at                TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (symbol, event_id)
+    )`);
+}
+
 async function main() {
+  await ensureTables();
   const symbols = await getSymbols('price_candles_weekly');
   const limit = pLimit(Number(opts.concurrency));
   let done = 0;

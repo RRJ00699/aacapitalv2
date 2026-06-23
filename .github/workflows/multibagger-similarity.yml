@@ -1,0 +1,40 @@
+name: AACapital Multibagger Similarity
+
+# Mines historical multibagger breakout patterns from weekly candles, then matches
+# the current universe against them to populate Historical Similarity analogs.
+#
+# Order matters: the miner writes multibagger_patterns, the similarity engine reads
+# it. Running similarity before the miner is exactly what produces the
+# "No historical analogs yet" empty state in the UI.
+#
+# Weekly is plenty — multibagger patterns are slow-moving and the miner is the
+# heaviest job in the system (DTW across the full ~1400-symbol weekly history).
+
+on:
+  schedule:
+    - cron: "0 21 * * 6"        # Sat 21:00 UTC = Sun 02:30 IST (off-peak)
+  workflow_dispatch:
+
+jobs:
+  similarity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120         # miner is DTW-heavy over the whole universe
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: npm ci || npm install --no-audit --no-fund
+
+      # 1) Mine historical multibagger patterns (self-heals its tables).
+      - name: Mine multibagger patterns
+        run: npx tsx _scripts/engines/historical_multibagger_miner.ts --concurrency 4
+
+      # 2) Match the current universe against the mined patterns.
+      #    --limit 1500 covers the full ~1400-symbol universe with margin.
+      - name: Build historical similarity
+        run: npx tsx _scripts/engines/multibagger_similarity_engine.ts --limit 1500 --top 5

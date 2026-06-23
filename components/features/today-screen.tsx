@@ -85,7 +85,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         fetch("/api/market/snapshot",                             {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/technical/screener?timeframe=daily&limit=15",  {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/sector-rotation?view=hot",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/ipo/intelligence?limit=5",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+        fetch("/api/ipo/intelligence?limit=5&scope=live",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/broker/status",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
       ])
 

@@ -103,7 +103,7 @@ export function PriceChart({ symbol, height = 280 }: Props) {
         return r.json()
       })
       .then(d => {
-        setCandles(d.candles ?? [])
+        setCandles(d.candles ?? d.data ?? [])
         setLoading(false)
       })
       .catch(e => {

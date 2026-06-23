@@ -66,6 +66,22 @@ export async function GET(req: NextRequest) {
           AND date >= NOW() - INTERVAL '1 month' * ${lookback}
         ORDER BY date ASC`
     }
+    if (!rows.length) {
+      // Daily price_candles IS populated by the daily sync — aggregate to monthly.
+      source = "price_candles_daily_agg"
+      rows = await sql`
+        SELECT date_trunc('month', date)::date AS date,
+               (array_agg(open  ORDER BY date ASC ))[1] AS open,
+               MAX(high) AS high,
+               MIN(low)  AS low,
+               (array_agg(close ORDER BY date DESC))[1] AS close,
+               SUM(volume) AS volume
+        FROM price_candles
+        WHERE symbol = ${symbol}
+          AND date >= NOW() - INTERVAL '1 month' * ${lookback}
+        GROUP BY 1
+        ORDER BY 1 ASC`
+    }
     if (rows.length >= 3) {
       const data = mapRows(rows)
       if (data.length >= 3) return NextResponse.json({ ok: true, source, data })
