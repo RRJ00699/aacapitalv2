@@ -174,6 +174,30 @@ export function StockResearchWorkspace({ symbol, onClose }:
     .finally(() => setLoading(false))
   }, [symbol])
 
+  // Path A live prices: poll the Kite REST quote every 3s during market hours and
+  // update livePrice. price (= livePrice ?? current_price) and the targets derived
+  // from it recompute automatically, so the workbook stays near-live without a socket.
+  useEffect(() => {
+    if (!symbol) return
+    const isMarketHours = () => {
+      const ist  = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }))
+      const mins = ist.getHours() * 60 + ist.getMinutes()
+      const day  = ist.getDay()
+      return day >= 1 && day <= 5 && mins >= 555 && mins <= 935   // 09:15–15:35 IST
+    }
+    let stopped = false
+    const poll = async () => {
+      if (stopped || !isMarketHours()) return
+      try {
+        const q = await fetch(`/api/broker/quote?sym=${symbol}&exchange=NSE`, { cache: "no-store" }).then(r => r.json())
+        if (q?.last_price && q.last_price > 0) setLivePrice(q.last_price)
+      } catch {}
+    }
+    poll()
+    const timer = setInterval(poll, 3000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [symbol])
+
   if (loading) return (
     <Overlay onClose={onClose}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
