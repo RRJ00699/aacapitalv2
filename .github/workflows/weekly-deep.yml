@@ -9,6 +9,8 @@ jobs:
     env:
       DATABASE_URL:      ${{ secrets.DATABASE_URL }}
       NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

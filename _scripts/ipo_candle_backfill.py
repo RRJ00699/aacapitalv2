@@ -30,12 +30,25 @@ def pct(price, base):
 def main():
     if not DATABASE_URL:
         log.error("DATABASE_URL not set"); return
-    if not KITE_ACCESS_TOKEN:
-        log.error("KITE_ACCESS_TOKEN not set — run: python _scripts/kite_login.py"); return
+    token = KITE_ACCESS_TOKEN
+    if not token:
+        # Fallback: read the freshly-refreshed token from Neon platform_config
+        # (refresh_kite_token.py writes it there; same source other scripts use).
+        try:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL); cur = conn.cursor()
+            cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+            row = cur.fetchone(); cur.close(); conn.close()
+            if row and row[0] and str(row[0]).strip():
+                token = str(row[0]).strip()
+        except Exception as e:
+            log.error(f"Neon token read failed: {e}")
+    if not token:
+        log.error("KITE_ACCESS_TOKEN not set and none in Neon — run refresh_kite_token.py"); return
 
     from kiteconnect import KiteConnect
     kite = KiteConnect(api_key=KITE_API_KEY)
-    kite.set_access_token(KITE_ACCESS_TOKEN)
+    kite.set_access_token(token)
     log.info("Kite connected")
 
     conn = psycopg2.connect(DATABASE_URL)

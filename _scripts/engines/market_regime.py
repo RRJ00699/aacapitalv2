@@ -64,7 +64,25 @@ def _get_token() -> str:
     t = os.environ.get('ACCESS_TOKEN', '').strip()
     if t:
         return t
-    raise RuntimeError('No Kite access token. Run: $env:KITE_ACCESS_TOKEN = YOUR_TOKEN')
+    # Fallback: read the freshly-refreshed token from Neon platform_config
+    # (refresh_kite_token.py writes it there earlier in the daily workflow; same
+    #  source every other script uses via kite_connect.get_token_from_db()).
+    try:
+        import psycopg2
+        db = os.environ.get('DATABASE_URL') or os.environ.get('NEON_DATABASE_URL', '')
+        if db:
+            conn = psycopg2.connect(db)
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if row and row[0] and str(row[0]).strip():
+                return str(row[0]).strip()
+    except Exception as e:
+        print(f"[market_regime] Neon token read failed: {e}")
+    raise RuntimeError('No Kite access token. Run refresh_kite_token.py first '
+                       '(writes kite_access_token to Neon platform_config), '
+                       'or set $env:KITE_ACCESS_TOKEN locally.')
 
 
 def get_kite() -> KiteConnect:
