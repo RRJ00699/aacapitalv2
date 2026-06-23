@@ -18,7 +18,8 @@ jobs:
   daily:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
       KITE_API_KEY:     ${{ secrets.KITE_API_KEY }}
       KITE_API_SECRET:  ${{ secrets.KITE_API_SECRET }}
       KITE_USER_ID:     ${{ secrets.KITE_USER_ID }}
@@ -45,6 +46,10 @@ jobs:
 
       - name: Generate signals (technical_signals)
         run: python _scripts/generate_signals.py --limit 500
+
+      - name: Sector rotation (sector_rotation)
+        continue-on-error: true
+        run: python _scripts/engines/compute_sector_rotation.py
 
       - name: Fetch NSE IPOs (ipo_intelligence)
         continue-on-error: true
