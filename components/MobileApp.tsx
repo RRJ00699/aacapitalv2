@@ -121,7 +121,16 @@ function MobileToday({ onStockSelect }: { onStockSelect: (s: string) => void }) 
       return day >= 1 && day <= 5 && mins >= 555 && mins <= 930
     }
     const timer = setInterval(() => { if (isMarketHours()) load() }, 60000)
-    return () => clearInterval(timer)
+    // Always refetch when the app regains focus/visibility (fixes stale data on reopen,
+    // e.g. opening the app in the evening still showed yesterday's signals)
+    const onVisible = () => { if (document.visibilityState === "visible") load() }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener("focus", load)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener("focus", load)
+    }
   }, [load])
 
   if (loading) return (

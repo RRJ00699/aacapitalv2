@@ -284,6 +284,33 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
             {n(ipo.fresh_issue_ratio)>0&&<Stat label="Fresh%" value={`${(n(ipo.fresh_issue_ratio)*100).toFixed(0)}%`} color={C.green}/>}
           </div>
 
+          {/* Quality facts (from ipo_issue_details) — context, NOT a return signal */}
+          {(ipo.roce_pct!=null||ipo.debt_equity!=null||ipo.iid_pe_post!=null||ipo.pat_margin_pct!=null||ipo.promoter_post_pct!=null)&&(()=>{
+            const facts:string[]=[]
+            if(ipo.pat_margin_pct!=null&&n(ipo.pat_margin_pct)<0) facts.push("Loss-making at IPO")
+            if(ipo.debt_equity!=null&&n(ipo.debt_equity)>3) facts.push("High leverage (D/E>3)")
+            if(ipo.promoter_post_pct!=null&&n(ipo.promoter_post_pct)<30) facts.push("Low promoter (<30%)")
+            if(ipo.iid_issue_cr!=null&&n(ipo.iid_issue_cr)>0&&n(ipo.iid_issue_cr)<300) facts.push("Small issue (<\u20b9300cr)")
+            if(ipo.roce_pct!=null&&n(ipo.roce_pct)<8) facts.push("Weak ROCE (<8%)")
+            return (
+              <div style={{padding:"10px 12px",background:C.surface,borderRadius:8,border:`1px solid ${C.border}`,marginBottom:10}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.meta,marginBottom:8}}>QUALITY FACTS · context, not a return signal</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:facts.length?8:0}}>
+                  {ipo.roce_pct!=null&&<Stat label="ROCE" value={`${n(ipo.roce_pct).toFixed(0)}%`}/>}
+                  {ipo.debt_equity!=null&&<Stat label="D/E" value={n(ipo.debt_equity).toFixed(2)}/>}
+                  {ipo.iid_pe_post!=null&&<Stat label="P/E post" value={n(ipo.iid_pe_post).toFixed(0)}/>}
+                  {ipo.pat_margin_pct!=null&&<Stat label="PAT mgn" value={`${n(ipo.pat_margin_pct).toFixed(0)}%`}/>}
+                  {ipo.promoter_post_pct!=null&&<Stat label="Promoter" value={`${n(ipo.promoter_post_pct).toFixed(0)}%`}/>}
+                </div>
+                {facts.length>0&&(
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {facts.map(f=><span key={f} style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:10,background:C.amberBg,color:C.amber,border:`1px solid ${C.amberBd}`}}>{"\u26a0"} {f}</span>)}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Anchor detail */}
           {(n(ipo.anchor_tier1_count)>0||n(ipo.anchor_count)>0)&&(
             <div style={{padding:"8px 12px",background:C.tealBg,borderRadius:8,border:`1px solid ${C.tealBd}`,marginBottom:10}}>

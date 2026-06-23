@@ -1,6 +1,7 @@
 // app/api/ipo/playbook/route.ts
 // Returns IPO playbook data — all IPOs with play recommendations
-// Computes play scores from existing ipo_intelligence data
+// CHANGE (additive): mainboard only (is_sme=false), drop malformed-size rows,
+// and dedupe BSE/name twins so each IPO appears once (the clean NSE row wins).
 
 import { NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
@@ -16,75 +17,83 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = await sql`
+      WITH deduped AS (
+        SELECT *,
+          ROW_NUMBER() OVER (
+            -- one row per company, ignoring Ltd/Limited/Pvt and punctuation/case
+            PARTITION BY regexp_replace(
+                           regexp_replace(lower(company_name), '(limited|ltd|lim|private|pvt)', '', 'g'),
+                           '[^a-z0-9]', '', 'g')
+            ORDER BY
+              -- prefer the row with a real NSE symbol …
+              (CASE WHEN symbol IS NOT NULL AND symbol <> '' THEN 0 ELSE 1 END),
+              -- … a sane issue size (BSE twin had ₹32,901,878 cr garbage) …
+              (CASE WHEN issue_size_cr IS NOT NULL AND issue_size_cr > 0 AND issue_size_cr < 100000 THEN 0 ELSE 1 END),
+              -- … and a populated play recommendation
+              (CASE WHEN play_recommendation IS NOT NULL AND play_recommendation <> '' THEN 0 ELSE 1 END),
+              updated_at DESC NULLS LAST
+          ) AS _rn
+        FROM ipo_intelligence
+        WHERE COALESCE(is_sme, false) = false                       -- mainboard only
+          AND (issue_size_cr IS NULL OR issue_size_cr < 100000)     -- drop malformed-size junk rows
+      )
+      SELECT base.*,
+        iid.roce_pct, iid.debt_equity, iid.pe_post AS iid_pe_post,
+        iid.promoter_post_pct, iid.pat_margin_pct,
+        iid.issue_amount_cr AS iid_issue_cr, iid.industry AS iid_industry,
+        iid.registrar AS iid_registrar
+      FROM (
       SELECT
         id, company_name, symbol, sector, is_sme,
         issue_price, issue_size_cr, fresh_issue_ratio, ofs_pct,
         listing_date, open_date, close_date,
-
-        -- GMP
         gmp_pct_t10, gmp_pct_t7, gmp_pct_t5, gmp_pct_t3, gmp_pct_t1,
         gmp_momentum, gmp_max_pct, gmp_min_pct, gmp_day_before_pct, gmp_history,
-
-        -- Subscription
         qib_subscription_x, nii_subscription_x, rii_subscription_x, total_subscription_x,
         sub_day1_qib, sub_day2_qib, sub_day3_qib, qib_backloaded,
-
-        -- Anchors
         anchor_quality, anchor_tier1_count, anchor_count, anchor_names,
         anchor_stalwart_names, anchor_investors,
         anchor_lock30_date, anchor_lock90_date,
-
-        -- Listing day
         listing_open, listing_day_high, listing_day_low, listing_day_close,
         listing_day_vwap, listing_vs_gmp_pct,
         hit_uc_day1, hit_lc_day1, hit_uc_day2, hit_lc_day2,
-
-        -- BRLM
         brlm_names, brlm_score, brlm_avg_listing_gain, brlm_pct_negative, brlm_tier,
-
-        -- Scores
         lqi_final, archetype,
         operator_risk_score, operator_risk_flags,
         buy_at_open_score, vwap_entry_score,
-
-        -- Returns
         return_listing_open, return_day1_close,
         return_day7, return_day30, return_day90, return_day180, return_day365,
         max_upside_pct,
-
-        -- Play
         play_recommendation, play_confidence, play_reasons,
         play_stop_loss_pct, play_target_pct, play_hold_window,
-
-        -- Extras
         similar_ipos, suggested_action,
         prob_10pct_profit, prob_loss_gt10, expected_return,
         ipo_pe, peer_median_pe, valuation_premium_pct,
         india_vix, listing_regime,
         lot_size,
         updated_at
-
-      FROM ipo_intelligence
-      WHERE (${play} = '' OR play_recommendation = ${play}
+      FROM deduped
+      WHERE _rn = 1
+        AND (${play} = '' OR play_recommendation = ${play}
              OR suggested_action ILIKE ${'%' + play + '%'})
         AND (${search} = '' OR company_name ILIKE ${'%' + search + '%'})
+      ) base
+      LEFT JOIN ipo_issue_details iid ON iid.nse_symbol = base.symbol
       ORDER BY
-        -- Upcoming and recent first
         CASE
-          WHEN listing_date IS NULL THEN 0
-          WHEN listing_date >= CURRENT_DATE THEN 1
-          WHEN listing_date >= CURRENT_DATE - INTERVAL '30 days' THEN 2
+          WHEN base.listing_date IS NULL THEN 0
+          WHEN base.listing_date >= CURRENT_DATE THEN 1
+          WHEN base.listing_date >= CURRENT_DATE - INTERVAL '30 days' THEN 2
           ELSE 3
         END ASC,
-        -- Then by play quality within each group
-        CASE WHEN play_recommendation = 'BUY_AT_OPEN'    THEN 1
-             WHEN play_recommendation = 'BUY_PANIC_DIP'  THEN 2
-             WHEN play_recommendation = 'WAIT_FOR_VWAP'  THEN 3
-             WHEN play_recommendation = 'BUY_AFTER_DAY3' THEN 4
-             WHEN play_recommendation = 'AVOID'          THEN 6
+        CASE WHEN base.play_recommendation = 'BUY_AT_OPEN'    THEN 1
+             WHEN base.play_recommendation = 'BUY_PANIC_DIP'  THEN 2
+             WHEN base.play_recommendation = 'WAIT_FOR_VWAP'  THEN 3
+             WHEN base.play_recommendation = 'BUY_AFTER_DAY3' THEN 4
+             WHEN base.play_recommendation = 'AVOID'          THEN 6
              ELSE 5
         END ASC,
-        listing_date DESC NULLS LAST
+        base.listing_date DESC NULLS LAST
       LIMIT ${limit}
     `
 
