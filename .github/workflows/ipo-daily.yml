@@ -61,6 +61,10 @@ jobs:
       - name: Market snapshot + IPO predictions (market_snapshot)
         run: python _scripts/prod/kite_sync_and_predict.py --mode all
 
+      - name: IPO play selector (Command Center BUY plays)
+        continue-on-error: true
+        run: python _scripts/ipo/ipo_play_selector.py --recent 90
+
       - name: FII/DII flows (daily_institutional_flows)
         continue-on-error: true
         run: python _scripts/fetch_fii_dii.py

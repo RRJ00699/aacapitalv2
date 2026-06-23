@@ -1,0 +1,49 @@
+name: AACapital Chittorgarh Import
+
+# Manual enrichment: import a Chittorgarh Pro export into ipo_intelligence, then
+# re-run the play selector across all IPOs.
+#
+# import_chittorgarh.py reads a FILE (no live scrape), so the export must be
+# committed to the repo first. Workflow:
+#   1. Export from Chittorgarh Pro (CSV or Excel)
+#   2. Drop it at data/Ipo_reports/  and commit
+#   3. Actions -> this workflow -> Run, set the filename if different from default
+#
+# The DAILY pipeline already runs ipo_play_selector.py on the NSE feed, so the
+# Command Center populates without this. This workflow is only for the richer
+# Chittorgarh fields (operator risk, BRLM, etc.) when you have a fresh export.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Path to the Chittorgarh export (committed in the repo)"
+        required: true
+        default: "data/Ipo_reports/chittorgarh_pro.xlsx"
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+
+      - name: Verify the export file exists
+        run: |
+          if [ ! -f "${{ github.event.inputs.file }}" ]; then
+            echo "::error::File not found: ${{ github.event.inputs.file }} — commit the Chittorgarh export to the repo first."
+            exit 1
+          fi
+          echo "Found ${{ github.event.inputs.file }}"
+
+      - name: Import Chittorgarh export into ipo_intelligence
+        run: python _scripts/ipo/import_chittorgarh.py --file "${{ github.event.inputs.file }}"
+
+      - name: Re-run play selector across all IPOs
+        run: python _scripts/ipo/ipo_play_selector.py
