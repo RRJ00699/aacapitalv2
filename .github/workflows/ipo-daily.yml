@@ -68,3 +68,12 @@ jobs:
       - name: Global markets cache
         continue-on-error: true
         run: python _scripts/seed_global_cache.py
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          HOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+        run: |
+          [ -z "$HOOK" ] && echo "NOTIFY_WEBHOOK not set; skipping" && exit 0
+          curl -s -X POST "$HOOK" -H "Content-Type: application/json" \
+            -d "{\"text\":\"AACapital Daily FAILED - run ${GITHUB_RUN_ID}\",\"content\":\"AACapital Daily FAILED: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"

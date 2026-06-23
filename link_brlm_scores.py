@@ -1,130 +1,115 @@
 """
-Links brlm_scores table → ipo_intelligence.brlm_score
-Matches on brlm_name partial match against brlm_names column.
-Also recalibrates scores (currently all 100 = too generous).
+Links brlm_scores table -> ipo_intelligence.brlm_score and recalibrates scores.
+Step 3 matcher rewritten: normalized + fuzzy, so short names (JM, BOI, IIFL) and
+suffix variants ("ICICI Securities" vs "ICICI Securities Ltd.") link correctly.
 """
 import psycopg2, os, re
+from difflib import SequenceMatcher
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 conn = psycopg2.connect(DATABASE_URL)
 cur = conn.cursor()
 
-# Step 1: Recalibrate BRLM scores (score=100 for everyone is useless)
-# Real score formula: 
-#   avg_listing > 50% = 90+
-#   avg_listing 30-50% = 75-89
-#   avg_listing 15-30% = 60-74
-#   avg_listing 5-15%  = 45-59
-#   avg_listing < 5%   = 30-44
-#   pct_negative > 30% = penalty
-
+# ── Step 1: Recalibrate BRLM scores ───────────────────────────────────────────
 print("Recalibrating BRLM scores...")
 cur.execute("SELECT brlm_name, avg_listing, pct_negative, ipo_count FROM brlm_scores")
 brlms = cur.fetchall()
-
 for brlm_name, avg_listing, pct_neg, n_ipos in brlms:
-    avg = float(avg_listing or 0)
-    pct_neg_val = float(pct_neg or 0)
-    n = int(n_ipos or 1)
-
-    # Base score from avg listing
+    avg = float(avg_listing or 0); pct_neg_val = float(pct_neg or 0); n = int(n_ipos or 1)
     if avg >= 50:   base = 90
     elif avg >= 30: base = 78
     elif avg >= 15: base = 65
     elif avg >= 5:  base = 50
     else:           base = 35
-
-    # Bonus for consistency (many IPOs)
     if n >= 20:   base += 5
     elif n >= 10: base += 3
-    elif n <= 2:  base -= 10  # small sample, unreliable
-
-    # Penalty for negative listings
-    if pct_neg_val > 40:  base -= 20
+    elif n <= 2:  base -= 10
+    if pct_neg_val > 40:   base -= 20
     elif pct_neg_val > 25: base -= 10
     elif pct_neg_val > 15: base -= 5
-
     score = max(20, min(98, base))
-
     cur.execute("UPDATE brlm_scores SET score = %s WHERE brlm_name = %s", (score, brlm_name))
-
 conn.commit()
 print(f"  Recalibrated {len(brlms)} BRLM scores")
 
-# Step 2: Show top BRLMs after recalibration
 print("\nTop 15 BRLMs after recalibration:")
-cur.execute("""
-    SELECT brlm_name, score, avg_listing, ipo_count, pct_negative
-    FROM brlm_scores ORDER BY score DESC LIMIT 15
-""")
+cur.execute("SELECT brlm_name, score, avg_listing, ipo_count, pct_negative FROM brlm_scores ORDER BY score DESC LIMIT 15")
 for r in cur.fetchall():
     print(f"  {r[0][:35]:35s} score:{r[1]:.0f} avg:{r[2]:.1f}% n:{r[3]} neg:{r[4]:.0f}%")
 
-# Step 3: Link scores to ipo_intelligence
+# ── Step 3: Link scores to ipo_intelligence (normalized fuzzy matcher) ─────────
 print("\nLinking BRLM scores to ipo_intelligence...")
-cur.execute("SELECT brlm_name, score, avg_listing FROM brlm_scores")
-brlm_map = {r[0].lower(): (r[1], r[2]) for r in cur.fetchall()}
 
-cur.execute("""
-    SELECT id, brlm_names FROM ipo_intelligence 
-    WHERE brlm_names IS NOT NULL AND brlm_names != ''
-""")
+STOP = {"ltd", "limited", "pvt", "private", "co", "company", "llp", "the", "india",
+        "indian", "and", "&"}
+
+def normalize(name):
+    s = re.sub(r"[^a-z0-9\s]", " ", str(name).lower())
+    toks = [t for t in s.split() if t and t not in STOP]
+    return " ".join(toks), set(toks)
+
+cur.execute("SELECT brlm_name, score, avg_listing FROM brlm_scores")
+db = []
+for nm, sc, gn in cur.fetchall():
+    norm, toks = normalize(nm)
+    if norm:
+        db.append({"orig": nm, "score": sc, "gain": gn, "norm": norm, "toks": toks})
+
+def best_match(token):
+    """Return (score, gain) for the best DB manager matching this name token, or None."""
+    qn, qt = normalize(token)
+    if not qn:
+        return None
+    best, best_r = None, 0.0
+    for d in db:
+        # 1) exact normalized
+        if qn == d["norm"]:
+            return (d["score"], d["gain"])
+        # 2) containment (one inside the other), guard against tiny fragments
+        if len(qn) >= 4 and (qn in d["norm"] or d["norm"] in qn):
+            r = 0.95
+        else:
+            # 3) token overlap (Jaccard) + 4) fuzzy ratio, take the stronger signal
+            inter = qt & d["toks"]
+            jac = len(inter) / len(qt | d["toks"]) if (qt | d["toks"]) else 0
+            ratio = SequenceMatcher(None, qn, d["norm"]).ratio()
+            # a shared distinctive token (>=4 chars) is a strong signal on its own
+            strong_tok = any(len(t) >= 4 for t in inter)
+            r = max(ratio, jac + (0.25 if strong_tok else 0))
+        if r > best_r:
+            best_r, best = r, (d["score"], d["gain"])
+    return best if best_r >= 0.72 else None
+
+cur.execute("SELECT id, brlm_names FROM ipo_intelligence WHERE brlm_names IS NOT NULL AND brlm_names != ''")
 ipos = cur.fetchall()
 
-matched = 0
+matched, unmatched_samples = 0, []
 for ipo_id, brlm_names in ipos:
-    if not brlm_names: continue
-    
-    # Try to find matching BRLM score
-    best_score = None
-    best_gain  = None
-    
-    # Split by comma for multiple BRLMs
-    for bname in re.split(r'[,;&]', str(brlm_names)):
-        bname = bname.strip().lower()
-        if not bname: continue
-        
-        # Exact match first
-        if bname in brlm_map:
-            s, g = brlm_map[bname]
+    best_score = best_gain = None
+    any_token_unmatched = None
+    for bname in re.split(r"[,;/&]", str(brlm_names)):
+        bname = bname.strip()
+        if not bname:
+            continue
+        m = best_match(bname)
+        if m:
+            s, g = m
             if best_score is None or s > best_score:
                 best_score, best_gain = s, g
-            continue
-        
-        # Partial match — first significant word
-        first_word = bname.split()[0] if bname.split() else ''
-        if len(first_word) >= 4:
-            for db_name, (s, g) in brlm_map.items():
-                if first_word in db_name:
-                    if best_score is None or s > best_score:
-                        best_score, best_gain = s, g
-                    break
-    
+        else:
+            any_token_unmatched = bname
     if best_score is not None:
-        cur.execute("""
-            UPDATE ipo_intelligence 
-            SET brlm_score = %s, brlm_avg_listing_gain = %s
-            WHERE id = %s
-        """, (best_score, best_gain, ipo_id))
+        cur.execute("UPDATE ipo_intelligence SET brlm_score=%s, brlm_avg_listing_gain=%s WHERE id=%s",
+                    (best_score, best_gain, ipo_id))
         matched += 1
+    elif any_token_unmatched and len(unmatched_samples) < 12:
+        unmatched_samples.append(any_token_unmatched)
 
 conn.commit()
 print(f"  Linked {matched}/{len(ipos)} IPOs to BRLM scores")
-
-# Step 4: Check upcoming IPOs now
-print("\nUpcoming IPOs with BRLM scores:")
-cur.execute("""
-    SELECT company_name, brlm_names, brlm_score, brlm_avg_listing_gain,
-           issue_size_cr, open_date, close_date
-    FROM ipo_intelligence
-    WHERE open_date >= '2026-06-19' AND is_sme = FALSE
-    ORDER BY open_date
-""")
-for r in cur.fetchall():
-    co, brlm, bscore, bgain, size, od, cd = r
-    score_str = f"score:{bscore:.0f} gain:{bgain:.1f}%" if bscore else "❌ no score"
-    print(f"  {co[:32]:32s} | {str(brlm or '?'):22s} | {score_str} | ₹{size}Cr")
+if unmatched_samples:
+    print("  Sample still-unmatched names (for tuning):")
+    for s in unmatched_samples:
+        print(f"    - {s}")
 
 conn.close()
-print("\nNow run: python pre_subscription_score.py")
-print("Then:    python _scripts\\ipo\\ipo_play_selector.py")
