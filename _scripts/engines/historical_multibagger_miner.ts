@@ -129,9 +129,14 @@ async function processSymbol(symbol: string) {
 }
 
 async function ensureTables() {
-  // Self-heal: the miner writes these but no migration creates them.
+  // These mining tables are fully regenerated every run, so drop-and-recreate to
+  // guarantee the schema (a stale multibagger_events from the old DNA-lab engine
+  // lacked start_date, which shadowed CREATE TABLE IF NOT EXISTS and broke the
+  // similarity engine with "column e.start_date does not exist").
+  await pool.query(`DROP TABLE IF EXISTS multibagger_patterns CASCADE`);
+  await pool.query(`DROP TABLE IF EXISTS multibagger_events   CASCADE`);
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS multibagger_events (
+    CREATE TABLE multibagger_events (
       id          SERIAL PRIMARY KEY,
       symbol      TEXT NOT NULL,
       start_date  DATE NOT NULL,
@@ -144,7 +149,7 @@ async function ensureTables() {
       UNIQUE (symbol, start_date, end_date)
     )`);
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS multibagger_patterns (
+    CREATE TABLE multibagger_patterns (
       id                        SERIAL PRIMARY KEY,
       symbol                    TEXT NOT NULL,
       event_id                  INTEGER REFERENCES multibagger_events(id) ON DELETE CASCADE,
