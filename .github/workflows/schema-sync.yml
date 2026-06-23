@@ -1,22 +1,20 @@
 name: Schema Sync Check
-
 on:
+  schedule:
+    - cron: "0 1 * * 1"          # Mondays 06:30 IST
   workflow_dispatch:
-
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
+          python-version: "3.11"
       - name: Install deps
-        run: pip install psycopg2-binary
-
-      - name: Check Neon schema
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python _scripts/check_neon_schema.py
+        run: pip install -r requirements.txt
+      - name: Schema sync check
+        run: python _scripts/schema_sync.py --dry-run

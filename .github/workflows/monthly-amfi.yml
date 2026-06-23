@@ -1,35 +1,22 @@
 name: AACapital Monthly AMFI
-
 on:
   schedule:
-    # 1st of every month at 9 AM IST (3:30 UTC)
-    - cron: '30 3 1 * *'
+    - cron: "0 2 1 * *"          # 1st of month, 07:30 IST
   workflow_dispatch:
-
 jobs:
-  amfi-update:
+  amfi:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run AMFI scoring
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npx tsx _scripts/run-intelligence-scoring.ts --module=amfi
-
-      - name: Summary
-        run: echo "✅ Monthly AMFI update complete $(date -u '+%Y-%m-%d %H:%M UTC')"
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Scrape AMFI NAV
+        run: python _scripts/scrape_amfi.py

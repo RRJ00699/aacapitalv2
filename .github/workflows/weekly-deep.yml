@@ -1,22 +1,20 @@
-# AACapital — Weekly deep refresh (GitHub Actions)
-# Replaces: management-commentary, on-demand-commentary  (delete those two)
-# NOTE: train_multibagger_model.py is intentionally NOT included — the pattern-match
-#       engine failed out-of-sample validation. Re-add only if a real edge is proven.
 name: Weekly Deep
 on:
   schedule:
-    - cron: '30 2 * * 0'     # 08:00 IST Sunday
+    - cron: "0 3 * * 0"          # Sundays 08:30 IST
   workflow_dispatch:
 jobs:
-  weekly:
+  deep:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - run: pip install psycopg2-binary requests anthropic python-dotenv
-      - name: Score management commentary
-        run: python _scripts/score_management_commentary.py --all --limit 100
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Score management commentary (all recommended)
+        run: python _scripts/score_management_commentary.py --recommended

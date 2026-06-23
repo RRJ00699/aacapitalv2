@@ -1,54 +1,27 @@
 name: AACapital Quarterly Backfill
-
 on:
   schedule:
-    - cron: '0 2 15 1,4,7,10 *'   # Jan/Apr/Jul/Oct 15th
+    - cron: "0 4 1 1,4,7,10 *"   # 1st of each quarter, 09:30 IST
   workflow_dispatch:
-
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+      KITE_API_SECRET:   ${{ secrets.KITE_API_SECRET }}
+      KITE_USER_ID:      ${{ secrets.KITE_USER_ID }}
+      KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
+      KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          npm ci
-          pip install psycopg2-binary kiteconnect python-dotenv pandas requests openpyxl
-
-      - name: Run intelligence scoring
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npx tsx _scripts/run-intelligence-scoring.ts
-        continue-on-error: true
-
-      - name: Score IPO engine
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-        run: python _scripts/engines/ipo_probability_engine.py --all
-        continue-on-error: true
-
-      - name: Market regime backfill
-        env:
-          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
-        run: python _scripts/engines/market_regime.py --backfill
-        continue-on-error: true
-
-      - name: Summary
-        run: echo "Quarterly backfill done $(date -u '+%Y-%m-%d %H:%M UTC')"
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Refresh Kite token
+        run: python _scripts/refresh_kite_token.py
+      - name: Quarterly candle backfill
+        run: python _scripts/ipo_candle_backfill.py
