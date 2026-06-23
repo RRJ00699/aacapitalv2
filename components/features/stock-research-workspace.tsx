@@ -201,11 +201,18 @@ export function StockResearchWorkspace({ symbol, onClose }:
   const isNR7   = detail.technical?.is_nr7 || wdna?.is_nr7
   const stage   = wdna?.stage_label ?? `Stage ${detail.technical?.stage ?? "—"}`
 
-  // Live price targets
-  const sl  = (detail.trade_plan?.stopLoss  ?? price * 0.90).toFixed(0)
-  const t1  = (detail.trade_plan?.targets?.[0] ?? price * 1.12).toFixed(0)
-  const t2  = (detail.trade_plan?.targets?.[1] ?? price * 1.25).toFixed(0)
-  const t3  = (detail.trade_plan?.targets?.[2] ?? price * 1.50).toFixed(0)
+  // Targets are computed off the LIVE price so they always match their +12/+25/+50%
+  // labels and stay above current price. A stored trade_plan only overrides this while
+  // it is still live (all targets above price, stop below) — once price runs past it,
+  // we fall back to fresh bands off the current price instead of showing stale numbers.
+  const plan      = detail.trade_plan ?? {}
+  const planValid = Array.isArray(plan.targets) && plan.targets.length >= 3
+    && Number(plan.targets[0]) > price
+    && (plan.stopLoss == null || Number(plan.stopLoss) < price)
+  const sl  = (planValid ? plan.stopLoss   : price * 0.90).toFixed(0)
+  const t1  = (planValid ? plan.targets[0] : price * 1.12).toFixed(0)
+  const t2  = (planValid ? plan.targets[1] : price * 1.25).toFixed(0)
+  const t3  = (planValid ? plan.targets[2] : price * 1.50).toFixed(0)
 
   return (
     <Overlay onClose={onClose}>

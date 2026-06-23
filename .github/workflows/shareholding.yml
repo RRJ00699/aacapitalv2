@@ -1,0 +1,35 @@
+name: AACapital Shareholding
+
+# Scrapes quarterly shareholding (Promoter / FII / DII / MF / Public / Pledge) from
+# Screener.in into shareholding_history + the latest-snapshot table that /api/ownership
+# serves. This is what fills the FII/DII columns that currently show 0 — the scraper
+# already captures them, it was simply never wired into a workflow.
+#
+# Quarterly cadence: shareholding is filed ~3-4 weeks after quarter end (BSE), so this
+# runs early in Feb / May / Aug / Nov to catch fresh filings. No login needed.
+# Rate-limited (~1.5s/symbol), so the full universe takes ~30-40 min.
+
+on:
+  schedule:
+    - cron: "30 1 5 2,5,8,11 *"   # 07:00 IST on the 5th of Feb/May/Aug/Nov
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many symbols to scrape (from stock_fundamentals)"
+        required: false
+        default: "1500"
+
+jobs:
+  shareholding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120          # ~1.5s/symbol over the ~1400 universe
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Scrape shareholding (FII/DII/MF) from Screener
+        run: python _scripts/scrape_shareholding.py --limit ${{ github.event.inputs.limit || '1500' }}
