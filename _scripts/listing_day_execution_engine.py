@@ -34,6 +34,17 @@ DATABASE_URL      = os.environ.get("DATABASE_URL", "")
 KITE_API_KEY      = os.environ.get("KITE_API_KEY",      "br9m41pn8nvvywnl")
 KITE_API_SECRET   = os.environ.get("KITE_API_SECRET",   "")
 KITE_ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN", "")
+if not KITE_ACCESS_TOKEN:
+    try:
+        import psycopg2 as _pg
+        _db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
+        if _db:
+            _c = _pg.connect(_db); _cur = _c.cursor()
+            _cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+            _r = _cur.fetchone(); _cur.close(); _c.close()
+            if _r and _r[0]: KITE_ACCESS_TOKEN = str(_r[0]).strip()
+    except Exception:
+        pass
 
 OI_HOLD_THRESHOLD = 65.0
 OI_NEUTRAL_LOW    = 50.0

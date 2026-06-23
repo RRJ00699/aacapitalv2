@@ -1,0 +1,94 @@
+name: AACapital Listing Day
+
+# Runs on weekday mornings, detects any mainboard IPO listing TODAY from Neon,
+# and launches the listing-day execution engine for each — in parallel, one job
+# per IPO, so each gets its own auction-window monitor.
+#
+# Notes:
+#  - 03:30 UTC = 09:00 IST. GitHub cron can drift 5-15 min under load, so this is
+#    scheduled early to still catch the pre-open / call-auction window.
+#  - The engine uses naive datetime.now() assuming IST, so the monitor job sets
+#    TZ=Asia/Kolkata. Without that, its 10:15/10:25 phase gates fire at the wrong
+#    real-world time.
+#  - The token is refreshed ONCE in the detect job (written to Neon); the parallel
+#    monitor jobs read it from Neon, avoiding concurrent Kite logins racing.
+
+on:
+  schedule:
+    - cron: "30 3 * * 1-5"      # 09:00 IST Mon–Fri (pre-open / auction)
+  workflow_dispatch:
+    inputs:
+      ipo:
+        description: "Force-run a specific IPO company name (skips auto-detect)"
+        required: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix:       ${{ steps.find.outputs.matrix }}
+      has_listings: ${{ steps.find.outputs.has_listings }}
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+      KITE_API_SECRET:   ${{ secrets.KITE_API_SECRET }}
+      KITE_USER_ID:      ${{ secrets.KITE_USER_ID }}
+      KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
+      KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Refresh Kite token (once, into Neon)
+        run: python _scripts/refresh_kite_token.py
+      - name: Find today's listings
+        id: find
+        env:
+          FORCE_IPO: ${{ github.event.inputs.ipo }}
+        run: |
+          python - <<'PY'
+          import os, json, psycopg2
+          override = (os.environ.get("FORCE_IPO") or "").strip()
+          if override:
+              names = [override]
+          else:
+              conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
+              cur.execute("""
+                  SELECT DISTINCT company_name
+                  FROM ipo_intelligence
+                  WHERE listing_date = CURRENT_DATE
+                    AND COALESCE(is_sme, false) = false
+                    AND company_name IS NOT NULL
+              """)
+              names = [r[0] for r in cur.fetchall()]
+              cur.close(); conn.close()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"matrix={json.dumps(names)}\n")
+              f.write(f"has_listings={'true' if names else 'false'}\n")
+          print("Listings today:", names if names else "none")
+          PY
+
+  monitor:
+    needs: detect
+    if: needs.detect.outputs.has_listings == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90          # hard cap: covers 09:00 → 10:30 IST, then exits
+    strategy:
+      fail-fast: false           # one IPO failing must not cancel the others
+      matrix:
+        ipo: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    env:
+      TZ:                Asia/Kolkata    # engine assumes IST for its phase gates
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Monitor listing — ${{ matrix.ipo }}
+        run: python _scripts/listing_day_execution_engine.py --ipo "${{ matrix.ipo }}"

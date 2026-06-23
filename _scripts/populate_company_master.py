@@ -62,6 +62,17 @@ def get_kite_name_lookup():
 
     api_key = os.getenv("KITE_API_KEY")
     token   = os.getenv("KITE_ACCESS_TOKEN")
+    if not token:
+        try:
+            import psycopg2 as _pg
+            _db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
+            if _db:
+                _c = _pg.connect(_db); _cur = _c.cursor()
+                _cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+                _r = _cur.fetchone(); _cur.close(); _c.close()
+                if _r and _r[0]: token = str(_r[0]).strip()
+        except Exception:
+            pass
     if not api_key or not token:
         log.warning("KITE_API_KEY or KITE_ACCESS_TOKEN not set — names will default to symbol")
         return {}
