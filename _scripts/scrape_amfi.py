@@ -22,8 +22,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 DATABASE_URL      = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
-SCREENER_USERNAME = os.environ.get("SCREENER_USERNAME", "try.rakeshreddy@gmail.com")
-SCREENER_PASSWORD = os.environ.get("SCREENER_PASSWORD", "Ashrith@2820")
+SCREENER_USERNAME = os.environ.get("SCREENER_USERNAME")
+SCREENER_PASSWORD = os.environ.get("SCREENER_PASSWORD")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

@@ -168,7 +168,7 @@ async function ensureTables() {
 
 async function main() {
   await ensureTables();
-  const symbols = await getSymbols('price_candles_weekly');
+  const symbols = await getSymbols('price_candles');   // full-history universe; weekly is aggregated from daily in fetchWeeklyCandles
   const limit = pLimit(Number(opts.concurrency));
   let done = 0;
   let totalEvents = 0;

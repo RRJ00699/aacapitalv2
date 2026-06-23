@@ -26,13 +26,16 @@ export async function GET(req: NextRequest) {
   const symbol = (req.nextUrl.searchParams.get("symbol") || "").trim().toUpperCase()
   if (!symbol) return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 })
 
-  const [fRows, cmRows, wRows, tRows, eRows, smRows] = await Promise.all([
+  const [fRows, cmRows, wRows, tRows, eRows, smRows, shRows] = await Promise.all([
     safe(sql`SELECT * FROM stock_fundamentals WHERE UPPER(nse_symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM company_master WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM weekly_dna WHERE UPPER(tradingsymbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM technical_signals WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM earnings_acceleration_scores WHERE UPPER(symbol) = ${symbol} ORDER BY scored_at DESC NULLS LAST LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM smart_money_summary WHERE UPPER(nse_symbol) = ${symbol} LIMIT 1`, [] as any[]),
+    safe(sql`SELECT promoter_pct, promoter_pledge, fii_pct, dii_pct, mf_pct, public_pct
+             FROM shareholding_history WHERE UPPER(nse_symbol) = ${symbol}
+             ORDER BY quarter DESC LIMIT 1`, [] as any[]),
   ])
 
   const f = fRows[0] || {}
@@ -41,6 +44,7 @@ export async function GET(req: NextRequest) {
   const ts = tRows[0] || {}
   const es = eRows[0] || {}
   const sm = smRows[0] || {}
+  const sh = shRows[0] || {}   // latest real shareholding (FII/DII/promoter) from scrape_shareholding
 
   // If no data at all, return graceful empty response (not 404)
   if (!Object.keys(f).length && !Object.keys(cm).length && !Object.keys(ts).length) {
@@ -94,10 +98,11 @@ export async function GET(req: NextRequest) {
       pat_growth: n(pick(f.profit_growth, f.pat_growth, 0)),
       pe_ratio: n(pick(f.pe_ratio, f.pe, 0)),
       pb_ratio: n(pick(f.pb_ratio, f.price_to_book, 0)),
-      promoter_holding: n(pick(f.promoter_holding, 0)),
-      promoter_pledge: n(pick(f.promoter_pledge, 0)),
-      fii_holding: n(pick(f.fii_holding, 0)),
-      dii_holding: n(pick(f.dii_holding, 0)),
+      promoter_holding: n(pick(sh.promoter_pct, f.promoter_holding, 0)),
+      promoter_pledge: n(pick(sh.promoter_pledge, f.promoter_pledge, 0)),
+      fii_holding: n(pick(sh.fii_pct, f.fii_holding, 0)),
+      dii_holding: n(pick(sh.dii_pct, f.dii_holding, 0)),
+      mf_holding: n(pick(sh.mf_pct, f.mf_holding, 0)),
       operating_margin: n(pick(f.operating_margin, f.opm, 0)),
       dividend_yield: n(pick(f.dividend_yield, 0)),
       market_cap: n(pick(f.market_cap, cm.market_cap_cr, 0)),
