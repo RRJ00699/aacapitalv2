@@ -35,11 +35,21 @@ def cols_present(cur):
                    WHERE table_name='stock_fundamentals'""")
     return {r[0] for r in cur.fetchall()}
 
+def pick_group_col(cur, have):
+    """Group by industry_group if it has real data, else fall back to industry/sector."""
+    for col in ("industry_group", "industry", "sector"):
+        if col in have:
+            cur.execute(f"SELECT COUNT(*) FROM stock_fundamentals WHERE {col} IS NOT NULL AND {col} <> ''")
+            if cur.fetchone()[0] >= 2:
+                return col
+    return None
+
 def main():
     conn = psycopg2.connect(URL); conn.autocommit = True; cur = conn.cursor()
     have = cols_present(cur)
-    if "industry_group" not in have:
-        sys.exit("stock_fundamentals has no industry_group column — cannot compute sectors")
+    group_col = pick_group_col(cur, have)
+    if not group_col:
+        sys.exit("stock_fundamentals has no populated industry_group / industry / sector column")
 
     # map each present candidate to the alias the UI selects
     alias = {"return_3m":"return_3m","return_6m":"return_6m","roce":"avg_roce",
@@ -58,10 +68,10 @@ def main():
             selects.append(f"NULL::numeric AS {a}")
 
     q = f"""
-        SELECT industry_group, COUNT(*) AS stock_count, {", ".join(selects)}
+        SELECT {group_col} AS industry_group, COUNT(*) AS stock_count, {", ".join(selects)}
         FROM stock_fundamentals
-        WHERE industry_group IS NOT NULL AND industry_group <> ''
-        GROUP BY industry_group
+        WHERE {group_col} IS NOT NULL AND {group_col} <> ''
+        GROUP BY {group_col}
         HAVING COUNT(*) >= 2
     """
     cur.execute(q)
@@ -70,13 +80,13 @@ def main():
     # top 3 stocks per sector by business_dna_score (if present)
     tops = {}
     if "business_dna_score" in have and "nse_symbol" in have:
-        cur.execute("""
+        cur.execute(f"""
             SELECT industry_group, nse_symbol FROM (
-              SELECT industry_group, nse_symbol,
-                     ROW_NUMBER() OVER (PARTITION BY industry_group
+              SELECT {group_col} AS industry_group, nse_symbol,
+                     ROW_NUMBER() OVER (PARTITION BY {group_col}
                        ORDER BY business_dna_score DESC NULLS LAST) rn
               FROM stock_fundamentals
-              WHERE industry_group IS NOT NULL) t
+              WHERE {group_col} IS NOT NULL) t
             WHERE rn <= 3""")
         for ig, sym in cur.fetchall():
             tops.setdefault(ig, []).append(sym)
@@ -90,9 +100,12 @@ def main():
                             else "Neutral" if sc>=40 else "Rotate Out" if sc>=25 else "Avoid")
     def trend(r):  return "Accelerating" if f(r["return_3m"]) >= f(r["return_6m"])/2 else "Decelerating"
 
-    # rebuild table
+    # Full rebuild. DROP+CREATE (not CREATE IF NOT EXISTS) so a stale schema — e.g. an
+    # older sector_rotation where top_stocks was text[] — can't shadow this and make the
+    # JSON insert fail with "malformed array literal".
+    cur.execute("DROP TABLE IF EXISTS sector_rotation")
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS sector_rotation (
+        CREATE TABLE sector_rotation (
             industry_group TEXT PRIMARY KEY, stock_count INT,
             return_3m NUMERIC, return_6m NUMERIC, avg_roce NUMERIC,
             avg_sales_growth_3y NUMERIC, avg_pat_growth NUMERIC,
@@ -100,9 +113,6 @@ def main():
             rotation_score INT, rotation_signal TEXT, rotation_trend TEXT,
             top_stocks JSONB, updated_at TIMESTAMPTZ DEFAULT now())
     """)
-    for c,t in [("rotation_trend","TEXT"),("top_stocks","JSONB"),("updated_at","TIMESTAMPTZ DEFAULT now()")]:
-        cur.execute(f"ALTER TABLE sector_rotation ADD COLUMN IF NOT EXISTS {c} {t}")
-    cur.execute("DELETE FROM sector_rotation")
 
     for r in rows:
         sc = score(r)
