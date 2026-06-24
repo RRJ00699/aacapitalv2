@@ -246,10 +246,10 @@ export default function StocksPage() {
                 <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)", borderRadius:14, padding:"18px 20px", marginBottom:14, color:"#f8fafc" }}>
                   <div style={{ fontSize:8, color:"#4b5563", letterSpacing:"2px", textTransform:"uppercase", marginBottom:6 }}>Big Picture — AACapital</div>
                   <div style={{ fontSize:13, lineHeight:1.8, color:"#cbd5e1" }}>
-                    <strong style={{ color:"#f8fafc" }}>{sym}</strong> — <strong style={{ color:D.tierColor }}>{D.tierLabel}</strong> · Score <strong style={{ color:D.verdC }}>{D.overall}/100</strong> · Multibagger <strong style={{ color:"#a78bfa" }}>{D.mbScore}/100</strong>. Buy Zone: <strong style={{ color:D.buyZoneColor }}>{D.buyZoneLabel} ({D.buyZone}/100)</strong>. Rev CAGR <strong style={{ color:"#34d399" }}>{D.rev3}%</strong> · PAT CAGR <strong style={{ color:"#34d399" }}>{D.pat3}%</strong> · ROCE <strong style={{ color:D.roce>=20?"#34d399":"#fbbf24" }}>{D.roce}%</strong>. Analyst target <strong style={{ color:"#34d399" }}>{meta?.exchange==="NSE"?"₹":"$"}{D.cT.toLocaleString("en-IN")}</strong>.
+                    <strong style={{ color:"#f8fafc" }}>{sym}</strong> — <strong style={{ color:D.tierColor }}>{D.tierLabel}</strong> · Score <strong style={{ color:D.verdC }}>{D.overall}/100</strong> · Multibagger <strong style={{ color:"#a78bfa" }}>{D.mbScore}/100</strong>. Buy Zone: <strong style={{ color:D.buyZoneColor }}>{D.buyZoneLabel} ({D.buyZone}/100)</strong>. Rev CAGR <strong style={{ color:"#34d399" }}>{D.rev3}%</strong> · PAT CAGR <strong style={{ color:"#34d399" }}>{D.pat3}%</strong> · ROCE <strong style={{ color:D.roce>=20?"#34d399":"#fbbf24" }}>{D.roce}%</strong>.
                   </div>
                   <div style={{ display:"flex", gap:10, marginTop:14, flexWrap:"wrap" }}>
-                    {[{l:"Stop Loss",v:`₹${D.sl}`,c:"#f87171"},{l:"Target 1",v:`₹${D.t1}`,c:"#34d399"},{l:"Target 2",v:`₹${D.t2}`,c:"#6ee7b7"},{l:"Target 3",v:`₹${D.t3}`,c:"#a7f3d0"},{l:"Analyst Target",v:`₹${D.cT.toLocaleString("en-IN")}`,c:"#93c5fd"}].map(s => (
+                    {[{l:"Stop Loss",v:`₹${D.sl}`,c:"#f87171"},{l:"Target 1",v:`₹${D.t1}`,c:"#34d399"},{l:"Target 2",v:`₹${D.t2}`,c:"#6ee7b7"},{l:"Target 3",v:`₹${D.t3}`,c:"#a7f3d0"}].map(s => (
                       <div key={s.l} style={{ background:"rgba(255,255,255,0.07)", borderRadius:8, padding:"7px 12px" }}>
                         <div style={{ fontSize:7, color:"#4b5563", letterSpacing:"1px", textTransform:"uppercase", marginBottom:2 }}>{s.l}</div>
                         <div style={{ fontSize:13, fontWeight:700, color:s.c }}>{s.v}</div>
@@ -258,7 +258,8 @@ export default function StocksPage() {
                   </div>
                 </div>
 
-                {/* ANALYST ROW */}
+                {/* ANALYST ROW hidden — analyst consensus/targets are synthetic (no real source) */}
+                {false && (
                 <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:12, padding:14, marginBottom:14 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
                     <div>
@@ -285,6 +286,7 @@ export default function StocksPage() {
                     </div>
                   </div>
                 </div>
+                )}
 
                 {/* INSTITUTION + DELIVERY */}
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
@@ -366,7 +368,6 @@ export default function StocksPage() {
                   {label:"Promoter",value:`${D.promoter.toFixed(1)}%`,color:D.promoter>=60?"#16a34a":D.promoter>=50?"#d97706":"#dc2626",sub:"Holding",tip:"Above 60% = high conviction owner-operator"},
                   {label:"Pledge %",value:`${D.pledge.toFixed(1)}%`,color:D.pledge<2?"#16a34a":D.pledge<5?"#d97706":"#dc2626",sub:D.pledge<2?"Clean":"Watch",tip:"Above 15% = hard avoid. Margin-call spiral risk"},
                   {label:"Piotroski F",value:`${D.piotroski}/9`,color:D.piotroski>=7?"#16a34a":D.piotroski>=5?"#d97706":"#dc2626",sub:D.piotroski>=7?"Strong":"Moderate",tip:"9-point financial health scorecard. 8-9 = excellent"},
-                  {label:"Beneish M",value:D.beneish.toFixed(2),color:D.beneish<-1.78?"#16a34a":"#dc2626",sub:D.beneish<-1.78?"Safe zone":"Watch",tip:"Below -1.78 = no earnings manipulation detected"},
                   {label:"Op. Margin",value:`${D.opMarg}%`,color:D.opMarg>=20?"#16a34a":D.opMarg>=12?"#d97706":"#dc2626",sub:D.opMarg>=20?"Wide moat":"Moderate",tip:"Above 20% signals pricing power and wide moat"},
                 ].map(s => <StatCard key={s.label} {...s}/>)}
               </div>

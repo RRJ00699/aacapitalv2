@@ -51,6 +51,10 @@ jobs:
         continue-on-error: true
         run: python _scripts/engines/compute_sector_rotation.py
 
+      - name: Smart money score (from shareholding trend)
+        continue-on-error: true
+        run: python _scripts/engines/compute_smart_money.py
+
       - name: Convergence ranking (convergence_ranking)
         continue-on-error: true
         run: python _scripts/engines/compute_convergence_ranking.py
