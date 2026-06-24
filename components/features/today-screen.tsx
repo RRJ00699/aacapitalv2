@@ -83,7 +83,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       const [globalR, snapR, techR, sectorR, ipoR, brokerR] = await Promise.all([
         fetch("/api/market/global",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/market/snapshot",                             {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/technical/screener?timeframe=daily&limit=15",  {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+        fetch("/api/convergence/ranking?limit=15",                 {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/sector-rotation?view=hot",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/ipo/intelligence?limit=5&scope=live",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/broker/status",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
@@ -151,11 +151,21 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
 
       // ── Top convergence ──
       const SUPPRESS = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
-      const tech = ((techR?.data ?? []) as any[]).filter((x:any) => !SUPPRESS.test(String(x.symbol??"")))
-      setOpps(tech.slice(0,10).map((x:any) => {
-        const score  = Math.round(num(x.buy_zone_score ?? x.probability_score ?? 55))
-        const action: Action = score>=75 || x.volume_expansion || x.nr7 ? "BUY" : score>=55 ? "WATCH" : "HOLD"
-        return { symbol:x.symbol, name:x.company_name, score, action, reasons:[x.nr7?"NR7 compression":"Technical signal", x.volume_expansion?"Volume expansion":"Watch volume"] }
+      const conv = ((techR?.data ?? []) as any[]).filter((x:any) => !SUPPRESS.test(String(x.symbol??"")))
+      setOpps(conv.slice(0,10).map((x:any) => {
+        const score  = Math.round(num(x.convergence ?? 50))
+        const action: Action = (String(x.action ?? "").toUpperCase() as Action)
+                             || (score>=70 ? "BUY" : score>=55 ? "WATCH" : "HOLD")
+        return {
+          symbol: x.symbol,
+          name:   x.name,
+          score,
+          action,
+          reasons: [
+            `Biz ${Math.round(num(x.business))} · Earn ${Math.round(num(x.earnings))} · Tech ${Math.round(num(x.technical))}`,
+            `SmartMoney ${Math.round(num(x.smart_money))} · Sector ${Math.round(num(x.sector))}`,
+          ],
+        }
       }))
 
       // ── Sectors ──
@@ -255,7 +265,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
 
             {/* Top Convergence + IPO DNA */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Card title="Top Convergence" meta="Technical Signals" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
+              <Card title="Top Convergence" meta="5-Factor Engine" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
                 {loading ? <Skeleton className="h-36"/> : opps.length
                   ? <div className="space-y-1 max-h-72 overflow-y-auto pr-1">{opps.map(o=>(
                       <button key={o.symbol} onClick={()=>onStockSelect?.(o.symbol)}
@@ -274,7 +284,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
                         </div>
                       </button>
                     ))}</div>
-                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No technical signals yet.</div>
+                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No convergence scores yet — run the ranking job.</div>
                 }
               </Card>
 

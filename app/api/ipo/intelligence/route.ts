@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
               UPPER(COALESCE(status,'')) IN ('OPEN','UPCOMING','LIVE')
               OR close_date >= CURRENT_DATE
             ))
-        AND lqi_final IS NOT NULL
+        AND (${scope} = 'live' OR lqi_final IS NOT NULL)
       ORDER BY lqi_final DESC NULLS LAST
       LIMIT ${limit}
     `

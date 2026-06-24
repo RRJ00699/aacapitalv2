@@ -167,7 +167,7 @@ def get_symbols(conn, limit: int) -> list:
     cur = conn.cursor()
     cur.execute("""
         SELECT DISTINCT symbol FROM technical_signals
-        WHERE symbol NOT ILIKE 'ANTELOP%' AND symbol NOT ILIKE 'ACUTAAS%'
+        WHERE symbol NOT ILIKE 'ANTELOP%%' AND symbol NOT ILIKE 'ACUTAAS%%'
         ORDER BY symbol LIMIT %s
     """, (limit,))
     symbols = [r[0] for r in cur.fetchall()]

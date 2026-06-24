@@ -104,14 +104,16 @@ async function processSymbol(symbol: string) {
   const windowWeeks = Number(opts.windowWeeks);
   const lookbackWeeks = Number(opts.lookbackWeeks);
   const minReturn = Number(opts.minReturn);
-  if (candles.length < windowWeeks + lookbackWeeks) return { symbol, events: 0 };
+  if (candles.length < windowWeeks + lookbackWeeks) return { symbol, events: 0, weeks: candles.length, enough: false, bestReturn: 0 };
 
   let events = 0;
   let lastEventEndIndex = -999;
+  let bestReturn = 0;
   for (let i = 0; i + windowWeeks < candles.length; i++) {
     const start = candles[i];
     const end = candles[i + windowWeeks];
     const ret = pct(start.close, end.close);
+    if (ret > bestReturn) bestReturn = ret;
     if (ret >= minReturn && i - lastEventEndIndex > 26) {
       const lookbackStart = Math.max(0, i - lookbackWeeks);
       const lookback = candles.slice(lookbackStart, i + 1);
@@ -125,7 +127,7 @@ async function processSymbol(symbol: string) {
       }
     }
   }
-  return { symbol, events };
+  return { symbol, events, weeks: candles.length, enough: true, bestReturn };
 }
 
 async function ensureTables() {
@@ -180,7 +182,16 @@ async function main() {
     return r;
   })));
   const failed = results.filter((r) => r.status === 'rejected').length;
+  const ok = results.filter((r) => r.status === 'fulfilled').map((r: any) => r.value);
+  const enough = ok.filter((r: any) => r.enough).length;
+  const maxWeeks = ok.reduce((m: number, r: any) => Math.max(m, r.weeks || 0), 0);
+  const bestRet = ok.reduce((m: number, r: any) => Math.max(m, r.bestReturn || 0), 0);
+  const need = Number(opts.windowWeeks) + Number(opts.lookbackWeeks);
   console.log(`Multibagger mining complete. Symbols=${symbols.length}, events=${totalEvents}, failed=${failed}`);
+  console.log(`Diagnostics: ${enough}/${symbols.length} symbols had >= ${need} weeks of history (deepest=${maxWeeks} weeks).`);
+  console.log(`Best ${Number(opts.windowWeeks)}-week return seen across universe = ${bestRet.toFixed(0)}% (threshold --min-return=${opts.minReturn}%).`);
+  if (enough === 0) console.log(`>> CAUSE: no symbol has enough weekly history. price_candles is too shallow — backfill daily history.`);
+  else if (totalEvents === 0) console.log(`>> CAUSE: history is fine but nothing hit ${opts.minReturn}%. Lower --min-return (best seen was ${bestRet.toFixed(0)}%).`);
 }
 
 main().catch((err) => {
