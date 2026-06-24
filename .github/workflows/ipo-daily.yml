@@ -45,7 +45,7 @@ jobs:
         run: python _scripts/kite-sync-candles.py --days 1 --target neon
 
       - name: Generate signals (technical_signals)
-        run: python _scripts/generate_signals.py --limit 500
+        run: python _scripts/generate_signals.py --limit 2000
 
       - name: Sector rotation (sector_rotation)
         continue-on-error: true
@@ -55,9 +55,17 @@ jobs:
         continue-on-error: true
         run: python _scripts/engines/compute_smart_money.py
 
-      - name: Convergence ranking (convergence_ranking)
+      - name: Convergence ranking (5-factor)
         continue-on-error: true
         run: python _scripts/engines/compute_convergence_ranking.py
+
+      - name: Snapshot convergence (dated history for future backtest)
+        continue-on-error: true
+        run: python _scripts/snapshot_convergence.py
+
+      - name: Institutional flow flags (soft reducing/adding context)
+        continue-on-error: true
+        run: python _scripts/compute_institutional_flow.py
 
       - name: Fetch NSE IPOs (ipo_intelligence)
         continue-on-error: true
@@ -72,6 +80,11 @@ jobs:
       - name: IPO play selector (Command Center BUY plays)
         continue-on-error: true
         run: python _scripts/ipo/ipo_play_selector.py --recent 90
+
+      - name: NSE bulk/block deals (institutional_large_deals)
+        if: github.event.schedule == '30 13 * * 1-5' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: python _scripts/fetch_institutional_deals.py
 
       - name: FII/DII flows (daily_institutional_flows)
         continue-on-error: true
