@@ -2860,10 +2860,11 @@ setMarketFetched(true);
           <StockSearch onSelect={(sym)=>setWorkspaceSymbol(sym)} placeholder="Search stock..." />
         </div>
         {[
-  {v:"today",     l:"Today",     icon:<Home      size={13}/>},
-  {v:"stocks",    l:"Stocks",    icon:<TrendingUp size={13}/>},
-  {v:"ipo",       l:"IPO",       icon:<Zap        size={13}/>},
-  {v:"portfolio", l:"Portfolio", icon:<Briefcase  size={13}/>},
+  {v:"today",         l:"Today",         icon:<Home      size={13}/>},
+  {v:"stocks",        l:"Stocks",        icon:<TrendingUp size={13}/>},
+  {v:"opportunities", l:"Opportunities", icon:<Activity  size={13}/>},
+  {v:"ipo",           l:"IPO",           icon:<Zap        size={13}/>},
+  {v:"portfolio",     l:"Portfolio",     icon:<Briefcase  size={13}/>},
 ].map(({v,l,icon})=>(
   <button key={v} onClick={()=>setTab(v)} style={{
     display:"flex",alignItems:"center",gap:5,
