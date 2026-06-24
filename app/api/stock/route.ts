@@ -3,6 +3,7 @@ import { findStock, detectExchange } from "@/lib/constants/stocks"
 import { getBroker } from "@/lib/brokers"
 import { YahooProvider } from "@/lib/providers/yahoo"
 import { SimulatedProvider } from "@/lib/providers/simulated"
+import { getRealStockData } from "@/lib/realStockData"
 import type { Exchange } from "@/lib/providers/interface"
 
 // ── Technical calculation functions ──────────────────────────────────────────
@@ -219,8 +220,11 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
+    // Real Neon data (stock_fundamentals + shareholding_history) — overrides sim/Yahoo.
+    const { realFund, realOwn } = await getRealStockData(sym)
+
     const price       = livePrice || simPrice
-    const fundamentals = { ...simFund, ...(liveFund ? Object.fromEntries(Object.entries(liveFund).filter(([_, v]) => v !== null)) : {}) }
+    const fundamentals = { ...simFund, ...(liveFund ? Object.fromEntries(Object.entries(liveFund).filter(([_, v]) => v !== null)) : {}), ...realFund }
     const technicals  = liveTech?.ema20 ? liveTech : simTech
 
     const sourceLabels: Record<string, string> = {
@@ -237,10 +241,12 @@ export async function GET(req: NextRequest) {
       symbol:   sym,
       exchange: exch,
       price, fundamentals,
-      ownership:  simOwn,
+      ownership:  realOwn ?? simOwn,
       technicals,
       buyZone:    buyZoneData,
       source,
+      ownershipReal:    realOwn != null,
+      fundamentalsReal: Object.keys(realFund).length > 0,
       dataNote:   sourceLabels[source] || "⚠ Simulated",
       fetchedAt:  new Date().toISOString(),
     })
