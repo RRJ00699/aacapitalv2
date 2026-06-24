@@ -2827,7 +2827,7 @@ setMarketFetched(true);
   const buyZoneLabel=(bz)=>bz>=91?"⚡ High Conviction Buy":bz>=76?"✅ Buy Zone":bz>=61?"📌 Accumulate":bz>=41?"👁 Watchlist":"❌ Avoid";
 
 
-  if (isMobile) return <MobileApp/>
+  //if (isMobile) return <MobileApp/>
   return(
     <div style={{background:"#FAFAF8",minHeight:"100vh",fontFamily:"'DM Sans',sans-serif",color:"#111827"}}>
       <style>{`
