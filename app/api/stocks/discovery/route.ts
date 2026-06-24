@@ -15,18 +15,38 @@ function buildResponse(rows: any[], hasSession9: boolean) {
   const data = (rows as any[])
     .filter(s => !SUPPRESS.test(s.symbol ?? ""))
     .map(s => {
-      const mb  = n(s.mb_score ?? 0)
-      const bzs = n(s.buy_zone_score ?? 0)
-      const mom = n(s.momentum_6m ?? 0)
-      const dna = mb > 0 ? mb : bzs
+      const mom  = n(s.momentum_6m ?? 0)
+      // REAL business-quality composite (ROCE/ROE/debt/promoter) + smart-money context.
+      // NOT the old mb_score/buy_zone technical composite — backtests showed that has no edge.
+      const roce = n(s.roce), roe = n(s.roe)
+      const debt = n(s.debt_to_equity), prom = n(s.promoter_holding)
+      const sm   = n(s.smart_money_score)
+      const hasFund = roce > 0 || roe > 0   // do we actually have fundamentals to judge?
+
+      let q = 0
+      if      (roce >= 20) q += 30
+      else if (roce >= 15) q += 20
+      else if (roce >= 10) q += 10
+      if      (roe  >= 18) q += 20
+      else if (roe  >= 12) q += 10
+      if      (debt > 0 && debt < 0.5) q += 20
+      else if (debt > 0 && debt < 1.0) q += 10
+      if      (prom >= 55) q += 15
+      else if (prom >= 45) q += 8
+      if      (sm   >= 70) q += 15   // institutional ownership as context, lighter weight
+      else if (sm   >= 50) q += 8
+      const quality = Math.min(q, 100)
+
+      const tier =
+        !hasFund                                   ? "unrated" :
+        (quality >= 80 && roce >= 20 && prom >= 55) ? "elite"  :
+        (quality >= 60 && roce >= 15)               ? "strong" : "decent"
 
       return {
         ...s,
-        dna_score:      Math.round(dna),
-        predicted_tier:
-          mb >= 70 && mom > 10 ? "5x_candidate" :
-          mb >= 45              ? "2x_candidate" :
-          bzs >= 75             ? "2x_candidate" : "watch",
+        dna_score:      hasFund ? quality : 0,   // unrated (no data) sink to the bottom
+        quality_score:  quality,
+        predicted_tier: tier,
         is_nr7:  !!(s.is_nr7 ?? s.nr7),
         signals: [
           (s.is_nr7 || s.nr7)   ? "NR7"          : null,
@@ -78,6 +98,10 @@ export async function GET() {
         sf.smart_money_signal,
         COALESCE(sf.earnings_score,      0)   AS earnings_score,
         COALESCE(sf.roce,                0)   AS roce,
+        COALESCE(sf.roe,                 0)   AS roe,
+        COALESCE(sf.debt_to_equity,      0)   AS debt_to_equity,
+        COALESCE(sf.promoter_holding,    0)   AS promoter_holding,
+        sf.pe_ratio,
         sf.market_cap
       FROM technical_signals ts
       LEFT JOIN company_master     cm ON cm.symbol     = ts.symbol
@@ -86,8 +110,8 @@ export async function GET() {
         AND ts.signal_date = (
           SELECT MAX(signal_date) FROM technical_signals WHERE timeframe = 'daily'
         )
-      ORDER BY COALESCE(ts.mb_score, ts.buy_zone_score, 0) DESC NULLS LAST
-      LIMIT 150
+      ORDER BY COALESCE(sf.roce, 0) DESC NULLS LAST
+      LIMIT 200
     `
 
     return buildResponse(rows as any[], true)
@@ -114,6 +138,10 @@ export async function GET() {
           sf.smart_money_signal,
           COALESCE(sf.earnings_score,      0)   AS earnings_score,
           COALESCE(sf.roce,                0)   AS roce,
+          COALESCE(sf.roe,                 0)   AS roe,
+          COALESCE(sf.debt_to_equity,      0)   AS debt_to_equity,
+          COALESCE(sf.promoter_holding,    0)   AS promoter_holding,
+          sf.pe_ratio,
           sf.market_cap
         FROM technical_signals ts
         LEFT JOIN company_master     cm ON cm.symbol     = ts.symbol
@@ -122,8 +150,8 @@ export async function GET() {
           AND ts.signal_date = (
             SELECT MAX(signal_date) FROM technical_signals WHERE timeframe = 'daily'
           )
-        ORDER BY ts.buy_zone_score DESC NULLS LAST
-        LIMIT 150
+        ORDER BY COALESCE(sf.roce, 0) DESC NULLS LAST
+        LIMIT 200
       `
 
       return buildResponse(rows as any[], false)

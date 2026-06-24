@@ -47,9 +47,11 @@ function Tag({text,color=T.blue}:{text:string;color?:string}) {
 }
 
 const TIER: Record<string,{label:string;color:string;bg:string}> = {
-  "5x_candidate":{label:"💎 5x",  color:T.purple,bg:T.purpleBg},
-  "2x_candidate":{label:"🔬 2x",  color:T.blue,  bg:T.blueBg},
-  "watch":       {label:"👁 Watch",color:T.meta,  bg:T.grayBg},
+  "elite":   {label:"🏆 Elite",  color:T.purple,bg:T.purpleBg},
+  "strong":  {label:"⭐ Strong", color:T.blue,  bg:T.blueBg},
+  "decent":  {label:"🟡 Decent", color:T.amber, bg:T.amberBg},
+  "unrated": {label:"· Unrated", color:T.meta,  bg:T.grayBg},
+  "watch":   {label:"👁 Watch",  color:T.meta,  bg:T.grayBg},
 }
 
 function StockRow({stock,onSelect,onWatchlist,inWatchlist}:{
@@ -58,7 +60,7 @@ function StockRow({stock,onSelect,onWatchlist,inWatchlist}:{
 }) {
   const sym   = stock.symbol??stock.tradingsymbol??""
   const name  = stock.company_name??sym
-  const dna   = Math.round(n(stock.dna_score??stock.buy_zone_score??0))
+  const dna   = Math.round(n(stock.dna_score??0))
   const tier  = TIER[stock.predicted_tier??"watch"]
   const biz   = Math.round(n(stock.business_dna_score??0))
   const sm    = Math.round(n(stock.smart_money_score??0))
@@ -204,8 +206,8 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
     (s.company_name??"").toLowerCase().includes(q))
 
   const all       = filt([...stocks].sort((a,b)=>n(b.dna_score)-n(a.dna_score)))
-  const fiveX     = filt(stocks.filter(s=>s.predicted_tier==="5x_candidate"))
-  const twoX      = filt(stocks.filter(s=>s.predicted_tier==="2x_candidate"))
+  const elite     = filt(stocks.filter(s=>s.predicted_tier==="elite"))
+  const strong    = filt(stocks.filter(s=>s.predicted_tier==="strong"))
   const smartMoney= filt(stocks.filter(s=>n(s.smart_money_score)>=70||
     (s.smart_money_signal??"").toLowerCase().includes("accum"))
     .sort((a,b)=>n(b.smart_money_score)-n(a.smart_money_score)))
@@ -217,8 +219,8 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
 
   const FILTERS=[
     {id:"all",        label:"All",            count:all.length},
-    {id:"5x",         label:"💎 5x",          count:fiveX.length},
-    {id:"2x",         label:"🔬 2x",          count:twoX.length},
+    {id:"elite",      label:"🏆 Elite",       count:elite.length},
+    {id:"strong",     label:"⭐ Strong",      count:strong.length},
     {id:"smartmoney", label:"🏛 Smart Money", count:smartMoney.length},
     {id:"earnings",   label:"📈 Earnings",    count:earnings.length},
     {id:"technical",  label:"⚡ Technical",   count:technical.length},
@@ -275,7 +277,7 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
         fontSize:11,color:rc.color,fontWeight:600}}>
         ⚡ {rc.msg}
         {!hasMb&&<span style={{marginLeft:8,fontWeight:400,opacity:.8}}>
-          · Run generate_signals.py to unlock 5x/2x tier classification
+          · Tiers reflect business quality (ROCE/ROE/debt/promoter), not return predictions
         </span>}
       </div>
 
@@ -289,21 +291,21 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
           </Section>
         )}
         {/* 5x */}
-        {show("5x")&&filter!=="all"&&(
-          <Section title="💎 5x Candidates" count={fiveX.length} badge="mb_score≥70 + momentum>10%"
+        {show("elite")&&filter!=="all"&&(
+          <Section title="🏆 Elite quality" count={elite.length} badge="ROCE≥20 · promoter≥55 · strong B/S"
             desc="Long base (12M+) + volume compression + 6M momentum. Pattern from 120K+ historical winner entry points.">
-            {loading?<Skel/>:fiveX.length===0
+            {loading?<Skel/>:elite.length===0
               ?<Empty msg="No 5x candidates" sub={hasMb?"Signals are current — no stocks match threshold":"Run generate_signals.py to compute mb_score"}/>
-              :fiveX.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
+              :elite.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
           </Section>
         )}
         {/* 2x */}
-        {show("2x")&&filter!=="all"&&(
-          <Section title="🔬 2x Candidates" count={twoX.length} badge="mb_score≥45"
+        {show("strong")&&filter!=="all"&&(
+          <Section title="⭐ Strong quality" count={strong.length} badge="ROCE≥15 · sound fundamentals"
             desc="Base forming (6-12M) + volume compressing. Earlier stage than 5x.">
-            {loading?<Skel/>:twoX.length===0
+            {loading?<Skel/>:strong.length===0
               ?<Empty msg="No 2x candidates" sub={hasMb?"No stocks meet threshold currently":"Run generate_signals.py to compute mb_score"}/>
-              :twoX.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
+              :strong.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
           </Section>
         )}
         {/* Smart Money */}
