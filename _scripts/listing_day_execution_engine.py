@@ -31,7 +31,7 @@ logging.basicConfig(
 log = logging.getLogger()
 
 DATABASE_URL      = os.environ.get("DATABASE_URL", "")
-KITE_API_KEY      = os.environ.get("KITE_API_KEY",      "br9m41pn8nvvywnl")
+KITE_API_KEY      = os.environ["KITE_API_KEY"]
 KITE_API_SECRET   = os.environ.get("KITE_API_SECRET",   "")
 KITE_ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN", "")
 if not KITE_ACCESS_TOKEN:

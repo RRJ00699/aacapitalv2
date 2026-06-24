@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 load_dotenv(".env.local")
 
 NEON_URL     = os.environ["NEON_DATABASE_URL"]
-KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+KITE_API_KEY = os.environ["KITE_API_KEY"]
 KITE_TOKEN   = os.environ.get("KITE_ACCESS_TOKEN", "")
 if not KITE_TOKEN:
     try:

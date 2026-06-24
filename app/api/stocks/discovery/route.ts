@@ -48,6 +48,10 @@ function buildResponse(rows: any[], hasSession9: boolean) {
         quality_score:  quality,
         predicted_tier: tier,
         is_nr7:  !!(s.is_nr7 ?? s.nr7),
+        mf_conviction:       n(s.mf_conviction_funds) > 0,
+        mf_conviction_funds: n(s.mf_conviction_funds) || 0,
+        mf_conviction_names: s.mf_conviction_fund_names ?? null,
+        mf_conviction_seen:  s.mf_conviction_seen ?? null,
         signals: [
           (s.is_nr7 || s.nr7)   ? "NR7"          : null,
           s.above_ema200         ? "Above EMA200" : null,
@@ -56,6 +60,8 @@ function buildResponse(rows: any[], hasSession9: boolean) {
           s.breakout_watch_tier === "COILED"   ? "🔥 Coiled"   : null,
           s.breakout_watch_tier === "BUILDING" ? "⚡ Building" : null,
           (s.smart_money_signal ?? "").toLowerCase().includes("accum") ? "SM Accum" : null,
+          n(s.mf_conviction_funds) >= 2 ? `💎 New conviction ×${n(s.mf_conviction_funds)}` :
+          n(s.mf_conviction_funds) === 1 ? "💎 New conviction" : null,
         ].filter(Boolean),
       }
     })
@@ -96,6 +102,9 @@ export async function GET() {
         sf.business_dna_grade,
         COALESCE(sf.smart_money_score,   0)   AS smart_money_score,
         sf.smart_money_signal,
+        mc.n_funds        AS mf_conviction_funds,
+        mc.funds          AS mf_conviction_fund_names,
+        mc.first_seen     AS mf_conviction_seen,
         COALESCE(sf.earnings_score,      0)   AS earnings_score,
         COALESCE(sf.roce,                0)   AS roce,
         COALESCE(sf.roe,                 0)   AS roe,
@@ -106,6 +115,7 @@ export async function GET() {
       FROM technical_signals ts
       LEFT JOIN company_master     cm ON cm.symbol     = ts.symbol
       LEFT JOIN stock_fundamentals sf ON sf.nse_symbol = ts.symbol
+      LEFT JOIN mf_conviction_flags mc ON mc.nse_symbol = ts.symbol AND mc.expires_on >= CURRENT_DATE
       WHERE ts.timeframe   = 'daily'
         AND ts.signal_date = (
           SELECT MAX(signal_date) FROM technical_signals WHERE timeframe = 'daily'
@@ -136,6 +146,9 @@ export async function GET() {
           sf.business_dna_grade,
           COALESCE(sf.smart_money_score,   0)   AS smart_money_score,
           sf.smart_money_signal,
+          mc.n_funds        AS mf_conviction_funds,
+          mc.funds          AS mf_conviction_fund_names,
+          mc.first_seen     AS mf_conviction_seen,
           COALESCE(sf.earnings_score,      0)   AS earnings_score,
           COALESCE(sf.roce,                0)   AS roce,
           COALESCE(sf.roe,                 0)   AS roe,
@@ -146,6 +159,7 @@ export async function GET() {
         FROM technical_signals ts
         LEFT JOIN company_master     cm ON cm.symbol     = ts.symbol
         LEFT JOIN stock_fundamentals sf ON sf.nse_symbol = ts.symbol
+        LEFT JOIN mf_conviction_flags mc ON mc.nse_symbol = ts.symbol AND mc.expires_on >= CURRENT_DATE
         WHERE ts.timeframe   = 'daily'
           AND ts.signal_date = (
             SELECT MAX(signal_date) FROM technical_signals WHERE timeframe = 'daily'

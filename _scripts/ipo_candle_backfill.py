@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger()
 
 DATABASE_URL      = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
-KITE_API_KEY      = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+KITE_API_KEY      = os.environ["KITE_API_KEY"]
 KITE_ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN", "")
 
 

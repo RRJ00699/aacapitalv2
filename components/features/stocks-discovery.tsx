@@ -47,11 +47,9 @@ function Tag({text,color=T.blue}:{text:string;color?:string}) {
 }
 
 const TIER: Record<string,{label:string;color:string;bg:string}> = {
-  "elite":   {label:"🏆 Elite",  color:T.purple,bg:T.purpleBg},
-  "strong":  {label:"⭐ Strong", color:T.blue,  bg:T.blueBg},
-  "decent":  {label:"🟡 Decent", color:T.amber, bg:T.amberBg},
-  "unrated": {label:"· Unrated", color:T.meta,  bg:T.grayBg},
-  "watch":   {label:"👁 Watch",  color:T.meta,  bg:T.grayBg},
+  "5x_candidate":{label:"💎 5x",  color:T.purple,bg:T.purpleBg},
+  "2x_candidate":{label:"🔬 2x",  color:T.blue,  bg:T.blueBg},
+  "watch":       {label:"👁 Watch",color:T.meta,  bg:T.grayBg},
 }
 
 function StockRow({stock,onSelect,onWatchlist,inWatchlist}:{
@@ -60,7 +58,7 @@ function StockRow({stock,onSelect,onWatchlist,inWatchlist}:{
 }) {
   const sym   = stock.symbol??stock.tradingsymbol??""
   const name  = stock.company_name??sym
-  const dna   = Math.round(n(stock.dna_score??0))
+  const dna   = Math.round(n(stock.dna_score??stock.buy_zone_score??0))
   const tier  = TIER[stock.predicted_tier??"watch"]
   const biz   = Math.round(n(stock.business_dna_score??0))
   const sm    = Math.round(n(stock.smart_money_score??0))
@@ -89,6 +87,9 @@ function StockRow({stock,onSelect,onWatchlist,inWatchlist}:{
             <Tag text={stock.business_dna_grade} color={T.green}/>}
           {sm>=75 && <Tag text="🏛 SM↑" color={T.green}/>}
           {stock.is_nr7&&<Tag text="NR7" color={T.orange}/>}
+          {stock.mf_conviction && <Tag
+            text={n(stock.mf_conviction_funds)>=2 ? `💎 New conviction ×${n(stock.mf_conviction_funds)}` : "💎 New conviction"}
+            color={T.purple}/>}
         </div>
         {/* Row 2 */}
         <div style={{fontSize:10,color:T.meta,overflow:"hidden",whiteSpace:"nowrap",
@@ -206,22 +207,25 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
     (s.company_name??"").toLowerCase().includes(q))
 
   const all       = filt([...stocks].sort((a,b)=>n(b.dna_score)-n(a.dna_score)))
-  const elite     = filt(stocks.filter(s=>s.predicted_tier==="elite"))
-  const strong    = filt(stocks.filter(s=>s.predicted_tier==="strong"))
+  const fiveX     = filt(stocks.filter(s=>s.predicted_tier==="5x_candidate"))
+  const twoX      = filt(stocks.filter(s=>s.predicted_tier==="2x_candidate"))
   const smartMoney= filt(stocks.filter(s=>n(s.smart_money_score)>=70||
     (s.smart_money_signal??"").toLowerCase().includes("accum"))
     .sort((a,b)=>n(b.smart_money_score)-n(a.smart_money_score)))
   const earnings  = filt(stocks.filter(s=>n(s.earnings_score)>=65)
     .sort((a,b)=>n(b.earnings_score)-n(a.earnings_score)))
   const technical = filt(stocks.filter(s=>s.is_nr7||s.nr7||s.vr7))
+  const conviction= filt(stocks.filter(s=>s.mf_conviction)
+    .sort((a,b)=>n(b.mf_conviction_funds)-n(a.mf_conviction_funds)))
   const wlStocks  = filt(stocks.filter(s=>watchlist.includes(s.symbol??s.tradingsymbol))
     .concat(watchlist.filter(sym=>!stocks.some(s=>s.symbol===sym)).map(sym=>({symbol:sym,predicted_tier:"watch"}))))
 
   const FILTERS=[
     {id:"all",        label:"All",            count:all.length},
-    {id:"elite",      label:"🏆 Elite",       count:elite.length},
-    {id:"strong",     label:"⭐ Strong",      count:strong.length},
+    {id:"5x",         label:"💎 5x",          count:fiveX.length},
+    {id:"2x",         label:"🔬 2x",          count:twoX.length},
     {id:"smartmoney", label:"🏛 Smart Money", count:smartMoney.length},
+    {id:"conviction", label:"💎 New conviction", count:conviction.length},
     {id:"earnings",   label:"📈 Earnings",    count:earnings.length},
     {id:"technical",  label:"⚡ Technical",   count:technical.length},
     {id:"watchlist",  label:"⭐ Watchlist",   count:wlStocks.length},
@@ -277,7 +281,7 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
         fontSize:11,color:rc.color,fontWeight:600}}>
         ⚡ {rc.msg}
         {!hasMb&&<span style={{marginLeft:8,fontWeight:400,opacity:.8}}>
-          · Tiers reflect business quality (ROCE/ROE/debt/promoter), not return predictions
+          · Run generate_signals.py to unlock 5x/2x tier classification
         </span>}
       </div>
 
@@ -291,21 +295,21 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
           </Section>
         )}
         {/* 5x */}
-        {show("elite")&&filter!=="all"&&(
-          <Section title="🏆 Elite quality" count={elite.length} badge="ROCE≥20 · promoter≥55 · strong B/S"
+        {show("5x")&&filter!=="all"&&(
+          <Section title="💎 5x Candidates" count={fiveX.length} badge="mb_score≥70 + momentum>10%"
             desc="Long base (12M+) + volume compression + 6M momentum. Pattern from 120K+ historical winner entry points.">
-            {loading?<Skel/>:elite.length===0
+            {loading?<Skel/>:fiveX.length===0
               ?<Empty msg="No 5x candidates" sub={hasMb?"Signals are current — no stocks match threshold":"Run generate_signals.py to compute mb_score"}/>
-              :elite.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
+              :fiveX.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
           </Section>
         )}
         {/* 2x */}
-        {show("strong")&&filter!=="all"&&(
-          <Section title="⭐ Strong quality" count={strong.length} badge="ROCE≥15 · sound fundamentals"
+        {show("2x")&&filter!=="all"&&(
+          <Section title="🔬 2x Candidates" count={twoX.length} badge="mb_score≥45"
             desc="Base forming (6-12M) + volume compressing. Earlier stage than 5x.">
-            {loading?<Skel/>:strong.length===0
+            {loading?<Skel/>:twoX.length===0
               ?<Empty msg="No 2x candidates" sub={hasMb?"No stocks meet threshold currently":"Run generate_signals.py to compute mb_score"}/>
-              :strong.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
+              :twoX.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
           </Section>
         )}
         {/* Smart Money */}
@@ -315,6 +319,15 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
             {loading?<Skel/>:smartMoney.length===0
               ?<Empty msg="No smart money signals" sub="Data from NSE bulk/block deals via stock_fundamentals table"/>
               :smartMoney.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
+          </Section>
+        )}
+        {/* New conviction — the one backtested signal */}
+        {show("conviction")&&filter!=="all"&&(
+          <Section title="💎 New conviction" count={conviction.length} badge="a conviction fund just initiated"
+            desc="A high-conviction active fund (Nippon/Quant/Canara/PPFAS small-mid-flexi) initiated a brand-new position. Backtested edge: EDGE+ in 3 of 4 years, strongest 1–3 months — regime-sensitive. A research signal, not a guarantee. ×N = multiple funds bought independently (stronger).">
+            {loading?<Skel/>:conviction.length===0
+              ?<Empty msg="No fresh conviction buys in window" sub="Flags expire after 90 days; refresh MF holdings monthly to keep current"/>
+              :conviction.map(s=><StockRow key={s.symbol} {...rp(s)}/>)}
           </Section>
         )}
         {/* Earnings */}

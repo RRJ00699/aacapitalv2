@@ -73,6 +73,8 @@ COVERAGE_FIELDS = [
     ("anchor_quality",       "anchor quality (pt4)"),
     ("anchor_tier1_count",   "tier-1 anchors (pt4)"),
     ("qib_subscription_x",   "QIB subscription (pt4)"),
+    ("retail_subscription_x","retail subscription (pt4)"),
+    ("retail_category_pct",  "retail quota % (pt4)"),
     ("total_subscription_x", "total subscription"),
     ("gmp_max_pct",          "GMP max (pt6)"),
     ("gmp_momentum",         "GMP momentum (pt6)"),
@@ -102,16 +104,34 @@ def num(v, default=None):
 
 
 def listing_gain_pct(row):
-    """Real listing-open gain %, computed from prices when possible.
-    Falls back to return_listing_open (auto-detecting percent vs fraction)."""
+    """REAL capturable return for a buyer who buys AT the listing open price.
+    You don't get allotment, so the issue->open pop (allotment gain) is NOT yours.
+    Your entry is the open; your exit is the listing-day close. Measure open->close.
+
+    open->close is the realistic day-trade outcome. (open->high would be the
+    best-case ceiling if you nailed the intraday top — see listing_gain_high.)"""
     lo = num(row.get("listing_open"))
-    ip = num(row.get("issue_price"))
-    if lo is not None and ip and ip > 0:
-        return (lo - ip) / ip * 100.0
-    r = num(row.get("return_listing_open"))
-    if r is None:
-        return None
-    return r * 100.0 if abs(r) < 1.5 else r   # 0.27 -> 27%, 27.2 -> 27.2%
+    lc = num(row.get("listing_day_close"))
+    if lo is not None and lo > 0 and lc is not None:
+        return (lc - lo) / lo * 100.0
+    # fallback: derive open->close from issue-price-based returns if both exist
+    r_open  = num(row.get("return_listing_open"))   # issue->open %
+    r_close = num(row.get("return_day1_close"))      # issue->close %
+    if r_open is not None and r_close is not None:
+        ro = r_open  if abs(r_open)  >= 1.5 else r_open  * 100.0
+        rc = r_close if abs(r_close) >= 1.5 else r_close * 100.0
+        # (1+rc)/(1+ro)-1  in pct terms
+        return ((100.0 + rc) / (100.0 + ro) - 1.0) * 100.0
+    return None
+
+
+def listing_gain_high(row):
+    """Best-case: open -> listing-day HIGH (only if you sold the intraday top)."""
+    lo = num(row.get("listing_open"))
+    hi = num(row.get("listing_day_high"))
+    if lo is not None and lo > 0 and hi is not None:
+        return (hi - lo) / lo * 100.0
+    return None
 
 
 # ── the thesis scorer (uses only PRE-listing signals) ─────────────────────────
@@ -144,6 +164,18 @@ def score_ipo(row):
         if qib >= 50:   bump(+15, f"QIB {qib:.0f}x")
         elif qib >= 20: bump(+8,  f"QIB {qib:.0f}x")
         elif qib < 3:   bump(-8,  f"weak QIB {qib:.1f}x")
+
+    # pt4 — RETAIL demand + retail allocation category (your addition)
+    retail = num(row.get("retail_subscription_x"))
+    if retail is not None:
+        if   retail >= 10: bump(+8, f"retail {retail:.0f}x")
+        elif retail >= 3:  bump(+4, f"retail {retail:.0f}x")
+        elif retail < 1:   bump(-6, f"retail undersubscribed {retail:.1f}x")
+    # a 10% retail quota = QIB-route issue (often loss-making / richly valued) -> caution
+    rcat = num(row.get("retail_category_pct"))
+    if rcat is not None and rcat <= 12:
+        bump(-4, f"only {rcat:.0f}% retail quota (QIB-route issue)")
+
     tot = num(row.get("total_subscription_x"))
     if tot is not None and tot >= 50:
         bump(+6, f"total sub {tot:.0f}x")
@@ -190,6 +222,10 @@ def score_ipo(row):
     brlm_neg = num(row.get("brlm_pct_negative"))
     if brlm_neg is not None and brlm_neg >= 40:
         bump(-5, f"BRLM {brlm_neg:.0f}% negative listings")
+    brlm_sc = num(row.get("brlm_score"))
+    if brlm_sc is not None:
+        if   brlm_sc >= 70: bump(+6, f"strong BRLM track record ({brlm_sc:.0f})")
+        elif brlm_sc <= 35: bump(-6, f"weak BRLM track record ({brlm_sc:.0f})")
 
     # operator risk (your 'notorious hype' point)
     op = num(row.get("operator_risk_score"))
@@ -271,7 +307,7 @@ def main():
     base_win  = 100 * sum(1 for g in all_gains if g >= WIN_THRESHOLD) / len(all_gains)
 
     print("\n" + "=" * 64)
-    print("THESIS PERFORMANCE  (real listing-open return by our recommendation)")
+    print("THESIS PERFORMANCE  (REAL open->close return for a buyer AT the open)")
     print("=" * 64)
     print(f"  {'bucket':16s} {'n':>4s} {'avg%':>7s} {'median%':>8s} "
           f"{'win%':>6s} {'>10%':>6s} {'<-5%':>6s}")
