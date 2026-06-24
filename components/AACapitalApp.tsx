@@ -2851,15 +2851,14 @@ setMarketFetched(true);
           <div style={{width:34,height:34,borderRadius:9,background:"linear-gradient(135deg,#2563EB)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Sora',sans-serif",fontWeight:800,color:"#fff",fontSize:14}}>AA</div>
           <div>
             <div style={{fontFamily:"'Sora',sans-serif",fontWeight:800,fontSize:16,color:"#111827",letterSpacing:"-0.3px"}}>AACapital</div>
-            {!isMobile&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#475569",letterSpacing:"1px"}}>Institutional Research · NSE/BSE</div>}
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#475569",letterSpacing:"1px"}}>Institutional Research · NSE/BSE</div>
           </div>
         </div>
-        <div style={{flex:isMobile?"0 0 6px":1}}/>
+        <div style={{flex:1}}/>
         {/* Global stock search */}
-        <div style={{width:isMobile?120:320,marginRight:6,position:"relative",zIndex:99999,flexShrink:0}}>
-          <StockSearch onSelect={(sym)=>setWorkspaceSymbol(sym)} placeholder={isMobile?"Search...":"Search stock..."} />
+        <div style={{width:320,marginRight:6,position:"relative",zIndex:99999}}>
+          <StockSearch onSelect={(sym)=>setWorkspaceSymbol(sym)} placeholder="Search stock..." />
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:isMobile?3:2,overflowX:"auto",minWidth:0}} className="navtabs">
         {[
   {v:"today",         l:"Today",         icon:<Home      size={13}/>},
   {v:"stocks",        l:"Stocks",        icon:<TrendingUp size={13}/>},
@@ -2868,8 +2867,8 @@ setMarketFetched(true);
   {v:"portfolio",     l:"Portfolio",     icon:<Briefcase  size={13}/>},
 ].map(({v,l,icon})=>(
   <button key={v} onClick={()=>setTab(v)} style={{
-    display:"flex",alignItems:"center",gap:5,flexShrink:0,
-    padding:isMobile?"6px 9px":"5px 11px",borderRadius:7,border:"none",
+    display:"flex",alignItems:"center",gap:5,
+    padding:"5px 11px",borderRadius:7,border:"none",
     background:tab===v?"#EFF6FF":"transparent",
     color:tab===v?"#2563EB":"#6B7280",
     fontFamily:"'IBM Plex Mono',monospace",fontSize:11,
@@ -2879,7 +2878,6 @@ setMarketFetched(true);
     {icon}{l}
   </button>
 ))}
-        </div>
         
         
         {refreshTime&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#374151"}}>↻{refreshTime}</div>}
@@ -2916,7 +2914,6 @@ setMarketFetched(true);
               {([
                 {id:"multibagger",     label:"Multibagger discovery"},
                 {id:"breakout-watch",  label:"🔭 Breakout Watch"},
-                {id:"technical",       label:"Technical screener"},
                 {id:"earnings",        label:"Earnings"},
                 {id:"weekly-dna",      label:"Weekly DNA"},
                 {id:"sector",          label:"Sector rotation"},
@@ -2935,7 +2932,6 @@ setMarketFetched(true);
           </div>
           {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
-          {oppView==="technical"      && <TechnicalScreener simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="weekly-dna"   && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
