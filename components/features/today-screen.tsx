@@ -4,10 +4,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw } from "lucide-react"
 
 type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN" | "BEARISH"
-type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM"
+type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM" | "RESEARCH" | "REVIEW"
 
 interface Opportunity { symbol: string; name?: string; score: number; action: Action; reasons?: string[] }
-interface IpoRow { name: string; score?: number; recommendation?: string }
+interface IpoRow { name: string; score?: number; recommendation?: string; status?: string; openDate?: string|null; closeDate?: string|null }
 interface SectorRow { name: string; performance?: number; score?: number; signal?: string }
 interface GlobalRow { label: string; value?: string; change?: number | null }
 
@@ -16,6 +16,11 @@ const n2  = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 })
 const num = (v: unknown, fb = 0) => { const x = Number(v); return Number.isFinite(x) ? x : fb }
 const has = (v: unknown) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v))
 const fmt = (v: unknown, d = 2) => has(v) ? (d === 0 ? nf.format(num(v)) : n2.format(num(v))) : "—"
+const fmtDate = (v: unknown) => {
+  if (!v) return "—"
+  const d = new Date(v as string)
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+}
 const sgn = (v?: number | null, s = "%") => has(v) ? `${num(v) >= 0 ? "+" : ""}${n2.format(num(v))}${s}` : "—"
 const cr  = (v: unknown) => has(v) ? `${num(v) >= 0 ? "+" : ""}${nf.format(num(v))} Cr` : "—"
 const first = (...vals: unknown[]) => vals.find(has)
@@ -53,10 +58,23 @@ function Card({ title, meta, icon, children }: { title:string; meta?:string; ico
 function ActionPill({ action }: { action: Action }) {
   const a = String(action).toUpperCase()
   const cls =
+    a === "RESEARCH"                                     ? "border-teal-300  bg-teal-50   text-teal-700"   :
+    a === "REVIEW"                                       ? "border-slate-300 bg-slate-50  text-slate-600"  :
     a === "BUY"  || a === "APPLY" || a === "ACCUMULATE" ? "border-emerald-300 bg-emerald-50  text-emerald-700" :
     a === "SKIP" || a === "AVOID" || a === "TRIM"        ? "border-rose-300   bg-rose-50    text-rose-700"    :
                                                            "border-amber-300  bg-amber-50   text-amber-700"
   return <span className={`inline-block min-w-[56px] rounded-full border px-3 py-0.5 text-center font-mono text-[10px] font-bold tracking-wider ${cls}`}>{a}</span>
+}
+
+const ipoStatusOf = (ipo:any) => {
+  const now=Date.now()
+  const o=ipo.open_date    ?new Date(ipo.open_date).getTime():0
+  const c=ipo.close_date   ?new Date(ipo.close_date).getTime():0
+  const l=ipo.listing_date ?new Date(ipo.listing_date).getTime():0
+  if(l&&now>=l)         return "LISTED"
+  if(c&&now>c&&l)       return "ALLOTMENT"
+  if(o&&now>=o&&now<=c) return "OPEN"
+  return "UPCOMING"
 }
 
 export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect?: (s: string) => void; commandCenter?: React.ReactNode }) {
@@ -85,7 +103,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         fetch("/api/market/snapshot",                             {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/convergence/ranking?limit=15",                 {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/sector-rotation?view=hot",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/ipo/intelligence?limit=5&scope=live",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+        fetch("/api/ipo/playbook?limit=100",                      {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/broker/status",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
       ])
 
@@ -154,8 +172,9 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       const conv = ((techR?.data ?? []) as any[]).filter((x:any) => !SUPPRESS.test(String(x.symbol??"")))
       setOpps(conv.slice(0,10).map((x:any) => {
         const score  = Math.round(num(x.convergence ?? 50))
-        const action: Action = (String(x.action ?? "").toUpperCase() as Action)
-                             || (score>=70 ? "BUY" : score>=55 ? "WATCH" : "HOLD")
+        // convergence is a QUALITY/ATTENTION score (not backtested, partly technical) —
+        // it flags what to research, never a buy verdict.
+        const action: Action = score>=70 ? "RESEARCH" : score>=55 ? "REVIEW" : "WATCH"
         return {
           symbol: x.symbol,
           name:   x.name,
@@ -177,13 +196,24 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
       setSectors(sectorList)
       setTopSectors(sectorList.slice(0,3).map((s:any)=>s.name).filter(Boolean))
 
-      // ── IPOs ──
-      const ipoList = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
-      setIpos(ipoList.slice(0,4).map((i:any) => {
-        const lqi = num(i.lqi ?? i.score?.listingScore ?? 0)
-        const rec = lqi>=75 ? "APPLY" : lqi>=50 ? "WATCH" : "SKIP"
-        return { name: i.company_name ?? i.name ?? i.ipo_name, recommendation: i.score?.recommendation ?? rec, score: Math.round(lqi)||undefined }
-      }))
+      // ── IPOs: current (OPEN) + UPCOMING only, by status (not lqi rank) ──
+      const ipoAll = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
+      const liveUpcoming = ipoAll
+        .map((i:any) => ({ ...i, _st: ipoStatusOf(i) }))
+        .filter((i:any) => i._st === "OPEN" || i._st === "UPCOMING")
+        .sort((a:any,b:any) => {
+          if (a._st !== b._st) return a._st === "OPEN" ? -1 : 1            // OPEN first
+          return new Date(a.open_date??0).getTime() - new Date(b.open_date??0).getTime()
+        })
+        .slice(0,6)
+      setIpos(liveUpcoming.map((i:any) => ({
+        name: i.company_name ?? i.name ?? i.ipo_name,
+        score: Math.round(num(i.lqi_final ?? i.lqi ?? 0)) || undefined,
+        recommendation: i.play_recommendation ?? i.suggested_action ?? "",
+        status: i._st,
+        openDate: i.open_date ?? null,
+        closeDate: i.close_date ?? null,
+      })))
 
       setBrokerOk(typeof brokerR?.connected==="boolean" ? brokerR.connected : null)
       setUpdatedAt(new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",second:"2-digit"}))
@@ -265,7 +295,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
 
             {/* Top Convergence + IPO DNA */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Card title="Top Convergence" meta="5-Factor Engine" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
+              <Card title="Top Convergence" meta="research candidates · not buy calls" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
                 {loading ? <Skeleton className="h-36"/> : opps.length
                   ? <div className="space-y-1 max-h-72 overflow-y-auto pr-1">{opps.map(o=>(
                       <button key={o.symbol} onClick={()=>onStockSelect?.(o.symbol)}
@@ -278,7 +308,7 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
                           <div className="truncate text-[11px] text-slate-400">{o.reasons?.slice(0,2).join(" · ")}</div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <Spark positive={o.action!=="AVOID"}/>
+                          <Spark positive={o.score>=55}/>
                           <ActionPill action={o.action}/>
                           <ChevronRight className="h-3.5 w-3.5 text-slate-300"/>
                         </div>
@@ -291,19 +321,23 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
               <Card title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-600"/>}>
                 {loading ? <Skeleton className="h-36"/> : ipos.length
                   ? <div className="space-y-1">{ipos.map(i=>{
-                      const rec = String(i.recommendation??"WATCH").toUpperCase()
-                      const action: Action = rec.includes("APPLY")?"APPLY": rec.includes("SKIP")||rec.includes("AVOID")?"SKIP":"WATCH"
+                      const isOpen = i.status === "OPEN"
+                      const badge = isOpen
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-blue-300 bg-blue-50 text-blue-700"
                       return (
                         <div key={i.name} className="flex items-center justify-between rounded-xl px-2 py-2.5 hover:bg-slate-50">
                           <div className="min-w-0">
                             <div className="truncate text-[13px] font-bold text-slate-900">{i.name}</div>
-                            <div className="font-mono text-[10px] text-slate-400">Conviction {i.score!=null?Math.round(num(i.score)):"—"}</div>
+                            <div className="font-mono text-[10px] text-slate-400">
+                              {isOpen ? "Closes" : "Opens"} {fmtDate(isOpen ? i.closeDate : i.openDate)}
+                            </div>
                           </div>
-                          <ActionPill action={action}/>
+                          <span className={`inline-block min-w-[64px] rounded-full border px-3 py-0.5 text-center font-mono text-[10px] font-bold tracking-wider ${badge}`}>{i.status}</span>
                         </div>
                       )
                     })}</div>
-                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No open IPOs.</div>
+                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No open or upcoming IPOs.</div>
                 }
               </Card>
             </div>
