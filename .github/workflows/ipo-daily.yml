@@ -51,6 +51,10 @@ jobs:
         continue-on-error: true
         run: python _scripts/engines/compute_sector_rotation.py
 
+      - name: Convergence ranking (convergence_ranking)
+        continue-on-error: true
+        run: python _scripts/engines/compute_convergence_ranking.py
+
       - name: Fetch NSE IPOs (ipo_intelligence)
         continue-on-error: true
         run: python _scripts/ipo/fetch_nse_ipos.py
