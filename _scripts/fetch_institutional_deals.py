@@ -15,7 +15,7 @@ the snapshot-capital-market-largedeal feed; if a run inserts 0 rows, print one r
 Run:  python _scripts/fetch_institutional_deals.py
 Env:  DATABASE_URL (or NEON_DATABASE_URL)
 """
-import os, sys, httpx, psycopg2
+import os, sys, time, requests, psycopg2
 from psycopg2.extras import execute_values
 from datetime import datetime
 
@@ -25,10 +25,13 @@ if not URL:
 
 SNAPSHOT = "https://www.nseindia.com/api/snapshot-capital-market-largedeal"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.nseindia.com/market-data/large-deals",
+    "Connection": "keep-alive",
 }
 
 
@@ -69,12 +72,40 @@ def parse_block(records, deal_type, today):
 
 def main():
     today = datetime.today().strftime("%Y-%m-%d")
-    with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=20) as client:
-        client.get("https://www.nseindia.com")          # prime session cookies
-        resp = client.get(SNAPSHOT)
-        if resp.status_code != 200:
-            sys.exit(f"NSE returned {resp.status_code}")
-        data = resp.json()
+    sess = requests.Session()
+    sess.headers.update(HEADERS)
+    # Prime cookies: homepage, then the large-deals page (sets the tokens the API needs),
+    # with a short settle pause. NSE serves an HTML challenge if you hit the API too soon.
+    sess.get("https://www.nseindia.com", timeout=20)
+    time.sleep(1.5)
+    sess.get("https://www.nseindia.com/market-data/large-deals", timeout=20)
+    time.sleep(1.0)
+
+    resp = sess.get(SNAPSHOT, timeout=20)
+    if resp.status_code != 200:
+        sys.exit(f"NSE returned {resp.status_code}")
+    data = None
+    for attempt in range(3):
+        body = (resp.text or "").strip()
+        ctype = resp.headers.get("content-type", "").lower()
+        if body and "json" in ctype:
+            try:
+                data = resp.json(); break
+            except Exception:
+                pass
+        # empty body or HTML challenge — re-prime briefly and retry
+        time.sleep(2.5)
+        sess.get("https://www.nseindia.com/market-data/large-deals", timeout=20)
+        resp = sess.get(SNAPSHOT, timeout=20)
+
+    if data is None:
+        body = (resp.text or "").strip()
+        if not body:
+            print("NSE returned an EMPTY response (HTTP %s, %s)." % (resp.status_code, resp.headers.get("content-type","")))
+            print("Almost always means: no live large-deals right now (after-hours / non-trading) "
+                  "OR the session needs warming. Try again ~30 min after market open on a trading day.")
+            return
+        sys.exit("NSE returned non-JSON. First 200 chars:\n" + body[:200])
 
     # import json; print(json.dumps(data, indent=2)[:1500])   # <- uncomment to inspect keys
     rows = []
