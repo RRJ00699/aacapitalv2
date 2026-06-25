@@ -283,7 +283,7 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
         fontSize:11,color:rc.color,fontWeight:600}}>
         ⚡ {rc.msg}
         {!hasMb&&<span style={{marginLeft:8,fontWeight:400,opacity:.8}}>
-          · Tiers reflect business quality (ROCE/ROE/debt/promoter), not return predictions
+          · Tiers reflect business quality (ROCE/ROE/debt/business-DNA), not return predictions
         </span>}
       </div>
 
@@ -298,7 +298,7 @@ export function StocksDiscovery({onStockSelect}:{onStockSelect:(s:string)=>void}
         )}
         {/* 5x */}
         {show("elite")&&filter!=="all"&&(
-          <Section title="🏆 Elite quality" count={elite.length} badge="ROCE≥20 · promoter≥55 · strong B/S"
+          <Section title="🏆 Elite quality" count={elite.length} badge="ROCE≥20 · strong B/S · high business-DNA"
             desc="Long base (12M+) + volume compression + 6M momentum. Pattern from 120K+ historical winner entry points.">
             {loading?<Skel/>:elite.length===0
               ?<Empty msg="No 5x candidates" sub={hasMb?"Signals are current — no stocks match threshold":"Run generate_signals.py to compute mb_score"}/>
