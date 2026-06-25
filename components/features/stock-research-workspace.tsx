@@ -96,6 +96,63 @@ function HoldingBar({ label, pct: p, color }: { label: string; pct: number; colo
   )
 }
 
+function MFOwnershipPanel({ symbol }: { symbol: string }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    let on = true
+    setLoading(true)
+    fetch(`/api/stock/mf-holders?sym=${encodeURIComponent(symbol)}`, { cache: "no-store" })
+      .then(r => r.json()).then(d => { if (on) { setData(d); setLoading(false) } })
+      .catch(() => { if (on) setLoading(false) })
+    return () => { on = false }
+  }, [symbol])
+
+  const holders = data?.holders ?? []
+  const fmtMon = (v: any) => { if (!v) return "—"; const d = new Date(v); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }) }
+
+  return (
+    <Section title={`Mutual Fund Ownership${holders.length ? ` · ${holders.length} fund${holders.length>1?"s":""}` : ""}`}>
+      {loading ? (
+        <div style={{ fontSize: 11, color: T.textMeta, padding: "8px 0" }}>Loading fund holdings…</div>
+      ) : holders.length === 0 ? (
+        <div style={{ fontSize: 11, color: T.textMeta, padding: "8px 0" }}>
+          No tracked conviction fund holds this stock.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {data?.is_new_conviction && (
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.purple, marginBottom: 2 }}>
+              💎 Fresh conviction buy — a fund initiated within ~3 months
+            </div>
+          )}
+          {holders.map((h: any) => (
+            <div key={h.fund} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "6px 8px", background: h.new_conviction ? T.greenBg : T.surface,
+              border: `1px solid ${h.new_conviction ? T.greenBd : T.border2}`, borderRadius: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.text, whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
+                  {h.new_conviction ? "💎 " : ""}{h.fund}
+                </div>
+                <div style={{ fontSize: 9, color: T.textMeta }}>
+                  {h.new_conviction ? "initiated" : "since"} {fmtMon(h.since)} · latest {fmtMon(h.as_of)}
+                </div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: T.text, marginLeft: 8 }}>
+                {h.weight_pct != null ? `${h.weight_pct.toFixed(1)}%` : "—"}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 9, color: T.textMeta, marginTop: 2 }}>
+            From tracked conviction funds (Nippon/Quant/Canara/PPFAS/SBI/HDFC small-mid-flexi). Weight = % of fund's portfolio. Research signal, not a buy call.
+          </div>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 // ── Overlay ───────────────────────────────────────────────────────────────────
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -466,6 +523,9 @@ export function StockResearchWorkspace({ symbol, onClose }:
                 <KV label="Score"  value={`${n(detail.scores?.smart_money)}/100`} />
               </div>
             </Section>
+
+            {/* Mutual Fund Ownership — which conviction funds hold / just initiated */}
+            <MFOwnershipPanel symbol={symbol} />
 
             {/* Order Book + MF + Ownership */}
             <Section title="Order Book">
