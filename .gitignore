@@ -42,3 +42,9 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# data files — local only
+/data/*.csv
+/data/**/*.xlsx
+/data/**/*.xls
+*.zip
