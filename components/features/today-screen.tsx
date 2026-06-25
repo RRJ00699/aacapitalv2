@@ -71,10 +71,12 @@ const ipoStatusOf = (ipo:any) => {
   const o=ipo.open_date    ?new Date(ipo.open_date).getTime():0
   const c=ipo.close_date   ?new Date(ipo.close_date).getTime():0
   const l=ipo.listing_date ?new Date(ipo.listing_date).getTime():0
+  if(!o&&!c&&!l)        return "UNKNOWN"          // no dates -> not actionable, don't show
   if(l&&now>=l)         return "LISTED"
   if(c&&now>c&&l)       return "ALLOTMENT"
   if(o&&now>=o&&now<=c) return "OPEN"
-  return "UPCOMING"
+  if(o&&now<o)          return "UPCOMING"          // genuinely opens in the future
+  return "UNKNOWN"                                 // anything else (e.g. closed, not listed, stale) -> hide
 }
 
 export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect?: (s: string) => void; commandCenter?: React.ReactNode }) {
