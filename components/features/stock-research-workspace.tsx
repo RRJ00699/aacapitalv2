@@ -9,6 +9,7 @@ import { PriceChart } from "./price-chart"
 import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
 import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
+import VerdictHeader from "@/components/features/VerdictHeader"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
@@ -366,6 +367,9 @@ export function StockResearchWorkspace({ symbol, onClose }:
         </div>
 
         <div style={{ padding: "16px 20px 0" }}>
+
+          {/* ── Verdict header: decomposed conviction scorecard (glance layer above tabs) ── */}
+          <VerdictHeader symbol={symbol} />
 
           {/* ── TECHNICAL TAB ── */}
           <div style={{ display: activeTab === "technical" ? "block" : "none" }}>
