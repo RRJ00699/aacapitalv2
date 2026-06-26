@@ -20,6 +20,9 @@ import pyotp
 import requests
 from kiteconnect import KiteConnect
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv(".env.local")
+load_dotenv(".env")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger()

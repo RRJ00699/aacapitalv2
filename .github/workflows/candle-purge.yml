@@ -1,6 +1,6 @@
 name: AACapital Candle Purge
 
-# Keeps price_candles bounded to a rolling 5-year window so Neon storage stays flat.
+# Keeps price_candles bounded to a rolling 10-year window so Neon storage stays flat.
 # Runs monthly (and on demand). Lower PURGE_YEARS via the dispatch input if storage
 # gets tight.
 
@@ -12,7 +12,7 @@ on:
       years:
         description: "Keep this many years of daily candles"
         required: false
-        default: "5"
+        default: "10"
 
 jobs:
   purge:
@@ -20,7 +20,7 @@ jobs:
     env:
       DATABASE_URL:      ${{ secrets.DATABASE_URL }}
       NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PURGE_YEARS:       ${{ github.event.inputs.years || '5' }}
+      PURGE_YEARS:       ${{ github.event.inputs.years || '10' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
