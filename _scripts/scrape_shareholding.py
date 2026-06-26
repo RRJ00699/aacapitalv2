@@ -198,7 +198,11 @@ def scrape_shareholding(session: requests.Session, symbol: str) -> list:
         except Exception as e:
             log.debug(f"  {symbol} scrape error: {e}")
     
-    return quarters[:8]  # last 8 quarters
+    # Screener lists quarters oldest→newest (left→right). Return NEWEST-first so
+    # quarters[0] is the latest filing. This fixes the "stuck at 2023Q1" bug (the old
+    # code kept the OLDEST 8 via quarters[:8]) and makes trend() read newest-minus-older
+    # in the correct direction.
+    return list(reversed(quarters))[:8]  # newest 8 quarters, newest first
 
 def parse_quarter(label: str) -> str | None:
     """Convert 'Jun 2026' → '2026Q1', 'Sep 2025' → '2025Q2' etc."""

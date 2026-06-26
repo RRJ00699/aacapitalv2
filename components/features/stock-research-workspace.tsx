@@ -13,6 +13,7 @@ import VerdictHeader from "@/components/features/VerdictHeader"
 import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 import TechnicalsLive from "@/components/features/TechnicalsLive"
+import StockDeals from "@/components/features/StockDeals"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
 const T = {
@@ -449,6 +450,10 @@ export function StockResearchWorkspace({ symbol, onClose }:
 
             {/* Real technicals from price_candles (EMA/RSI/ATR/52w/returns) */}
             <TechnicalsLive symbol={symbol} />
+
+            <Section title="Institutional Deals (bulk / block)">
+              <StockDeals symbol={symbol} />
+            </Section>
 
             <Section title="Historical Similarity">
               <HistoricalSimilarityPanel symbol={symbol} />

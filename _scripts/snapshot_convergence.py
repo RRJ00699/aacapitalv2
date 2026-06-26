@@ -34,6 +34,21 @@ def main():
     if not cur.fetchone():
         sys.exit("convergence_ranking not found — run compute_convergence_ranking first")
 
+    # Trading-day guard — only snapshot when today actually has a fresh candle.
+    # Weekends and market holidays still trigger the daily Action, but no new candle is
+    # written, so the technical factor floors out. Snapshotting CURRENT_DATE would then
+    # stamp those junk scores into the point-in-time history (the backbone of the
+    # "what changed" + future backtests). Require a candle dated today, else skip cleanly.
+    # This also drops the redundant pre-open snapshot (today's candle doesn't exist yet at
+    # 08:15) — the meaningful snapshot is the post-close run, which this preserves.
+    cur.execute("SELECT MAX(date), CURRENT_DATE FROM price_candles")
+    maxd, today = cur.fetchone()
+    if maxd is None or maxd < today:
+        print(f"skip: latest price_candle is {maxd}, not today ({today}) — "
+              f"non-trading day or pre-close; not snapshotting.")
+        cur.close(); conn.close()
+        return
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS convergence_history (
             run_date    DATE NOT NULL,
