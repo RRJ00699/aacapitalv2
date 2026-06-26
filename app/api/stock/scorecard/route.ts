@@ -108,8 +108,11 @@ export async function GET(req: NextRequest) {
     let valuation: number | null = null
     if (pe !== null && pe > 0 && sectorPe && sectorPe > 0) {
       // pe at 50% of sector => ~85, at sector median => 50, at 2x sector => ~15
+      // ratio = stock PE / sector median PE. Anchored so: cheap (0.5x) ~85, at sector median
+      // (1x) ~58, premium quality (2x) ~30, absurd (3x+) approaches floor. Quality compounders
+      // that always trade at a premium read "expensive" not a disqualifying 0.
       const ratio = pe / sectorPe
-      valuation = clamp(100 - (ratio - 0.5) * 70)
+      valuation = clamp(85 - (ratio - 0.5) * 36)
     } else if (pe !== null && pe > 0) {
       valuation = band(pe, 60, 12, false)  // fallback absolute band, lower PE better
     }
