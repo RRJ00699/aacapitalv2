@@ -10,7 +10,7 @@
 
 export type WorkboardEngine = "new" | "old" | "both"
 
-export const WORKBOARD_ENGINE: WorkboardEngine = "both"
+export const WORKBOARD_ENGINE = "both" as WorkboardEngine
 
 export const showNewEngine = () => WORKBOARD_ENGINE === "new" || WORKBOARD_ENGINE === "both"
 export const showOldEngine = () => WORKBOARD_ENGINE === "old" || WORKBOARD_ENGINE === "both"
