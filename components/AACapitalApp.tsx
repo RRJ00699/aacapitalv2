@@ -34,6 +34,7 @@ import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { BreakoutWatchScreen } from "./features/breakout-watch"  // SESSION 9
 import { StocksDiscovery } from "./features/stocks-discovery"      // SESSION 9
 import StockScorecardGrid from "./features/StockScorecardGrid"
+import OpportunitiesScreener from "./features/OpportunitiesScreener"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2541,7 +2542,7 @@ export default function App(){
   const [discoveryView,setDiscoveryView]=useState("command_center");
   const [portfolioView,setPortfolioView]=useState("holdings");
   // V10 new state
-  const [oppView,setOppView]=useState("multibagger");
+  const [oppView,setOppView]=useState("screener");
   const [portView,setPortView]=useState("doctor");
   const [ipoView,setIpoView]=useState("command");
   const [isMobile, setIsMobile] = useState(false)
@@ -2913,6 +2914,7 @@ setMarketFetched(true);
             </div>
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px"}}>
               {([
+                {id:"screener",        label:"🎯 Screener"},
                 {id:"multibagger",     label:"Multibagger discovery"},
                 {id:"breakout-watch",  label:"🔭 Breakout Watch"},
                 {id:"earnings",        label:"Earnings"},
@@ -2931,6 +2933,7 @@ setMarketFetched(true);
               ))}
             </div>
           </div>
+          {oppView==="screener"      && <OpportunitiesScreener onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}

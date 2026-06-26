@@ -179,6 +179,7 @@ export function StockResearchWorkspace({ symbol, onClose }:
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [wdna, setWdna]       = useState<any>(null)
+  const [tech, setTech]       = useState<any>(null)   // /api/stock/technicals — real ATR/52w for honest targets
   const [livePrice, setLivePrice] = useState<number | null>(null)
   const [activeTab,    setActiveTab]    = useState<string>("technical")
   const [inWatchlist,  setInWatchlist]  = useState(false)
@@ -221,7 +222,8 @@ export function StockResearchWorkspace({ symbol, onClose }:
       fetch(`/api/investment-command-center?symbol=${symbol}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/weekly-dna?symbol=${symbol}`).then(r => r.json()).catch(() => null),
       fetch(`/api/broker/quote?sym=${symbol}&exchange=NSE`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
-    ]).then(([d, w, q]) => {
+      fetch(`/api/stock/technicals?sym=${symbol}`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
+    ]).then(([d, w, q, t]) => {
       if (d?.ok) {
         if (q?.last_price && q.last_price > 0) d.current_price = q.last_price
         setDetail(d)
@@ -230,6 +232,7 @@ export function StockResearchWorkspace({ symbol, onClose }:
         setError(d?.error ?? "Stock not found")
       }
       if (w?.ok) setWdna(w.data)
+      setTech(t?.ok ? t : null)
     }).catch(e => setError(e.message))
     .finally(() => setLoading(false))
   }, [symbol])
@@ -285,18 +288,31 @@ export function StockResearchWorkspace({ symbol, onClose }:
   const isNR7   = detail.technical?.is_nr7 || wdna?.is_nr7
   const stage   = wdna?.stage_label ?? `Stage ${detail.technical?.stage ?? "—"}`
 
-  // Targets are computed off the LIVE price so they always match their +12/+25/+50%
-  // labels and stay above current price. A stored trade_plan only overrides this while
-  // it is still live (all targets above price, stop below) — once price runs past it,
-  // we fall back to fresh bands off the current price instead of showing stale numbers.
+  // Targets are computed off the LIVE price. Priority order, most honest first:
+  //   1. a still-live stored trade_plan (all targets above price, stop below)
+  //   2. real candle structure — 2·ATR volatility stop + ATR-spaced targets, T3 reaching
+  //      toward the actual 52-week high — all from price_candles via /api/stock/technicals
+  //   3. flat % bands, only if ATR isn't available yet (sync hasn't covered the symbol)
   const plan      = detail.trade_plan ?? {}
   const planValid = Array.isArray(plan.targets) && plan.targets.length >= 3
     && Number(plan.targets[0]) > price
     && (plan.stopLoss == null || Number(plan.stopLoss) < price)
-  const sl  = (planValid ? plan.stopLoss   : price * 0.90).toFixed(0)
-  const t1  = (planValid ? plan.targets[0] : price * 1.12).toFixed(0)
-  const t2  = (planValid ? plan.targets[1] : price * 1.25).toFixed(0)
-  const t3  = (planValid ? plan.targets[2] : price * 1.50).toFixed(0)
+
+  const atr    = n(tech?.daily?.atr)            // average true range (₹) from daily price_candles
+  const w52h   = n(tech?.price?.week52High)
+  const hasATR = atr > 0
+
+  const slNum = planValid ? Number(plan.stopLoss)   : hasATR ? price - 2 * atr : price * 0.90
+  const t1Num = planValid ? Number(plan.targets[0]) : hasATR ? price + 2 * atr : price * 1.12
+  const t2Num = planValid ? Number(plan.targets[1]) : hasATR ? price + 4 * atr : price * 1.25
+  const t3Num = planValid ? Number(plan.targets[2]) : hasATR ? Math.max(price + 6 * atr, w52h || 0) : price * 1.50
+  const sl = slNum.toFixed(0), t1 = t1Num.toFixed(0), t2 = t2Num.toFixed(0), t3 = t3Num.toFixed(0)
+
+  // honest % labels derived from the actual levels (no more hardcoded +12/+25/+50)
+  const movePct = (v: number) => price > 0 ? `${v >= price ? "+" : ""}${(((v - price) / price) * 100).toFixed(0)}%` : ""
+  const targetBasis = planValid ? "saved trade plan"
+    : hasATR ? `ATR-based · ATR ₹${atr.toFixed(0)}, 52w hi ₹${(w52h || 0).toFixed(0)}`
+    : "flat bands — candle history pending for this symbol"
 
   return (
     <Overlay onClose={onClose}>
@@ -404,26 +420,27 @@ export function StockResearchWorkspace({ symbol, onClose }:
             <Section title="Entry · Exit · Targets">
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <div style={{ background: T.redBg, border: `1px solid ${T.redBd}`, borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>STOP LOSS</div>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>STOP LOSS · {movePct(slNum)}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: T.red }}>₹{sl}</div>
                   <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Close below = exit</div>
                 </div>
                 <div style={{ background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 1 · +12%</div>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 1 · {movePct(t1Num)}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: T.green }}>₹{t1}</div>
                   <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Book partial profit</div>
                 </div>
                 <div style={{ background: T.blueBg, border: `1px solid ${T.blueBd}`, borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 2 · +25%</div>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 2 · {movePct(t2Num)}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: T.blue }}>₹{t2}</div>
                   <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Trail stop loss up</div>
                 </div>
                 <div style={{ background: T.purpleBg, border: `1px solid ${T.purpleBd}`, borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 3 · +50%</div>
+                  <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 600, marginBottom: 4 }}>TARGET 3 · {movePct(t3Num)}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: T.purple }}>₹{t3}</div>
                   <div style={{ fontSize: 10, color: T.textSub, marginTop: 2 }}>Let winner run</div>
                 </div>
               </div>
+              <div style={{ fontSize: 9, color: T.textMeta, marginTop: 6 }}>Levels: {targetBasis}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
                 <KV label="Position Size" value={detail.conviction?.position_size ?? "1–3%"} />
                 <KV label="Hold Period"   value="6–18 months" />

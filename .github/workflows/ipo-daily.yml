@@ -41,6 +41,9 @@ jobs:
       - name: Refresh Kite token
         run: python _scripts/refresh_kite_token.py
 
+      - name: Reconcile universe (new fundamentals -> company_master)
+        run: python _scripts/reconcile_universe.py
+
       - name: Sync candles Kite -> Neon
         run: python _scripts/kite-sync-candles.py --days 1 --target neon
 
