@@ -85,11 +85,21 @@ export async function GET(req: NextRequest) {
     }
     const quality = avg(Object.values(qParts))
 
-    // ── SMART MONEY ── your precomputed smart_money_score + bulk flow + MF conviction
+    // ── SMART MONEY ── direction comes from smart_money_SIGNAL (the raw smart_money_score is
+    // near-flat across signals — ~32 for both Accumulation and Distribution — so it does NOT
+    // encode direction and must not be trusted as bullish). Signal sets the base; bulk flow and
+    // live MF conviction adjust it.
+    const sig = String(f.smart_money_signal || "").toLowerCase()
+    const signalBase =
+      sig.includes("strong accum") ? 88 :
+      sig.includes("accum")        ? 72 :
+      sig.includes("heavy distrib")? 12 :
+      sig.includes("distrib")      ? 28 :
+      sig.includes("neutral")      ? 50 : null
     const smParts = {
-      smartScore: num(f.smart_money_score),
-      bulkFlow:   num(f.bulk_net_flow) !== null ? (Number(f.bulk_net_flow) > 0 ? 70 : 35) : null,
-      conviction: flag ? clamp(60 + Number(flag.n_funds || 0) * 12) : null,  // funds initiating => boost
+      signal:     signalBase,
+      bulkFlow:   num(f.bulk_net_flow) !== null ? (Number(f.bulk_net_flow) > 0 ? 68 : 30) : null,
+      conviction: flag ? clamp(60 + Number(flag.n_funds || 0) * 12) : null,
     }
     const smartMoney = avg(Object.values(smParts))
 
