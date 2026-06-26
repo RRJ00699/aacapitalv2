@@ -33,6 +33,7 @@ import { TechnicalScreener } from "./features/technical-screener"
 import { MultibaggerDiscovery } from "./features/multibagger-discovery"
 import { BreakoutWatchScreen } from "./features/breakout-watch"  // SESSION 9
 import { StocksDiscovery } from "./features/stocks-discovery"      // SESSION 9
+import StockScorecardGrid from "./features/StockScorecardGrid"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2976,9 +2977,9 @@ setMarketFetched(true);
         </div>
       )}
 
-      {tab==="stocks"&&(
-        <StocksDiscovery onStockSelect={(s)=>{ setWorkspaceSymbol(s); setTab("stocks") }}/>
-      )}
+     {tab==="stocks"&&(
+  <StockScorecardGrid onStockSelect={(s)=>{ setWorkspaceSymbol(s); setTab("stocks") }}/>
+)}
             {tab==="ipo"&&(
         <div>
           {/* IPO sub-nav */}

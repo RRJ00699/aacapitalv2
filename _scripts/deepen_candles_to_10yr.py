@@ -81,20 +81,32 @@ def find_shallow(conn, years: int):
 def upsert_daily(conn, symbol, candles) -> int:
     if not candles:
         return 0
+    # Dedupe by date within this batch — Kite occasionally returns duplicate dates,
+    # which triggers "ON CONFLICT DO UPDATE cannot affect row a second time". Last wins.
+    by_date = {}
+    for c in candles:
+        d = c["date"].date()
+        by_date[d] = (symbol, d, c["open"], c["high"], c["low"], c["close"], c["volume"])
+    rows = list(by_date.values())
+    if not rows:
+        return 0
     cur = conn.cursor()
-    rows = [
-        (symbol, c["date"].date(), c["open"], c["high"], c["low"], c["close"], c["volume"])
-        for c in candles
-    ]
-    psycopg2.extras.execute_values(cur, """
-        INSERT INTO price_candles (symbol, date, open, high, low, close, volume)
-        VALUES %s
-        ON CONFLICT (symbol, date) DO UPDATE SET
-          open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
-          close=EXCLUDED.close, volume=EXCLUDED.volume
-    """, rows)
-    conn.commit(); cur.close()
-    return len(rows)
+    try:
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO price_candles (symbol, date, open, high, low, close, volume)
+            VALUES %s
+            ON CONFLICT (symbol, date) DO UPDATE SET
+              open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+              close=EXCLUDED.close, volume=EXCLUDED.volume
+        """, rows)
+        conn.commit()
+        return len(rows)
+    except Exception as e:
+        conn.rollback()   # never leave the connection aborted — that's what cascaded last time
+        log.warning(f"  ! {symbol}: upsert failed ({e}); rolled back, continuing")
+        return 0
+    finally:
+        cur.close()
 
 
 def main():
