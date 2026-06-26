@@ -12,6 +12,7 @@ import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalS
 import VerdictHeader from "@/components/features/VerdictHeader"
 import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
+import TechnicalsLive from "@/components/features/TechnicalsLive"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
 const T = {
@@ -429,46 +430,8 @@ export function StockResearchWorkspace({ symbol, onClose }:
               </div>
             </Section>
 
-            {/* Technical structure */}
-            <Section title="Technical Structure">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                <KV label="Stage"        value={String(stage)} />
-                <KV label="Base Length"  value={`${n(detail.technical?.base_months) || 0}M`} />
-                <KV label="Momentum 6M"  value={pct(detail.technical?.momentum_6m)}
-                  color={n(detail.technical?.momentum_6m) >= 0 ? T.green : T.red} />
-                <KV label="Vol Compress" value={`${fmt(detail.technical?.vol_compression, 2)}x`} />
-                <KV label="Below 52W Hi" value={`${fmt(detail.technical?.pct_below_high)}%`} />
-                <KV label="NR7 Signal"   value={isNR7 ? "✓ Coiling" : "—"}
-                  highlight={isNR7} color={isNR7 ? T.green : T.textSub} />
-              </div>
-            </Section>
-
-            {/* Expected returns */}
-            <Section title="Expected Returns">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <div style={{ background: `${T.green}10`, border: `1px solid ${T.green}30`,
-                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: T.green }}>
-                    {conv >= 70 ? "70%" : conv >= 55 ? "55%" : "40%"}
-                  </div>
-                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+20% in 6M)</div>
-                </div>
-                <div style={{ background: `${T.blue}10`, border: `1px solid ${T.blue}30`,
-                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: T.blue }}>
-                    {conv >= 70 ? "53%" : conv >= 55 ? "40%" : "28%"}
-                  </div>
-                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+50% in 12M)</div>
-                </div>
-                <div style={{ background: `${T.purple}10`, border: `1px solid ${T.purple}30`,
-                  borderRadius: 10, padding: 12, textAlign: "center" as const }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: T.purple }}>
-                    {conv >= 70 ? "40%" : conv >= 55 ? "28%" : "15%"}
-                  </div>
-                  <div style={{ fontSize: 9, color: T.textMeta, marginTop: 4 }}>P(+100% in 24M)</div>
-                </div>
-              </div>
-            </Section>
+            {/* Real technicals from price_candles (EMA/RSI/ATR/52w/returns) */}
+            <TechnicalsLive symbol={symbol} />
 
             <Section title="Historical Similarity">
               <HistoricalSimilarityPanel symbol={symbol} />
