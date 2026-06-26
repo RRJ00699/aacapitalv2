@@ -48,14 +48,22 @@ export default function StockDeals({ symbol }: { symbol: string }) {
   if (!deals.length) return <div style={{ fontSize: 12, color: T.textMeta, padding: "8px 0" }}>No bulk/block deals on record for {symbol}.</div>
 
   const s = data.summary || {}
-  const net = s.net_value ?? 0
+  const bulkNet = s.bulk_net ?? 0
+  const hasBulk = (s.bulk_count ?? 0) > 0
+  const hasBlock = (s.block_count ?? 0) > 0
 
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <Stat label="Net flow" value={inr(net)} color={net >= 0 ? T.green : T.red} strong />
-        <Stat label={`Buys (${s.buy_count ?? 0})`} value={inr(s.buy_value ?? 0)} color={T.green} />
-        <Stat label={`Sells (${s.sell_count ?? 0})`} value={inr(s.sell_value ?? 0)} color={T.red} />
+        {hasBulk && (
+          <Stat label={`Bulk net (${s.bulk_count})`} value={inr(bulkNet)} color={bulkNet >= 0 ? T.green : T.red} strong />
+        )}
+        {hasBlock && (
+          <Stat label={`Block turnover (${s.block_count})`} value={inr(s.block_turnover ?? 0)} color={T.textSub} />
+        )}
+        {!hasBulk && !hasBlock && (
+          <Stat label="Deals" value={String(data.count)} color={T.textSub} />
+        )}
       </div>
 
       <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>

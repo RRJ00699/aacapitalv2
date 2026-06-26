@@ -40,19 +40,26 @@ export async function GET(req: NextRequest) {
           quantity: qty, price, value: +value.toFixed(0),
         }
       })
-      let buyVal = 0, sellVal = 0, buyN = 0, sellN = 0
+      // Bulk deals carry a real direction (single-side disclosure). Block deals report
+      // BOTH counterparties, so buy≈sell and net is always ~0 — show their turnover instead.
+      let bulkBuy = 0, bulkSell = 0, bulkN = 0, blockTurnover = 0, blockN = 0
       for (const d of deals) {
-        if (d.side === "BUY") { buyVal += d.value; buyN++ }
-        else if (d.side === "SELL") { sellVal += d.value; sellN++ }
+        if (d.deal_type === "BLOCK") { blockTurnover += d.value; blockN++ }
+        else {
+          if (d.side === "BUY") bulkBuy += d.value
+          else if (d.side === "SELL") bulkSell += d.value
+          bulkN++
+        }
       }
       return NextResponse.json({
         ok: true, symbol, window_days: days, count: deals.length,
         summary: {
-          buy_value: +buyVal.toFixed(0), sell_value: +sellVal.toFixed(0),
-          net_value: +(buyVal - sellVal).toFixed(0), buy_count: buyN, sell_count: sellN,
+          bulk_buy: +bulkBuy.toFixed(0), bulk_sell: +bulkSell.toFixed(0),
+          bulk_net: +(bulkBuy - bulkSell).toFixed(0), bulk_count: bulkN,
+          block_turnover: +blockTurnover.toFixed(0), block_count: blockN,
         },
         deals,
-        disclaimer: "Bulk/block deals are disclosed positions, often partial. Research signal, not a buy call.",
+        disclaimer: "Bulk deals show net direction; block deals report both sides (net ≈ 0), shown as turnover. Research signal, not a buy call.",
       })
     }
 

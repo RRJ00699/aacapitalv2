@@ -14,6 +14,7 @@ import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 import TechnicalsLive from "@/components/features/TechnicalsLive"
 import StockDeals from "@/components/features/StockDeals"
+import FinancialDNA from "@/components/features/FinancialDNA"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
 const T = {
@@ -451,10 +452,6 @@ export function StockResearchWorkspace({ symbol, onClose }:
             {/* Real technicals from price_candles (EMA/RSI/ATR/52w/returns) */}
             <TechnicalsLive symbol={symbol} />
 
-            <Section title="Institutional Deals (bulk / block)">
-              <StockDeals symbol={symbol} />
-            </Section>
-
             <Section title="Historical Similarity">
               <HistoricalSimilarityPanel symbol={symbol} />
             </Section>
@@ -462,6 +459,16 @@ export function StockResearchWorkspace({ symbol, onClose }:
 
           {/* ── FUNDAMENTALS TAB ── */}
           <div style={{ display: activeTab === "fundamentals" ? "block" : "none" }}>
+
+            {/* Financial DNA — 10yr fundamentals: grade, sub-scores, flags (quality/risk lens) */}
+            <Section title="Financial DNA (10-yr fundamentals)">
+              <FinancialDNA symbol={symbol} />
+            </Section>
+
+            {/* Institutional bulk/block deals — who's actually transacting in the name */}
+            <Section title="Institutional Deals (bulk / block)">
+              <StockDeals symbol={symbol} />
+            </Section>
 
             {/* Shareholding */}
             <Section title="Shareholding Pattern">
