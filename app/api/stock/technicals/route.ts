@@ -120,15 +120,25 @@ function resampleMonthly(daily: Candle[]): Candle[] {
   }))
 }
 
+// Normalize a DB date value to 'YYYY-MM-DD' whether Neon returns a JS Date,
+// an ISO string, or something else — prevents "Invalid time value" downstream.
+function ymd(v: any): string {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10)
+  const s = String(v ?? "")
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10)
+}
+
 const toCandles = (rows: any[], dateKey = "date"): Candle[] =>
   rows.map(r => ({
-    date:   String(r[dateKey]).slice(0, 10),
+    date:   ymd(r[dateKey]),
     open:   Number(r.open),
     high:   Number(r.high),
     low:    Number(r.low),
     close:  Number(r.close),
     volume: Number(r.volume) || 0,
-  }))
+  })).filter(c => c.date) // drop any row whose date couldn't be parsed
 
 export async function GET(req: NextRequest) {
   const sym = (req.nextUrl.searchParams.get("sym") || "").trim().toUpperCase()
@@ -245,6 +255,7 @@ function resampleWeekly(daily: Candle[]): Candle[] {
   const byWeek = new Map<string, Candle[]>()
   for (const c of daily) {
     const d = new Date(c.date + "T00:00:00Z")
+    if (Number.isNaN(d.getTime())) continue        // skip unparseable, never throw
     const day = d.getUTCDay() || 7        // Mon=1..Sun=7
     const monday = new Date(d); monday.setUTCDate(d.getUTCDate() - (day - 1))
     const key = monday.toISOString().slice(0, 10)
