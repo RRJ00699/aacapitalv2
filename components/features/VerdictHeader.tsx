@@ -43,6 +43,22 @@ type Change = {
   headline: string
 }
 
+type Recon = {
+  ok: boolean
+  symbol: string
+  verdict: "confirmed" | "contradicted" | "mixed" | "no_move" | "no_filing" | "neutral"
+  note: string
+  filings?: { latest_quarter?: string | null }
+}
+
+// verdict → { color, bg, icon } for the reconcile badge
+function reconTone(v: string): { color: string; bg: string; icon: string } {
+  if (v === "confirmed")    return { color: "#15803d", bg: "#ecfdf3", icon: "✓" }
+  if (v === "contradicted") return { color: "#b91c1c", bg: "#fef2f2", icon: "⚠" }
+  if (v === "mixed")        return { color: "#b45309", bg: "#fffbeb", icon: "≈" }
+  return { color: "#6b7280", bg: "#f3f4f6", icon: "·" }
+}
+
 const FLABEL: Record<string, string> = {
   business: "Business", earnings: "Earnings", technical: "Technical",
   smart_money: "Smart money", sector: "Sector",
@@ -95,6 +111,7 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const [chg, setChg] = useState<Change | null>(null)
   const [chgMeta, setChgMeta] = useState<{ compared: boolean; since: string | null }>({ compared: false, since: null })
+  const [recon, setRecon] = useState<Recon | null>(null)
 
   useEffect(() => {
     if (!symbol) return
@@ -114,6 +131,15 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
         if (j?.ok) { setChg(j.changes?.[0] ?? null); setChgMeta({ compared: !!j.compared, since: j.since_date ?? null }) }
       })
       .catch(() => {})   // fail quiet — the strip just won't show the convergence line
+  }, [symbol])
+
+  useEffect(() => {
+    if (!symbol) return
+    setRecon(null)
+    fetch(`/api/conviction/reconcile?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (j?.ok) setRecon(j) })
+      .catch(() => {})   // fail quiet
   }, [symbol])
 
   if (err) return null                 // fail quiet — don't show a broken panel
@@ -213,7 +239,8 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
         const hasMove = !!chg && chgMeta.compared &&
           (chg.status === "up" || chg.status === "down" || chg.status === "new" || chg.status === "dropped" ||
            (chg.convergence.delta !== null && chg.convergence.delta !== 0))
-        if (!hasMove && conviction <= 0) return null
+        const showRecon = !!recon && (recon.verdict === "confirmed" || recon.verdict === "contradicted" || recon.verdict === "mixed")
+        if (!hasMove && conviction <= 0 && !showRecon) return null
         return (
           <div style={card}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
@@ -267,6 +294,20 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
                 </span>
               </div>
             )}
+
+            {/* conviction vs filed shareholding reconcile */}
+            {showRecon && recon && (() => {
+              const t = reconTone(recon.verdict)
+              return (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: conviction > 0 || hasMove ? 10 : 0 }}>
+                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: t.color, background: t.bg,
+                    borderRadius: 6, padding: "2px 8px" }}>
+                    {t.icon} Filings {recon.verdict === "confirmed" ? "agree" : recon.verdict === "contradicted" ? "disagree" : "mixed"}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary,#6b7280)", lineHeight: 1.5 }}>{recon.note}</span>
+                </div>
+              )
+            })()}
           </div>
         )
       })()}
