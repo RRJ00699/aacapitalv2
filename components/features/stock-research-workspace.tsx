@@ -10,6 +10,7 @@ import { OrderBookPanel } from "./order-book-panel"
 import { ManagementCommentaryPanel } from "./management-commentary-panel"
 import { HistoricalSimilarityPanel } from "@/components/intelligence/HistoricalSimilarityPanel"
 import VerdictHeader from "@/components/features/VerdictHeader"
+import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
@@ -369,13 +370,13 @@ export function StockResearchWorkspace({ symbol, onClose }:
         <div style={{ padding: "16px 20px 0" }}>
 
           {/* ── Verdict header: decomposed conviction scorecard (glance layer above tabs) ── */}
-          <VerdictHeader symbol={symbol} />
+          {showNewEngine() && <VerdictHeader symbol={symbol} />}
 
           {/* ── TECHNICAL TAB ── */}
           <div style={{ display: activeTab === "technical" ? "block" : "none" }}>
 
             {/* 6-engine scores */}
-            <Section title="6-Engine Convergence">
+            {showOldEngine() && <Section title="6-Engine Convergence">
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 12 }}>
                 {[
                   { label: "Technical DNA",  score: n(detail.scores?.technical_dna), color: T.blue   },
@@ -391,7 +392,7 @@ export function StockResearchWorkspace({ symbol, onClose }:
                   </div>
                 ))}
               </div>
-            </Section>
+            </Section>}
 
             {/* Price chart */}
             <Section title="Price Chart">
