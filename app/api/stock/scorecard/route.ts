@@ -68,13 +68,19 @@ export async function GET(req: NextRequest) {
     const sectorPe = num((peerRows[0] as any)?.sector_pe)
     const flag = (flagRows[0] || null) as any
 
+    // Detect lenders — banks/NBFCs/finance carry high D/E by design (they borrow to lend),
+    // so the normal debt band would wrongly tank every financial. For them, skip the debt
+    // and interest-coverage bands and lean on ROE + DNA instead.
+    const sectorText = `${f.industry || ""} ${f.industry_group || ""}`.toLowerCase()
+    const isFinance = /financ|bank|nbfc|lend|insur|capital market|housing finance/.test(sectorText)
+
     // ── QUALITY ── ROCE, ROE, debt, interest coverage, margins, DNA score
     const qParts = {
       roce:       band(num(f.roce), 8, 25),
       roe:        band(num(f.roe), 8, 22),
       opm:        band(num(f.opm_pct), 5, 25),
-      debt:       band(num(f.debt_to_equity), 1.5, 0.2, false),   // lower is better
-      intCover:   band(num(f.interest_coverage), 1.5, 8),
+      debt:       isFinance ? null : band(num(f.debt_to_equity), 1.5, 0.2, false),   // lower better; N/A for lenders
+      intCover:   isFinance ? null : band(num(f.interest_coverage), 1.5, 8),         // N/A for lenders
       dna:        num(f.business_dna_score),                       // already 0..100-ish
     }
     const quality = avg(Object.values(qParts))
@@ -129,7 +135,7 @@ export async function GET(req: NextRequest) {
       convergence: blend,
       read,
       subscores: {
-        quality:    { score: quality,    inputs: cleanInputs(qParts, f, ["roce", "roe", "opm_pct", "debt_to_equity", "interest_coverage", "business_dna_grade"]) },
+        quality:    { score: quality,    inputs: { ...cleanInputs(qParts, f, ["roce", "roe", "opm_pct", "debt_to_equity", "interest_coverage", "business_dna_grade"]), is_lender: isFinance } },
         smartMoney: { score: smartMoney, inputs: { smart_money_signal: f.smart_money_signal, bulk_net_flow: num(f.bulk_net_flow), bulk_deal_count: num(f.bulk_deal_count), conviction_funds: flag ? Number(flag.n_funds) : 0, funds: flag?.funds ?? null } },
         valuation:  { score: valuation,  inputs: { pe_ratio: pe, sector_pe: sectorPe } },
         momentum:   { score: momentum,   inputs: { return_3m: num(f.return_3m), return_6m: num(f.return_6m), earnings_category: f.earnings_category, pat_growth_1y: num(f.pat_growth_1y), sector_rotation_score: num(f.sector_rotation_score) } },
