@@ -31,6 +31,37 @@ const LABELS: Record<string, string> = {
   momentum: "Momentum",
 }
 
+// ── "what changed since last look" (from /api/convergence/changes) ────────────
+type Change = {
+  symbol: string
+  status: "up" | "down" | "flat" | "new" | "dropped"
+  convergence: { now: number | null; prev: number | null; delta: number | null }
+  factors: Record<string, { now: number | null; prev: number | null; delta: number | null }>
+  action: string | null
+  action_prev: string | null
+  action_changed: boolean
+  headline: string
+}
+
+const FLABEL: Record<string, string> = {
+  business: "Business", earnings: "Earnings", technical: "Technical",
+  smart_money: "Smart money", sector: "Sector",
+}
+
+// colored ▲/▼ delta pill for a score move; renders nothing for null/zero
+function Delta({ d, label }: { d: number | null; label?: string }) {
+  if (d === null || d === 0) return null
+  const up = d > 0
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600,
+      color: up ? "#15803d" : "#b91c1c", background: up ? "#ecfdf3" : "#fef2f2",
+      borderRadius: 6, padding: "2px 7px" }}>
+      {label ? <span style={{ color: "var(--text-secondary,#6b7280)", fontWeight: 500 }}>{label}</span> : null}
+      <span>{up ? "▲" : "▼"} {up ? "+" : ""}{d}</span>
+    </span>
+  )
+}
+
 // score → semantic color (green strong / amber middling / muted weak)
 function toneFor(n: number | null): string {
   if (n === null) return "var(--text-muted, #9ca3af)"
@@ -62,6 +93,8 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
   const [data, setData] = useState<Scorecard | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const [chg, setChg] = useState<Change | null>(null)
+  const [chgMeta, setChgMeta] = useState<{ compared: boolean; since: string | null }>({ compared: false, since: null })
 
   useEffect(() => {
     if (!symbol) return
@@ -70,6 +103,17 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
       .then((r) => r.json())
       .then((j) => { if (j?.ok) setData(j); else setErr(j?.error || "no data") })
       .catch((e) => setErr(String(e)))
+  }, [symbol])
+
+  useEffect(() => {
+    if (!symbol) return
+    setChg(null)
+    fetch(`/api/convergence/changes?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.ok) { setChg(j.changes?.[0] ?? null); setChgMeta({ compared: !!j.compared, since: j.since_date ?? null }) }
+      })
+      .catch(() => {})   // fail quiet — the strip just won't show the convergence line
   }, [symbol])
 
   if (err) return null                 // fail quiet — don't show a broken panel
@@ -164,21 +208,68 @@ export default function VerdictHeader({ symbol }: { symbol: string }) {
         </div>
       </div>
 
-      {/* what-changed / conviction strip — only when there's something to say */}
-      {conviction > 0 && (
-        <div style={card}>
-          <div style={{ fontSize: 12, color: "var(--text-secondary,#6b7280)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
-            What changed
+      {/* what-changed strip — convergence deltas since last look + fresh MF conviction */}
+      {(() => {
+        const hasMove = !!chg && chgMeta.compared &&
+          (chg.status === "up" || chg.status === "down" || chg.status === "new" || chg.status === "dropped" ||
+           (chg.convergence.delta !== null && chg.convergence.delta !== 0))
+        if (!hasMove && conviction <= 0) return null
+        return (
+          <div style={card}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--text-secondary,#6b7280)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                What changed
+              </div>
+              {chgMeta.since && (
+                <div style={{ fontSize: 11, color: "var(--text-muted,#9ca3af)" }}>since {chgMeta.since}</div>
+              )}
+            </div>
+
+            {/* convergence move + per-factor deltas */}
+            {hasMove && chg && (
+              <div style={{ marginBottom: conviction > 0 ? 10 : 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  {chg.convergence.delta !== null && chg.convergence.delta !== 0 && (
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      Conviction{" "}
+                      <span style={{ color: chg.convergence.delta > 0 ? "#15803d" : "#b91c1c" }}>
+                        {chg.convergence.delta > 0 ? "+" : ""}{chg.convergence.delta}
+                      </span>{" "}
+                      <span style={{ color: "var(--text-muted,#9ca3af)", fontWeight: 400 }}>
+                        ({chg.convergence.prev ?? "—"} → {chg.convergence.now ?? "—"})
+                      </span>
+                    </span>
+                  )}
+                  {chg.action_changed && (
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "#eef2ff", color: "#3730a3" }}>
+                      {chg.action_prev ?? "—"} → {chg.action ?? "—"}
+                    </span>
+                  )}
+                  {(chg.status === "new" || chg.status === "dropped") && (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary,#6b7280)" }}>{chg.headline}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {Object.keys(FLABEL).map((f) => (
+                    <Delta key={f} d={chg.factors?.[f]?.delta ?? null} label={FLABEL[f]} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* fresh MF conviction */}
+            {conviction > 0 && (
+              <div style={{ fontSize: 13 }}>
+                <span style={{ color: "#0c447c" }}>💎 </span>
+                {fundsLabel ? <span>{fundsLabel} </span> : null}
+                <span style={{ color: "var(--text-secondary,#6b7280)" }}>
+                  {conviction === 1 ? "initiated a new position" : `${conviction} funds initiated new positions`} — fresh conviction
+                </span>
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 13 }}>
-            <span style={{ color: "#0c447c" }}>💎 </span>
-            {fundsLabel ? <span>{fundsLabel} </span> : null}
-            <span style={{ color: "var(--text-secondary,#6b7280)" }}>
-              {conviction === 1 ? "initiated a new position" : `${conviction} funds initiated new positions`} — fresh conviction
-            </span>
-          </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

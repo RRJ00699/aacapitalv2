@@ -40,6 +40,18 @@ function ScoreRing({ score }: { score: number }) {
   )
 }
 
+// colored ▲/▼ convergence-delta pill (from /api/convergence/changes)
+function ConvDelta({ d }: { d: number | null }) {
+  if (d === null || d === 0) return null
+  const up = d > 0
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 700,
+      color: up ? T.green : T.red, background: up ? T.greenBg : T.redBg, borderRadius: 6, padding: "1px 6px" }}>
+      {up ? "▲" : "▼"} {up ? "+" : ""}{d}
+    </span>
+  )
+}
+
 export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string) => void }) {
   const [stocks,    setStocks]    = useState<any[]>([])
   const [details,   setDetails]   = useState<Record<string, any>>({})
@@ -48,6 +60,9 @@ export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string)
   const [input,     setInput]     = useState("")
   const [error,     setError]     = useState<string | null>(null)
   const [removing,  setRemoving]  = useState<string | null>(null)
+  const [changes,   setChanges]   = useState<any[]>([])
+  const [sinceDate, setSinceDate] = useState<string | null>(null)
+  const [compared,  setCompared]  = useState(false)
 
   const loadWatchlist = useCallback(async () => {
     setLoading(true)
@@ -66,6 +81,12 @@ export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string)
       const map: Record<string, any> = {}
       results.forEach((r, i) => { if (r?.ok) map[list[i].symbol] = r })
       setDetails(map)
+
+      // what changed since last look (convergence deltas, scoped to the watchlist)
+      try {
+        const cr = await fetch("/api/convergence/changes?watchlist=1&min=1", { cache: "no-store" }).then(r => r.json())
+        if (cr?.ok) { setChanges(cr.changes ?? []); setSinceDate(cr.since_date ?? null); setCompared(!!cr.compared) }
+      } catch {}
     } catch {}
     finally { setLoading(false) }
   }, [])
@@ -109,6 +130,10 @@ export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string)
     const conv = n(details[s.symbol]?.scores?.convergence)
     return conv >= 70 || details[s.symbol]?.technical?.is_nr7
   }).length
+
+  const changeBySym: Record<string, any> = Object.fromEntries(changes.map((c: any) => [c.symbol, c]))
+  const movers = changes.filter((c: any) =>
+    c.status === "up" || c.status === "down" || c.status === "new" || c.status === "dropped")
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", paddingBottom: 80 }}>
@@ -167,6 +192,36 @@ export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string)
                 <div style={{ fontSize: 11, color: T.textSub, marginTop: 2 }}>{c.label}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* What changed since last look */}
+        {compared && movers.length > 0 && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14,
+            padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>What changed</span>
+              <span style={{ fontSize: 11, color: T.textMeta }}>
+                {movers.length} mover{movers.length > 1 ? "s" : ""} since {sinceDate}
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {movers.slice(0, 12).map((c: any) => (
+                <div key={c.symbol} onClick={() => onStockSelect?.(c.symbol)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
+                    borderRadius: 8, cursor: "pointer", background: T.bg }}>
+                  <ConvDelta d={c.convergence?.delta ?? null} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.text, minWidth: 64 }}>{c.symbol}</span>
+                  <span style={{ fontSize: 11, color: T.textSub, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.headline}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {compared && movers.length === 0 && stocks.length > 0 && (
+          <div style={{ fontSize: 11, color: T.textMeta, marginBottom: 14 }}>
+            No convergence moves on your watchlist since {sinceDate}.
           </div>
         )}
 
@@ -248,6 +303,7 @@ export function WatchlistScreen({ onStockSelect }: { onStockSelect?: (s: string)
                         {rating}
                       </span>
                     )}
+                    <ConvDelta d={changeBySym[s.symbol]?.convergence?.delta ?? null} />
                   </div>
                   <div style={{ fontSize: 11, color: T.textSub }}>{name} · {industry}</div>
                   <div style={{ fontSize: 11, color: T.textMeta, marginTop: 3 }}>

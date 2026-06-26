@@ -1,5 +1,5 @@
 "use client"
-import { TrendingUp, BarChart2, Zap, Home, RefreshCw, Activity, Briefcase, Settings2, Users, Award } from "lucide-react"
+import { TrendingUp, BarChart2, Zap, Home, RefreshCw, Activity, Briefcase, Settings2, Users, Award, Star } from "lucide-react"
 import {
   calcConviction, calcEV, allocPct,
   ConvictionPanel, CapitalGoalEngine, ModeTracker, CompoundTab,
@@ -2865,6 +2865,7 @@ setMarketFetched(true);
   {v:"today",         l:"Today",         icon:<Home      size={13}/>},
   {v:"stocks",        l:"Stocks",        icon:<TrendingUp size={13}/>},
   {v:"opportunities", l:"Opportunities", icon:<Activity  size={13}/>},
+  {v:"watchlist",     l:"Watch",         icon:<Star      size={13}/>},
   {v:"ipo",           l:"IPO",           icon:<Zap        size={13}/>},
   {v:"portfolio",     l:"Portfolio",     icon:<Briefcase  size={13}/>},
 ].map(({v,l,icon})=>(
