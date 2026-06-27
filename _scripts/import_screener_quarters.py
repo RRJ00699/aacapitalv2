@@ -144,13 +144,19 @@ def ensure_table(cur):
         CREATE TABLE IF NOT EXISTS quarterly_financials (
             symbol TEXT NOT NULL,
             period DATE NOT NULL,
-            fiscal_label TEXT,
-            sales NUMERIC(18,4), expenses NUMERIC(18,4), operating_profit NUMERIC(18,4),
-            opm_pct NUMERIC(10,4), other_income NUMERIC(18,4), depreciation NUMERIC(18,4),
-            interest NUMERIC(18,4), pbt NUMERIC(18,4), tax NUMERIC(18,4),
-            net_profit NUMERIC(18,4),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
             PRIMARY KEY (symbol, period))""")
+    # Evolve the schema so a table created by an EARLIER version of this script (which had
+    # tax_pct/eps but no `tax`) gains the current columns. ADD COLUMN IF NOT EXISTS is a no-op
+    # where the column already exists, so this is safe on fresh and pre-existing tables alike.
+    coltypes = {
+        "fiscal_label": "TEXT",
+        "sales": "NUMERIC(18,4)", "expenses": "NUMERIC(18,4)", "operating_profit": "NUMERIC(18,4)",
+        "opm_pct": "NUMERIC(10,4)", "other_income": "NUMERIC(18,4)", "depreciation": "NUMERIC(18,4)",
+        "interest": "NUMERIC(18,4)", "pbt": "NUMERIC(18,4)", "tax": "NUMERIC(18,4)",
+        "net_profit": "NUMERIC(18,4)", "updated_at": "TIMESTAMPTZ DEFAULT NOW()",
+    }
+    for c, t in coltypes.items():
+        cur.execute(f"ALTER TABLE quarterly_financials ADD COLUMN IF NOT EXISTS {c} {t}")
 
 
 def symbol_from_path(path):
