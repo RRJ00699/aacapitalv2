@@ -1,22 +1,29 @@
 name: AACapital MF Conviction Refresh
 
-# Refreshes the 💎 new-conviction signal monthly from Screener (the source your repo
-# already uses — AMFI direct is a JS SPA that returns empty to naive fetches).
-# Runs the FULL documented pipeline in order: load → canonicalize → reconcile →
-# compute flags → freshness. Cron is set after the SEBI 10-day disclosure deadline.
+# Refreshes the 💎 new-conviction signal monthly from Screener (the source this repo
+# already uses — AMFI-direct and the AMC sites are JS/403 and unreachable to naive fetches).
+# Runs the documented pipeline IN ORDER:
+#   load (Screener) → canonicalize → reconcile → compute flags → freshness.
 #
-# Required GitHub repo Secrets (Settings → Secrets and variables → Actions):
+# NOTE on build_isin_symbol_map: deliberately NOT a step here. scrape_amfi.py scrapes
+# per-stock and writes mf_scheme_holdings.nse_symbol directly, so Screener rows are already
+# symbol-mapped. (build_isin is only needed by the folder/parse path, and data/EQUITY_L.csv
+# is gitignored so it couldn't run in CI anyway.)
+#
+# Required repo Secrets (Settings → Secrets and variables → Actions):
 #   DATABASE_URL, SCREENER_USERNAME, SCREENER_PASSWORD
-# Optional: NOTIFY_WEBHOOK (same one ipo-daily uses) for failure pings.
+# Optional: NOTIFY_WEBHOOK (the one ipo-daily uses) for failure pings.
 #
-# NOTE: this schedules a Screener scrape with stored credentials. It's monthly
-# (low frequency), but automated scraping can be against site ToS — that's your
-# call. The cadence and --limit below are the dials.
+# Uses _scripts/scrape_amfi.py (env-only credentials) — NOT scrape_amfi_screener.py,
+# which has credentials hardcoded and should be deleted from the repo + git history.
+#
+# Caveat: this schedules an authenticated Screener scrape. It's monthly (low frequency),
+# but automated scraping can run against site ToS — cadence and --limit are the dials.
 
 on:
   schedule:
-    - cron: '0 4 12 * *'      # 12th of each month, 04:00 UTC (~09:30 IST), after the 10-day deadline
-  workflow_dispatch:           # manual "Run workflow" button anytime
+    - cron: '0 4 12 * *'      # 12th each month, 04:00 UTC (~09:30 IST), after the SEBI 10-day deadline
+  workflow_dispatch:           # manual "Run workflow" button — use this to test first
 
 jobs:
   mf-refresh:
@@ -40,10 +47,10 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: 1) Load holdings from Screener
+      - name: 1) Load holdings from Screener (writes nse_symbol directly)
         run: python _scripts/scrape_amfi.py --limit 500
 
-      - name: 2) Canonicalize scheme names (prevents fake "new buy" flags)
+      - name: 2) Canonicalize scheme + amc names (prevents fake "new buy" flags)
         run: python _scripts/mf/canonicalize_mf_schemes.py
 
       - name: 3) Reconcile disclosures (prune redundant fortnights)
@@ -52,13 +59,14 @@ jobs:
       - name: 4) Compute conviction flags (💎)
         run: python _scripts/mf/compute_mf_conviction_flags.py
 
-      - name: 5) Freshness report (heartbeat — shows which funds are going stale)
+      - name: 5) Freshness report (heartbeat — which funds are going stale)
         run: python _scripts/mf/mf_freshness_monitor.py
 
       - name: Notify on failure
-        if: failure() && env.HOOK != ''
+        if: failure()
         env:
           HOOK: ${{ secrets.NOTIFY_WEBHOOK }}
         run: |
+          [ -z "$HOOK" ] && echo "NOTIFY_WEBHOOK not set; skipping" && exit 0
           curl -s -X POST "$HOOK" -H "Content-Type: application/json" \
-            -d '{"text":"❌ AACapital MF Conviction Refresh failed — check the Actions log."}' || true
+            -d "{\"text\":\"AACapital MF Conviction Refresh FAILED - run ${GITHUB_RUN_ID}\",\"content\":\"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" || true
