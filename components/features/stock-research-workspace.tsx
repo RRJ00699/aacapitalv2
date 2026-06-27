@@ -16,6 +16,7 @@ import TechnicalsLive from "@/components/features/TechnicalsLive"
 import TechnicalRegimeNote from "@/components/features/TechnicalRegimeNote"
 import StockDeals from "@/components/features/StockDeals"
 import FinancialDNA from "@/components/features/FinancialDNA"
+import QuarterlyResults from "@/components/features/QuarterlyResults"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
 const T = {
@@ -467,6 +468,11 @@ export function StockResearchWorkspace({ symbol, onClose }:
             {/* Financial DNA — 10yr fundamentals: grade, sub-scores, flags (quality/risk lens) */}
             <Section title="Financial DNA (10-yr fundamentals)">
               <FinancialDNA symbol={symbol} />
+            </Section>
+
+            {/* Quarterly P&L trend — revenue / net profit / OPM% with YoY */}
+            <Section title="Quarterly Results">
+              <QuarterlyResults symbol={symbol} />
             </Section>
 
             {/* Institutional bulk/block deals — who's actually transacting in the name */}

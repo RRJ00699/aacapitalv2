@@ -67,6 +67,9 @@ jobs:
       - name: Import into annual_financials
         run: python _scripts/import_screener_financials.py --dir data/fundamental_raw
 
+      - name: Import into quarterly_financials (Quarters section)
+        run: python _scripts/import_screener_quarters.py --dir data/fundamental_raw
+
       - name: Recompute Financial DNA (current snapshot + vintage history)
         run: |
           python _scripts/compute_financial_dna.py
