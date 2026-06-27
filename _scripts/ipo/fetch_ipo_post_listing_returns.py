@@ -80,7 +80,7 @@ def get_ipos_needing_returns(year=None, limit=100, symbol=None) -> list:
           AND nse_symbol != 'nan'
           AND listing_date IS NOT NULL
           AND listing_date < CURRENT_DATE - INTERVAL '7 days'
-          AND (return_day30 IS NULL OR return_day7 IS NULL)
+          AND (return_day30 IS NULL OR return_day7 IS NULL OR return_day15 IS NULL)
     """
     params = []
 
@@ -212,6 +212,7 @@ def compute_returns(kite, ipo: dict) -> dict:
     # Compute returns at key intervals
     intervals = {
         'return_day7':   (5,   7),    # ~1 week = 5 trading days
+        'return_day15':  (11,  15),   # ~15 calendar = ~11 trading days
         'return_day30':  (22,  30),   # ~1 month = 22 trading days
         'return_day90':  (63,  90),   # ~3 months
         'return_day180': (126, 180),  # ~6 months
@@ -237,7 +238,7 @@ def ensure_columns(conn):
     cols = [
         ("listing_day_high","NUMERIC"), ("listing_day_low","NUMERIC"),
         ("listing_day_close","NUMERIC"), ("return_listing_open","NUMERIC"),
-        ("return_day1_close","NUMERIC"), ("return_day7","NUMERIC"),
+        ("return_day1_close","NUMERIC"), ("return_day7","NUMERIC"), ("return_day15","NUMERIC"),
         ("return_day30","NUMERIC"), ("return_day90","NUMERIC"),
         ("return_day180","NUMERIC"), ("return_day365","NUMERIC"),
         ("max_upside_30d","NUMERIC"), ("max_drawdown_30d","NUMERIC"),

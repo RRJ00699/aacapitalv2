@@ -76,11 +76,15 @@ def login_screener() -> requests.Session:
         "password": SCREENER_PASSWORD,
         "csrfmiddlewaretoken": csrf_token,
     }, headers={"Referer": "https://www.screener.in/login/"}, timeout=10)
-    if 'logout' in r.text.lower() or r.url == 'https://www.screener.in/':
+    if 'logout' in r.text.lower():
         log.info("  ✓ Screener login successful")
         return session
-    log.warning("  Screener login may have failed")
-    return session
+    # Login failed. Do NOT continue with an unauthenticated session — Screener's
+    # per-scheme MF tables are login-gated, so an anonymous scrape returns zero
+    # holdings and every fund quietly goes stale with no error. Fail loudly.
+    log.error("  ✗ Screener login FAILED — check SCREENER_USERNAME / SCREENER_PASSWORD "
+              "(rotate + update the GitHub secret if the password changed).")
+    raise SystemExit(2)
 
 def fetch_mf_holdings(session, symbol: str) -> list:
     """Get MF holdings from Screener company page."""
@@ -213,6 +217,13 @@ def main():
 
     conn.close()
     log.info(f"\nDone. {ok}/{len(symbols)} stocks with MF holdings data")
+    # Safety net: if NOTHING was captured, the run effectively failed (auth dropped,
+    # Screener layout changed, network). Exit non-zero so the Action turns red instead
+    # of "succeeding" while writing zero rows and letting the conviction engine rot.
+    if ok == 0:
+        log.error("✗ Captured MF holdings for 0 stocks — treating as failure. "
+                  "Check the login line above and whether Screener's page layout changed.")
+        raise SystemExit(3)
 
 if __name__ == "__main__":
     main()

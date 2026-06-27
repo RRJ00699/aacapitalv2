@@ -6,6 +6,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { RefreshCw, ChevronDown, ChevronUp, Zap, TrendingUp, Eye, Shield, AlertTriangle } from "lucide-react"
+import IpoCapitalProtectionPanel from "./IpoCapitalProtectionPanel"
+
 
 const C = {
   green:  "#15803D", greenBg:  "#F0FDF4", greenBd: "#BBF7D0",
@@ -38,9 +40,20 @@ const TABS = [
   { id: "upcoming", label: "Upcoming",    icon: <TrendingUp size={11} />  },
   { id: "watch",    label: "Watch list",  icon: <Eye size={11} />         },
   { id: "listing",  label: "Listing day", icon: <TrendingUp size={11} />  },
+  { id: "post",     label: "Post-listing", icon: <Shield size={11} />     },
 ]
 
 const n = (v: unknown) => parseFloat(String(v || 0)) || 0
+
+// Map a (possibly varied) listed-IPO record to capital-protection panel props.
+// Defensive across field-name variants so it survives whatever /api/ipo returns.
+function postListingProps(ipo: any) {
+  const issuePrice   = n(ipo.issuePrice ?? ipo.priceBandHigh ?? ipo.priceBandLow)
+  const currentPrice = n(ipo.currentPrice ?? ipo.ltp ?? ipo.lastPrice ?? ipo.listingClose ?? ipo.listingPrice)
+  const openPrice    = n(ipo.listingOpen ?? ipo.listingOpenPrice ?? ipo.listing_day_open) || currentPrice
+  const listingDate  = ipo.listingDate ?? ipo.listing_date ?? ipo.listDate ?? ""
+  return { issuePrice, currentPrice, openPrice, listingDate }
+}
 
 // ─── Score bar ────────────────────────────────────────────────────────────────
 function ScoreBar({ label, score, color }: { label: string; score: number; color: string }) {
@@ -206,6 +219,7 @@ function IpoCard({ ipo, simple, expanded, onToggle }: {
 export function IpoCommandCenter({ simple = false }: { simple?: boolean }) {
   const [loading, setLoading] = useState(true)
   const [ipos, setIpos] = useState<any[]>([])
+  const [postIpos, setPostIpos] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState("open")
   const [expandedIpo, setExpandedIpo] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
@@ -213,11 +227,15 @@ export function IpoCommandCenter({ simple = false }: { simple?: boolean }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/ipo?limit=20").then(r => r.json()).catch(() => null)
+      const [res, post] = await Promise.all([
+        fetch("/api/ipo?limit=20").then(r => r.json()).catch(() => null),
+        fetch("/api/ipo/post-listing").then(r => r.json()).catch(() => null),
+      ])
       if (res?.ipos) {
         setIpos(res.ipos)
         setLastUpdate(new Date())
       }
+      if (post?.ipos) setPostIpos(post.ipos)
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [])
@@ -274,6 +292,41 @@ export function IpoCommandCenter({ simple = false }: { simple?: boolean }) {
         <div style={{ padding: "0 16px" }}>
           {loading ? (
             [1,2].map(i => <div key={i} style={{ background: C.grayBg, borderRadius: 14, height: 120, marginBottom: 10 }} />)
+          ) : activeTab === "post" ? (
+            postIpos.length === 0 ? (
+              <div style={{ padding: "48px 0", textAlign: "center", color: C.textSub }}>
+                <Shield size={32} color={C.grayBd} style={{ margin: "0 auto 12px", display: "block" }} />
+                <div style={{ fontSize: 14 }}>No IPOs listed in the last 45 days</div>
+              </div>
+            ) : postIpos.map(ipo => {
+              const key = ipo.id || ipo.symbol || ipo.name
+              const p = postListingProps(ipo)
+              if (!p.issuePrice || !p.currentPrice) {
+                return (
+                  <div key={key} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{ipo.name}</div>
+                    <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 4, lineHeight: 1.5 }}>
+                      Price not available yet — needs <code>issue_price</code> and at least <code>return_listing_open</code>
+                      in <code>ipo_intelligence</code> (run the returns backfill for this listing).
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div key={key} style={{ marginBottom: 16 }}>
+                  <IpoCapitalProtectionPanel
+                    company={ipo.name}
+                    issuePrice={p.issuePrice}
+                    currentPrice={p.currentPrice}
+                    openPrice={p.openPrice}
+                    listingDate={p.listingDate}
+                    signal={ipo.signal}
+                    positionValue={n(ipo.positionValue) || 0}
+                    reserveCapital={n(ipo.reserveCapital) || 0}
+                  />
+                </div>
+              )
+            })
           ) : sorted.length === 0 ? (
             <div style={{ padding: "48px 0", textAlign: "center", color: C.textSub }}>
               <Zap size={32} color={C.grayBd} style={{ margin: "0 auto 12px", display: "block" }} />

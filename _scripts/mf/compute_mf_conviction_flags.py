@@ -30,6 +30,9 @@ if not URL:
 
 EDGE_DAYS = int(os.environ.get("MF_EDGE_DAYS", "90"))
 MIN_FUNDS = int(os.environ.get("MF_MIN_FUNDS", "1"))
+# Same threshold the freshness monitor uses (MF_STALE_DAYS=50): a fund whose own latest
+# disclosure is older than this is untrustworthy, and its initiations are not flagged.
+STALE_DAYS = int(os.environ.get("MF_STALE_DAYS", "50"))
 
 
 def main():
@@ -62,6 +65,24 @@ def main():
     if not flags:
         print("No initiations detected (need >=2 disclosure dates per fund)."); return
     fdf = pd.DataFrame(flags)
+
+    # ── Staleness guard ───────────────────────────────────────────────────────
+    # A fund whose own latest disclosure is older than MF_STALE_DAYS can't be trusted
+    # to still hold what it last showed, so its "initiations" would surface as fake-fresh
+    # buys. Drop those funds here (before the per-symbol counts) so the screen only fires
+    # on funds we can stand behind — and a stock's fund-count reflects trustworthy funds only.
+    today = pd.Timestamp.today().normalize()
+    fund_latest = hold.groupby("scheme_name")["as_of"].max()
+    stale_funds = {s for s, d in fund_latest.items() if (today - d).days > STALE_DAYS}
+    if stale_funds:
+        before = len(fdf)
+        fdf = fdf[~fdf["scheme"].isin(stale_funds)].copy()
+        print(f"staleness guard: dropped {before - len(fdf)} initiation(s) from "
+              f"{len(stale_funds)} stale fund(s) (>{STALE_DAYS}d old):")
+        for s in sorted(stale_funds):
+            print(f"    - {s}  (latest {fund_latest[s].date()}, {(today - fund_latest[s]).days}d old)")
+    if fdf.empty:
+        print("All funds stale — no trustworthy initiations to flag."); return
 
     # latest disclosure date in the whole dataset = "now" for freshness purposes
     latest = hold["as_of"].max()
