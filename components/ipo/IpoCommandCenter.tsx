@@ -262,8 +262,9 @@ export function IpoCommandCenter({ simple = false }: { simple?: boolean }) {
         <div style={{ padding: "16px 16px 0", marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Zap size={18} color={C.purple} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <img src="/aa-logo-emblem.png" alt="AA Capital"
+                  style={{ height: 38, width: 38, borderRadius: 9, objectFit: "cover" }} />
                 <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>
                   {simple ? "IPO decisions" : "IPO command center"}
                 </div>
