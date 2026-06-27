@@ -75,6 +75,9 @@ jobs:
           python _scripts/compute_financial_dna.py
           python _scripts/compute_financial_dna.py --history
 
+      - name: Recompute valuation lens (P/E & P/B vs own history)
+        run: python _scripts/compute_valuation.py
+
       - name: Upload exports + failure log (traceability, ephemeral)
         if: always()
         uses: actions/upload-artifact@v4

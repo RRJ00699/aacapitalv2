@@ -12,9 +12,11 @@ Modes:  --symbol SYM (print, no DB) · --diag (one symbol, no DB) · (default) a
   python _scripts/compute_valuation.py --symbol RELIANCE
   python _scripts/compute_valuation.py
 """
-import os, sys, argparse, datetime
+import os, sys, argparse, datetime, warnings
 import numpy as np
 import pandas as pd
+
+warnings.filterwarnings("ignore", message=".*pandas only supports SQLAlchemy.*")
 
 URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 CR = 1e7  # 1 crore = 10,000,000 ; Screener financials are in ₹ crore, price_candles in ₹/share
