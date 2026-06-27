@@ -1,0 +1,64 @@
+name: AACapital MF Conviction Refresh
+
+# Refreshes the 💎 new-conviction signal monthly from Screener (the source your repo
+# already uses — AMFI direct is a JS SPA that returns empty to naive fetches).
+# Runs the FULL documented pipeline in order: load → canonicalize → reconcile →
+# compute flags → freshness. Cron is set after the SEBI 10-day disclosure deadline.
+#
+# Required GitHub repo Secrets (Settings → Secrets and variables → Actions):
+#   DATABASE_URL, SCREENER_USERNAME, SCREENER_PASSWORD
+# Optional: NOTIFY_WEBHOOK (same one ipo-daily uses) for failure pings.
+#
+# NOTE: this schedules a Screener scrape with stored credentials. It's monthly
+# (low frequency), but automated scraping can be against site ToS — that's your
+# call. The cadence and --limit below are the dials.
+
+on:
+  schedule:
+    - cron: '0 4 12 * *'      # 12th of each month, 04:00 UTC (~09:30 IST), after the 10-day deadline
+  workflow_dispatch:           # manual "Run workflow" button anytime
+
+jobs:
+  mf-refresh:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
+      MF_EDGE_DAYS: "90"       # flag lifetime (the backtested ~1-3mo edge window)
+      MF_MIN_FUNDS: "1"        # min funds initiating to raise a flag
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: 1) Load holdings from Screener
+        run: python _scripts/scrape_amfi.py --limit 500
+
+      - name: 2) Canonicalize scheme names (prevents fake "new buy" flags)
+        run: python _scripts/mf/canonicalize_mf_schemes.py
+
+      - name: 3) Reconcile disclosures (prune redundant fortnights)
+        run: python _scripts/mf/reconcile_mf_disclosures.py
+
+      - name: 4) Compute conviction flags (💎)
+        run: python _scripts/mf/compute_mf_conviction_flags.py
+
+      - name: 5) Freshness report (heartbeat — shows which funds are going stale)
+        run: python _scripts/mf/mf_freshness_monitor.py
+
+      - name: Notify on failure
+        if: failure() && env.HOOK != ''
+        env:
+          HOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+        run: |
+          curl -s -X POST "$HOOK" -H "Content-Type: application/json" \
+            -d '{"text":"❌ AACapital MF Conviction Refresh failed — check the Actions log."}' || true
