@@ -13,6 +13,7 @@ import VerdictHeader from "@/components/features/VerdictHeader"
 import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 import TechnicalsLive from "@/components/features/TechnicalsLive"
+import TechnicalRegimeNote from "@/components/features/TechnicalRegimeNote"
 import StockDeals from "@/components/features/StockDeals"
 import FinancialDNA from "@/components/features/FinancialDNA"
 
@@ -393,6 +394,9 @@ export function StockResearchWorkspace({ symbol, onClose }:
 
           {/* ── TECHNICAL TAB ── */}
           <div style={{ display: activeTab === "technical" ? "block" : "none" }}>
+
+            {/* Market-regime flier: honest breakout-regime conclusion + live ARMED/MUTED badge */}
+            <TechnicalRegimeNote />
 
             {/* 6-engine scores */}
             {showOldEngine() && <Section title="6-Engine Convergence">

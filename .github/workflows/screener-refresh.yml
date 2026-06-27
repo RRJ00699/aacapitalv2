@@ -1,0 +1,84 @@
+name: AACapital Screener Refresh
+
+# Keeps the 10-yr fundamentals (annual_financials) and Financial DNA fresh.
+# Downloads Screener "Data Sheet" exports via a REAL headless browser (Playwright) — the only
+# method that reliably clears Cloudflare. Weekly Saturday cadence catches staggered annual filings.
+# Scheduled runs use --stale, which only fetches names MISSING or BEHIND the latest fiscal year,
+# so most weeks this is light. Use the manual dispatch (mode=all) during peak results season.
+#
+# Required repo secrets:  SCREENER_USERNAME, SCREENER_PASSWORD, DATABASE_URL
+
+on:
+  schedule:
+    - cron: "0 1 * * 6"          # 06:30 IST every Saturday
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "stale | all | symbols"
+        required: false
+        default: "stale"
+      symbols:
+        description: "space-separated symbols (only when mode=symbols)"
+        required: false
+        default: ""
+      limit:
+        description: "cap number of names (0 = no cap)"
+        required: false
+        default: "0"
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCREENER_USERNAME: ${{ secrets.SCREENER_USERNAME }}
+      SCREENER_PASSWORD: ${{ secrets.SCREENER_PASSWORD }}
+      MODE:  ${{ github.event.inputs.mode || 'stale' }}
+      LIMIT: ${{ github.event.inputs.limit || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install playwright psycopg2-binary openpyxl pandas
+          python -m playwright install --with-deps chromium
+
+      - name: Symbols file (mode=symbols)
+        if: ${{ github.event.inputs.mode == 'symbols' }}
+        run: printf '%s\n' ${{ github.event.inputs.symbols }} > _refresh_symbols.txt
+
+      - name: Download — stale (default / scheduled)
+        if: ${{ env.MODE == 'stale' }}
+        run: python _scripts/download_screener_playwright.py --stale --out data/fundamental_raw --sleep 3 --limit "$LIMIT"
+
+      - name: Download — all
+        if: ${{ env.MODE == 'all' }}
+        run: python _scripts/download_screener_playwright.py --all --out data/fundamental_raw --sleep 3 --limit "$LIMIT"
+
+      - name: Download — symbols
+        if: ${{ env.MODE == 'symbols' }}
+        run: python _scripts/download_screener_playwright.py --symbols-file _refresh_symbols.txt --out data/fundamental_raw --sleep 3
+
+      - name: Import into annual_financials
+        run: python _scripts/import_screener_financials.py --dir data/fundamental_raw
+
+      - name: Recompute Financial DNA (current snapshot + vintage history)
+        run: |
+          python _scripts/compute_financial_dna.py
+          python _scripts/compute_financial_dna.py --history
+
+      - name: Upload exports + failure log (traceability, ephemeral)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screener-exports
+          path: |
+            data/fundamental_raw/*.xlsx
+            data/fundamental_raw/_download_failures.txt
+          retention-days: 7
+          if-no-files-found: ignore
