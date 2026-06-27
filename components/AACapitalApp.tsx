@@ -2848,13 +2848,10 @@ setMarketFetched(true);
       {showBackend&&<BackendModal onClose={()=>setShowBackend(false)}/>}
 
       {/* ── NAV ── */}
-      <div style={{background:"#FFFFFF",borderBottom:"1px solid #F0EDE8",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:56,position:"sticky",top:0,zIndex:300,overflow:"visible"}}>
+      <div style={{background:"#FFFFFF",borderBottom:"1px solid #F0EDE8",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:64,position:"sticky",top:0,zIndex:300,overflow:"visible"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <img src="/aa-logo-emblem.png" alt="AA Capital" style={{width:34,height:34,borderRadius:9,objectFit:"cover"}} />
-          <div>
-            <div style={{fontFamily:"'Sora',sans-serif",fontWeight:800,fontSize:16,color:"#111827",letterSpacing:"-0.3px"}}>AACapital</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#475569",letterSpacing:"1px"}}>Institutional Research · NSE/BSE</div>
-          </div>
+          <img src="/aa-logo-emblem.png" alt="AA Capital" style={{width:48,height:48,borderRadius:11,objectFit:"cover"}} />
+          
         </div>
         <div style={{flex:1}}/>
         {/* Global stock search */}
