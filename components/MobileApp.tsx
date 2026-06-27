@@ -471,12 +471,11 @@ export function MobileApp() {
         justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20,
         boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 30, height: 30, background: T.blue, borderRadius: 8,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>AA</div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>AACapital</div>
-            <div style={{ fontSize: 9, color: T.textMeta }}>Institutional Research</div>
+          <img src="/aa-logo-emblem.png" alt="AA Capital"
+            style={{ width: 38, height: 38, borderRadius: 9, objectFit: "cover" }} />
+          <div style={{ lineHeight: 1.15 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: "-0.3px" }}>AACapital</div>
+            <div style={{ fontSize: 8.5, color: "#B8860B", fontWeight: 600, letterSpacing: "0.6px", whiteSpace: "nowrap" }}>WHERE MARKETS MAKE SENSE.</div>
           </div>
         </div>
         <button onClick={() => setShowSearch(true)}

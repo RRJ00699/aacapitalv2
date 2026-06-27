@@ -2850,8 +2850,11 @@ setMarketFetched(true);
       {/* ── NAV ── */}
       <div style={{background:"#FFFFFF",borderBottom:"1px solid #F0EDE8",padding:"0 16px",display:"flex",alignItems:"center",gap:12,height:64,position:"sticky",top:0,zIndex:300,overflow:"visible"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <img src="/aa-logo-emblem.png" alt="AA Capital" style={{width:48,height:48,borderRadius:11,objectFit:"cover"}} />
-          
+          <img src="/aa-logo-emblem.png" alt="AA Capital" style={{width:46,height:46,borderRadius:11,objectFit:"cover"}} />
+          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",lineHeight:1.14,marginLeft:3}}>
+            <div style={{fontFamily:"'Sora',sans-serif",fontWeight:800,fontSize:18,color:"#0F1B2D",letterSpacing:"-0.3px"}}>AACapital</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#B8860B",letterSpacing:"1.4px",fontWeight:600}}>WHERE MARKETS MAKE SENSE.</div>
+          </div>
         </div>
         <div style={{flex:1}}/>
         {/* Global stock search */}
