@@ -106,24 +106,23 @@ def main():
         conn.close(); return
 
     if not mapping:
-        print("\nNothing to canonicalize — names already clean.")
-        conn.close(); return
+        print("\nScheme names already clean — running amc_name unification only.")
+    else:
+        # Apply: update scheme_name to canonical. The unique key is (month, amc_name, scheme_name,
+        # isin); merging two names for the same month+stock could collide, so delete dupes first,
+        # keeping the row with the most recent id.
+        for raw, c in mapping.items():
+            # delete would-be duplicates (same month+amc+isin already exists under canonical)
+            cur.execute("""
+                DELETE FROM mf_scheme_holdings a
+                USING mf_scheme_holdings b
+                WHERE a.scheme_name = %s AND b.scheme_name = %s
+                  AND a.month = b.month AND a.amc_name = b.amc_name AND a.isin = b.isin
+                  AND a.id < b.id
+            """, (raw, c))
+            cur.execute("UPDATE mf_scheme_holdings SET scheme_name = %s WHERE scheme_name = %s", (c, raw))
 
-    # Apply: update scheme_name to canonical. The unique key is (month, amc_name, scheme_name,
-    # isin); merging two names for the same month+stock could collide, so delete dupes first,
-    # keeping the row with the most recent id.
-    for raw, c in mapping.items():
-        # delete would-be duplicates (same month+amc+isin already exists under canonical)
-        cur.execute("""
-            DELETE FROM mf_scheme_holdings a
-            USING mf_scheme_holdings b
-            WHERE a.scheme_name = %s AND b.scheme_name = %s
-              AND a.month = b.month AND a.amc_name = b.amc_name AND a.isin = b.isin
-              AND a.id < b.id
-        """, (raw, c))
-        cur.execute("UPDATE mf_scheme_holdings SET scheme_name = %s WHERE scheme_name = %s", (c, raw))
-
-    conn.commit()
+        conn.commit()
 
     # ── set amc_name FROM the (clean) scheme_name ──
     # amc_name column is unreliable ("Unknown AMC", or even the wrong AMC on some rows).
@@ -136,13 +135,17 @@ def main():
         amc = canonical_amc(sch)
         if not amc:
             print(f"  ?? could not derive AMC for scheme: {sch}"); continue
-        # collapse any duplicate key that would collide once amc_name is unified
+        # Before unifying amc_name, collapse ALL duplicate (month, isin) rows for this scheme
+        # — regardless of amc_name variant — keeping the most recently loaded (max id). Once
+        # amc_name is unified the key is effectively (month, scheme, isin), so any such pair
+        # would collide; dedup first. (The old version kept the amc condition + a.id<b.id,
+        # which missed collisions when the non-canonical row had the higher id.)
         cur.execute("""
             DELETE FROM mf_scheme_holdings a
             USING mf_scheme_holdings b
-            WHERE a.scheme_name = %s AND b.scheme_name = %s AND a.amc_name <> %s AND b.amc_name = %s
+            WHERE a.scheme_name = %s AND b.scheme_name = %s
               AND a.month = b.month AND a.isin = b.isin AND a.id < b.id
-        """, (sch, sch, amc, amc))
+        """, (sch, sch))
         cur.execute("""
             UPDATE mf_scheme_holdings SET amc_name = %s
             WHERE scheme_name = %s AND (amc_name IS DISTINCT FROM %s)

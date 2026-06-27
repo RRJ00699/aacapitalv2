@@ -17,10 +17,14 @@ AMC_DISPLAY = {
     "sbi": "SBI", "hdfc": "HDFC", "nippon": "Nippon India", "kotak": "Kotak",
     "axis": "Axis", "dsp": "DSP", "quant": "Quant", "invesco": "Invesco",
     "tata": "Tata", "bandhan": "Bandhan",
+    # added so folders you already have stop being silently skipped:
+    "canara": "Canara Robeco", "ppfas": "PPFAS", "shriram": "Shriram",
+    "groww": "Groww", "mahindra": "Mahindra Manulife",
 }
 CAP_DISPLAY = {
     "smallcap": "Small Cap Fund", "small": "Small Cap Fund",
     "midcap": "Mid Cap Fund", "mid": "Mid Cap Fund",
+    "flexicap": "Flexi Cap Fund", "flexi": "Flexi Cap Fund",
 }
 
 def folder_to_names(folder_name):
@@ -49,18 +53,69 @@ def discover_dirs():
     return out
 
 
-def parse_date_from_filename(filename):
-    match = re.search(
-        r"(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)[-_ ]+(\d{4})",
-        filename.upper(),
-    )
-    if not match:
-        return None
+_MON3 = {m[:3].lower(): n for n, m in {
+    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"}.items()}
+_MON3["sept"] = 9
 
-    return datetime.strptime(
-        f"01 {match.group(1)} {match.group(2)}",
-        "%d %B %Y",
-    ).date()
+
+def _parse_date_str(t):
+    """First-of-month date from a text fragment, trying the formats AMC files actually use.
+    Uses digit/letter lookarounds (not \\b) so underscore-prefixed dates like
+    'Portfolio_30042026' and 'Portfolio_May-2026' still match."""
+    if not t:
+        return None
+    t = str(t)
+    # 31-May-2026 / 31 May 26 / 31.May.2026
+    m = re.search(r"(?<!\d)(\d{1,2})[\-/.\s]+([A-Za-z]{3,9})[\-/.\s]+(\d{2,4})(?!\d)", t)
+    if m and m.group(2)[:3].lower() in _MON3:
+        yr = int(m.group(3)); yr += 2000 if yr < 100 else 0
+        return datetime(yr, _MON3[m.group(2)[:3].lower()], 1).date()
+    # May-2026 / MAY 2026 / May-24  (no day)
+    m = re.search(r"(?<![A-Za-z])([A-Za-z]{3,9})[\-/.\s]+(\d{2,4})(?!\d)", t)
+    if m and m.group(1)[:3].lower() in _MON3:
+        yr = int(m.group(2)); yr += 2000 if yr < 100 else 0
+        return datetime(yr, _MON3[m.group(1)[:3].lower()], 1).date()
+    # 31/05/2026 / 31-05-2026 / 31.05.2026
+    m = re.search(r"(?<!\d)(\d{1,2})[\-/.](\d{1,2})[\-/.](\d{4})(?!\d)", t)
+    if m and 1 <= int(m.group(2)) <= 12:
+        return datetime(int(m.group(3)), int(m.group(2)), 1).date()
+    # ISO 2026-05-31
+    m = re.search(r"(?<!\d)(\d{4})[\-/.](\d{2})[\-/.](\d{2})(?!\d)", t)
+    if m and 1 <= int(m.group(2)) <= 12:
+        return datetime(int(m.group(1)), int(m.group(2)), 1).date()
+    # 8-digit: DDMMYYYY (e.g. 30042026) or YYYYMMDD
+    m = re.search(r"(?<!\d)(\d{8})(?!\d)", t)
+    if m:
+        s = m.group(1)
+        dd, mm, yy = int(s[:2]), int(s[2:4]), int(s[4:])
+        if 1 <= mm <= 12 and 1 <= dd <= 31 and 2000 <= yy <= 2100:
+            return datetime(yy, mm, 1).date()
+        yy, mm, dd = int(s[:4]), int(s[4:6]), int(s[6:])
+        if 1 <= mm <= 12 and 2000 <= yy <= 2100:
+            return datetime(yy, mm, 1).date()
+    return None
+
+
+def parse_date_from_filename(filename):
+    return _parse_date_str(filename)
+
+
+def month_from_content(raw):
+    """Pull the disclosure month from the header area when the filename has no date.
+    Prefers an explicit 'as on/at/of <date>', then a real date cell, then any date text."""
+    head = raw.head(15)
+    for cells in head.values:
+        line = " ".join(str(x) for x in cells if pd.notna(x))
+        if re.search(r"as\s+(on|at|of)\b", line, re.I):
+            d = _parse_date_str(line)
+            if d:
+                return d
+    for val in head.values.flatten():
+        if isinstance(val, (pd.Timestamp, datetime)):
+            return datetime(val.year, val.month, 1).date()
+    text = " ".join(str(x) for x in head.values.flatten() if pd.notna(x))
+    return _parse_date_str(text)
 
 
 def clean_number(value):
@@ -76,13 +131,13 @@ def clean_number(value):
 
 
 def parse_excel_file(file_path, amc_name, scheme_name):
-    holding_month = parse_date_from_filename(file_path.name)
+    raw = pd.read_excel(file_path, header=None)
+
+    holding_month = parse_date_from_filename(file_path.name) or month_from_content(raw)
 
     if holding_month is None:
-        print(f"SKIP no month: {file_path.name}")
+        print(f"SKIP no month (filename+content): {file_path.name}")
         return pd.DataFrame()
-
-    raw = pd.read_excel(file_path, header=None)
 
     header_row = None
 
@@ -129,6 +184,12 @@ def parse_excel_file(file_path, amc_name, scheme_name):
             rename_map[col] = "portfolio_weight_pct"
 
     df = df.rename(columns=rename_map)
+
+    # Two source columns can rename to the same target (e.g. "% to NAV" and "% to AUM"
+    # both -> portfolio_weight_pct). That makes df["col"] return a DataFrame, and
+    # clean_number then receives a Series -> "truth value of a Series is ambiguous".
+    # Collapse duplicates, keeping the first occurrence.
+    df = df.loc[:, ~df.columns.duplicated()]
 
     # --- drop DEBT/bond rows (these files mix equity + debt) ---
     # 1) any row carrying a coupon value is a bond, not equity
