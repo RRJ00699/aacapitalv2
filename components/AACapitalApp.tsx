@@ -36,6 +36,7 @@ import { BreakoutWatchScreen } from "./features/breakout-watch"  // SESSION 9
 import { StocksDiscovery } from "./features/stocks-discovery"      // SESSION 9
 import StockScorecardGrid from "./features/StockScorecardGrid"
 import OpportunitiesScreener from "./features/OpportunitiesScreener"
+import EarningsBeatsScreen from "./features/EarningsBeatsScreen"
 import QualityValueScreen from "./features/QualityValueScreen"
 import TechnicalScreen from "./features/TechnicalScreen"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
@@ -2924,6 +2925,7 @@ setMarketFetched(true);
                 {id:"multibagger",     label:"Multibagger discovery"},
                 {id:"breakout-watch",  label:"🔭 Breakout Watch"},
                 {id:"earnings",        label:"Earnings"},
+                {id:"earnings-beats",  label:"🔥 Earnings Beats"},
                 {id:"weekly-dna",      label:"Weekly DNA"},
                 {id:"sector",          label:"Sector rotation"},
               ] as {id:string;label:string}[]).map(t=>(
@@ -2945,6 +2947,7 @@ setMarketFetched(true);
           {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="earnings-beats" && <EarningsBeatsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="weekly-dna"   && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
         </div>

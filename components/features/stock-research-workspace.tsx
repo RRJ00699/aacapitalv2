@@ -18,6 +18,7 @@ import TechnicalHealth from "@/components/features/TechnicalHealth"
 import StockDeals from "@/components/features/StockDeals"
 import FinancialDNA from "@/components/features/FinancialDNA"
 import QuarterlyResults from "@/components/features/QuarterlyResults"
+import EarningsSurprise from "@/components/features/EarningsSurprise"
 import ValuationLens from "@/components/features/ValuationLens"
 import SectorPeers from "@/components/features/SectorPeers"
 
@@ -490,6 +491,11 @@ export function StockResearchWorkspace({ symbol, onClose }:
             {/* Quarterly P&L trend — revenue / net profit / OPM% with YoY */}
             <Section title="Quarterly Results">
               <QuarterlyResults symbol={symbol} />
+            </Section>
+
+            {/* Earnings surprise vs our house estimate */}
+            <Section title="Earnings Surprise (vs house estimate)">
+              <EarningsSurprise symbol={symbol} />
             </Section>
 
             {/* Institutional bulk/block deals — who's actually transacting in the name */}
