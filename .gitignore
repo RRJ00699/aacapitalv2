@@ -48,3 +48,6 @@ next-env.d.ts
 /data/**/*.xlsx
 /data/**/*.xls
 *.zip
+
+__pycache__/
+*.pyc
