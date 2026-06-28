@@ -26,7 +26,7 @@ export default function EarningsSurprise({ symbol }: { symbol: string }) {
   }, [symbol])
 
   if (loading) return <div style={{ fontSize: 12, color: T.textMeta, padding: "8px 2px" }}>Loading earnings surprise…</div>
-  if (!d || d.error) return <div style={{ fontSize: 12, color: T.textMeta, padding: "8px 2px" }}>Earnings surprise unavailable.</div>
+  if (!d || d.error) return <div style={{ fontSize: 12, color: T.textMeta, padding: "8px 2px" }}>No house earnings estimate for this stock yet (we cover ~875 names).</div>
   const qs: any[] = d.quarters || []
   if (!qs.length) return <div style={{ fontSize: 12, color: T.textSub, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px" }}>No matched quarters yet — needs a house estimate and a reported actual for the same quarter.</div>
 

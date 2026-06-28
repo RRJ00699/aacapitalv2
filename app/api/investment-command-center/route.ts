@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const symbol = (req.nextUrl.searchParams.get("symbol") || "").trim().toUpperCase()
   if (!symbol) return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 })
 
-  const [fRows, cmRows, wRows, tRows, eRows, smRows, shRows] = await Promise.all([
+  const [fRows, cmRows, wRows, tRows, eRows, smRows, shRows, valRows] = await Promise.all([
     safe(sql`SELECT * FROM stock_fundamentals WHERE UPPER(nse_symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM company_master WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM weekly_dna WHERE UPPER(tradingsymbol) = ${symbol} LIMIT 1`, [] as any[]),
@@ -36,9 +36,11 @@ export async function GET(req: NextRequest) {
     safe(sql`SELECT promoter_pct, promoter_pledge, fii_pct, dii_pct, mf_pct, public_pct
              FROM shareholding_history WHERE UPPER(nse_symbol) = ${symbol}
              ORDER BY quarter DESC LIMIT 1`, [] as any[]),
+    safe(sql`SELECT current_pb, current_pe FROM valuation WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
   ])
 
   const f = fRows[0] || {}
+  const val = valRows[0] || {}
   const cm = cmRows[0] || {}
   const w = wRows[0] || {}
   const ts = tRows[0] || {}
@@ -95,15 +97,15 @@ export async function GET(req: NextRequest) {
       eps_cagr_3y: n(pick(f.eps_growth_3y, f.eps_cagr_3y, 0)),
       debt_equity: n(pick(f.debt_equity, f.debt_to_equity, 0)),
       interest_cover: n(pick(f.interest_coverage, f.interest_cover, 0)),
-      pat_growth: n(pick(f.profit_growth, f.pat_growth, 0)),
+      pat_growth: n(pick(f.pat_growth_1y, f.profit_growth, f.pat_growth, 0)),
       pe_ratio: n(pick(f.pe_ratio, f.pe, 0)),
-      pb_ratio: n(pick(f.pb_ratio, f.price_to_book, 0)),
+      pb_ratio: n(pick(f.pb_ratio, f.price_to_book, val.current_pb, 0)),
       promoter_holding: n(pick(sh.promoter_pct, f.promoter_holding, 0)),
       promoter_pledge: n(pick(sh.promoter_pledge, f.promoter_pledge, 0)),
       fii_holding: n(pick(sh.fii_pct, f.fii_holding, 0)),
       dii_holding: n(pick(sh.dii_pct, f.dii_holding, 0)),
       mf_holding: n(pick(sh.mf_pct, f.mf_holding, 0)),
-      operating_margin: n(pick(f.operating_margin, f.opm, 0)),
+      operating_margin: n(pick(f.opm_pct, f.operating_margin, f.opm, 0)),
       dividend_yield: n(pick(f.dividend_yield, 0)),
       market_cap: n(pick(f.market_cap, cm.market_cap_cr, 0)),
     },

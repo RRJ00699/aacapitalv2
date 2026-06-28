@@ -521,7 +521,6 @@ export function StockResearchWorkspace({ symbol, onClose }:
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
                 <KV label="P/E Ratio"   value={n(f.pe_ratio) > 0 ? `${fmt(f.pe_ratio)}x` : "—"} />
                 <KV label="P/B Ratio"   value={n(f.pb_ratio) > 0 ? `${fmt(f.pb_ratio)}x` : "—"} />
-                <KV label="Div Yield"   value={n(f.dividend_yield) > 0 ? `${fmt(f.dividend_yield)}%` : "—"} />
               </div>
             </Section>
 
