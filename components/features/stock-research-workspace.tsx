@@ -14,6 +14,7 @@ import { showNewEngine, showOldEngine } from "@/lib/workboard-config"
 import Phase1WorkspacePanels from "@/components/workspace/Phase1WorkspacePanels"
 import TechnicalsLive from "@/components/features/TechnicalsLive"
 import TechnicalRegimeNote from "@/components/features/TechnicalRegimeNote"
+import TechnicalHealth from "@/components/features/TechnicalHealth"
 import StockDeals from "@/components/features/StockDeals"
 import FinancialDNA from "@/components/features/FinancialDNA"
 import QuarterlyResults from "@/components/features/QuarterlyResults"
@@ -458,6 +459,10 @@ export function StockResearchWorkspace({ symbol, onClose }:
 
             {/* Real technicals from price_candles (EMA/RSI/ATR/52w/returns) */}
             <TechnicalsLive symbol={symbol} />
+
+            <Section title="Technical Health (relative strength, volume, structure)">
+              <TechnicalHealth symbol={symbol} />
+            </Section>
 
             <Section title="Historical Similarity">
               <HistoricalSimilarityPanel symbol={symbol} />

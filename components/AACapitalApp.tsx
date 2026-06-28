@@ -37,6 +37,7 @@ import { StocksDiscovery } from "./features/stocks-discovery"      // SESSION 9
 import StockScorecardGrid from "./features/StockScorecardGrid"
 import OpportunitiesScreener from "./features/OpportunitiesScreener"
 import QualityValueScreen from "./features/QualityValueScreen"
+import TechnicalScreen from "./features/TechnicalScreen"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2919,6 +2920,7 @@ setMarketFetched(true);
               {([
                 {id:"screener",        label:"🎯 Screener"},
                 {id:"quality-value",   label:"💎 Quality + Value"},
+                {id:"rel-strength",     label:"📈 Rel. Strength"},
                 {id:"multibagger",     label:"Multibagger discovery"},
                 {id:"breakout-watch",  label:"🔭 Breakout Watch"},
                 {id:"earnings",        label:"Earnings"},
@@ -2939,6 +2941,7 @@ setMarketFetched(true);
           </div>
           {oppView==="screener"      && <OpportunitiesScreener onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="quality-value" && <QualityValueScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="rel-strength"  && <TechnicalScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
