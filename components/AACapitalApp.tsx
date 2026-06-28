@@ -39,6 +39,7 @@ import OpportunitiesScreener from "./features/OpportunitiesScreener"
 import EarningsBeatsScreen from "./features/EarningsBeatsScreen"
 import QualityValueScreen from "./features/QualityValueScreen"
 import TechnicalScreen from "./features/TechnicalScreen"
+import RadarScreen from "./features/RadarScreen"
 import { PortfolioDoctor } from "./features/portfolio-doctor"
 import { IpoCommandCenter } from "./ipo/IpoCommandCenter"
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -2920,6 +2921,7 @@ setMarketFetched(true);
             <div style={{display:"flex",borderBottom:"1px solid #E5E7EB",padding:"0 16px"}}>
               {([
                 {id:"screener",        label:"🎯 Screener"},
+                {id:"radar",           label:"📡 Radar"},
                 {id:"quality-value",   label:"💎 Quality + Value"},
                 {id:"rel-strength",     label:"📈 Rel. Strength"},
                 {id:"multibagger",     label:"Multibagger discovery"},
@@ -2942,6 +2944,7 @@ setMarketFetched(true);
             </div>
           </div>
           {oppView==="screener"      && <OpportunitiesScreener onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
+          {oppView==="radar"         && <RadarScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="quality-value" && <QualityValueScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="rel-strength"  && <TechnicalScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="multibagger"    && <MultibaggerDiscovery simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
