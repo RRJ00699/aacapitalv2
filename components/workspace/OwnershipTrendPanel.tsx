@@ -38,17 +38,21 @@ export default function OwnershipTrendPanel({ symbol }: Props) {
         <Metric label="DII 4Q" value={pct(s?.dii_change_4q)} />
         <Metric label="MF 4Q" value={pct(s?.mf_change_4q)} />
         <Metric label="Public 4Q" value={pct(s?.public_change_4q)} />
-        <Metric label="Pledge 4Q" value={pct(s?.pledge_change_4q)} />
-        <Metric label="Promoter 4Q" value={pct(s?.promoter_change_4q)} />
       </div>
 
       {s?.summary && <p className="text-sm opacity-80">{s.summary}</p>}
+
+      <p className="text-xs opacity-50">
+        Promoter pledge is intentionally not shown — it isn’t captured in the source filings yet, so a
+        “0%” here would be misleading rather than a genuine clean reading. FII/DII/MF changes are
+        4-quarter moves; treat as ownership context, not a buy signal.
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left opacity-70">
-              <th>Quarter</th><th>Promoter</th><th>FII</th><th>DII</th><th>MF</th><th>Public</th><th>Pledge</th>
+              <th>Quarter</th><th>Promoter</th><th>FII</th><th>DII</th><th>MF</th><th>Public</th>
             </tr>
           </thead>
           <tbody>
@@ -60,7 +64,6 @@ export default function OwnershipTrendPanel({ symbol }: Props) {
                 <td>{pct(h.dii_pct)}</td>
                 <td>{pct(h.mutual_fund_pct)}</td>
                 <td>{pct(h.public_pct)}</td>
-                <td>{pct(h.pledged_pct)}</td>
               </tr>
             ))}
           </tbody>
