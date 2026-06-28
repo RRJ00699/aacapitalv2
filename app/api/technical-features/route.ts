@@ -25,6 +25,12 @@ const shape = (r: any) => ({
   atr_pct: num(r.atr_pct), vol_pctile: num(r.vol_pctile), rsi14: num(r.rsi14),
   ema_aligned: r.ema_aligned ?? null, above_ema200: r.above_ema200 ?? null,
   pct_from_52wh: num(r.pct_from_52wh), pct_from_ath: num(r.pct_from_ath),
+  // Bucket-A descriptors (context, not forecasts)
+  compression_tightness: num(r.compression_tightness), compression_state: r.compression_state || null,
+  support: num(r.support), support_dist: num(r.support_dist),
+  resistance: num(r.resistance), resistance_dist: num(r.resistance_dist),
+  gap_dir: r.gap_dir || null, gap_size: num(r.gap_size), gap_filled: r.gap_filled ?? null,
+  delivery_today: num(r.delivery_today), delivery_ratio: num(r.delivery_ratio), delivery_state: r.delivery_state || null,
   // from the existing nightly engine (may be null if not yet scored that name)
   stage: r.stage_label || r.stage || null,
   breakout_watch_score: num(r.breakout_watch_score),

@@ -72,10 +72,42 @@ export default function TechnicalHealth({ symbol }: { symbol: string }) {
         <Tile label="from ATH" value={t.pct_from_ath === null ? "—" : `${t.pct_from_ath.toFixed(0)}%`} color={t.pct_from_ath > -10 ? T.green : T.textSub} />
       </div>
 
-      <div style={{ fontSize: 9, color: T.textMeta, marginTop: 8, lineHeight: 1.5 }}>
-        Ranks are 0–100 percentiles across the universe (or sector), point-in-time. High RS = outperforming
-        most stocks — a <b>descriptor, not a forecast</b> (cross-sectional momentum isn't predictive here).
-        Stage &amp; breakout-watch come from the nightly engine. Context for judgement, not a buy call.
+      {/* Bucket-A descriptors — context lenses, explicitly NOT signals */}
+      <div style={{ marginTop: 10, padding: "10px 12px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+        <div style={{ fontSize: 9, color: T.textMeta, fontWeight: 700, marginBottom: 6 }}>STRUCTURE & CONTEXT (descriptive — not buy signals)</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {t.compression_state && chip(
+            t.compression_state,
+            t.compression_state.startsWith("Coil") ? T.blue : t.compression_state.startsWith("Expand") ? T.amber : T.textSub,
+            t.compression_state.startsWith("Coil") ? "#EFF6FF" : T.bg
+          )}
+          {t.gap_dir && t.gap_dir !== "None" && chip(
+            `Gap ${t.gap_dir} ${t.gap_size?.toFixed(1)}%${t.gap_filled ? " · filled" : " · open"}`,
+            t.gap_dir === "Up" ? T.green : T.red,
+            t.gap_dir === "Up" ? T.greenBg : T.redBg
+          )}
+          {t.delivery_state && t.delivery_today !== null && chip(
+            `Delivery ${t.delivery_today.toFixed(0)}%${t.delivery_ratio ? ` (${t.delivery_ratio.toFixed(1)}× norm)` : ""} · ${t.delivery_state}`,
+            t.delivery_state === "Elevated" ? T.blue : t.delivery_state === "Light" ? T.textSub : T.textSub,
+            T.bg
+          )}
+        </div>
+        {(t.support !== null || t.resistance !== null) && (
+          <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11 }}>
+            {t.support !== null && (
+              <span style={{ color: T.textSub }}>Support <b style={{ color: T.green }}>₹{t.support.toFixed(0)}</b>
+                {t.support_dist !== null && <span style={{ color: T.textMeta }}> ({t.support_dist.toFixed(1)}%)</span>}</span>
+            )}
+            {t.resistance !== null && (
+              <span style={{ color: T.textSub }}>Resistance <b style={{ color: T.red }}>₹{t.resistance.toFixed(0)}</b>
+                {t.resistance_dist !== null && <span style={{ color: T.textMeta }}> (+{t.resistance_dist.toFixed(1)}%)</span>}</span>
+            )}
+          </div>
+        )}
+        <div style={{ fontSize: 9, color: T.textMeta, marginTop: 6, lineHeight: 1.5 }}>
+          Coiling = range is tightening (not a breakout prediction). Levels are where price turned before.
+          Delivery vs this stock's own norm — backtested as context, <b>not</b> a forward signal.
+        </div>
       </div>
     </div>
   )
