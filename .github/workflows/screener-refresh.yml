@@ -81,6 +81,9 @@ jobs:
       - name: Earnings surprise (actual vs house estimate, beat-streak)
         run: python _scripts/compute_earnings_surprise.py
 
+      - name: Refresh stale stock_fundamentals (legacy table — 16 routes read it)
+        run: python _scripts/import_fundamentals.py --stale 7 --limit 500
+
       - name: Upload exports + failure log (traceability, ephemeral)
         if: always()
         uses: actions/upload-artifact@v4
