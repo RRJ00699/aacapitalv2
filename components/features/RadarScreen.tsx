@@ -64,19 +64,20 @@ export default function RadarScreen({ onStockSelect }:{ onStockSelect:(s:string)
         r.grade=s.grade||null; r.dna_score=num(s.dna_score)
         const gradeOK = ["AAA","AA+","AA","A+","A"].includes(String(s.grade||""))
         const valOK   = num(s.pe_percentile)!==null ? Number(s.pe_percentile)<=40 : false
-        const growOK  = num(s.profit_growth_yoy)!==null ? Number(s.profit_growth_yoy)>0
-                        : num(s.revenue_growth_yoy)!==null ? Number(s.revenue_growth_yoy)>0 : false
+        const growOK  = num(s.np_yoy)!==null ? Number(s.np_yoy)>0
+                        : num(s.sales_yoy)!==null ? Number(s.sales_yoy)>0 : false
         r.garp = gradeOK && valOK && growOK
       }
       // Relative Strength
       for(const s of (tech?.stocks||[])){
         const r=get(s.symbol); r.rs = num(s.rs_score)
       }
-      // Breakout watch
-      const boList = bo?.stocks || bo?.watchlist || bo?.results || []
+      // Breakout watch (route returns { data: rows } from technical_signals)
+      const boList = bo?.data || bo?.stocks || bo?.watchlist || bo?.results || []
       for(const s of boList){
         const r=get(s.symbol||s.tradingsymbol)
-        r.breakout = s.breakout_watch_tier || s.tier || (num(s.breakout_watch_score)!==null?"Watch":null)
+        r.breakout = s.breakout_watch_tier || s.tier
+          || (num(s.breakout_watch_score)!==null && Number(s.breakout_watch_score)>=48 ? "Watch" : null)
       }
       // Earnings beat streaks
       for(const s of (earn?.stocks||[])){
