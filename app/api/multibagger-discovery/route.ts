@@ -102,14 +102,13 @@ export async function GET(req: NextRequest) {
         f.smart_money_signal,
         f.roce,
         f.market_cap,
-        COALESCE(w.is_nr7, false) AS is_nr7,
-        COALESCE(w.is_nr4, false) AS is_nr4,
-        w.stage,
+        false AS is_nr7,
+        false AS is_nr4,
+        NULL AS stage,
         ARRAY_REMOVE(ARRAY[
           CASE WHEN fs.vol_ratio < 0.65     THEN 'Vol compression'   END,
           CASE WHEN fs.ret_6m > 15          THEN '6M momentum'       END,
           CASE WHEN fs.months_cnt >= 12     THEN 'Long base'         END,
-          CASE WHEN w.is_nr7                THEN 'NR7 coil'          END,
           CASE WHEN f.business_dna_grade IN ('A+','A') THEN 'Strong DNA' END,
           CASE WHEN f.smart_money_signal LIKE '%Accum%' THEN 'SM accumulation' END
         ], NULL) AS signals,
@@ -120,7 +119,6 @@ export async function GET(req: NextRequest) {
         ], NULL) AS warnings
       FROM final_score fs
       LEFT JOIN stock_fundamentals f ON f.nse_symbol = fs.tradingsymbol
-      LEFT JOIN weekly_dna w ON w.tradingsymbol = fs.tradingsymbol
       WHERE fs.dna_score >= ${minScore}
         AND (f.market_cap IS NULL OR f.market_cap > 200)
       ORDER BY fs.dna_score DESC, f.business_dna_score DESC NULLS LAST

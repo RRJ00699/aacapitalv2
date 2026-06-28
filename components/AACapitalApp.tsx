@@ -21,7 +21,6 @@ import { SectorRotationScreen } from "./features/sector-rotation"
 import { TradeJournalScreen, CapitalDeploymentOptimizer, MultibaggerDiscoveryEngine } from "./features/sprint8-features"
 import { DNALabScreen } from "./features/dna-lab"
 import { EarningsScreen }   from "./features/earnings-screen"
-import { WeeklyDNAScreen }  from "./features/weekly-dna-screen"
 import { WatchlistScreen }  from "./features/watchlist-screen"
 import { PriceAlertsScreen } from "./features/price-alerts-screen"
 import { MobileApp }         from "./MobileApp"
@@ -2928,7 +2927,6 @@ setMarketFetched(true);
                 {id:"breakout-watch",  label:"🔭 Breakout Watch"},
                 {id:"earnings",        label:"Earnings"},
                 {id:"earnings-beats",  label:"🔥 Earnings Beats"},
-                {id:"weekly-dna",      label:"Weekly DNA"},
                 {id:"sector",          label:"Sector rotation"},
               ] as {id:string;label:string}[]).map(t=>(
                 <button key={t.id} onClick={()=>setOppView(t.id as any)}
@@ -2951,7 +2949,6 @@ setMarketFetched(true);
           {oppView==="breakout-watch" && <BreakoutWatchScreen  simple={simpleMode} onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings"     && <EarningsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="earnings-beats" && <EarningsBeatsScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
-          {oppView==="weekly-dna"   && <WeeklyDNAScreen onStockSelect={(s)=>setWorkspaceSymbol(s)}/>}
           {oppView==="sector"       && <SectorRotationScreen/>}
         </div>
       )}

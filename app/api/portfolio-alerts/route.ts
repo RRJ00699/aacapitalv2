@@ -276,17 +276,17 @@ export async function GET(req: NextRequest) {
     `,
     sql`
       SELECT
-        tradingsymbol,
-        is_nr7,
-        is_nr4,
-        stage,
-        vol_contraction_pct,
-        breakout_ready,
-        rs_vs_nifty_4w,
-        rs_vs_nifty_12w,
-        weeks_in_base
-      FROM weekly_dna
-      WHERE tradingsymbol = ANY(${symbols})
+        nse_symbol AS tradingsymbol,
+        NULL::boolean AS is_nr7,
+        NULL::boolean AS is_nr4,
+        NULL AS stage,
+        NULL::numeric AS vol_contraction_pct,
+        NULL::boolean AS breakout_ready,
+        NULL::numeric AS rs_vs_nifty_4w,
+        NULL::numeric AS rs_vs_nifty_12w,
+        NULL::numeric AS weeks_in_base
+      FROM company_master
+      WHERE false
     `,
   ]);
 

@@ -228,7 +228,7 @@ export function StockResearchWorkspace({ symbol, onClose }:
     setLoading(true); setError(null); setDetail(null)
     Promise.all([
       fetch(`/api/investment-command-center?symbol=${symbol}`, { cache: "no-store" }).then(r => r.json()),
-      fetch(`/api/weekly-dna?symbol=${symbol}`).then(r => r.json()).catch(() => null),
+      Promise.resolve(null),
       fetch(`/api/broker/quote?sym=${symbol}&exchange=NSE`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
       fetch(`/api/stock/technicals?sym=${symbol}`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
     ]).then(([d, w, q, t]) => {
