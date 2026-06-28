@@ -50,6 +50,9 @@ jobs:
       - name: Generate signals (technical_signals)
         run: python _scripts/generate_signals.py --limit 2000
 
+      - name: Technical feature store (relative strength, RVOL, volatility)
+        run: python _scripts/compute_technical_features.py
+
       - name: Sector rotation (sector_rotation)
         continue-on-error: true
         run: python _scripts/engines/compute_sector_rotation.py
