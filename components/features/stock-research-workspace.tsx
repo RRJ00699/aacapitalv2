@@ -18,6 +18,7 @@ import StockDeals from "@/components/features/StockDeals"
 import FinancialDNA from "@/components/features/FinancialDNA"
 import QuarterlyResults from "@/components/features/QuarterlyResults"
 import ValuationLens from "@/components/features/ValuationLens"
+import SectorPeers from "@/components/features/SectorPeers"
 
 // ── Design tokens (same as Today screen) ─────────────────────────────────────
 const T = {
@@ -474,6 +475,11 @@ export function StockResearchWorkspace({ symbol, onClose }:
             {/* Valuation lens — today's P/E vs the stock's own 10yr band (value complement to DNA) */}
             <Section title="Valuation (vs own history)">
               <ValuationLens symbol={symbol} />
+            </Section>
+
+            {/* Sector peers — where this stock ranks within its sector on quality/value/growth */}
+            <Section title="Sector Peers">
+              <SectorPeers symbol={symbol} />
             </Section>
 
             {/* Quarterly P&L trend — revenue / net profit / OPM% with YoY */}
