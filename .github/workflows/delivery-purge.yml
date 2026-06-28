@@ -1,0 +1,29 @@
+name: AACapital Delivery Purge
+
+# Keeps delivery_data bounded to a rolling 10-year window so Neon storage stays flat.
+# Monthly + on demand. Mirrors candle-purge.yml.
+
+on:
+  schedule:
+    - cron: "0 21 1 * *"     # 02:30 IST on the 1st of each month
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Keep this many years of delivery data"
+        required: false
+        default: "10"
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PURGE_YEARS:       ${{ github.event.inputs.years || '10' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: Purge delivery rows older than the rolling window
+        run: python _scripts/purge_old_delivery.py

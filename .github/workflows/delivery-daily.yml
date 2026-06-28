@@ -1,0 +1,33 @@
+name: AACapital Delivery Daily
+
+# Pulls NSE delivery % (sec_bhavdata_full bhavcopy) into delivery_data each evening after the
+# market settles. Delivery % is NOT in Kite's API, so this is its own feed. Mon-Fri post-close.
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5"     # 19:00 IST Mon-Fri (after close; bhavcopy is published by then)
+  workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: "Backfill the last N calendar days (0 = just yesterday)"
+        required: false
+        default: "0"
+
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: Fetch NSE delivery bhavcopy
+        run: |
+          if [ "${{ github.event.inputs.backfill_days }}" != "" ] && [ "${{ github.event.inputs.backfill_days }}" != "0" ]; then
+            python _scripts/fetch_delivery_bhavcopy.py --backfill-days ${{ github.event.inputs.backfill_days }}
+          else
+            python _scripts/fetch_delivery_bhavcopy.py
+          fi
