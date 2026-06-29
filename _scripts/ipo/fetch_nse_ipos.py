@@ -34,7 +34,7 @@ import sys
 import time
 import argparse
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -233,7 +233,7 @@ def upsert(rows: list[dict], dry_run: bool):
             cur.execute("SELECT id FROM ipo_intelligence WHERE company_name = %s LIMIT 1", (company,))
             hit = cur.fetchone()
             fields = {k: v for k, v in r.items() if k != "company_name"}
-            fields["updated_at"] = datetime.utcnow()
+            fields["updated_at"] = datetime.now(timezone.utc)
             if hit:
                 sets = ", ".join(f"{k} = %s" for k in fields)
                 cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE company_name = %s",
