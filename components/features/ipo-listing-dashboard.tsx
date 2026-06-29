@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { RefreshCw, Zap, TrendingUp, TrendingDown, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react"
+import IpoLiveBoard from "@/components/ipo/IpoLiveBoard"
 
 const C = {
   bg:"#FAFAF8",surface:"#FFFFFF",border:"#E5E7EB",muted:"#F8FAFC",
@@ -424,6 +425,7 @@ export function IpoListingDashboard() {
     {id:"open",    label:"📋 Open Now",     count:openIpos.length},
     {id:"upcoming",label:"📅 Upcoming",     count:upcoming.length},
     {id:"listed",  label:"📈 Post-Listing", count:listed.length},
+    {id:"live",    label:"🔴 Live",         count:null},
     {id:"brlm",    label:"🏆 BRLM",         count:null},
   ]
 
@@ -485,7 +487,9 @@ export function IpoListingDashboard() {
         </div>
 
         {/* Content */}
-        {tab==="brlm"?(
+        {tab==="live"?(
+          <IpoLiveBoard/>
+        ):tab==="brlm"?(
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
             <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
               <div style={{fontSize:14,fontWeight:800,color:C.text}}>BRLM Leaderboard</div>
