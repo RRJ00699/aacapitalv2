@@ -1,6 +1,7 @@
 "use client"
 import React, { useEffect, useState } from "react"
 import IpoLiveTickPanel from "./IpoLiveTickPanel"
+import IpoLevelPanel from "./IpoLevelPanel"
 
 /**
  * Renders a live tick panel for EVERY IPO currently streaming into ipo_tick_feed.
@@ -46,8 +47,13 @@ export default function IpoLiveBoard({ pollMs = 10000 }: { pollMs?: number }) {
     )
 
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      {symbols.map((s) => <IpoLiveTickPanel key={s} symbol={s} />)}
+    <div style={{ display: "grid", gap: 22 }}>
+      {symbols.map((s) => (
+        <div key={s} style={{ display: "grid", gap: 12 }}>
+          <IpoLiveTickPanel symbol={s} />
+          <IpoLevelPanel symbol={s} />
+        </div>
+      ))}
     </div>
   )
 }

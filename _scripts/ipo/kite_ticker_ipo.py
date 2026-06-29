@@ -85,14 +85,62 @@ def ensure_table(conn):
     conn.commit()
 
 
+def resolve_auto_today_symbols(conn):
+    """
+    Pick the IPOs to capture today, straight from ipo_intelligence (NSE-scrape-fed).
+    Rules (locked with owner):
+      - mainboard only            -> COALESCE(is_sme,false) = false
+      - issue price >= 200        -> issue_price >= 200   (never capture cheap names)
+      - active window             -> listing_date <= today(IST) <= listing_date + 30d
+      - max 3 names (a day rarely has >3 mainboard listings in-window that matter)
+    Returns a list of NSE symbols (upper-cased).
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT symbol, company_name, issue_price, listing_date
+        FROM ipo_intelligence
+        WHERE COALESCE(is_sme, false) = false
+          AND issue_price >= 200
+          AND symbol IS NOT NULL AND btrim(symbol) <> ''
+          AND listing_date IS NOT NULL
+          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
+          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date <= listing_date + INTERVAL '30 days'
+        ORDER BY listing_date DESC
+        LIMIT 3
+    """)
+    rows = cur.fetchall(); cur.close()
+    out = []
+    for sym, name, price, ld in rows:
+        out.append(sym.strip().upper())
+        log.info(f"  auto-today: {sym} ({name}) issue Rs{price} listed {ld}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", required=True, help="comma-separated NSE symbols, e.g. TURTLEMINT,HEXAGON")
+    ap.add_argument("--symbols", default="", help="comma-separated NSE symbols, e.g. TURTLEMINT,HEXAGON")
+    ap.add_argument("--auto-today", action="store_true",
+                    help="auto-pick mainboard IPOs (>=Rs200) within listing_date..+30d from ipo_intelligence")
     ap.add_argument("--exchange", default="NSE")
     ap.add_argument("--write-db", action="store_true", help="persist throttled snapshots to ipo_tick_feed")
     ap.add_argument("--interval", type=float, default=5.0, help="seconds between DB snapshots per symbol")
     ap.add_argument("--trend-ticks", type=int, default=8, help="LTP window for the short trend")
     args = ap.parse_args()
+
+    # Decide WHAT to capture before touching Kite, so a no-listing day exits in ~1s.
+    if args.auto_today:
+        c0 = db_conn()
+        if not c0:
+            sys.exit("--auto-today needs DATABASE_URL to read ipo_intelligence.")
+        symbols = resolve_auto_today_symbols(c0); c0.close()
+        if not symbols:
+            log.info("auto-today: no mainboard IPO (>=Rs200) inside its listing->+30d window today. "
+                     "Nothing to capture — exiting clean.")
+            return
+    else:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+        if not symbols:
+            sys.exit("Provide --symbols TURTLEMINT[,HEX] or --auto-today.")
 
     try:
         from kiteconnect import KiteConnect, KiteTicker
@@ -112,7 +160,7 @@ def main():
                  f"`python _scripts/refresh_kite_token.py` today, and make sure KITE_API_KEY "
                  f"matches the app that minted the token (currently {API_KEY}).")
 
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    # symbols already resolved above (from --auto-today or --symbols)
     # resolve symbol -> instrument_token via ltp (also verifies the token works)
     token_to_sym, sym_to_token = {}, {}
     for sym in symbols:

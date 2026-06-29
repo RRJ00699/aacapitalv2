@@ -1,0 +1,98 @@
+name: AACapital IPO Live Tick Capture
+
+# Streams live ticks (LTP / VWAP / OBIR / volume) into ipo_tick_feed for every
+# MAINBOARD IPO with issue price >= Rs200 that is inside its listing_date -> +30d
+# window. This is the data layer the floor/ceiling analysis reads.
+#
+# Distinct from listing-day.yml (that runs the auction-decision execution engine,
+# listing-day only). This one captures continuously, every market day, through the
+# 30-day anchor window, so the floor/ceiling can evolve day by day.
+#
+# Timing / limits:
+#   - 03:45 UTC = 09:15 IST. GitHub cron drifts 5-15 min under load, so it's set
+#     early to still catch the pre-open / call-auction.
+#   - A single Actions job hard-stops at 6h; the Indian session is ~6h15m. We run
+#     ~5h40m (the listing-day action is front-loaded) and RESTART the ticker once
+#     mid-session to refresh the Kite token + the websocket connection (~the "4h
+#     refresh"). Kite tokens themselves expire next morning, not after N hours, so
+#     the restart is really about a clean, fresh socket.
+#   - Symbols are auto-detected from ipo_intelligence (NSE-scrape-fed) via the
+#     ticker's --auto-today (mainboard, >=Rs200, in 30d window, max 3).
+
+on:
+  schedule:
+    - cron: "45 3 * * 1-5"      # 09:15 IST, Mon-Fri
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Force specific NSE symbols (comma-sep, skips auto-detect)"
+        required: false
+
+# Don't stack overlapping captures if a previous day's run somehow lingers.
+concurrency:
+  group: ipo-live-capture
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340          # ~5h40m — safely under the 6h hard limit
+    env:
+      TZ:                Asia/Kolkata
+      DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+      KITE_API_SECRET:   ${{ secrets.KITE_API_SECRET }}
+      KITE_USER_ID:      ${{ secrets.KITE_USER_ID }}
+      KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
+      KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+
+      - name: Gate — is any mainboard IPO (>=Rs200) in its 30d window today?
+        id: gate
+        run: |
+          python - <<'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
+          cur.execute("""
+            SELECT COUNT(*) FROM ipo_intelligence
+            WHERE COALESCE(is_sme,false)=false AND issue_price>=200
+              AND symbol IS NOT NULL AND btrim(symbol)<>''
+              AND listing_date IS NOT NULL
+              AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
+              AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date <= listing_date + INTERVAL '30 days'
+          """)
+          n = cur.fetchone()[0]; cur.close(); conn.close()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"go={'true' if n else 'false'}\n")
+          print(f"in-window mainboard IPOs (>=Rs200): {n}")
+          PY
+
+      - name: Capture ticks (restart mid-session to refresh the connection)
+        if: steps.gate.outputs.go == 'true'
+        env:
+          FORCE_SYMBOLS: ${{ github.event.inputs.symbols }}
+        run: |
+          set +e
+          ARGS="--auto-today"
+          if [ -n "$FORCE_SYMBOLS" ]; then ARGS="--symbols $FORCE_SYMBOLS"; fi
+          # Two chunks of up to ~3h55m. The job's 340-min timeout caps total runtime;
+          # the loop just guarantees a fresh token + socket roughly every 4h.
+          for chunk in 1 2; do
+            echo "=== capture chunk $chunk: refresh token, then stream ($ARGS) ==="
+            python _scripts/refresh_kite_token.py || true
+            timeout 14100 python _scripts/ipo/kite_ticker_ipo.py $ARGS --write-db --interval 5
+            echo "chunk $chunk ended (rc=$?) — computing floor/ceiling levels"
+            python _scripts/ipo/analyze_listing_day.py --auto-today || true
+          done
+          echo "=== final level analysis pass ==="
+          python _scripts/ipo/analyze_listing_day.py --auto-today || true
+          echo "capture window complete"
+
+      - name: Nothing to capture
+        if: steps.gate.outputs.go != 'true'
+        run: echo "No mainboard IPO (>=Rs200) in its listing->+30d window today. Skipping."
