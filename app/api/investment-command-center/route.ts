@@ -26,12 +26,11 @@ export async function GET(req: NextRequest) {
   const symbol = (req.nextUrl.searchParams.get("symbol") || "").trim().toUpperCase()
   if (!symbol) return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 })
 
-  const [fRows, cmRows, tRows, eRows, smRows, shRows, valRows] = await Promise.all([
+  const [fRows, cmRows, tRows, eRows, shRows, valRows] = await Promise.all([
     safe(sql`SELECT * FROM stock_fundamentals WHERE UPPER(nse_symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM company_master WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM technical_signals WHERE UPPER(symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM earnings_acceleration_scores WHERE UPPER(symbol) = ${symbol} ORDER BY scored_at DESC NULLS LAST LIMIT 1`, [] as any[]),
-    safe(sql`SELECT * FROM smart_money_summary WHERE UPPER(nse_symbol) = ${symbol} LIMIT 1`, [] as any[]),
     safe(sql`SELECT promoter_pct, promoter_pledge, fii_pct, dii_pct, mf_pct, public_pct
              FROM shareholding_history WHERE UPPER(nse_symbol) = ${symbol}
              ORDER BY quarter DESC LIMIT 1`, [] as any[]),
@@ -44,7 +43,7 @@ export async function GET(req: NextRequest) {
   const w: any = {}   // weekly_dna retired — support/resistance now fall back to ATR-derived defaults (or use technical_features descriptors)
   const ts = tRows[0] || {}
   const es = eRows[0] || {}
-  const sm = smRows[0] || {}
+  const sm: any = {}   // smart_money_summary retired — score/signal now read from stock_fundamentals (f)
   const sh = shRows[0] || {}   // latest real shareholding (FII/DII/promoter) from scrape_shareholding
 
   // If no data at all, return graceful empty response (not 404)

@@ -52,14 +52,13 @@ def scrape_fundamentals(session, symbol):
         "roce": get_num(soup, "ROCE"), "roe": get_num(soup, "ROE"),
         "pe_ratio": get_num(soup, "P/E"),
         "debt_to_equity": get_num(soup, "Debt to equity"),
-        "promoter_holding": get_num(soup, "Promoter holding"),
     }
 
 def upsert_fundamentals(data):
     conn = get_db(); cur = conn.cursor()
     cur.execute("""
-        INSERT INTO stock_fundamentals (nse_symbol, name, industry, market_cap, roce, roe, pe_ratio, debt_to_equity, promoter_holding, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        INSERT INTO stock_fundamentals (nse_symbol, name, industry, market_cap, roce, roe, pe_ratio, debt_to_equity, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON CONFLICT (nse_symbol) DO UPDATE SET
             name=EXCLUDED.name,
             industry=COALESCE(EXCLUDED.industry, stock_fundamentals.industry),
@@ -68,10 +67,9 @@ def upsert_fundamentals(data):
             roe=COALESCE(EXCLUDED.roe, stock_fundamentals.roe),
             pe_ratio=COALESCE(EXCLUDED.pe_ratio, stock_fundamentals.pe_ratio),
             debt_to_equity=COALESCE(EXCLUDED.debt_to_equity, stock_fundamentals.debt_to_equity),
-            promoter_holding=COALESCE(EXCLUDED.promoter_holding, stock_fundamentals.promoter_holding),
             updated_at=NOW()
     """, (data["nse_symbol"], data["name"], data["industry"], data["market_cap"],
-          data["roce"], data["roe"], data["pe_ratio"], data["debt_to_equity"], data["promoter_holding"]))
+          data["roce"], data["roe"], data["pe_ratio"], data["debt_to_equity"]))
     conn.commit(); cur.close(); conn.close()
 
 def get_missing_symbols(limit):
@@ -89,16 +87,38 @@ def get_missing_symbols(limit):
     cur.close(); conn.close()
     return syms
 
+def get_stale_symbols(days, limit):
+    """Existing rows whose updated_at is older than `days` (refresh, not backfill)."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT nse_symbol FROM stock_fundamentals
+        WHERE nse_symbol IS NOT NULL
+          AND (updated_at IS NULL OR updated_at < NOW() - (%s || ' days')::interval)
+        ORDER BY updated_at NULLS FIRST
+        LIMIT %s
+    """, (days, limit))
+    syms = [r[0] for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return syms
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--symbols", nargs="+")
+    p.add_argument("--stale", type=int, metavar="DAYS",
+                   help="refresh existing rows older than DAYS (e.g. --stale 7)")
     p.add_argument("--limit", type=int, default=50)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     if not DATABASE_URL: log.error("DATABASE_URL not set"); sys.exit(1)
     if not SCREENER_UN: log.error("SCREENER_USERNAME not set"); sys.exit(1)
     session = screener_login()
-    symbols = args.symbols or get_missing_symbols(args.limit)
+    if args.symbols:
+        symbols = args.symbols
+    elif args.stale is not None:
+        symbols = get_stale_symbols(args.stale, args.limit)
+        log.info(f"Stale-refresh mode: {len(symbols)} rows older than {args.stale}d")
+    else:
+        symbols = get_missing_symbols(args.limit)
     log.info(f"Importing fundamentals for {len(symbols)} stocks")
     log.info("=" * 60)
     ok = 0

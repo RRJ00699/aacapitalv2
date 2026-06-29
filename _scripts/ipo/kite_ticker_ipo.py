@@ -48,18 +48,21 @@ def db_conn():
 
 
 def load_access_token():
+    # platform_config (written fresh every morning by refresh_kite_token.py) is the source of
+    # truth. Read it FIRST so a stale KITE_ACCESS_TOKEN env var can't shadow today's token.
+    conn = db_conn()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+        row = cur.fetchone(); conn.close()
+        if row and row[0]:
+            return row[0]
+    # fallback only when there's no DB / no row
     tok = os.environ.get("KITE_ACCESS_TOKEN")
     if tok:
         return tok
-    conn = db_conn()
-    if not conn:
-        sys.exit("No KITE_ACCESS_TOKEN env and no DB to read platform_config. Run refresh_kite_token.py.")
-    cur = conn.cursor()
-    cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
-    row = cur.fetchone(); conn.close()
-    if not row or not row[0]:
-        sys.exit("No kite_access_token in platform_config. Run refresh_kite_token.py first.")
-    return row[0]
+    sys.exit("No kite_access_token in platform_config and no KITE_ACCESS_TOKEN env. "
+             "Run refresh_kite_token.py first.")
 
 
 def ensure_table(conn):

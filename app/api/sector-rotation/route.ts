@@ -25,10 +25,9 @@ export async function GET(req: NextRequest) {
           f.earnings_score, f.earnings_category,
           f.return_3m, f.return_6m,
           f.roce, f.sales_growth_3y, f.debt_to_equity,
-          s.smart_money_score, s.smart_money_signal,
-          s.net_flow_3m, s.tier1_deal_count
+          f.smart_money_score, f.smart_money_signal,
+          0 AS net_flow_3m, 0 AS tier1_deal_count
         FROM stock_fundamentals f
-        LEFT JOIN smart_money_summary s ON s.nse_symbol = f.nse_symbol
         WHERE f.industry_group ILIKE ${'%' + sector + '%'}
           AND f.market_cap > 100
         ORDER BY f.business_dna_score DESC NULLS LAST, f.market_cap DESC
@@ -107,12 +106,11 @@ export async function GET(req: NextRequest) {
           sr.avg_roce,
           sr.total_mcap_cr,
           -- Smart money flow into this sector (from bulk/block deals)
-          COALESCE(SUM(sms.net_flow_3m), 0) as sector_net_flow_3m,
-          COALESCE(SUM(sms.tier1_deal_count), 0) as sector_tier1_deals,
+          0 as sector_net_flow_3m,
+          0 as sector_tier1_deals,
           COUNT(f.nse_symbol) as stocks_with_sm_data
         FROM sector_rotation sr
         LEFT JOIN stock_fundamentals f ON f.industry_group = sr.industry_group
-        LEFT JOIN smart_money_summary sms ON sms.nse_symbol = f.nse_symbol
         GROUP BY sr.industry_group, sr.rotation_score, sr.rotation_signal,
                  sr.return_3m, sr.return_6m, sr.avg_roce, sr.total_mcap_cr
         ORDER BY sr.rotation_score DESC
