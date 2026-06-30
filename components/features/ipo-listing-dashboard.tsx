@@ -78,10 +78,29 @@ function Ring({v,size=44}:{v:number;size?:number}) {
   )
 }
 
-function PlayBadge({play}:{play:string}) {
-  const p=playOf(play)
+// ── VALIDATED gap-bucket signal (research signal, not a buy call) ──────────────
+// gap = (listing_open − issue)/issue:
+//   LOW  <10%    flat/discount open — historically dead (~47% win). No edge at open.
+//   MID  10–30%  the playable zone — best history (+7% to T+20, 62% win).
+//   HIGH >30%    T+1 trap risk — strong opens tend to fade.
+type Sig = {tier:string;label:string;detail:string;color:string;bg:string;bd:string}
+function signalFor(ipo:any): Sig {
+  const issue=n(ipo.issue_price), open=n(ipo.listing_open)
+  const listed = open>0 && issue>0
+  if(!listed){
+    const sub=n(ipo.total_subscription_x ?? ipo.qib_subscription_x)
+    if(sub>=10) return {tier:"PRE-LISTING",label:"Heavily subscribed",detail:"Demand ≠ a listing edge — the signal resolves at the open.",color:C.blue,bg:C.blueBg,bd:C.blueBd}
+    return {tier:"PRE-LISTING",label:"Awaiting listing",detail:"No listing-day data yet — signal resolves at the open.",color:C.meta,bg:C.muted,bd:C.border}
+  }
+  const gap=(open-issue)/issue*100
+  if(gap<10)  return {tier:"LOW-GAP",label:"No edge at open",detail:`Opened ${gap>=0?"+":""}${gap.toFixed(1)}% — flat/discount opens are historically dead (~47% win). Capital-protection mode.`,color:C.amber,bg:C.amberBg,bd:C.amberBd}
+  if(gap<=30) return {tier:"MID-GAP",label:"Playable zone",detail:`Opened +${gap.toFixed(1)}% — best historical zone (+7% avg to T+20, 62% win). Manage to the floor.`,color:C.green,bg:C.greenBg,bd:C.greenBd}
+  return {tier:"HIGH-GAP",label:"T+1 trap risk",detail:`Opened +${gap.toFixed(1)}% — strong opens tend to fade; chasing the open has poor history.`,color:C.red,bg:C.redBg,bd:C.redBd}
+}
+function SignalBadge({ipo}:{ipo:any}) {
+  const s=signalFor(ipo)
   return <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,
-    background:p.bg,color:p.color,border:`1px solid ${p.bd}`}}>{p.emoji} {p.label}</span>
+    background:s.bg,color:s.color,border:`1px solid ${s.bd}`}}>{s.tier} · {s.label}</span>
 }
 
 function GmpBadge({ipo}:{ipo:any}) {
@@ -130,6 +149,7 @@ function Stat({label,value,color=C.sub}:{label:string;value:string;color?:string
 function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle:()=>void}) {
   const status  = statusOf(ipo)
   const play    = playOf(ipo.play_recommendation ?? ipo.suggested_action ?? "")
+  const sig     = signalFor(ipo)
   const lqi     = Math.round(n(ipo.lqi_final ?? ipo.lqi ?? 0))
   const gmp     = gmpOf(ipo)
   const daysO   = status==="OPEN"?daysLeft(ipo.close_date):status==="UPCOMING"?daysLeft(ipo.open_date):null
@@ -138,7 +158,6 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
   const stop    = n(ipo.play_stop_loss_pct ?? play.stop)
   const target  = n(ipo.play_target_pct   ?? play.target)
   const hold    = ipo.play_hold_window    ?? play.hold
-  const conf    = Math.round(n(ipo.play_confidence ?? 0))
 
   const statusCfg:{[k:string]:React.CSSProperties} = {
     OPEN:      {background:C.greenBg,color:C.green,border:`1px solid ${C.greenBd}`},
@@ -155,8 +174,8 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
   }
 
   return (
-    <div style={{background:C.surface,borderLeft:`3px solid ${play.color}`,
-      border:`1px solid ${play.color==="AVOID"?C.redBd:C.border}`,
+    <div style={{background:C.surface,borderLeft:`3px solid ${sig.color}`,
+      border:`1px solid ${sig.bd}`,
       borderRadius:14,marginBottom:12,overflow:"hidden"}}>
 
       {/* ── Card header (always visible — The Playbook Card format) ─────── */}
@@ -167,15 +186,17 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
             {/* Row 1: Company + play + status */}
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
               <span style={{fontSize:15,fontWeight:900,color:C.text}}>{ipo.company_name}</span>
-              <PlayBadge play={ipo.play_recommendation??ipo.suggested_action??""}/>
+              <SignalBadge ipo={ipo}/>
               {status!=="LISTED"&&(
                 <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,...(statusCfg[status]||{})}}>
                   {status}
                 </span>
               )}
-              {conf>0&&<span style={{fontSize:10,color:C.meta}}>Confidence: {conf}%</span>}
               {ipo.is_sme&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:C.purpleBg,color:C.purple,border:`1px solid ${C.purpleBd}`}}>SME</span>}
             </div>
+
+            {/* Validated signal rationale (research signal, not a buy call) */}
+            <div style={{fontSize:11,color:sig.color,fontWeight:600,marginBottom:5}}>{sig.detail}</div>
 
             {/* Row 2: Price + lot + size + sector + days */}
             <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:5}}>
