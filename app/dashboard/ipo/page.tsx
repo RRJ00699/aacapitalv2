@@ -1,63 +1,97 @@
 // app/dashboard/ipo/page.tsx
-// Task 5: IPO Command Center — full page wired to ipo_intelligence
+// IPO Command Center — wired to ipo_consolidated (the maintained wide table).
+//
+// Sources the REAL, backfilled columns (gap_bucket, floor/ceiling, level_verdict,
+// listing_open, total_subscription_x, ipo_pe, anchor_count/quality, is_sme, …) and
+// leads with the VALIDATED edge (gap_bucket), not the disproven LQI "Strong Buy/Avoid".
 
 import { neon } from "@neondatabase/serverless";
 import IPOCommandCenterClient from "./IPOCommandCenterClient";
-import type { IPOIntelligence } from "@/components/ipo/IPOIntelligenceCard";
+import type { IPORow } from "@/components/ipo/IpoSignalCard";
 
 const sql = neon(process.env.NEON_DATABASE_URL!);
 
 export const revalidate = 900; // 15 min
 
-async function getIPOs(): Promise<IPOIntelligence[]> {
+async function getIPOs(): Promise<IPORow[]> {
   const r = await sql`
     SELECT
-      id, company_name,
-      issue_price, issue_size_cr,
-      open_date AS issue_open_date,
-      close_date AS issue_close_date,
+      ROW_NUMBER() OVER (ORDER BY listing_date DESC NULLS LAST, company_name) AS id,
+      company_name,
+      COALESCE(symbol_final, nse_symbol, symbol)        AS symbol,
+      COALESCE(is_sme, FALSE)                           AS is_sme,
+      issue_category,
+      ipo_status,
+
+      issue_price,
+      issue_size_cr,
+      ipo_open_date                                     AS issue_open_date,
+      ipo_close_date                                    AS issue_close_date,
       listing_date,
-      suggested_action AS ipo_status,
 
-      lqi_final AS lqi_score,
-      archetype AS conviction,
-      prob_10pct_profit AS p_profit_10pct,
-      prob_loss_gt10 AS p_loss,
-      expected_return AS expected_return_pct,
+      -- VALIDATED signal inputs
+      listing_open,
+      gap_bucket,
+      listing_gap_pct,
+      return_current,
+      floor_price,
+      ceiling_price,
+      level_verdict,
+      tp1_exit_note,
 
-      qib_subscription, nii_subscription,
-      retail_subscription, total_subscription,
+      -- demand (consolidated canonical subscription cols; these already reflect the backfill)
+      final_total                                       AS total_subscription,
+      final_qib                                         AS qib_subscription,
+      final_retail                                      AS retail_subscription,
+      final_nii                                         AS nii_subscription,
 
-      gmp_percentage, gmp_value,
-      revenue_growth_3yr, pat_growth_3yr,
-      pe_ratio, sector_pe_median,
+      -- fundamentals (correct column names)
+      COALESCE(ipo_pe, ipo_pe_post)                     AS ipo_pe,
+      peer_median_pe,
+      roe,
+      pat_cr,
+      is_profitable,
+      valuation_premium,
+      promoter_holding_after                            AS promoter_holding_post,
 
-      anchor_classification,
-      NULL::int AS anchor_investor_count,
-      ofs_percentage, promoter_holding_post,
-      NULL::boolean AS is_sme,
-      NULL::text AS listing_exchange
+      -- anchors / BRLM
+      anchor_count,
+      anchor_quality,
+      anchor_total_cr,
+      brlm_names,
+      brlm_tier,
 
-    FROM ipo_intelligence
+      -- context (NOT a buy signal)
+      regime_at_listing,
+      gmp_pct,
+      gmp_value,
+
+      -- quality score (demoted from "verdict")
+      lqi_final                                         AS lqi_score
+    FROM ipo_consolidated
     ORDER BY
-      lqi_final DESC NULLS LAST,
-      listing_date DESC NULLS LAST
-    LIMIT 333
-  ` as IPOIntelligence[];
+      -- surface the actionable ones first: open/listing-pending, then by listing recency
+      (ipo_status IN ('OPEN','LISTING_PENDING','ALLOTMENT_PENDING')) DESC,
+      listing_date DESC NULLS LAST,
+      lqi_final DESC NULLS LAST
+    LIMIT 400
+  ` as IPORow[];
   return r;
 }
 
 async function getSummaryStats() {
   const r = await sql`
     SELECT
-      COUNT(*) FILTER (WHERE suggested_action = 'APPLY')                       AS open_count,
-      COUNT(*) FILTER (WHERE listing_date >= CURRENT_DATE)                     AS listing_pending,
-      COUNT(*) FILTER (WHERE archetype IN ('STRONG_BUY','BUY','APPLY'))        AS buy_signals,
-      COUNT(*) FILTER (WHERE lqi_final >= 70)                                  AS high_lqi,
-      COUNT(*) FILTER (WHERE gmp_percentage >= 20)                             AS high_gmp,
-      ROUND(AVG(lqi_final)::numeric, 1)                                        AS avg_lqi,
-      COUNT(*)                                                                  AS total
-    FROM ipo_intelligence
+      COUNT(*) FILTER (WHERE ipo_status IN ('OPEN','ALLOTMENT_PENDING'))                 AS open_count,
+      COUNT(*) FILTER (WHERE listing_date >= CURRENT_DATE)                               AS listing_pending,
+      -- the actual edge: MID-gap listings are the playable zone
+      COUNT(*) FILTER (WHERE gap_bucket = 'MID')                                         AS playable_mid,
+      -- capital-protection watch: holding something sitting on its floor
+      COUNT(*) FILTER (WHERE level_verdict ILIKE '%FLOOR%')                              AS at_floor,
+      -- strong demand (context)
+      COUNT(*) FILTER (WHERE final_total >= 10)                                         AS subscribed_10x,
+      COUNT(*)                                                                            AS total
+    FROM ipo_consolidated
   `;
   return r[0];
 }
