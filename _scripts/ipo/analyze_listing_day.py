@@ -20,7 +20,7 @@ Writes one upsertable row per (symbol, trade_date) to ipo_level_analysis.
 
 Usage:
   python _scripts/ipo/analyze_listing_day.py --symbol TURTLEMINT
-  python _scripts/ipo/analyze_listing_day.py --auto-today          # all in-window symbols
+  python _scripts/ipo/analyze_listing_day.py --auto-today          # all symbols still inside their anchor lock-in window
   python _scripts/ipo/analyze_listing_day.py --symbol X --date 2026-06-29
 """
 import os, sys, json, argparse, logging
@@ -305,8 +305,11 @@ def auto_today_symbols(conn):
           AND symbol IS NOT NULL AND btrim(symbol)<>''
           AND listing_date IS NOT NULL
           AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
-          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date <= listing_date + INTERVAL '30 days'
-        ORDER BY listing_date DESC LIMIT 3
+          -- window runs until the ANCHOR FIRST LOCK-IN (30d anchor unlock), not a guessed listing+30d.
+          -- falls back to listing_date+30d only when the anchor lock date is unknown.
+          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              <= COALESCE(anchor_lock30_date, (listing_date + INTERVAL '30 days')::date)
+        ORDER BY listing_date DESC LIMIT 6
     """)
     syms = [r[0].strip().upper() for r in cur.fetchall()]; cur.close()
     return syms
@@ -315,7 +318,7 @@ def auto_today_symbols(conn):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", help="NSE symbol, e.g. TURTLEMINT")
-    ap.add_argument("--auto-today", action="store_true", help="all mainboard >=Rs200 symbols in their 30d window")
+    ap.add_argument("--auto-today", action="store_true", help="all mainboard >=Rs200 symbols still inside their anchor lock-in window")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today IST)")
     args = ap.parse_args()
 

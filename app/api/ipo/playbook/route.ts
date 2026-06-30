@@ -41,7 +41,9 @@ export async function GET(req: NextRequest) {
         iid.roce_pct, iid.debt_equity, iid.pe_post AS iid_pe_post,
         iid.promoter_post_pct, iid.pat_margin_pct,
         iid.issue_amount_cr AS iid_issue_cr, iid.industry AS iid_industry,
-        iid.registrar AS iid_registrar
+        iid.registrar AS iid_registrar,
+        lvl.floor_price, lvl.ceiling_price, lvl.poc_price, lvl.floor_defenses,
+        lvl.level_verdict, lvl.lvl_gap_bucket, lvl.level_date
       FROM (
       SELECT
         id, company_name, symbol, sector, is_sme,
@@ -79,6 +81,15 @@ export async function GET(req: NextRequest) {
         AND (${search} = '' OR company_name ILIKE ${'%' + search + '%'})
       ) base
       LEFT JOIN ipo_issue_details iid ON iid.nse_symbol = base.symbol
+      LEFT JOIN LATERAL (
+        -- latest floor/ceiling/verdict row inside the symbol's anchor lock-in window
+        SELECT floor_price, ceiling_price, poc_price, floor_defenses,
+               verdict AS level_verdict, gap_bucket AS lvl_gap_bucket, trade_date AS level_date
+        FROM ipo_level_analysis la
+        WHERE la.symbol = base.symbol
+        ORDER BY la.trade_date DESC
+        LIMIT 1
+      ) lvl ON true
       ORDER BY
         CASE
           WHEN base.listing_date IS NULL THEN 0

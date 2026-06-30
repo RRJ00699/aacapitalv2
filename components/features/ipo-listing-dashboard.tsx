@@ -18,16 +18,6 @@ const C = {
   purple:"#7C3AED",purpleBg:"#F5F3FF",purpleBd:"#DDD6FE",
 }
 
-const PLAY: Record<string,{label:string;emoji:string;color:string;bg:string;bd:string;stop:number;target:number;hold:string}> = {
-  BUY_AT_OPEN:    {label:"BUY AT OPEN",   emoji:"🟢",color:C.green, bg:C.greenBg, bd:C.greenBd, stop:4,  target:20, hold:"30 min → EOD"},
-  WAIT_FOR_VWAP:  {label:"WAIT VWAP",     emoji:"🟡",color:C.amber, bg:C.amberBg, bd:C.amberBd, stop:5,  target:15, hold:"10:30 AM → EOD"},
-  BUY_PANIC_DIP:  {label:"PANIC DIP",     emoji:"🔵",color:C.blue,  bg:C.blueBg,  bd:C.blueBd,  stop:6,  target:20, hold:"Day 1–3"},
-  BUY_AFTER_DAY3: {label:"DAY 3+",        emoji:"⚪",color:C.teal,  bg:C.tealBg,  bd:C.tealBd,  stop:5,  target:12, hold:"1 week"},
-  BUY_AFTER_ANCHOR:{label:"ANCHOR UNLOCK",emoji:"⚪",color:C.teal,  bg:C.tealBg,  bd:C.tealBd,  stop:8,  target:25, hold:"1–4 weeks"},
-  BUY_PEER:       {label:"BUY PEER",      emoji:"🟠",color:"#EA580C",bg:"#FFF7ED", bd:"#FED7AA", stop:5,  target:15, hold:"normal"},
-  AVOID:          {label:"AVOID",          emoji:"🔴",color:C.red,   bg:C.redBg,   bd:C.redBd,   stop:0,  target:0,  hold:"—"},
-}
-const playOf = (p?:string) => PLAY[p??""] ?? {label:p??"—",emoji:"⚪",color:C.meta,bg:"#F1F5F9",bd:C.border,stop:0,target:0,hold:"—"}
 
 const n = (v:unknown) => parseFloat(String(v??0))||0
 const fmt = (v:unknown,d=0) => n(v).toLocaleString("en-IN",{maximumFractionDigits:d})
@@ -103,6 +93,79 @@ function SignalBadge({ipo}:{ipo:any}) {
     background:s.bg,color:s.color,border:`1px solid ${s.bd}`}}>{s.tier} · {s.label}</span>
 }
 
+// ── CAPITAL PROTECTION (the original vision): floor/ceiling through the anchor lock-in ──
+// Floor/ceiling come from ipo_level_analysis (live listing-day ticks), computed each day
+// until the ANCHOR FIRST LOCK-IN date — joined onto the row by /api/ipo/playbook.
+const daysFrom = (d?:string|null) => { if(!d) return null; return Math.round((new Date(d).getTime()-Date.now())/86400000) }
+const hasLevels = (ipo:any) => n(ipo.floor_price)>0 || n(ipo.ceiling_price)>0
+function levelTone(v?:string|null){
+  const s=(v??"").toUpperCase()
+  if(/BROKE|BELOW|LOST/.test(s))    return {color:C.red,  bg:C.redBg,  bd:C.redBd}
+  if(/CEIL|ABOVE|RECLAIM/.test(s))  return {color:C.blue, bg:C.blueBg, bd:C.blueBd}
+  if(/FLOOR|DEFEND|HOLD/.test(s))   return {color:C.green,bg:C.greenBg,bd:C.greenBd}
+  return {color:C.meta,bg:C.muted,bd:C.border}
+}
+// compact line for the collapsed card
+function LevelInline({ipo}:{ipo:any}){
+  if(!hasLevels(ipo)) return null
+  const t=levelTone(ipo.level_verdict), fl=n(ipo.floor_price), ce=n(ipo.ceiling_price), df=n(ipo.floor_defenses)
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 9px",borderRadius:8,
+      background:t.bg,border:`1px solid ${t.bd}`,fontSize:10,fontWeight:800,color:t.color}}>
+      🛡 {ipo.level_verdict||"LEVELS"}
+      {fl>0&&<span>floor ₹{fmt(fl,2)}</span>}
+      {ce>0&&<span style={{opacity:.85}}>· ceil ₹{fmt(ce,2)}</span>}
+      {df>0&&<span style={{opacity:.7}}>· {df} def</span>}
+    </span>
+  )
+}
+// anchor lock-in countdown (the supply-pressure calendar)
+function AnchorClock({ipo}:{ipo:any}){
+  const d30=ipo.anchor_lock30_date, d90=ipo.anchor_lock90_date
+  if(!d30&&!d90) return null
+  const chip=(label:string,d?:string|null)=>{
+    const days=daysFrom(d); if(days==null) return null
+    const future=days>0, col=future?(days<=5?C.amber:C.teal):C.meta
+    return <span style={{fontSize:10,fontWeight:700,color:col}}>🔓 {label} {future?`unlocks in ${days}d`:`unlocked ${Math.abs(days)}d ago`}</span>
+  }
+  return <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>{chip("Anchor 30d",d30)}{chip("90d",d90)}</div>
+}
+// expanded capital-protection panel
+function CapitalProtectionBlock({ipo}:{ipo:any}){
+  const t=levelTone(ipo.level_verdict)
+  const fl=n(ipo.floor_price), ce=n(ipo.ceiling_price), poc=n(ipo.poc_price), df=n(ipo.floor_defenses), issue=n(ipo.issue_price)
+  const cell=(label:string,val:string,col:string)=>(
+    <div><div style={{fontSize:9,color:C.meta,fontWeight:700}}>{label}</div><div style={{fontSize:14,fontWeight:900,color:col}}>{val}</div></div>
+  )
+  return (
+    <div style={{background:t.bg,border:`1px solid ${t.bd}`,borderRadius:8,padding:"12px 14px",marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:800,color:t.color,marginBottom:8}}>
+        🛡 Capital protection{ipo.level_verdict?` · ${ipo.level_verdict}`:""}
+        {ipo.level_date&&<span style={{fontWeight:600,opacity:.7}}> · as of {ipo.level_date}</span>}
+      </div>
+      {hasLevels(ipo)?(
+        <>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:8}}>
+            {fl>0 &&cell("DEFENDED FLOOR",`₹${fmt(fl,2)}`,C.green)}
+            {poc>0&&cell("POC",`₹${fmt(poc,2)}`,C.sub)}
+            {ce>0 &&cell("CEILING",`₹${fmt(ce,2)}`,C.blue)}
+            {issue>0&&cell("ISSUE",`₹${fmt(issue,2)}`,C.meta)}
+            {df>0 &&cell("FLOOR DEFENSES",String(df),t.color)}
+          </div>
+          <div style={{fontSize:10,color:C.meta,marginBottom:8}}>
+            Floor/ceiling from live listing-day ticks through the anchor lock-in window — protect the floor, don't chase.
+          </div>
+        </>
+      ):(
+        <div style={{fontSize:10,color:C.meta,marginBottom:8}}>
+          Floor/ceiling populate once live ticks are captured inside this IPO's anchor lock-in window.
+        </div>
+      )}
+      <div style={{borderTop:`1px solid ${t.bd}`,paddingTop:8}}><AnchorClock ipo={ipo}/></div>
+    </div>
+  )
+}
+
 function GmpBadge({ipo}:{ipo:any}) {
   const g=gmpOf(ipo); if(g===null) return null
   const col=g>20?C.green:g>5?C.teal:g>0?C.amber:C.red
@@ -148,29 +211,18 @@ function Stat({label,value,color=C.sub}:{label:string;value:string;color?:string
 // ── The Playbook Card ──────────────────────────────────────────────────────────
 function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle:()=>void}) {
   const status  = statusOf(ipo)
-  const play    = playOf(ipo.play_recommendation ?? ipo.suggested_action ?? "")
   const sig     = signalFor(ipo)
   const lqi     = Math.round(n(ipo.lqi_final ?? ipo.lqi ?? 0))
   const gmp     = gmpOf(ipo)
   const daysO   = status==="OPEN"?daysLeft(ipo.close_date):status==="UPCOMING"?daysLeft(ipo.open_date):null
   const maxSub  = Math.max(n(ipo.qib_subscription_x),n(ipo.nii_subscription_x),n(ipo.rii_subscription_x),30)
   const hasSub  = n(ipo.qib_subscription_x)>0||n(ipo.nii_subscription_x)>0||n(ipo.rii_subscription_x)>0
-  const stop    = n(ipo.play_stop_loss_pct ?? play.stop)
-  const target  = n(ipo.play_target_pct   ?? play.target)
-  const hold    = ipo.play_hold_window    ?? play.hold
 
   const statusCfg:{[k:string]:React.CSSProperties} = {
     OPEN:      {background:C.greenBg,color:C.green,border:`1px solid ${C.greenBd}`},
     UPCOMING:  {background:C.blueBg, color:C.blue, border:`1px solid ${C.blueBd}`},
     ALLOTMENT: {background:C.amberBg,color:C.amber,border:`1px solid ${C.amberBd}`},
     LISTED:    {background:C.muted,  color:C.meta, border:`1px solid ${C.border}`},
-  }
-
-  // Parse play reasons
-  let reasons: string[] = []
-  if (ipo.play_reasons) {
-    try { reasons = typeof ipo.play_reasons==="string" ? JSON.parse(ipo.play_reasons) : ipo.play_reasons }
-    catch {}
   }
 
   return (
@@ -211,12 +263,10 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
               )}
             </div>
 
-            {/* Row 3: GMP + stop/target/hold pills */}
+            {/* Row 3: GMP context + capital-protection levels (listed) */}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <GmpBadge ipo={ipo}/>
-              {stop>0&&<span style={{fontSize:10,color:C.red,fontWeight:700}}>Stop: −{stop}%</span>}
-              {target>0&&<span style={{fontSize:10,color:C.green,fontWeight:700}}>Target: +{target}%</span>}
-              {hold&&hold!=="—"&&<span style={{fontSize:10,color:C.meta}}>Hold: {hold}</span>}
+              {status==="LISTED"&&<LevelInline ipo={ipo}/>}
             </div>
           </div>
 
@@ -247,25 +297,8 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
       {expanded&&(
         <div style={{borderTop:`1px solid ${C.border}`,background:C.muted,padding:"14px 16px"}}>
 
-          {/* Why this play — The Playbook Card "Why" section */}
-          {reasons.length>0&&(
-            <div style={{background:play.bg,border:`1px solid ${play.bd}`,borderRadius:8,
-              padding:"10px 14px",marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:800,color:play.color,marginBottom:6}}>
-                {play.emoji} Why this play:
-              </div>
-              {reasons.map((r:string,i:number)=>(
-                <div key={i} style={{fontSize:11,color:play.color,marginBottom:3}}>→ {r}</div>
-              ))}
-              {status==="OPEN"&&(
-                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${play.bd}30`,fontSize:11,color:play.color}}>
-                  <div>10:00 AM → Watch OI buy/sell</div>
-                  <div>10:15 AM → Decision deadline</div>
-                  <div>10:25 AM → Enter or walk away</div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Capital protection — floor/ceiling through the anchor lock-in (the core view) */}
+          {(status==="LISTED"||status==="ALLOTMENT")&&<CapitalProtectionBlock ipo={ipo}/>}
 
           {/* Key numbers */}
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -340,7 +373,7 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
                 🏛 Anchors: {n(ipo.anchor_count)} total · {n(ipo.anchor_tier1_count)} Tier-1 (LIC/SBI/ICICI/Nippon)
               </span>
               {ipo.anchor_stalwart_names&&<div style={{fontSize:10,color:C.teal,marginTop:3,opacity:.8}}>{ipo.anchor_stalwart_names}</div>}
-              {ipo.anchor_lock30_date&&<div style={{fontSize:9,color:C.teal,marginTop:2}}>Unlock: {ipo.anchor_lock30_date} (30d) · {ipo.anchor_lock90_date||"—"} (90d)</div>}
+              {(ipo.anchor_lock30_date||ipo.anchor_lock90_date)&&<div style={{marginTop:4}}><AnchorClock ipo={ipo}/></div>}
             </div>
           )}
 
@@ -415,7 +448,7 @@ function BrlmBoard({ipos}:{ipos:any[]}) {
 export function IpoListingDashboard() {
   const [ipos,    setIpos]    = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab,     setTab]     = useState("command")
+  const [tab,     setTab]     = useState("listed")
   const [expanded,setExpanded]= useState<number|null>(null)
   const [search,  setSearch]  = useState("")
   const [ts,      setTs]      = useState("")
