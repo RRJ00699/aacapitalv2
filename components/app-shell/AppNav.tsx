@@ -9,7 +9,7 @@ import { TrendingUp, Zap, Home, Activity, Briefcase, Star } from "lucide-react";
 import { StockSearch } from "@/components/features/stock-search";
 
 const TABS = [
-  { v: "today",         l: "Today",         href: "/",               icon: Home },
+  { v: "today",         l: "Today",         href: "/today",          icon: Home },
   { v: "stocks",        l: "Stocks",        href: "/#stocks",        icon: TrendingUp },
   { v: "opportunities", l: "Opportunities", href: "/#opportunities", icon: Activity },
   { v: "watchlist",     l: "Watch",         href: "/#watchlist",     icon: Star },
