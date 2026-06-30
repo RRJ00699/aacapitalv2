@@ -90,29 +90,32 @@ def resolve_auto_today_symbols(conn):
     Pick the IPOs to capture today, straight from ipo_intelligence (NSE-scrape-fed).
     Rules (locked with owner):
       - mainboard only            -> COALESCE(is_sme,false) = false
-      - issue price >= 200        -> issue_price >= 200   (never capture cheap names)
-      - active window             -> listing_date <= today(IST) <= listing_date + 30d
-      - max 3 names (a day rarely has >3 mainboard listings in-window that matter)
+      - total issue SIZE >= 200cr -> issue_size_cr >= 200   (skip junk/operator-driven small issues)
+      - active window             -> listing_date <= today(IST) <= anchor first lock-in (anchor_lock30_date)
+      - max 6 names
     Returns a list of NSE symbols (upper-cased).
     """
     cur = conn.cursor()
     cur.execute("""
-        SELECT symbol, company_name, issue_price, listing_date
+        SELECT symbol, company_name, issue_size_cr, listing_date, anchor_lock30_date
         FROM ipo_intelligence
         WHERE COALESCE(is_sme, false) = false
-          AND issue_price >= 200
+          -- mainboard, total issue SIZE >= Rs200cr (skip junk/operator small issues); upper bound drops malformed sizes
+          AND issue_size_cr >= 200 AND issue_size_cr < 100000
           AND symbol IS NOT NULL AND btrim(symbol) <> ''
           AND listing_date IS NOT NULL
           AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
-          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date <= listing_date + INTERVAL '30 days'
+          -- capture runs to the ANCHOR FIRST LOCK-IN, not a guessed listing+30d
+          AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              <= COALESCE(anchor_lock30_date, (listing_date + INTERVAL '30 days')::date)
         ORDER BY listing_date DESC
-        LIMIT 3
+        LIMIT 6
     """)
     rows = cur.fetchall(); cur.close()
     out = []
-    for sym, name, price, ld in rows:
+    for sym, name, size, ld, lock in rows:
         out.append(sym.strip().upper())
-        log.info(f"  auto-today: {sym} ({name}) issue Rs{price} listed {ld}")
+        log.info(f"  auto-today: {sym} ({name}) size Rs{size}cr listed {ld} lock {lock}")
     return out
 
 
@@ -120,7 +123,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", default="", help="comma-separated NSE symbols, e.g. TURTLEMINT,HEXAGON")
     ap.add_argument("--auto-today", action="store_true",
-                    help="auto-pick mainboard IPOs (>=Rs200) within listing_date..+30d from ipo_intelligence")
+                    help="auto-pick mainboard IPOs (issue size >=Rs200cr) inside their anchor lock-in window")
     ap.add_argument("--exchange", default="NSE")
     ap.add_argument("--write-db", action="store_true", help="persist throttled snapshots to ipo_tick_feed")
     ap.add_argument("--interval", type=float, default=5.0, help="seconds between DB snapshots per symbol")

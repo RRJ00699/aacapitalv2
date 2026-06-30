@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { RefreshCw, Zap, TrendingUp, TrendingDown, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react"
 import IpoLiveBoard from "@/components/ipo/IpoLiveBoard"
+import IpoLevelPanel from "@/components/ipo/IpoLevelPanel"
 
 const C = {
   bg:"#FAFAF8",surface:"#FFFFFF",border:"#E5E7EB",muted:"#F8FAFC",
@@ -97,6 +98,15 @@ function SignalBadge({ipo}:{ipo:any}) {
 // Floor/ceiling come from ipo_level_analysis (live listing-day ticks), computed each day
 // until the ANCHOR FIRST LOCK-IN date — joined onto the row by /api/ipo/playbook.
 const daysFrom = (d?:string|null) => { if(!d) return null; return Math.round((new Date(d).getTime()-Date.now())/86400000) }
+// listed AND still inside the anchor first lock-in window — the active capital-protection set.
+// uses the real anchor lock date; falls back to listing+30d only when it's unknown.
+const inAnchorWindow = (i:any) => {
+  if (statusOf(i)!=="LISTED") return false
+  const lock = i.anchor_lock30_date
+    ? new Date(i.anchor_lock30_date).getTime()
+    : (i.listing_date ? new Date(i.listing_date).getTime()+30*86400000 : null)
+  return lock!=null && Date.now() <= lock
+}
 const hasLevels = (ipo:any) => n(ipo.floor_price)>0 || n(ipo.ceiling_price)>0
 function levelTone(v?:string|null){
   const s=(v??"").toUpperCase()
@@ -298,7 +308,10 @@ function PlaybookCard({ipo,expanded,onToggle}:{ipo:any;expanded:boolean;onToggle
         <div style={{borderTop:`1px solid ${C.border}`,background:C.muted,padding:"14px 16px"}}>
 
           {/* Capital protection — floor/ceiling through the anchor lock-in (the core view) */}
-          {(status==="LISTED"||status==="ALLOTMENT")&&<CapitalProtectionBlock ipo={ipo}/>}
+          {status==="LISTED"&&<CapitalProtectionBlock ipo={ipo}/>}
+
+          {/* Live listing-day read — OHLC + VWAP + floor/ceiling/POC series (/api/ipo/levels) */}
+          {status==="LISTED"&&ipo.symbol&&<div style={{marginBottom:12}}><IpoLevelPanel symbol={ipo.symbol}/></div>}
 
           {/* Key numbers */}
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -448,7 +461,7 @@ function BrlmBoard({ipos}:{ipos:any[]}) {
 export function IpoListingDashboard() {
   const [ipos,    setIpos]    = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab,     setTab]     = useState("listed")
+  const [tab,     setTab]     = useState("command")
   const [expanded,setExpanded]= useState<number|null>(null)
   const [search,  setSearch]  = useState("")
   const [ts,      setTs]      = useState("")
@@ -468,14 +481,14 @@ export function IpoListingDashboard() {
   const q   = search.trim().toLowerCase()
   const all = ipos.filter(i=>!q||(i.company_name??"").toLowerCase().includes(q))
 
-  const command  = all.filter(i=>{const s=statusOf(i);const p=i.play_recommendation??"";return(s==="OPEN"||s==="UPCOMING"||s==="ALLOTMENT")&&p!=="AVOID"})
+  const command  = all.filter(i=>{const s=statusOf(i);return s==="OPEN"||s==="UPCOMING"||s==="ALLOTMENT"||inAnchorWindow(i)})
   const openIpos = all.filter(i=>statusOf(i)==="OPEN")
   const upcoming = all.filter(i=>statusOf(i)==="UPCOMING")
-  const listed   = all.filter(i=>{const s=statusOf(i);return s==="LISTED"||s==="ALLOTMENT"})
+  const listed   = all.filter(i=>statusOf(i)==="LISTED"&&!inAnchorWindow(i))
     .sort((a,b)=>new Date(b.listing_date??0).getTime()-new Date(a.listing_date??0).getTime())
 
   const TABS=[
-    {id:"command", label:"⚡ Command",      count:command.length},
+    {id:"command", label:"⚡ Command (live + in-window)", count:command.length},
     {id:"open",    label:"📋 Open Now",     count:openIpos.length},
     {id:"upcoming",label:"📅 Upcoming",     count:upcoming.length},
     {id:"listed",  label:"📈 Post-Listing", count:listed.length},
@@ -556,11 +569,11 @@ export function IpoListingDashboard() {
           <div style={{padding:"48px 0",textAlign:"center",color:C.meta}}>
             <TrendingUp size={32} color="#CBD5E1" style={{margin:"0 auto 12px",display:"block"}}/>
             <div style={{fontSize:14,color:C.sub,fontWeight:600,marginBottom:6}}>
-              {tab==="command"?"No active BUY plays right now":tab==="open"?"No IPOs open for subscription":
+              {tab==="command"?"Nothing open, upcoming, or inside an anchor lock-in window":tab==="open"?"No IPOs open for subscription":
                tab==="upcoming"?"No upcoming IPOs in database":"No recently listed IPOs"}
             </div>
             <div style={{fontSize:12,color:C.meta}}>
-              {tab==="command"?"Export from Chittorgarh Pro → run import_chittorgarh.py → ipo_play_selector.py":""}
+              {tab==="command"?"In-window listed IPOs appear here through their anchor lock-in; past that they move to Post-Listing.":""}
             </div>
           </div>
         ):(

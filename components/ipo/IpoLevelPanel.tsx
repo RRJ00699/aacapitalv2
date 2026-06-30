@@ -89,6 +89,8 @@ export default function IpoLevelPanel({ symbol = "TURTLEMINT", pollMs = 30000 }:
   const tone = verdictTone(latest.verdict)
   const floor = num(latest.floor_price), ceil = num(latest.ceiling_price), poc = num(latest.poc_price)
   const close = num(latest.day_close), gapPct = num(latest.gap_pct)
+  const dOpen = num(latest.day_open), dHigh = num(latest.day_high), dLow = num(latest.day_low)
+  const vwap = num(latest.session_vwap), cvv = num(latest.close_vs_vwap)
   let profile: Record<string, number> = {}
   try { profile = typeof latest.profile_json === "string" ? JSON.parse(latest.profile_json) : (latest.profile_json || {}) } catch { profile = {} }
 
@@ -117,6 +119,15 @@ export default function IpoLevelPanel({ symbol = "TURTLEMINT", pollMs = 30000 }:
         {stat("CEILING", ceil != null ? ceil.toFixed(2) : "—", C.red)}
         {stat("POC", poc != null ? poc.toFixed(2) : "—", C.poc)}
         {stat("CLOSE", close != null ? close.toFixed(2) : "—")}
+      </div>
+
+      {/* Listing-day OHLC + session VWAP (from /api/ipo/levels) */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
+        {stat("OPEN", dOpen != null ? dOpen.toFixed(2) : "—")}
+        {stat("HIGH", dHigh != null ? dHigh.toFixed(2) : "—", C.green)}
+        {stat("LOW", dLow != null ? dLow.toFixed(2) : "—", C.red)}
+        {stat("VWAP", vwap != null ? vwap.toFixed(2) : "—", C.blue)}
+        {cvv != null && stat("CLOSE vs VWAP", `${cvv >= 0 ? "+" : ""}${cvv.toFixed(2)}%`, cvv >= 0 ? C.green : C.red)}
       </div>
 
       {latest.risk_note && (

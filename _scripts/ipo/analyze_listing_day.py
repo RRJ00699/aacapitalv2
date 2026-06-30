@@ -301,7 +301,10 @@ def auto_today_symbols(conn):
     cur = conn.cursor()
     cur.execute("""
         SELECT symbol FROM ipo_intelligence
-        WHERE COALESCE(is_sme,false)=false AND issue_price>=200
+        WHERE COALESCE(is_sme,false)=false
+          -- mainboard, total issue SIZE >= Rs200cr (filters out junk/operator-driven small issues);
+          -- upper bound drops malformed BSE-twin size rows (e.g. Rs32,901,878 cr).
+          AND issue_size_cr >= 200 AND issue_size_cr < 100000
           AND symbol IS NOT NULL AND btrim(symbol)<>''
           AND listing_date IS NOT NULL
           AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
@@ -318,7 +321,7 @@ def auto_today_symbols(conn):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", help="NSE symbol, e.g. TURTLEMINT")
-    ap.add_argument("--auto-today", action="store_true", help="all mainboard >=Rs200 symbols still inside their anchor lock-in window")
+    ap.add_argument("--auto-today", action="store_true", help="all mainboard IPOs with issue size >= Rs200cr still inside their anchor lock-in window")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today IST)")
     args = ap.parse_args()
 
