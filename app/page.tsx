@@ -1,5 +1,4 @@
-import AACapitalApp from "@/components/AACapitalApp"
-
+import { redirect } from "next/navigation";
 export default function RootPage() {
-  return <AACapitalApp />
+  redirect("/today");
 }

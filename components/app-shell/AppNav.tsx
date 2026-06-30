@@ -5,16 +5,17 @@
 // As each tab becomes a real route, flip its href from "/#x" to "/x".
 
 import Link from "next/link";
-import { TrendingUp, Zap, Home, Activity, Briefcase, Star } from "lucide-react";
+import { TrendingUp, Zap, Home, Activity, Briefcase, Star, Settings2 } from "lucide-react";
 import { StockSearch } from "@/components/features/stock-search";
 
 const TABS = [
   { v: "today",         l: "Today",         href: "/today",          icon: Home },
-  { v: "stocks",        l: "Stocks",        href: "/#stocks",        icon: TrendingUp },
-  { v: "opportunities", l: "Opportunities", href: "/#opportunities", icon: Activity },
-  { v: "watchlist",     l: "Watch",         href: "/#watchlist",     icon: Star },
-  { v: "ipo",           l: "IPO",           href: "/ipo",            icon: Zap },        // real route
-  { v: "portfolio",     l: "Portfolio",     href: "/#portfolio",     icon: Briefcase },
+  { v: "stocks",        l: "Stocks",        href: "/stocks",         icon: TrendingUp },
+  { v: "opportunities", l: "Opportunities", href: "/opportunities",  icon: Activity },
+  { v: "watchlist",     l: "Watch",         href: "/watchlist",      icon: Star },
+  { v: "ipo",           l: "IPO",           href: "/ipo",            icon: Zap },
+  { v: "portfolio",     l: "Portfolio",     href: "/portfolio",      icon: Briefcase },
+  { v: "research",      l: "Research",      href: "/research",       icon: Settings2 },
 ];
 
 export default function AppNav({
