@@ -1,0 +1,28 @@
+dimension,field,source_table,source_column,populator_script,consumed_by,coverage_now,status,action_to_fix
+identity,nse_symbol,ipo_intelligence,nse_symbol,import_chittorgarh.py,everything,388/432,LIVE,none
+identity,listing_date,ipo_intelligence,listing_date,import_chittorgarh.py,builder+screens,407/432,LIVE,none
+listing_gain,issue_price,ipo_intelligence,issue_price,import_chittorgarh.py,gap signal,428/432,LIVE,none
+listing_gain,listing_open,ipo_intelligence,listing_open,fill_listing_open_from_candles.py,gap signal,416/432,LIVE,none
+listing_gain,gap_bucket,ipo_consolidated,gap_bucket,build_ipo_consolidated_v2.py,gap signal (CORE),416/432,LIVE,none
+listing_gain,issue_size_cr,ipo_intelligence,issue_size_cr,import_chittorgarh.py,radar filter,406/432,LIVE,none
+profitability,is_profitable,ipo_consolidated,is_profitable,import_screener_financials.py,radar+brain,432/432,LIVE,none
+profitability,pat_cr,ipo_consolidated,pat_cr,import_screener_financials.py,brain,385/432,LIVE,none
+profitability,roe,ipo_consolidated,roe,import_screener_financials.py,quality,258/432,LIVE,thin but real (14781 annual rows)
+profitability,roce,ipo_consolidated,roce,import_screener_financials.py,quality,248/432,LIVE,thin but real
+profitability,debt_equity,ipo_consolidated,debt_equity,import_screener_financials.py,quality,234/432,LIVE,thin but real
+valuation,ipo_pe,ipo_consolidated,ipo_pe,import_chittorgarh.py,valuation,401/432,LIVE,none
+valuation,ipo_pe_post,ipo_consolidated,ipo_pe_post,import_chittorgarh.py,valuation,239/432,LIVE,none
+valuation,peer_median_pe,ipo_intelligence,peer_median_pe,NONE,Hyundai/HDB edge,0/432,PARKED,"PARK (revisit): source = Chittorgarh RHP ""Basis for Issue Price"" peer-comparison table (peer names + P/E + RoNW). Cleaner than screener AJAX. Extend import_chittorgarh.py to parse it; fill-empty-only."
+valuation,valuation_premium,ipo_consolidated,valuation_premium,build_v2 (computed),Hyundai/HDB edge,0/432,BLOCKED,unblocks automatically once peer_median_pe (via Chittorgarh) lands; builder already computes it (guarded)
+valuation,peg_ratio,ipo_intelligence,peg_ratio,NONE,valuation,0/432,NOT_INGESTED,derive once peer/eps growth present
+anchor_quantity,anchor_total_cr,ipo_consolidated,anchor_total_cr,import_chittorgarh.py,anchor signal,310/432,LIVE,none
+anchor_quantity,anchor_lock30_date,ipo_consolidated,anchor_lock30_date,import_chittorgarh.py,lock-in window,311/432,LIVE,none
+anchor_quality,anchor_names,ipo_intelligence,anchor_names,import_chittorgarh.py (BROKEN),tier-1 classifier,10/432,BROKEN_SOURCE,chittorgarh anchor-name parse failing -> fix scraper or scrape NSE anchor circular
+anchor_quality,anchor_tier1_count,ipo_intelligence,anchor_tier1_count,NONE,Canara edge,0/432,NOT_WIRED,"classifier never built -> needs anchor_names first, then match vs tier-1 list"
+anchor_quality,anchor_quality,ipo_consolidated,anchor_quality,NONE (defaults Tier-2),Canara edge,319/432,BROKEN,derive from anchor_tier1_count once classifier runs
+regime,india_vix,ipo_consolidated,india_vix,market_regime.py,regime,pending,FIX_READY,surfaced from market_regimes on listing_date; run health-check to reveal count then flip LIVE
+regime,listing_pcr,(none),listing_pcr,NONE,regime,0/432,NOT_CAPTURED,no PCR source exists -> add daily NSE option-chain PCR fetch (forward)
+regime,listing_regime,ipo_consolidated,listing_regime,market_regime.py,regime,319/432,PARTIAL,NORMAL-heavy; tie to market_regimes join
+order_flow,obir_buy_sell_pct,ipo_tick_feed,obir,kite_ticker_ipo.py,OI signal,forward only,NO_HISTORY,kite live capture only; no backfill possible
+structural,order_book_change,(none),(none),NONE,ACME/Aether edge,0,NOT_STRUCTURED,news/concall ingestion OR stays manual overlay
+regime,vix_source,market_regimes,india_vix,market_regime.py,india_vix surfacing,26 days,PARTIAL,only 26 days captured -> backfill daily VIX/PCR/NIFTY (build #5); caps surfaced india_vix coverage

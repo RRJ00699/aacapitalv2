@@ -319,11 +319,13 @@ def main():
     # is_profitable: positive trailing PAT
     cur.execute("UPDATE ipo_consolidated SET is_profitable = (pat_cr IS NOT NULL AND pat_cr > 0)")
 
-    # valuation_premium: IPO P/E relative to peer median (NULL where peer data absent)
+    # valuation_premium: IPO P/E relative to peer median. GOLDEN RULE — only write rows
+    # where we can compute a real value; never blank an existing one to NULL.
     cur.execute("""
       UPDATE ipo_consolidated SET valuation_premium =
-        CASE WHEN ipo_pe IS NOT NULL AND peer_median_pe IS NOT NULL AND peer_median_pe > 0
-             THEN round((ipo_pe - peer_median_pe) / peer_median_pe * 100, 1) END
+        round((ipo_pe - peer_median_pe) / peer_median_pe * 100, 1)
+      WHERE ipo_pe IS NOT NULL AND peer_median_pe IS NOT NULL AND peer_median_pe > 0
+        AND valuation_premium IS NULL
     """)
 
     # regime_at_listing: market regime on the listing date. market_regimes column names
@@ -341,6 +343,22 @@ def main():
         """)
     else:
         print(f"  (regime: market_regimes missing date/regime cols {sorted(mr_cols)[:6]}… — skipped)")
+
+    # india_vix: surface from market_regimes on the listing date — SAME source/pattern
+    # as regime_at_listing above. The column-map (line ~210) reads i.india_vix, which is
+    # always NULL; market_regimes is the real per-day source. FROM-join only touches rows
+    # with a matching listing_date, so non-matching rows keep their build-time value.
+    vix_col = next((c for c in ("india_vix", "vix", "vix_close", "india_vix_close") if c in mr_cols), None)
+    if date_col and vix_col:
+        cur.execute(f"""
+          UPDATE ipo_consolidated c SET india_vix = r.{vix_col}
+          FROM market_regimes r
+          WHERE r.{date_col} = c.listing_date AND r.{vix_col} IS NOT NULL
+            AND c.india_vix IS NULL
+        """)  # GOLDEN RULE: fill empties only — never overwrite a populated cell
+        print(f"  (vix: surfaced india_vix from market_regimes.{vix_col} on listing_date)")
+    else:
+        print(f"  (vix: market_regimes has no vix col {sorted(mr_cols)[:8]}… — skipped)")
 
     # tp1_exit_note: static research note (the validated MID-gap exit window)
     cur.execute("""

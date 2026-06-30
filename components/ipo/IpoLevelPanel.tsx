@@ -86,18 +86,36 @@ export default function IpoLevelPanel({ symbol = "TURTLEMINT", pollMs = 30000 }:
     )
   }
 
-  const tone = verdictTone(latest.verdict)
-  const floor = num(latest.floor_price), ceil = num(latest.ceiling_price), poc = num(latest.poc_price)
+  // Carry forward the last ESTABLISHED structural level: today's if located, else the most
+  // recent prior session that has it. FLOOR/CEILING/POC/verdict show yesterday's read until
+  // today's forms, then auto-update. OHLC/VWAP/CLOSE always reflect today's live session.
+  const pick = (key: string): { val: any; date: string | null } => {
+    for (let i = series.length - 1; i >= 0; i--) {
+      const v = series[i]?.[key]
+      if (v != null) return { val: v, date: series[i].trade_date }
+    }
+    const lv = latest?.[key]
+    return lv != null ? { val: lv, date: latest.trade_date } : { val: null, date: null }
+  }
+  const today = latest?.trade_date
+  const asOf = (d: string | null) => (d && d !== today) ? `as of ${String(d).slice(5, 10)}` : undefined
+  const flP = pick("floor_price"), ceP = pick("ceiling_price"), pcP = pick("poc_price"), dfP = pick("floor_defenses"), verP = pick("verdict")
+  const floor = flP.val != null ? num(flP.val) : null
+  const ceil  = ceP.val != null ? num(ceP.val) : null
+  const poc   = pcP.val != null ? num(pcP.val) : null
+  const verdict = verP.val ?? null
+  const tone = verdictTone(verdict)
   const close = num(latest.day_close), gapPct = num(latest.gap_pct)
   const dOpen = num(latest.day_open), dHigh = num(latest.day_high), dLow = num(latest.day_low)
   const vwap = num(latest.session_vwap), cvv = num(latest.close_vs_vwap)
   let profile: Record<string, number> = {}
   try { profile = typeof latest.profile_json === "string" ? JSON.parse(latest.profile_json) : (latest.profile_json || {}) } catch { profile = {} }
 
-  const stat = (label: string, val: string, color = C.ink) => (
+  const stat = (label: string, val: string, color = C.ink, sub?: string) => (
     <div>
       <div style={{ fontSize: 10, color: C.meta, fontFamily: mono, letterSpacing: 1 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color }}>{val}</div>
+      {sub && <div style={{ fontSize: 9, color: C.amber, fontFamily: mono, marginTop: 1 }}>{sub}</div>}
     </div>
   )
 
@@ -109,15 +127,15 @@ export default function IpoLevelPanel({ symbol = "TURTLEMINT", pollMs = 30000 }:
           {latest.gap_bucket && <span style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: "#EEF1F4", borderRadius: 6, padding: "3px 8px", fontFamily: mono }}>
             {latest.gap_bucket} GAP{gapPct != null ? ` ${gapPct >= 0 ? "+" : ""}${gapPct.toFixed(1)}%` : ""}
           </span>}
-          <span style={{ fontSize: 11, fontWeight: 800, color: tone.fg, background: tone.bg, borderRadius: 6, padding: "4px 9px" }}>{latest.verdict}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: tone.fg, background: tone.bg, borderRadius: 6, padding: "4px 9px" }}>{verdict || "NO LEVEL YET"}{asOf(verP.date) ? ` · ${String(verP.date).slice(5, 10)}` : ""}</span>
         </div>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-        {stat("FLOOR", floor != null ? floor.toFixed(2) : "—", C.green)}
-        {stat("DEFENSES", latest.floor_defenses != null ? String(latest.floor_defenses) : "—")}
-        {stat("CEILING", ceil != null ? ceil.toFixed(2) : "—", C.red)}
-        {stat("POC", poc != null ? poc.toFixed(2) : "—", C.poc)}
+        {stat("FLOOR", floor != null ? floor.toFixed(2) : "—", C.green, asOf(flP.date))}
+        {stat("DEFENSES", dfP.val != null ? String(dfP.val) : "—", C.ink, asOf(dfP.date))}
+        {stat("CEILING", ceil != null ? ceil.toFixed(2) : "—", C.red, asOf(ceP.date))}
+        {stat("POC", poc != null ? poc.toFixed(2) : "—", C.poc, asOf(pcP.date))}
         {stat("CLOSE", close != null ? close.toFixed(2) : "—")}
       </div>
 

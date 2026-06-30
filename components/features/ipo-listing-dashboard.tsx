@@ -70,10 +70,10 @@ function Ring({v,size=44}:{v:number;size?:number}) {
 }
 
 // ── VALIDATED gap-bucket signal (research signal, not a buy call) ──────────────
-// gap = (listing_open − issue)/issue:
-//   LOW  <10%    flat/discount open — historically dead (~47% win). No edge at open.
-//   MID  10–30%  the playable zone — best history (+7% to T+20, 62% win).
-//   HIGH >30%    T+1 trap risk — strong opens tend to fade.
+// Backtest N=343, 2010–2026, scored as BUY-AT-OPEN + exit on strength (best close ≤10 sessions):
+//   LOW  <10%    steady — ~70% gave a green exit ≤10d (+4% median). No pop to chase.
+//   MID  10–30%  the playable zone — ~81% green exit ≤10d (+10% median), peaks ~session 18.
+//   HIGH >30%    pop-and-fade — ~61% green exit ≤10d (+3%) but peaks ~session 10 then fades.
 type Sig = {tier:string;label:string;detail:string;color:string;bg:string;bd:string}
 function signalFor(ipo:any): Sig {
   const issue=n(ipo.issue_price), open=n(ipo.listing_open)
@@ -84,9 +84,9 @@ function signalFor(ipo:any): Sig {
     return {tier:"PRE-LISTING",label:"Awaiting listing",detail:"No listing-day data yet — signal resolves at the open.",color:C.meta,bg:C.muted,bd:C.border}
   }
   const gap=(open-issue)/issue*100
-  if(gap<10)  return {tier:"LOW-GAP",label:"No edge at open",detail:`Opened ${gap>=0?"+":""}${gap.toFixed(1)}% — flat/discount opens are historically dead (~47% win). Capital-protection mode.`,color:C.amber,bg:C.amberBg,bd:C.amberBd}
-  if(gap<=30) return {tier:"MID-GAP",label:"Playable zone",detail:`Opened +${gap.toFixed(1)}% — best historical zone (+7% avg to T+20, 62% win). Manage to the floor.`,color:C.green,bg:C.greenBg,bd:C.greenBd}
-  return {tier:"HIGH-GAP",label:"T+1 trap risk",detail:`Opened +${gap.toFixed(1)}% — strong opens tend to fade; chasing the open has poor history.`,color:C.red,bg:C.redBg,bd:C.redBd}
+  if(gap<10)  return {tier:"LOW-GAP",label:"Steady · manage to floor",detail:`Opened ${gap>=0?"+":""}${gap.toFixed(1)}% — no pop to chase, but ~70% gave a green exit within 10 sessions (+4% median). Buy-at-open workable; manage to the floor.`,color:C.blue,bg:C.blueBg,bd:C.blueBd}
+  if(gap<=30) return {tier:"MID-GAP",label:"Playable · let it run",detail:`Opened +${gap.toFixed(1)}% — strongest zone: ~81% offered a green exit ≤10 sessions (+10% median), tends to peak ~session 18. Buy-at-open; let it run, manage to the floor.`,color:C.green,bg:C.greenBg,bd:C.greenBd}
+  return {tier:"HIGH-GAP",label:"Pop & fade · exit fast",detail:`Opened +${gap.toFixed(1)}% — strong open: ~61% gave a green exit but it peaks ~session 10 then fades. Capture the move early; don't hold for more.`,color:C.amber,bg:C.amberBg,bd:C.amberBd}
 }
 function SignalBadge({ipo}:{ipo:any}) {
   const s=signalFor(ipo)
