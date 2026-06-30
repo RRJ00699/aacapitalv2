@@ -1,26 +1,47 @@
-﻿$env:DATABASE_URL = "postgresql://neondb_owner:npg_CU4meJPwa8Gn@ep-small-river-apqw6vg6-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-Set-Location "C:\aacapital-v2"
+<#
+  run_ipo_pipeline.ps1  — AACapital IPO refresh chain (local, on-demand)
 
-# Check if new Chittorgarh export exists
-$csvPath = "data\chittorgarh\latest.csv"
-$xlsxPath = "data\chittorgarh\latest.xlsx"
+  Runs the full new-IPO pipeline in dependency order:
+     1. fetch_nse_ipos.py            (catch new IPOs from NSE feeds)
+     2. enrich_ipo_chittorgarh.py    (--auto --apply: fill issue_price/subscription/
+                                       anchors/KPIs/BRLMs for the bare rows just caught)
+     3. build_ipo_consolidated_v2.py (rebuild the one-stop wide table)
 
-if (Test-Path $xlsxPath) {
-    Write-Host "$(Get-Date) Starting Chittorgarh import (xlsx)..."
-    python _scripts\ipo\import_chittorgarh.py --file $xlsxPath
-    Rename-Item $xlsxPath "processed_$(Get-Date -Format 'yyyy-MM-dd').xlsx" -Force
-} elseif (Test-Path $csvPath) {
-    Write-Host "$(Get-Date) Starting Chittorgarh import (csv)..."
-    python _scripts\ipo\import_chittorgarh.py --file $csvPath
-    Rename-Item $csvPath "processed_$(Get-Date -Format 'yyyy-MM-dd').csv" -Force
-} else {
-    Write-Host "$(Get-Date) No new Chittorgarh export found â€” skipping import"
+  Stops on the first hard failure so you never rebuild on half-fetched data.
+  Run from the repo root:   .\_scripts\ipo\run_ipo_pipeline.ps1
+  Dry-run (no DB writes):   .\_scripts\ipo\run_ipo_pipeline.ps1 -DryRun
+#>
+param(
+    [switch]$DryRun  # preview: fetch --dry-run + enrich (no --apply); skips rebuild
+)
+
+$ErrorActionPreference = "Stop"
+$root = (Resolve-Path "$PSScriptRoot\..\..").Path   # repo root from _scripts\ipo\
+Set-Location $root
+
+function Step($n, $label, $cmd) {
+    Write-Host ""
+    Write-Host "===== [$n] $label =====" -ForegroundColor Cyan
+    Write-Host "  > $cmd" -ForegroundColor DarkGray
+    Invoke-Expression $cmd
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "FAILED at step $n ($label) — stopping (exit $LASTEXITCODE)." -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    Write-Host "  ok" -ForegroundColor Green
 }
 
-Write-Host "$(Get-Date) Running play selector..."
-python _scripts\ipo\ipo_play_selector.py --recent 30
+$t0 = Get-Date
+Write-Host "AACapital IPO pipeline  ($(if($DryRun){'DRY-RUN'}else{'LIVE'}))  $($t0.ToString('HH:mm:ss'))" -ForegroundColor Yellow
 
-Write-Host "$(Get-Date) Running BRLM scores..."
-python _scripts\ipo\compute_brlm_scores.py
-
-Write-Host "$(Get-Date) IPO pipeline complete."
+if ($DryRun) {
+    Step 1 "Fetch NSE IPOs (dry-run)"        "python _scripts\ipo\fetch_nse_ipos.py --dry-run"
+    Step 2 "Enrich from Chittorgarh (dry-run)" "python _scripts\ipo\enrich_ipo_chittorgarh.py --auto"
+    Write-Host "`nDRY-RUN complete — no DB writes, consolidated not rebuilt." -ForegroundColor Yellow
+}
+else {
+    Step 1 "Fetch NSE IPOs"                  "python _scripts\ipo\fetch_nse_ipos.py"
+    Step 2 "Enrich new IPOs from Chittorgarh" "python _scripts\ipo\enrich_ipo_chittorgarh.py --auto --apply"
+    Step 3 "Rebuild IPO consolidated"        "python _scripts\build_ipo_consolidated_v2.py"
+    Write-Host "`nPipeline complete in $([int]((Get-Date)-$t0).TotalSeconds)s." -ForegroundColor Green
+}

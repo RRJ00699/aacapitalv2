@@ -77,8 +77,16 @@ jobs:
         continue-on-error: true
         run: python _scripts/ipo/fetch_nse_ipos.py
 
+      - name: Enrich new IPOs from Chittorgarh (issue price / subscription / anchors / KPIs)
+        continue-on-error: true
+        run: python _scripts/ipo/enrich_ipo_chittorgarh.py --auto --apply
+
       - name: Market regime (market_regimes)
         run: python _scripts/engines/market_regime.py
+
+      - name: Rebuild IPO consolidated (one-stop wide table)
+        continue-on-error: true
+        run: python _scripts/build_ipo_consolidated_v2.py
 
       - name: Market snapshot + IPO predictions (market_snapshot)
         run: python _scripts/prod/kite_sync_and_predict.py --mode all
