@@ -3,14 +3,17 @@
 // HONEST IPO card — leads with the VALIDATED edge, not a disproven buy verdict.
 //
 // Validated edge (gap_bucket = (listing_open - issue)/issue):
-//   LOW  (<10%)   flat/discount open — historically dead (~47% win). No edge at open.
-//   MID  (10-30%) the playable zone   — best historical outcome (+7% avg to T+20, 62% win).
-//   HIGH (>30%)   T+1 trap risk        — strong opens tend to fade. Don't chase.
+//   LOW  (<10%)   steady — ~70% gave a green exit ≤10 sessions (+4% median). No pop to chase.
+//   MID  (10-30%) the playable zone — ~81% green exit ≤10d (+10% median), peaks ~session 18.
+//   HIGH (>30%)   pop-and-fade — ~61% green exit ≤10d but peaks ~session 10 then fades. Exit fast.
 // GMP is non-predictive → shown as muted context, never as a buy call.
 // LQI is a quality input, not a verdict → small chip, demoted.
 // "Research signal, not a buy call."
 
 import { useState } from "react";
+import { signalFor, BASE_RATES, bucketOf, type Tone, type Signal } from "@/lib/ipoSignal";
+export { signalFor };
+export type { Signal };
 
 const C = {
   green: "#15803D", greenBg: "#F0FDF4", greenBd: "#BBF7D0",
@@ -76,40 +79,11 @@ export interface IPORow {
   lqi_score: number | null;
 }
 
-type Tone = "green" | "amber" | "red" | "blue" | "gray";
-export interface Signal { tier: string; tone: Tone; headline: string; detail: string; }
-
 const num = (v: unknown): number | null => {
   const n = parseFloat(String(v));
   return Number.isFinite(n) ? n : null;
 };
-
-// ── the validated signal model (pure; reused by card, list, tiles) ──────────────
-export function signalFor(r: IPORow): Signal {
-  const listed = r.listing_open != null;
-  const gap = (r.gap_bucket ?? "").toUpperCase();
-
-  if (!listed) {
-    // Pre-listing: report demand, never a buy verdict.
-    const sub = num(r.total_subscription);
-    if (sub != null && sub >= 10)
-      return { tier: "PRE-LISTING", tone: "blue", headline: "Heavily subscribed",
-        detail: `Demand read: ${sub.toFixed(0)}x total. Demand ≠ listing edge — wait for the open.` };
-    return { tier: "PRE-LISTING", tone: "gray", headline: "Awaiting listing",
-      detail: "No listing-day data yet. Signal resolves at the open." };
-  }
-
-  if (gap === "MID")
-    return { tier: "MID-GAP", tone: "green", headline: "Playable zone",
-      detail: "Best historical zone: +7% avg to T+20, 62% win. Manage to the floor." };
-  if (gap === "HIGH")
-    return { tier: "HIGH-GAP", tone: "red", headline: "T+1 trap risk",
-      detail: "Strong opens tend to fade. Chasing the open has poor history here." };
-  if (gap === "LOW")
-    return { tier: "LOW-GAP", tone: "amber", headline: "No edge at open",
-      detail: "Flat/discount open — historically dead (~47% win). Capital-protection mode." };
-  return { tier: "LISTED", tone: "gray", headline: "Listed", detail: "Gap bucket unavailable." };
-}
+// ── signal model moved to lib/ipoSignal.ts (single source of truth) ──────────────
 
 const toneCss = (t: Tone) => ({
   green: { c: C.green, bg: C.greenBg, bd: C.greenBd },
@@ -194,6 +168,21 @@ export default function IpoSignalCard({ ipo, compact = false }: { ipo: IPORow; c
           <span className="text-xs font-semibold" style={{ color: t.c }}>{sig.headline}</span>
         </div>
         <p className="text-[11px] mt-1" style={{ color: C.text }}>{sig.detail}</p>
+        {sig.bucket && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {([
+              [`~${BASE_RATES[sig.bucket].winRate}%`, "green exit ≤10d"],
+              [`+${BASE_RATES[sig.bucket].median}%`, "median"],
+              [`exit ~s${BASE_RATES[sig.bucket].peakDay}`, "peak"],
+              [`${BASE_RATES[sig.bucket].tail}%`, "tail risk"],
+            ] as [string, string][]).map(([v, l]) => (
+              <span key={l} className="text-[10px] px-1.5 py-0.5 rounded tabular-nums"
+                style={{ background: "#fff", border: `1px solid ${t.bd}`, color: t.c }}>
+                <b>{v}</b> <span style={{ color: C.textSub }}>{l}</span>
+              </span>
+            ))}
+          </div>
+        )}
         {ipo.level_verdict && (
           <p className="text-[11px] mt-1 font-medium" style={{ color: t.c }}>
             Level: {ipo.level_verdict}

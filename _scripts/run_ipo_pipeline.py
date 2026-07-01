@@ -49,7 +49,11 @@ def main():
     if not preflight(): sys.exit(1)
 
     ok=True
-    # order matters: regime → candles → listing_open → consolidated → levels → health gate
+    # order matters: SCRAPE new IPOs/GMP → regime → candles → listing_open → consolidated → levels → gate
+    # scrape steps are non-hard (a source hiccup shouldn't kill the data refresh). Adjust script
+    # names to your scrapers; missing ones just warn and skip.
+    step("scrape IPO calendar + details", ["ipo/import_chittorgarh.py","--latest"])
+    step("refresh GMP",                   ["ipo/refresh_gmp.py"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("backfill candles (new IPOs)", ["ipo/backfill_ipo_ohlc.py"])
     ok&=step("derive listing_open",         ["fill_listing_open_from_candles.py"])
