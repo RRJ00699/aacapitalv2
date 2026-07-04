@@ -3,9 +3,13 @@
 // Shared top nav for the routed app. During migration, IPO is a real route (/ipo);
 // not-yet-migrated tabs link to /#<tab> and are restored by AACapitalApp's hash sync.
 // As each tab becomes a real route, flip its href from "/#x" to "/x".
+//
+// Admin tab: appended only when /api/admin/check says the signed-in user is an admin.
+// Non-admins never see it; the /dashboard/admin page also bounces them server-side.
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { TrendingUp, Zap, Home, Activity, Briefcase, Star, Settings2 } from "lucide-react";
+import { TrendingUp, Zap, Home, Activity, Briefcase, Star, Settings2, Wrench } from "lucide-react";
 import { StockSearch } from "@/components/features/stock-search";
 
 const TABS = [
@@ -27,6 +31,26 @@ export default function AppNav({
   onSearchSelect: (symbol: string) => void;
   refreshTime?: string;
 }) {
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/check", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (alive) setIsAdmin(!!j.admin); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const tabStyle = (active: boolean) => ({
+    display: "flex" as const, alignItems: "center" as const, gap: 5,
+    padding: "5px 11px", borderRadius: 7, border: "none",
+    background: active ? "#EFF6FF" : "transparent",
+    color: active ? "#2563EB" : "#6B7280",
+    fontFamily: "'IBM Plex Mono',monospace", fontSize: 11,
+    fontWeight: active ? 600 : 400, textDecoration: "none",
+    cursor: "pointer", transition: "all .12s", whiteSpace: "nowrap" as const,
+  });
+
   return (
     <div style={{ background: "#FFFFFF", borderBottom: "1px solid #F0EDE8", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -43,20 +67,16 @@ export default function AppNav({
       {TABS.map(({ v, l, href, icon: Icon }) => {
         const active = current === v;
         return (
-          <Link key={v} href={href} prefetch={false}
-            style={{
-              display: "flex", alignItems: "center", gap: 5,
-              padding: "5px 11px", borderRadius: 7, border: "none",
-              background: active ? "#EFF6FF" : "transparent",
-              color: active ? "#2563EB" : "#6B7280",
-              fontFamily: "'IBM Plex Mono',monospace", fontSize: 11,
-              fontWeight: active ? 600 : 400, textDecoration: "none",
-              cursor: "pointer", transition: "all .12s", whiteSpace: "nowrap",
-            }}>
+          <Link key={v} href={href} prefetch={false} style={tabStyle(active)}>
             <Icon size={13} />{l}
           </Link>
         );
       })}
+      {isAdmin && (
+        <Link href="/dashboard/admin" prefetch={false} style={tabStyle(current === "admin")}>
+          <Wrench size={13} />Admin
+        </Link>
+      )}
       {refreshTime && <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "#374151" }}>↻{refreshTime}</div>}
     </div>
   );
