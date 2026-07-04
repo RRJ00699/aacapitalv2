@@ -15,6 +15,7 @@ Logs to _scripts/logs/pipeline_YYYY-MM-DD.log.
 """
 import subprocess, sys, os, datetime, argparse
 HERE=os.path.dirname(os.path.abspath(__file__))
+REPO=os.path.dirname(HERE)
 LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
 LOG=os.path.join(LOGDIR,f"pipeline_{datetime.date.today()}.log")
 
@@ -43,9 +44,20 @@ def step(name, args, hard=False):
         return False
     log(f"   ✓ {name} done"); return True
 
+def self_update():
+    """Sync the repo to origin/main so the VM always runs the latest pushed code.
+    You push from your PC; the next scheduled run picks it up. No SSH needed."""
+    try:
+        subprocess.run(["git","fetch","--quiet","origin","main"], cwd=REPO, timeout=90)
+        subprocess.run(["git","reset","--hard","--quiet","origin/main"], cwd=REPO, timeout=90)
+        log("self-update: synced to origin/main")
+    except Exception as e:
+        log(f"self-update skipped ({e}) — running current code")
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--weekly",action="store_true"); a=ap.parse_args()
     log(f"=== IPO PIPELINE START {datetime.datetime.now():%Y-%m-%d %H:%M} ===")
+    self_update()
     if not preflight(): sys.exit(1)
 
     ok=True

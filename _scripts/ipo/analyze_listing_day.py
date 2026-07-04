@@ -227,7 +227,7 @@ def analyze(conn, symbol, d):
         note = "Circuit-locked tape — no two-sided market, no reliable floor. Treat as operator play; stand aside."
     elif floor_price is None:
         verdict = "NO LEVEL YET"
-        note = "Not enough volume structure to locate a floor. Keep watching."
+        note = "No firm volume floor from live ticks yet — the researched first-5-session band is your reference until volume builds."
     elif cur_price < floor_price:
         verdict = "FLOOR BROKEN"
         note = (f"Price {cur_price:.2f} is BELOW the volume floor {floor_price:.2f}. "
