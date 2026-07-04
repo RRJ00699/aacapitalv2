@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-parse_sbi_notes.py  (v2) — SBI IPO notes -> structured rows.
-v2 fixes: read ALL pages (peer table is on p.~8), anchor OFS/fresh to '(Rs cr)' (no share-count
-mis-parse), and add a table-scan fallback for peer P/S. Re-run --write-db to refresh (ON CONFLICT
-DO UPDATE), which now fills peer_ps that v1 missed.
+parse_sbi_notes.py  (v3) — SBI IPO notes -> structured rows.
+Robust cross-company peer-comparison parse: pulls subject + peer-MEDIAN P/E (and P/S
+where present) + peer names from the "Peer Comparison" matrix, and fills
+ipo_intelligence.peer_median_pe / peer_ps / peer_name fill-empty-only with value sanity.
 
   pip install pdfplumber rapidfuzz psycopg2-binary --break-system-packages
-  python _scripts\\parse_sbi_notes.py --dir data\\research_notes --debug
-  python _scripts\\parse_sbi_notes.py --dir data\\research_notes --write-db
+  python _scripts/parse_sbi_notes.py --dir data/research_notes --debug
+  python _scripts/parse_sbi_notes.py --dir data/research_notes --write-db
 """
 import argparse, os, re, sys, glob
 
@@ -36,7 +36,6 @@ def parse_pdf(path):
         "company": company, "source": source,
         "price_low":  num(g(r"Price Band[^0-9]*([\d.]+)\s*[–\-]")),
         "price_high": num(g(r"Price Band[^0-9]*[\d.]+\s*[–\-]\s*([\d.]+)")),
-        # anchor to (Rs cr) so we never grab a share count
         "fresh_cr":   num(g(r"Fresh Issue\s*\(Rs ?[Cc]r\)\s*([\d,.]+)")) or num(g(r"Fresh Issue\s*Rs\s*([\d,.]+)\s*Cr")),
         "ofs_cr":     num(g(r"Offer for [Ss]ale\s*\(Rs ?[Cc]r\)\s*([\d,.]+)")) or num(g(r"OFS\s*\(Rs ?[Cc]r\)\s*([\d,.]+)")),
         "issue_size_cr": num(g(r"Issue Size\s*\(Rs ?[Cc]r\)\s*([\d,.]+)")) or num(g(r"Issue Size\s*Rs\s*([\d,.]+)")),
@@ -45,7 +44,7 @@ def parse_pdf(path):
         "nii_pct":    num(g(r"(?:NII|Non-Institutional)[^0-9]*(\d+)\s*%")),
         "retail_pct": num(g(r"Retail[^0-9]*(\d+)\s*%")),
         "note_ps":    num(g(r"P/?S of ([\d.]+)\s*x")) or num(g(r"annualized P/?S of ([\d.]+)")),
-        "peer_name": None, "peer_ps": None,
+        "peer_name": None, "peer_ps": None, "note_pe": None, "peer_pe": None,
         "loss_making": bool(re.search(r"yet to achieve profitability|incurred loss|loss[- ]making", T, re.I)),
         "pdf_path": path,
     }
@@ -54,22 +53,46 @@ def parse_pdf(path):
     mb = re.search(r"(?:BRLMs|Lead managers)\s*(.+?)\s*Registrar", T, re.I | re.S)
     rec["brlms"] = re.sub(r"\s+", " ", mb.group(1)).strip()[:300] if mb else None
 
-    # peer P/S — 1) inline text  2) table scan for a row starting with P/S
-    mp = re.search(r"P/?S(?:ales)?\s*\(x\)\s*([\d.]+)\s+([\d.]+)", T)
-    if mp:
-        rec["note_ps"] = rec["note_ps"] or num(mp.group(1)); rec["peer_ps"] = num(mp.group(2))
+    # ---- peer comparison (cross-company matrix): [metric, SUBJECT, peer1, peer2, ...] ----
+    # Identify the RIGHT table by the subject company appearing in its header row, so the
+    # subject's own multi-YEAR ratio table can't be mistaken for peers. Peer median =
+    # median of the PEER columns (positive values only), robust to one loss-making peer.
+    def _peer_metric(rowvals):
+        vals = [num(c) for c in rowvals]; vals = [v for v in vals if v is not None]
+        if len(vals) < 2: return None, None
+        subject = vals[0]
+        peers = sorted(v for v in vals[1:] if v and v > 0)
+        if not peers: return subject, None
+        m = len(peers)//2
+        med = peers[m] if len(peers) % 2 else (peers[m-1] + peers[m]) / 2
+        return subject, round(med, 2)
+
+    subj_key = (company.split()[0].lower() if company else "")
+    for tbl in tables or []:
+        if not tbl or len(tbl) < 2: continue
+        header = [ (c or "").strip() for c in tbl[0] ]
+        if subj_key and subj_key not in " ".join(header).lower():
+            continue
+        rowmap = {}
+        for row in tbl:
+            cells = [ (c or "").strip() for c in row ]
+            if cells and cells[0]: rowmap[cells[0].lower()] = cells[1:]
+        pe_key = next((k for k in rowmap if re.match(r"^p\s*/?\s*e\b", k)), None)
+        if not pe_key: continue
+        subj_pe, peer_pe = _peer_metric(rowmap[pe_key])
+        if peer_pe is None: continue
+        rec["note_pe"] = subj_pe; rec["peer_pe"] = peer_pe
+        ps_key = next((k for k in rowmap if re.match(r"^p\s*/?\s*s\b", k) or "p/s" in k), None)
+        if ps_key:
+            subj_ps, peer_ps = _peer_metric(rowmap[ps_key])
+            rec["note_ps"] = rec["note_ps"] or subj_ps; rec["peer_ps"] = peer_ps
+        peers = [h for h in header[2:] if h and h not in ("-",)]
+        if peers: rec["peer_name"] = ", ".join(peers[:3])
+        break
     if rec["peer_ps"] is None:
-        for tbl in tables:
-            for row in tbl or []:
-                cells = [ (c or "").strip() for c in row ]
-                if cells and re.search(r"^P/?S(?:ales)?\b", cells[0], re.I):
-                    nums = [num(c) for c in cells[1:] if num(c) is not None]
-                    if len(nums) >= 2:
-                        rec["note_ps"] = rec["note_ps"] or nums[0]; rec["peer_ps"] = nums[-1]
-    # peer name (best-effort)
-    mpn = re.search(r"Peer Comparison.*?([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+){0,3}\s+(?:Ltd|Limited))", T, re.S)
-    if mpn and rec["peer_ps"] and company.split()[0].lower() not in mpn.group(1).lower():
-        rec["peer_name"] = mpn.group(1).strip()
+        mp = re.search(r"P/?S(?:ales)?\s*\(x\)\s*([\d.]+)\s+([\d.]+)", T)
+        if mp:
+            rec["note_ps"] = rec["note_ps"] or num(mp.group(1)); rec["peer_ps"] = num(mp.group(2))
     return rec
 
 def main():
@@ -88,12 +111,12 @@ def main():
             r = parse_pdf(f); rows.append(r)
             if a.debug:
                 import json; print(json.dumps(r, indent=2, default=str)); return
-        except Exception as e: print("  ✗", os.path.basename(f), str(e)[:70])
-    got_peer = sum(1 for r in rows if r.get("peer_ps"))
-    print(f"parsed {len(rows)} notes; peer_ps found on {got_peer}")
+        except Exception as e: print("  x", os.path.basename(f), str(e)[:70])
+    got_peer = sum(1 for r in rows if r.get("peer_pe"))
+    print(f"parsed {len(rows)} notes; peer_pe found on {got_peer}")
     for r in rows[:8]:
-        print(f"  {r['company'][:28]:28} PS={r.get('note_ps')} peerPS={r.get('peer_ps')} "
-              f"OFS={r.get('ofs_cr')} fresh={r.get('fresh_cr')} {r.get('rating')}")
+        print(f"  {r['company'][:28]:28} PE={r.get('note_pe')} peerPE={r.get('peer_pe')} "
+              f"peerPS={r.get('peer_ps')} {r.get('peer_name')}")
     if not a.write_db:
         print("\ndry-run — add --write-db to persist."); return
 
@@ -127,13 +150,16 @@ def main():
            parsed_at=now()""", r)
         written += 1
         if nse:
+            # value-sanity BEFORE commit: a real peer P/E is >0 and not an absurd artifact
+            pe_ok = r["peer_pe"] if (r["peer_pe"] and 0 < r["peer_pe"] <= 500) else None
             cur.execute("""UPDATE ipo_intelligence SET
                 sbi_rating=COALESCE(sbi_rating,%s), ofs_cr=COALESCE(ofs_cr,%s), fresh_cr=COALESCE(fresh_cr,%s),
-                peer_ps=COALESCE(peer_ps,%s), peer_name=COALESCE(peer_name,%s) WHERE nse_symbol=%s""",
-                (r["rating"], r["ofs_cr"], r["fresh_cr"], r["peer_ps"], r["peer_name"], nse))
+                peer_ps=COALESCE(peer_ps,%s), peer_name=COALESCE(peer_name,%s),
+                peer_median_pe=COALESCE(peer_median_pe,%s) WHERE nse_symbol=%s""",
+                (r["rating"], r["ofs_cr"], r["fresh_cr"], r["peer_ps"], r["peer_name"], pe_ok, nse))
             filled += cur.rowcount
     conn.commit()
-    print(f"✓ ipo_research_notes: {written} rows (peer_ps on {got_peer}) | ipo_intelligence fill-empty: {filled}")
+    print(f"ipo_research_notes: {written} rows | ipo_intelligence peer/sbi fill-empty: {filled}")
 
 if __name__ == "__main__":
     main()
