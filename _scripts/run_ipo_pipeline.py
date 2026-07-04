@@ -69,6 +69,8 @@ def main():
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("backfill candles (new IPOs)", ["ipo/backfill_ipo_ohlc.py"])
     ok&=step("derive listing_open",         ["fill_listing_open_from_candles.py"])
+    step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
+    step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     ok&=step("daily floor/ceiling levels",  ["ipo_daily_levels.py","--from-db","--write-db"])
     if a.weekly:
