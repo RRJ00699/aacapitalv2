@@ -77,6 +77,7 @@ def main():
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
     # health gate LAST — fails loud if anything regressed
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
+    step("value-sanity report",             ["check_value_sanity.py"])
 
     log(f"=== PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
     sys.exit(0 if ok and gate else 2)
