@@ -1,0 +1,56 @@
+diff --git a/_scripts/ipo/analyze_listing_day.py b/_scripts/ipo/analyze_listing_day.py
+index 215e069..a4c9117 100644
+--- a/_scripts/ipo/analyze_listing_day.py
++++ b/_scripts/ipo/analyze_listing_day.py
+@@ -227,7 +227,7 @@ def analyze(conn, symbol, d):
+         note = "Circuit-locked tape — no two-sided market, no reliable floor. Treat as operator play; stand aside."
+     elif floor_price is None:
+         verdict = "NO LEVEL YET"
+-        note = "Not enough volume structure to locate a floor. Keep watching."
++        note = "No firm volume floor from live ticks yet — the researched first-5-session band is your reference until volume builds."
+     elif cur_price < floor_price:
+         verdict = "FLOOR BROKEN"
+         note = (f"Price {cur_price:.2f} is BELOW the volume floor {floor_price:.2f}. "
+diff --git a/_scripts/ipo/refresh_gmp.py b/_scripts/ipo/refresh_gmp.py
+new file mode 100644
+index 0000000..a4a1c0a
+--- /dev/null
++++ b/_scripts/ipo/refresh_gmp.py
+@@ -0,0 +1,4 @@
++import os, sys, runpy
++here = os.path.dirname(os.path.abspath(__file__))
++sys.argv = ["scrape_investorgain_gmp.py", "--write-db"]
++runpy.run_path(os.path.join(here, "..", "scrape_investorgain_gmp.py"), run_name="__main__")
+diff --git a/_scripts/run_ipo_pipeline.py b/_scripts/run_ipo_pipeline.py
+index 78bb73f..2e71521 100644
+--- a/_scripts/run_ipo_pipeline.py
++++ b/_scripts/run_ipo_pipeline.py
+@@ -15,6 +15,7 @@ Logs to _scripts/logs/pipeline_YYYY-MM-DD.log.
+ """
+ import subprocess, sys, os, datetime, argparse
+ HERE=os.path.dirname(os.path.abspath(__file__))
++REPO=os.path.dirname(HERE)
+ LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
+ LOG=os.path.join(LOGDIR,f"pipeline_{datetime.date.today()}.log")
+ 
+@@ -43,9 +44,20 @@ def step(name, args, hard=False):
+         return False
+     log(f"   ✓ {name} done"); return True
+ 
++def self_update():
++    """Sync the repo to origin/main so the VM always runs the latest pushed code.
++    You push from your PC; the next scheduled run picks it up. No SSH needed."""
++    try:
++        subprocess.run(["git","fetch","--quiet","origin","main"], cwd=REPO, timeout=90)
++        subprocess.run(["git","reset","--hard","--quiet","origin/main"], cwd=REPO, timeout=90)
++        log("self-update: synced to origin/main")
++    except Exception as e:
++        log(f"self-update skipped ({e}) — running current code")
++
+ def main():
+     ap=argparse.ArgumentParser(); ap.add_argument("--weekly",action="store_true"); a=ap.parse_args()
+     log(f"=== IPO PIPELINE START {datetime.datetime.now():%Y-%m-%d %H:%M} ===")
++    self_update()
+     if not preflight(): sys.exit(1)
+ 
+     ok=True
