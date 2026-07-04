@@ -22,8 +22,9 @@ from kiteconnect import KiteConnect
 from dotenv import load_dotenv
 
 load_dotenv(".env.local")
+load_dotenv(".env")
 
-NEON_URL     = os.environ["NEON_DATABASE_URL"]
+NEON_URL     = os.environ.get("NEON_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
 
 # Access token: prefer env var, then fall back to .kite_token file

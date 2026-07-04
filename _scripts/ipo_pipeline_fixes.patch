@@ -1,0 +1,47 @@
+diff --git a/_scripts/engines/market_regime.py b/_scripts/engines/market_regime.py
+index 1055665..32ca5f3 100644
+--- a/_scripts/engines/market_regime.py
++++ b/_scripts/engines/market_regime.py
+@@ -22,8 +22,9 @@ from kiteconnect import KiteConnect
+ from dotenv import load_dotenv
+ 
+ load_dotenv(".env.local")
++load_dotenv(".env")
+ 
+-NEON_URL     = os.environ["NEON_DATABASE_URL"]
++NEON_URL     = os.environ.get("NEON_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+ KITE_API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+ 
+ # Access token: prefer env var, then fall back to .kite_token file
+diff --git a/_scripts/ipo/import_chittorgarh.py b/_scripts/ipo/import_chittorgarh.py
+index a5f77ff..6936d42 100644
+--- a/_scripts/ipo/import_chittorgarh.py
++++ b/_scripts/ipo/import_chittorgarh.py
+@@ -621,7 +621,8 @@ def upsert_row(cur, row: pd.Series, derived: dict, play: dict):
+ 
+ def main():
+     p = argparse.ArgumentParser()
+-    p.add_argument("--file",  required=True, help="Chittorgarh Pro CSV or Excel file")
++    p.add_argument("--file",  default=None,  help="Chittorgarh Pro CSV or Excel file")
++    p.add_argument("--latest", action="store_true", help="auto-pick newest data/chittorgarh_* file; skip cleanly if none")
+     p.add_argument("--sheet", default=None,  help="Sheet name for Excel (default: first sheet)")
+     p.add_argument("--limit", type=int,      help="Process only first N rows")
+     p.add_argument("--dry-run", action="store_true")
+@@ -630,6 +631,17 @@ def main():
+     if not DATABASE_URL:
+         log.error("DATABASE_URL not set"); sys.exit(1)
+ 
++    # Resolve --latest: newest chittorgarh_* in data/, else skip cleanly (pipeline stays green)
++    if args.latest and not args.file:
++        import glob
++        cands = sorted(glob.glob("data/chittorgarh_*.xlsx") + glob.glob("data/chittorgarh_*.csv"),
++                       key=lambda p: os.path.getmtime(p), reverse=True)
++        if not cands:
++            log.info("--latest: no data/chittorgarh_* file found — nothing to import, skipping."); sys.exit(0)
++        args.file = cands[0]; log.info(f"--latest -> {args.file}")
++    if not args.file:
++        log.info("no --file and no --latest match — skipping Chittorgarh import."); sys.exit(0)
++
+     # Load file
+     fpath = args.file
+     log.info(f"Loading {fpath}")

@@ -621,7 +621,8 @@ def upsert_row(cur, row: pd.Series, derived: dict, play: dict):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--file",  required=True, help="Chittorgarh Pro CSV or Excel file")
+    p.add_argument("--file",  default=None,  help="Chittorgarh Pro CSV or Excel file")
+    p.add_argument("--latest", action="store_true", help="auto-pick newest data/chittorgarh_* file; skip cleanly if none")
     p.add_argument("--sheet", default=None,  help="Sheet name for Excel (default: first sheet)")
     p.add_argument("--limit", type=int,      help="Process only first N rows")
     p.add_argument("--dry-run", action="store_true")
@@ -629,6 +630,17 @@ def main():
 
     if not DATABASE_URL:
         log.error("DATABASE_URL not set"); sys.exit(1)
+
+    # Resolve --latest: newest chittorgarh_* in data/, else skip cleanly (pipeline stays green)
+    if args.latest and not args.file:
+        import glob
+        cands = sorted(glob.glob("data/chittorgarh_*.xlsx") + glob.glob("data/chittorgarh_*.csv"),
+                       key=lambda p: os.path.getmtime(p), reverse=True)
+        if not cands:
+            log.info("--latest: no data/chittorgarh_* file found — nothing to import, skipping."); sys.exit(0)
+        args.file = cands[0]; log.info(f"--latest -> {args.file}")
+    if not args.file:
+        log.info("no --file and no --latest match — skipping Chittorgarh import."); sys.exit(0)
 
     # Load file
     fpath = args.file
