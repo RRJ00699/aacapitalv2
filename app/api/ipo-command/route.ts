@@ -31,6 +31,12 @@ export async function GET() {
          OR ipo_open_date >= CURRENT_DATE
       ORDER BY COALESCE(listing_date, ipo_open_date)`;
 
+    // latest floor/ceiling per symbol (ipo_daily_levels) for card-level risk lines
+    const dl = await sql`
+      SELECT DISTINCT ON (symbol) UPPER(symbol) AS sym, floor, ceiling, close,
+             cushion, broke_floor, broke_ceiling, t
+      FROM ipo_daily_levels ORDER BY symbol, date DESC`;
+
     // live symbols = listing today OR ticks in the last 3h
     const liveSyms = await sql`
       SELECT DISTINCT symbol FROM ipo_tick_feed
@@ -109,7 +115,7 @@ export async function GET() {
         WHERE brlm_names IS NOT NULL AND listing_gap_pct IS NOT NULL
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`;
 
-    return NextResponse.json({ cards, live, levels, blocks, post, brlm,
+    return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl,
       generated_at: new Date().toISOString() });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -79,7 +79,7 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
 }
 
 export default function IpoCommand() {
-  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[]}|null>(null);
+  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
   const loadData = useCallback(() => {
@@ -216,6 +216,15 @@ export default function IpoCommand() {
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}
               <span style={{fontSize:12,color:C.dim}}>demand ≠ edge — QIB level tested non-predictive</span></div>}
+            {(()=>{const L=(d?.dl||[]).find(x=>x.sym===c.sym); if(!L||L.floor==null) return null;
+              const bf=!!L.broke_floor, bc=!!L.broke_ceiling;
+              return <div style={{fontSize:12,marginTop:7,color:C.sub}}>
+                <b style={{color:C.text}}>Level:</b>{" "}
+                <span style={{color:bf?C.red:C.sub}}>floor ₹{Number(L.floor).toFixed(2)}{bf?" ⚠ broken":""}</span>
+                {" · "}<span style={{color:bc?C.green:C.sub}}>ceiling ₹{Number(L.ceiling).toFixed(2)}{bc?" ↑ broken":""}</span>
+                {L.cushion!=null&&<>{" · "}cushion {Number(L.cushion).toFixed(1)}%</>}
+                {L.t!=null&&<span style={{color:C.dim}}>{" · "}session {String(L.t)} · bands freeze after 5 · respected 78%/75% hist.</span>}
+              </div>;})()}
           </div>))}
       </>}
 
