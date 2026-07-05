@@ -66,6 +66,8 @@ def main():
     # names to your scrapers; missing ones just warn and skip.
     # no --year: scrape_chittorgarh.py defaults to the CURRENT year (never goes stale)
     step("scrape IPO calendar + details", ["scrape_chittorgarh.py","--write-db"])
+    # anchor/subscription depth (non-hard: token/CF hiccup shouldn't kill the run)
+    step("anchor + subscription enrich",  ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
     step("refresh GMP",                   ["ipo/refresh_gmp.py"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("backfill candles (new IPOs)", ["ipo/backfill_ipo_ohlc.py"])
