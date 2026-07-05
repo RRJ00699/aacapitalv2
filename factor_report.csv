@@ -1,0 +1,31 @@
+factor,bucket,n,win_pct,median_pct
+F1 issue size (pt1),500-2000,213,71.8,6.0
+F1 issue size (pt1),>2000cr,77,81.8,9.2
+F1 issue size (pt1),150-500,73,58.9,1.5
+F2 OFS share (pt2),PURE-OFS(>90),181,68.0,5.5
+F2 OFS share (pt2),MIXED,50,70.0,6.7
+F2 OFS share (pt2),FRESH(<10%ofs),18,72.2,4.5
+F2 OFS share (pt2),OFS-HEAVY(60-90),14,71.4,6.0
+F3 peer-PE discount (pt3),CHEAP(<0.6x),30,76.7,7.6
+F3 peer-PE discount (pt3),DISC(0.6-1x),26,65.4,8.2
+F3 peer-PE discount (pt3),PREMIUM(1-1.5x),19,78.9,4.6
+F3 peer-PE discount (pt3),RICH(>1.5x),17,82.4,7.5
+F5a absolute PE (pt5),PE30-60,136,66.2,3.4
+F5a absolute PE (pt5),PE15-30,93,72.0,6.8
+F5a absolute PE (pt5),PE>60,38,78.9,8.2
+F5a absolute PE (pt5),PE<15,18,83.3,13.0
+F5b ROE (pt5, expect null),ROE>25,66,63.6,5.0
+F5b ROE (pt5, expect null),ROE15-25,57,80.7,7.9
+F5b ROE (pt5, expect null),ROE8-15,32,62.5,5.0
+F5b ROE (pt5, expect null),ROE<8,20,70.0,11.2
+F6a GMP level (pt6),GMP15-35,108,72.2,7.8
+F6a GMP level (pt6),GMP>35%,105,70.5,4.3
+F6a GMP level (pt6),GMP5-15,18,61.1,3.7
+F6b GMP trajectory (pt6),FLAT,14,57.1,6.8
+F7a final QIB (pt4/sub),QIB>25x,160,70.0,6.9
+F7a final QIB (pt4/sub),QIB1-5,114,71.9,5.5
+F7a final QIB (pt4/sub),QIB5-25,75,76.0,7.0
+F8b anchor tier-1 (pt4),T1=0,242,71.1,5.5
+REF gap bucket (baseline),LOW,212,70.8,5.2
+REF gap bucket (baseline),HIGH,89,64.0,5.4
+REF gap bucket (baseline),MID,69,84.1,9.4

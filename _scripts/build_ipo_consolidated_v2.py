@@ -226,6 +226,7 @@ MAP = [
   ("ipo_score",               "i.ipo_score"),
   ("score_band",              "i.score_band"),
   ("score_evidence",          "i.score_evidence"),
+  ("d10_best_pct",            "i.d10_best_pct"),
   ("raw_score",               "i.raw_score"),
   ("lqi_base",                "i.lqi_base"),
   ("lqi_final",               "i.lqi_final"),

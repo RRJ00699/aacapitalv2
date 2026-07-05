@@ -79,6 +79,8 @@ def main():
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
+    step("d10 outcome precompute",        ["compute_d10.py"])
+    step("d10 outcome precompute",        ["compute_d10.py"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     ok&=step("daily floor/ceiling levels",  ["ipo_daily_levels.py","--from-db","--write-db"])
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
