@@ -34,8 +34,12 @@ const D = (v: unknown) => String(v ?? "").slice(0, 10);
 
 function Chip({ b }: { b?: string | null }) {
   const s = BAND[b || ""] || BAND.NEUTRAL;
-  return <span style={{color:s.c,background:s.bg,border:`1px solid ${s.bd}`,borderRadius:8,
-    padding:"2px 9px",fontSize:11,fontWeight:700}}>{b || "UNSCORED"}</span>;
+  const TIP: Record<string,string> = { STRONG:"9 of 10 like this made money (15-yr history)",
+    FAVORABLE:"7.6 of 10 like this made money", NEUTRAL:"about average — 7 of 10 made money",
+    AVOID:"a coin flip historically — we skip these" };
+  return <span title={TIP[b || ""] || "not enough data to grade yet"}
+    style={{color:s.c,background:s.bg,border:`1px solid ${s.bd}`,borderRadius:8,
+    padding:"2px 9px",fontSize:11,fontWeight:700,cursor:"help"}}>{b || "UNSCORED"}</span>;
 }
 function State({ s }: { s?: string | null }) {
   const m: Record<string,[string,string,string]> = {
@@ -107,16 +111,27 @@ export default function IpoCommand() {
           borderRadius:10,padding:"6px 13px",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>↻ Refresh</button>
       </div>
 
-      {/* engine strip — validated score v0 */}
-      <div style={{...card,marginTop:12,display:"flex",gap:22,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{maxWidth:290}}><div style={{fontWeight:800,fontSize:13}}>SCORE v0 · buy open → best close ≤10 sessions</div>
-          <div style={{fontSize:12,color:C.meta}}>n=370 (2010–26) · validated 2026-07-05 · monotonic</div></div>
-        {[["Strong","89.5%","+9.4% · n=38",C.green],["Favorable","76.0%","+8.7% · n=96",C.blue],
-          ["Baseline","72%","+5.9% · n=370",C.text],["Avoid","51.2%","+0.8% · n=84",C.red]].map((s,i)=>(
-          <div key={i}><div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase"}}>{s[0]}</div>
-            <div style={{...num,fontSize:19,fontWeight:800,color:s[3] as string}}>{s[1]}</div>
-            <div style={{...num,fontSize:12,color:C.meta}}>{s[2]}</div></div>))}
-        <a href="/dashboard/research" style={{marginLeft:"auto",fontSize:12.5,color:C.blue,fontWeight:600}}>Full evidence →</a>
+      {/* engine strip — plain-English grades, rigor one line below */}
+      <div style={{...card,marginTop:12}}>
+        <div style={{display:"flex",gap:22,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{maxWidth:300}}>
+            <div style={{fontWeight:800,fontSize:14}}>Every IPO gets a grade before it lists</div>
+            <div style={{fontSize:12,color:C.meta}}>based on how 370 IPOs behaved over the last 15 years</div>
+          </div>
+          {[["STRONG grade","9 of 10 worked","typical gain +9.4%",C.green],
+            ["FAVORABLE","7.6 of 10 worked","typical +8.7%",C.blue],
+            ["average IPO","7.2 of 10 worked","typical +5.9%",C.text],
+            ["AVOID grade","a coin flip","typical +0.8% — skip these",C.red]].map((s,i)=>(
+            <div key={i} title="worked = made money buying at the listing open and selling at the best close within 10 trading days">
+              <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.4}}>{s[0]}</div>
+              <div style={{fontSize:17,fontWeight:800,color:s[3] as string}}>{s[1]}</div>
+              <div style={{fontSize:12,color:C.meta}}>{s[2]}</div></div>))}
+          <a href="/dashboard/research" style={{marginLeft:"auto",fontSize:12.5,color:C.blue,fontWeight:600}}>Full evidence →</a>
+        </div>
+        <div style={{fontSize:11.5,color:C.dim,marginTop:8}}>
+          “Worked” = made money buying at the listing open and selling at the best close within 10 trading days.
+          Grades: STRONG 89.5% (n=38) · FAVORABLE 76.0% (n=96) · baseline 72% (n=370) · AVOID 51.2% (n=84) · validated 2026-07-05.
+        </div>
       </div>
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>
