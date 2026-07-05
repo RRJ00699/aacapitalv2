@@ -1,21 +1,9 @@
 #!/usr/bin/env python3
-"""
-fetch_insider_trades.py — EXPERIMENTAL: NSE insider/promoter disclosures (SAST/PIT)
-for IPO-universe symbols -> insider_transactions.
-
-Fills the promoter-transaction gap in the institutional-analysis layer. Uses the
-SAME NSE session pattern as fetch_institutional_deals.py (cookie prime + browser
-headers), which is proven to work from the VM. Only rows whose symbol exists in
-ipo_intelligence are stored (keeps the table IPO-relevant, not market-wide).
-
-Idempotent via a dedup_key (md5 of the row's identifying fields) with a UNIQUE
-index. Non-hard pipeline step: a feed change warns, never kills the nightly.
-If a run parses 0 rows on a trading day it prints one RAW record so a field
-rename is visible immediately, not silently.
-
-  venv/bin/python _scripts/fetch_insider_trades.py            # last 7 days
-  venv/bin/python _scripts/fetch_insider_trades.py --days 60  # wider window
-"""
+"""fetch_insider_trades.py — EXPERIMENTAL: NSE insider/promoter (PIT) disclosures
+for the IPO universe -> insider_transactions. Same cookie-prime session pattern as
+fetch_institutional_deals.py (proven from this VM). Dedup-keyed; prints a RAW
+record if fields drift so nothing fails silently.
+  venv/bin/python _scripts/fetch_insider_trades.py [--days 60]"""
 import os, sys, time, argparse, hashlib, datetime as dt
 try:
     import requests, psycopg2
@@ -36,7 +24,7 @@ HEADERS = {
 
 def get_session():
     s = requests.Session(); s.headers.update(HEADERS)
-    s.get("https://www.nseindia.com", timeout=20)          # prime cookies
+    s.get("https://www.nseindia.com", timeout=20)
     time.sleep(1)
     return s
 
@@ -74,12 +62,11 @@ def main():
 
     to_d = dt.date.today(); from_d = to_d - dt.timedelta(days=a.days)
     s = get_session()
-    fmt = "%d-%m-%Y"
     r = s.get(API, params={"index": "equities",
-                           "from_date": from_d.strftime(fmt),
-                           "to_date": to_d.strftime(fmt)}, timeout=30)
+                           "from_date": from_d.strftime("%d-%m-%Y"),
+                           "to_date": to_d.strftime("%d-%m-%Y")}, timeout=30)
     if r.status_code != 200:
-        sys.exit(f"NSE PIT HTTP {r.status_code} — feed blocked/moved (experimental step, non-fatal)")
+        sys.exit(f"NSE PIT HTTP {r.status_code} — feed blocked/moved (experimental, non-fatal)")
     data = r.json().get("data") or []
     print(f"NSE PIT rows returned: {len(data)}")
     if not data:
@@ -96,15 +83,14 @@ def main():
             "person": (d.get("acqName") or d.get("personName") or "").strip(),
             "person_category": (d.get("personCategory") or "").strip(),
             "security_type": (d.get("secType") or "").strip(),
-            "action": (d.get("acqMode") and (d.get("tdpTransactionType") or d.get("acquisitionDisposal") or "")).strip()
-                      if False else (d.get("tdpTransactionType") or d.get("acquisitionDisposal") or "").strip(),
+            "action": (d.get("tdpTransactionType") or d.get("acquisitionDisposal") or "").strip(),
             "quantity": num(d.get("secAcq") or d.get("noOfSecurities")),
             "value_cr": (num(d.get("secVal")) or 0) / 1e7 or None,
             "txn_date": parse_date(d.get("date") or d.get("intimDate") or d.get("acqfromDt")),
             "mode": (d.get("acqMode") or "").strip(),
         }
         if not row["person"] and not shown_raw:
-            print("RAW record (field-name drift check):", {k: d.get(k) for k in list(d)[:12]})
+            print("RAW record (field-drift check):", {k: d.get(k) for k in list(d)[:12]})
             shown_raw = True
         key = hashlib.md5("|".join(str(row[k]) for k in
               ("symbol", "person", "action", "quantity", "txn_date", "mode")).encode()).hexdigest()

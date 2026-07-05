@@ -1,20 +1,9 @@
 #!/usr/bin/env python3
-"""
-match_anchor_deals.py — the anchor-conviction signal: joins NSE bulk/block deals
-(institutional_large_deals) against each IPO's anchor investor names, inside the
-listing -> lock-in+45d window, and flags what anchors are actually DOING.
-
-Per matched deal: ANCHOR SELL below issue price = distributing at a loss (bearish
-tell); no anchor sells while price sits under issue = holding with conviction
-(your bullish tell). Writes anchor_deal_signals (derived table -> DO UPDATE ok).
-
-Matching: rapidfuzz partial_ratio >= 86 between deal client_name and each anchor
-name (handles 'SBI MUTUAL FUND' vs 'SBI Mutual Fund A/C ...'). anchor_names may
-be a JSON array or comma-joined text — both handled.
-
-  venv/bin/python _scripts/match_anchor_deals.py            # report
-  venv/bin/python _scripts/match_anchor_deals.py --apply    # write signals table
-"""
+"""match_anchor_deals.py — anchor-conviction signal: joins NSE bulk/block deals
+(institutional_large_deals) against each IPO's anchor names in the listing->+75d
+window. ANCHOR SELL below issue = distributing at a loss; silence under issue =
+holding with conviction. Writes anchor_deal_signals (derived -> DO UPDATE ok).
+  venv/bin/python _scripts/match_anchor_deals.py [--apply]"""
 import os, sys, json, argparse
 DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 THRESH = 86
@@ -77,7 +66,7 @@ def main():
             tag = "DISTRIBUTING-AT-LOSS" if (side == "SELL" and below) else \
                   ("PROFIT-TAKING" if side == "SELL" else "ADDING")
             print(f"  {sym:12} {ddate} {side:4} {qty:>10} @ {px}  "
-                  f"{client[:28]:28} ~ {best_a[:24]} ({best})  [{tag}]")
+                  f"{(client or '')[:28]:28} ~ {best_a[:24]} ({best})  [{tag}]")
             if a.apply:
                 cur.execute("""INSERT INTO anchor_deal_signals
                                (symbol, company_name, deal_date, client_name, matched_anchor,
