@@ -15,21 +15,21 @@ export async function GET() {
   if (gate) return gate;
   try {
     const cards = await sql`
-      SELECT company_name, listing_date, open_date, close_date, issue_size_cr,
+      SELECT company_name, listing_date, ipo_open_date AS open_date, ipo_close_date AS close_date, issue_size_cr,
              issue_price, ipo_score, score_band, score_evidence, gap_bucket,
              listing_gap_pct, final_qib, final_nii, final_retail, final_total,
              brlm_names,
              UPPER(REGEXP_REPLACE(COALESCE(symbol_final, nse_symbol, symbol, ''), '\\.NS$','')) AS sym,
              CASE
-               WHEN open_date <= CURRENT_DATE AND close_date >= CURRENT_DATE THEN 'OPEN'
+               WHEN ipo_open_date <= CURRENT_DATE AND ipo_close_date >= CURRENT_DATE THEN 'OPEN'
                WHEN listing_date = CURRENT_DATE THEN 'LISTING'
                WHEN listing_date > CURRENT_DATE THEN 'UPCOMING'
                WHEN listing_date >= CURRENT_DATE - 30 THEN 'INWINDOW'
              END AS state
       FROM ipo_consolidated
-      WHERE listing_date >= CURRENT_DATE - 30 OR close_date >= CURRENT_DATE
-         OR open_date >= CURRENT_DATE
-      ORDER BY COALESCE(listing_date, open_date)`;
+      WHERE listing_date >= CURRENT_DATE - 30 OR ipo_close_date >= CURRENT_DATE
+         OR ipo_open_date >= CURRENT_DATE
+      ORDER BY COALESCE(listing_date, ipo_open_date)`;
 
     // live symbols = listing today OR ticks in the last 3h
     const liveSyms = await sql`
