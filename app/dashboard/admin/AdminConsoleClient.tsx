@@ -134,7 +134,13 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
     <div style={{ padding: "20px 24px", background: C.bg, minHeight: "100vh" }}>
       {/* header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+          <a href="/dashboard/ipo" style={{
+            fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
+            background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px",
+          }}>← IPO Command Center</a>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
+        </div>
         <button onClick={load} style={{
           fontSize: 12, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`,
           borderRadius: 8, padding: "6px 12px", cursor: "pointer",
