@@ -65,7 +65,7 @@ def f_qibback(r):
 def f_anchcnt(r): return buck(r.get("anchor_count"), [10, 30], ["ANCH<10", "ANCH10-30", "ANCH>30"])
 def f_ancht1(r):  return buck(r.get("anchor_tier1_count"), [1, 4], ["T1=0", "T1 1-3", "T1>=4"])
 def f_regime(r):
-    v = (r.get("regime") or r.get("active_regime") or "").strip().upper()
+    v = (r.get("regime_at_listing") or r.get("regime") or "").strip().upper()
     return v or None
 def f_bucket(r):
     v = (r.get("gap_bucket") or "").strip().upper()
@@ -83,7 +83,7 @@ FACTORS = [
     ("F7b QIB backloaded",         ["qib_backloaded"],                f_qibback),
     ("F8a anchor count (pt4)",     ["anchor_count"],                  f_anchcnt),
     ("F8b anchor tier-1 (pt4)",    ["anchor_tier1_count"],            f_ancht1),
-    ("F10a regime (pt10)",         ["regime","gap_bucket"],                                f_regime),
+    ("F10a regime (pt10)",         ["regime_at_listing","gap_bucket"],                                f_regime),
     ("REF gap bucket (baseline)",  ["gap_bucket"],                    f_bucket),
 ]
 
