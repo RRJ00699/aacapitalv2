@@ -83,7 +83,7 @@ FACTORS = [
     ("F7b QIB backloaded",         ["qib_backloaded"],                f_qibback),
     ("F8a anchor count (pt4)",     ["anchor_count"],                  f_anchcnt),
     ("F8b anchor tier-1 (pt4)",    ["anchor_tier1_count"],            f_ancht1),
-    ("F10a regime (pt10)",         [],                                f_regime),
+    ("F10a regime (pt10)",         ["regime","gap_bucket"],                                f_regime),
     ("REF gap bucket (baseline)",  ["gap_bucket"],                    f_bucket),
 ]
 
