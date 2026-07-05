@@ -76,6 +76,9 @@ def main():
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     ok&=step("daily floor/ceiling levels",  ["ipo_daily_levels.py","--from-db","--write-db"])
+    step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
+    step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
+    step("backup critical tables",           ["backup_critical_tables.py"])
     if a.weekly:
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
     # health gate LAST — fails loud if anything regressed
@@ -83,6 +86,14 @@ def main():
     step("value-sanity report",             ["check_value_sanity.py"])
 
     log(f"=== PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
+    if ok and gate:
+        url = os.environ.get("HEALTHCHECK_URL", "").strip()
+        if url:
+            try:
+                import urllib.request; urllib.request.urlopen(url, timeout=15)
+                log("dead-man switch pinged")
+            except Exception as e:
+                log(f"healthcheck ping failed ({e}) — healthchecks.io will alert (as designed)")
     sys.exit(0 if ok and gate else 2)
 
 if __name__=="__main__": main()
