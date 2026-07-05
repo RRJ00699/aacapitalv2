@@ -69,7 +69,7 @@ def load(cur):
     cols = {r[0] for r in cur.fetchall()}
     sym = "symbol_final" if "symbol_final" in cols else "nse_symbol"
     open_col = next((c for c in ("listing_open", "listing_open_price") if c in cols), None)
-    sel = [sym, "listing_date", "gap_bucket", "issue_size_cr", "ipo_pe",
+    sel = [sym, "company_name", "listing_date", "gap_bucket", "issue_size_cr", "ipo_pe",
            "peer_median_pe", "anchor_count"] + ([open_col] if open_col else [])
     sel = [c for c in sel if c in cols]
     cur.execute(f"SELECT {', '.join(sel)} FROM ipo_consolidated WHERE listing_date IS NOT NULL")
@@ -144,6 +144,10 @@ def main():
                        WHERE UPPER(COALESCE(NULLIF(nse_symbol,''), symbol)) = %s""",
                     (s, band_of(s), ev, (r.get(sym) or "").upper().replace(".NS", "")))
         upd += cur.rowcount
+        if cur.rowcount == 0 and r.get("company_name"):
+            cur.execute("""UPDATE ipo_intelligence SET ipo_score=%s, score_band=%s, score_evidence=%s
+                           WHERE company_name = %s""", (s, band_of(s), ev, r["company_name"]))
+            upd += cur.rowcount
     conn.commit(); conn.close()
     print(f"APPLIED: ipo_score/score_band/score_evidence written on {upd} rows (derived, DO UPDATE).")
 
