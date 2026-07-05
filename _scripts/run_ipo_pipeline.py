@@ -64,7 +64,8 @@ def main():
     # order matters: SCRAPE new IPOs/GMP → regime → candles → listing_open → consolidated → levels → gate
     # scrape steps are non-hard (a source hiccup shouldn't kill the data refresh). Adjust script
     # names to your scrapers; missing ones just warn and skip.
-    step("scrape IPO calendar + details", ["scrape_chittorgarh.py","--year","2026","--write-db"])
+    # no --year: scrape_chittorgarh.py defaults to the CURRENT year (never goes stale)
+    step("scrape IPO calendar + details", ["scrape_chittorgarh.py","--write-db"])
     step("refresh GMP",                   ["ipo/refresh_gmp.py"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("backfill candles (new IPOs)", ["ipo/backfill_ipo_ohlc.py"])
@@ -77,7 +78,6 @@ def main():
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
     # health gate LAST — fails loud if anything regressed
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
-    step("value-sanity report",             ["check_value_sanity.py"])
     step("value-sanity report",             ["check_value_sanity.py"])
 
     log(f"=== PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
