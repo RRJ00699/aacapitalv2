@@ -24,7 +24,7 @@ HEADERS = {
 
 def get_session():
     s = requests.Session(); s.headers.update(HEADERS)
-    s.get("https://www.nseindia.com", timeout=20)
+    s.get("https://www.nseindia.com", timeout=20); time.sleep(1); s.get(HEADERS["Referer"], timeout=20)
     time.sleep(1)
     return s
 
