@@ -50,7 +50,7 @@ def main():
             import psycopg2
             conn = psycopg2.connect(DB, connect_timeout=15); cur = conn.cursor()
             ltd = last_trading_day(today)
-            cur.execute("SELECT MAX(date) FROM market_regimes")
+            cur.execute("SELECT MAX(evaluation_date) FROM market_regimes")
             mr = cur.fetchone()[0]
             check("market_regimes fresh", mr is not None and mr >= ltd - datetime.timedelta(days=2),
                   f"max={mr} (last trading day {ltd})")

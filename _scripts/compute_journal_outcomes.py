@@ -1,27 +1,18 @@
 #!/usr/bin/env python3
-"""
-compute_journal_outcomes.py — derive the reflective-journal fields nightly, so the
-base-rate loop runs on ~90% autopilot (you trade; the system does the bookkeeping).
-
-Per symbol, FIFO-pairs BUY/SELL rows from the ledger:
-  * on each SELL row (DERIVED -> Rule-1 allows DO UPDATE):
-      pnl_pct  = (sell_price - FIFO avg buy cost) / cost * 100
-      outcome  = 'win' / 'loss' / 'scratch' (|pnl|<0.25%)
-      entry_date = date of first matched BUY
-  * thesis: fill-EMPTY-only snapshot from ipo_consolidated at the symbol
-      ("auto: bucket=MID gap=+8.2% peerPE=25.1/63.1") — your own words never clobbered.
-
-  venv/bin/python _scripts/compute_journal_outcomes.py           # dry-run
-  venv/bin/python _scripts/compute_journal_outcomes.py --apply
-"""
+"""compute_journal_outcomes.py (v2) — derive pnl_pct/outcome/entry_date nightly.
+Real schema: symbol, action (BUY/SELL), quantity, price, timestamp.
+SELL rows get FIFO pnl (derived -> DO UPDATE); thesis auto-snapshot fill-empty only.
+  venv/bin/python _scripts/compute_journal_outcomes.py [--apply]"""
 import os, sys, argparse
 DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 
 def fifo_pair(rows):
-    """rows: [(id, side, qty, price, date)] chronological. Returns {sell_id: (pnl_pct, entry_date)}."""
-    lots, out = [], {}          # lots: [qty_remaining, price, date]
+    lots, out = [], {}
     for rid, side, qty, price, d in rows:
-        qty = float(qty or 0); price = float(price or 0)
+        try:
+            qty = float(qty or 0); price = float(price or 0)
+        except (TypeError, ValueError):
+            continue
         if qty <= 0 or price <= 0:
             continue
         if side == "BUY":
@@ -46,28 +37,26 @@ def main():
     if not DB: sys.exit("DATABASE_URL not set")
     import psycopg2
     conn = psycopg2.connect(DB, connect_timeout=15); cur = conn.cursor()
-
-    cur.execute("""SELECT id, UPPER(COALESCE(symbol, tradingsymbol)), transaction_type,
-                          quantity, price, COALESCE(entry_date, trade_date::date)
+    cur.execute("""SELECT id, UPPER(symbol), UPPER(action), quantity, price,
+                          COALESCE(entry_date, timestamp::date)
                    FROM trade_journal
-                   WHERE COALESCE(symbol, tradingsymbol) IS NOT NULL
-                   ORDER BY trade_date, id""")
+                   WHERE symbol IS NOT NULL AND action IS NOT NULL
+                   ORDER BY timestamp NULLS LAST, id""")
     by_sym = {}
     for rid, sym, side, qty, price, d in cur.fetchall():
         by_sym.setdefault(sym, []).append((rid, side, qty, price, d))
-
+    if not by_sym:
+        print("trade_journal is empty — nothing to compute (expected until your first synced trade).")
     upd = 0
-    for sym, rows in by_sym.items():
+    for sym, rows in sorted(by_sym.items()):
         for rid, (pnl, entry) in fifo_pair(rows).items():
             outcome = "scratch" if abs(pnl) < 0.25 else ("win" if pnl > 0 else "loss")
             print(f"  {sym:12} sell id={rid}: pnl={pnl:+.2f}% -> {outcome} (entry {entry})")
             if a.apply:
-                cur.execute("""UPDATE trade_journal
-                               SET pnl_pct=%s, outcome=%s, entry_date=COALESCE(entry_date,%s)
-                               WHERE id=%s""", (pnl, outcome, entry, rid))
+                cur.execute("""UPDATE trade_journal SET pnl_pct=%s, outcome=%s,
+                               entry_date=COALESCE(entry_date,%s) WHERE id=%s""",
+                            (pnl, outcome, entry, rid))
                 upd += cur.rowcount
-
-    # thesis snapshot — fill-empty only, never touch rows where you wrote your own
     thesis_sql = """
         UPDATE trade_journal j SET thesis =
           'auto: bucket=' || COALESCE(c.gap_bucket,'?')
@@ -79,8 +68,7 @@ def main():
           AND UPPER(REGEXP_REPLACE(COALESCE(c.symbol_final, c.nse_symbol, c.symbol),'\\.NS$','')) = UPPER(j.symbol)"""
     if a.apply:
         cur.execute(thesis_sql); print(f"thesis auto-snapshots: {cur.rowcount}")
-        conn.commit()
-        print(f"APPLIED: {upd} sell rows updated.")
+        conn.commit(); print(f"APPLIED: {upd} sell rows updated.")
     else:
         print("DRY-RUN — add --apply to write.")
     conn.close()
