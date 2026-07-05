@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
 """
-scrape_chittorgarh.py — Chittorgarh mainboard IPO calendar -> ipo_intelligence (auto-source).
+scrape_chittorgarh.py (v3, FINAL) — Chittorgarh mainboard IPO calendar -> ipo_intelligence.
 
-Replaces the manual Chittorgarh Pro file export (the last hands-off blocker, P0-3).
-Source: Chittorgarh's clean JSON calendar API (no HTML scrape):
-  https://webnodejs.chittorgarh.com/cloud/report/data-read/82/1/7/{YEAR}/{FY}/0/mainboard/0?search=&v=21-38
-  -> reportTableData[]: Company, Opening/Closing/Listing dates, Issue Price, Issue Size,
-     ~nse_symbol, ~isin, ~URLRewrite_Folder_Name (slug).
-Playwright chromium clears Cloudflare; the JSON is then read via the same browser page.
+Built on probe evidence (chittorgarh_probe.py, 2026-07-05):
+  * URL slot after the report id is the PAGE NUMBER (pages of ~5, date desc):
+      .../data-read/82/{PAGE}/7/{YEAR}/{FY}/0/mainboard/0
+    v3 walks pages until empty/repeat -> full year coverage.
+  * Dates come from clean ISO tilde keys: ~Issue_Open_Date, ~IssueCloseDate,
+    ~ListingDate (display keys are '21-Dec-2021' and unreliable).
+  * ~nse_symbol / ~isin / ~URLRewrite_Folder_Name confirmed present.
+  * 'Lead Manager' present -> fills brlm_names (fill-empty, column-checked).
 
-WRITE DISCIPLINE (Rule 1 — locked in):
-  * Raw scraped facts are fill-EMPTY-only: UPDATE uses COALESCE(existing, scraped);
-    new companies INSERT with ON CONFLICT DO NOTHING semantics (existence check first).
-  * Chittorgarh's ~nse_symbol is UNRELIABLE (Dixon->KFINTECH, Advit Jewels->RAMBHAJO).
-    The join is therefore by FUZZY COMPANY NAME (rapidfuzz token_sort_ratio >= 90),
-    never by symbol. A scraped symbol is written ONLY when:
-      1. both nse_symbol AND symbol are blank on the matched row, and
-      2. the symbol's prefix matches the matched company name.
-    An existing symbol is NEVER overwritten.
-  * Value sanity runs BEFORE commit: issue_price>0, issue_size_cr>0, dates in
-    [2005-01-01, today+120d], open<=close<=listing. A row failing HARD checks is
-    skipped (counted), never written.
+WRITE DISCIPLINE (Rule 1):
+  * fill-EMPTY-only (COALESCE) for raw facts; INSERT only when no fuzzy match.
+  * join by fuzzy company name (rapidfuzz token_sort_ratio >= 90), never by
+    Chittorgarh's unreliable ~nse_symbol (Dixon->KFINTECH, Advit->RAMBHAJO).
+  * scraped symbol written ONLY where BOTH nse_symbol and symbol are blank AND
+    the symbol prefix matches the company name. Never overwrites.
+  * value-sanity per row BEFORE commit; HARD failures skipped and counted.
+  * COVERAGE WARN if a 2010-2025 year yields <10 rows (truncation alarm).
 
 Usage (VM):
-  venv/bin/python _scripts/scrape_chittorgarh.py --year 2026                  # dry-run, one year
-  venv/bin/python _scripts/scrape_chittorgarh.py --from 2010 --to 2026 --write-db   # full backfill
-Prints final counters:  ins=<new rows> upd=<rows fill-empty updated> symw=<symbols written>
-Needs: DATABASE_URL (or NEON_DATABASE_URL), playwright chromium, rapidfuzz, psycopg2.
+  venv/bin/python _scripts/scrape_chittorgarh.py --year 2021              # dry-run gate
+  venv/bin/python _scripts/scrape_chittorgarh.py --from 2010 --to 2026 --write-db
+  venv/bin/python _scripts/scrape_chittorgarh.py --write-db               # pipeline mode: current year
+Prints:  ins= upd= symw= skip=
 """
 import os, sys, re, json, time, argparse, datetime, logging
 
@@ -35,23 +33,24 @@ log = logging.getLogger("scrape_chittorgarh")
 
 DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 API = ("https://webnodejs.chittorgarh.com/cloud/report/data-read/"
-       "82/1/7/{year}/{fy}/0/mainboard/0?search=&v=21-38")
+       "82/{page}/7/{year}/{fy}/0/mainboard/0?search=&v=21-38")
 WARMUP_URL = "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/mainboard/"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 FUZZ_THRESHOLD = 90
+MAX_PAGES = 60          # 60 * ~5 = 300 IPOs/year headroom
+MIN_EXPECTED = 10
 _NULLISH = {"", "-", "\u2014", "n/a", "na", "nan", "none", "null", "tbd", "--"}
 
 # ---------------------------------------------------------------- parsers ---
 def clean_str(v):
     if v is None:
         return None
-    s = re.sub(r"<[^>]+>", " ", str(v))          # strip any HTML the API embeds
+    s = re.sub(r"<[^>]+>", " ", str(v))
     s = re.sub(r"\s+", " ", s).strip()
     return None if s.lower() in _NULLISH else s
 
-def num(v, take="max"):
-    """Parse a number; for bands like '300 to 316' take the upper (final/cap price)."""
+def num(v):
     if isinstance(v, (int, float)):
         return float(v)
     s = clean_str(v)
@@ -59,34 +58,34 @@ def num(v, take="max"):
         return None
     s = s.replace("\u20b9", "").replace(",", "")
     nums = [float(m) for m in re.findall(r"-?\d+(?:\.\d+)?", s)]
-    if not nums:
-        return None
-    return max(nums) if take == "max" else nums[0]
+    return max(nums) if nums else None       # bands like '300 to 316' -> upper
 
-def parse_date(v):
-    s = clean_str(v)
+def iso_date(v):
+    """'2021-12-21T00:00:00.000Z' or '2021-12-21' -> date; '21-Dec-2021' fallback."""
+    s = None if v is None else str(v).strip()
     if not s:
         return None
-    s = re.sub(r"^[A-Za-z]+day,\s*", "", s).strip()
-    for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %b, %Y", "%d-%m-%Y",
-                "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
         try:
-            return datetime.datetime.strptime(s, fmt).date()
+            return datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
-            continue
-    m = re.match(r"(\d{4}-\d{2}-\d{2})", s)
-    return datetime.date.fromisoformat(m.group(1)) if m else None
+            return None
+    m = re.match(r"(\d{1,2})-([A-Za-z]{3})-(\d{4})", s)
+    if m:
+        try:
+            return datetime.datetime.strptime(m.group(), "%d-%b-%Y").date()
+        except ValueError:
+            return None
+    return None
 
 def norm_name(s):
-    """Normalize a company name for fuzzy matching."""
     s = (s or "").lower()
     s = re.sub(r"\b(limited|ltd\.?|ipo|india|the)\b", " ", s)
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 def symbol_prefix_ok(symbol, company):
-    """A scraped symbol is trusted only if its prefix matches the company name.
-    Guards against Chittorgarh's wrong-symbol rows (Dixon->KFINTECH etc.)."""
     if not symbol or not company:
         return False
     sym = re.sub(r"[^A-Z0-9]", "", symbol.upper())
@@ -96,10 +95,8 @@ def symbol_prefix_ok(symbol, company):
     k = min(4, len(sym), len(comp))
     return comp.startswith(sym[:k]) or sym.startswith(comp[:k])
 
-# ------------------------------------------------------- key discovery ------
+# ---------------------------------------------------------------- mapping ---
 def pick(row, *patterns):
-    """Find the first row key whose name matches any regex pattern (API header
-    text drifts; keys are discovered, not hardcoded)."""
     for pat in patterns:
         rx = re.compile(pat, re.I)
         for k in row.keys():
@@ -108,26 +105,29 @@ def pick(row, *patterns):
     return None
 
 def map_row(row):
-    company = clean_str(pick(row, r"^(issuer\s*)?company", r"company\s*name", r"^issuer"))
+    company = clean_str(row.get("Company") or pick(row, r"company|issuer"))
     if company:
         company = re.sub(r"\s*IPO$", "", company, flags=re.I).strip()
     return {
         "company_name":  company,
-        "open_date":     parse_date(pick(row, r"open(ing)?\s*date", r"^open")),
-        "close_date":    parse_date(pick(row, r"clos(e|ing)\s*date", r"^close")),
-        "listing_date":  parse_date(pick(row, r"listing\s*date")),
-        "issue_price":   num(pick(row, r"issue\s*price", r"price\s*band", r"offer\s*price")),
-        "issue_size_cr": num(pick(row, r"issue\s*(amount|size)", r"total\s*issue")),
-        "nse_symbol":    clean_str(pick(row, r"~?nse_?symbol")),
-        "isin":          clean_str(pick(row, r"~?isin")),
-        "slug":          clean_str(pick(row, r"URLRewrite", r"~?slug")),
+        # tilde ISO keys are authoritative (probe-verified); display keys fallback
+        "open_date":     iso_date(row.get("~Issue_Open_Date")) or iso_date(pick(row, r"open(ing)?\s*date")),
+        "close_date":    iso_date(row.get("~IssueCloseDate")) or iso_date(pick(row, r"clos(e|ing)\s*date")),
+        "listing_date":  iso_date(row.get("~ListingDate")) or iso_date(pick(row, r"listing\s*date")),
+        "issue_price":   num(pick(row, r"issue\s*price")),
+        "issue_size_cr": num(pick(row, r"total\s*issue|issue\s*(amount|size)")),
+        "nse_symbol":    clean_str(row.get("~nse_symbol")),
+        "isin":          clean_str(row.get("~isin")),
+        "slug":          clean_str(row.get("~URLRewrite_Folder_Name")),
+        "brlm_names":    clean_str(row.get("Lead Manager") or pick(row, r"lead\s*manager")),
     }
+
+def rec_key(rec):
+    return rec.get("slug") or (norm_name(rec.get("company_name")), str(rec.get("open_date")))
 
 # ------------------------------------------------------------ sanity gate ---
 def sane(rec, year):
-    """Value-sanity BEFORE commit. Returns (ok, reasons); bad individual values
-    are nulled where salvageable, whole row rejected on HARD violations."""
-    lo, hi = datetime.date(2005, 1, 1), datetime.date.today() + datetime.timedelta(days=120)
+    lo, hi = datetime.date(2005, 1, 1), datetime.date.today() + datetime.timedelta(days=180)
     reasons = []
     if not rec["company_name"] or len(rec["company_name"]) < 3:
         return False, ["missing company_name"]
@@ -144,7 +144,6 @@ def sane(rec, year):
         reasons.append("close_date > listing_date"); rec["listing_date"] = None
     if rec["isin"] and not re.fullmatch(r"IN[A-Z0-9]{10}", rec["isin"]):
         reasons.append(f"isin {rec['isin']} malformed"); rec["isin"] = None
-    # HARD: nothing usable left, or dates wildly off the requested year
     dates = [d for d in (rec["open_date"], rec["close_date"], rec["listing_date"]) if d]
     if dates and all(abs(d.year - year) > 1 for d in dates):
         return False, reasons + [f"all dates outside year {year}"]
@@ -153,12 +152,36 @@ def sane(rec, year):
     return True, reasons
 
 # ---------------------------------------------------------------- fetcher ---
-def fy_candidates(year):
-    return [f"{year}-{(year + 1) % 100:02d}", f"{year - 1}-{year % 100:02d}", str(year)]
+def _get_rows(ctx, url):
+    try:
+        r = ctx.request.get(url, headers={"accept": "application/json"}, timeout=30000)
+        if not r.ok:
+            return []
+        return (r.json() or {}).get("reportTableData") or []
+    except Exception:  # noqa: BLE001
+        return []
+
+def fetch_year(ctx, year):
+    fy = f"{year}-{(year + 1) % 100:02d}"
+    seen, out = set(), []
+    for page in range(1, MAX_PAGES + 1):
+        rows = _get_rows(ctx, API.format(page=page, year=year, fy=fy))
+        if not rows:
+            break
+        new = 0
+        for r in rows:
+            m = map_row(r)
+            if not m["company_name"]:
+                continue
+            k = rec_key(m)
+            if k not in seen:
+                seen.add(k); out.append(m); new += 1
+        if new == 0:                     # page repeated -> past the end
+            break
+        time.sleep(0.25)
+    return out
 
 def fetch_all(years):
-    """One Playwright browser; warm up once to clear Cloudflare, then hit the
-    JSON API per year via the same page (cookies carry over)."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -175,32 +198,28 @@ def fetch_all(years):
                 break
             pg.wait_for_timeout(1500)
         for year in years:
-            rows = []
-            for fy in fy_candidates(year):
-                url = API.format(year=year, fy=fy)
-                try:
-                    pg.goto(url, wait_until="domcontentloaded", timeout=45000)
-                    body = pg.evaluate("document.body.innerText")
-                    data = json.loads(body)
-                    rows = data.get("reportTableData") or []
-                    if rows:
-                        break
-                except Exception as e:  # noqa: BLE001
-                    log.info(f"  {year} fy={fy}: {type(e).__name__} — trying next fy form")
-            log.info(f"{year}: {len(rows)} raw rows")
-            out[year] = rows
-            time.sleep(1.5)  # be polite between years
+            recs = fetch_year(ctx, year)
+            warn = ("  <-- COVERAGE WARN (truncated year?)"
+                    if 2010 <= year <= 2025 and len(recs) < MIN_EXPECTED else "")
+            log.info(f"{year}: {len(recs)} unique IPOs{warn}")
+            out[year] = recs
+            time.sleep(0.8)
         b.close()
     return out
 
 # ------------------------------------------------------------------ writer --
-UPDATE_COLS = ["open_date", "close_date", "listing_date", "issue_price", "issue_size_cr", "isin"]
+UPDATE_COLS = ["open_date", "close_date", "listing_date", "issue_price",
+               "issue_size_cr", "isin", "brlm_names"]
+
+def valid_columns(cur):
+    cur.execute("SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='ipo_intelligence'")
+    return {c for (c,) in cur.fetchall()}
 
 def load_existing(cur):
     cur.execute("""SELECT id, company_name, nse_symbol, symbol
                    FROM ipo_intelligence WHERE company_name IS NOT NULL""")
-    rows = cur.fetchall()
-    return [(rid, name, norm_name(name), nsym, sym) for (rid, name, nsym, sym) in rows]
+    return [(rid, name, norm_name(name), nsym, sym) for (rid, name, nsym, sym) in cur.fetchall()]
 
 def best_match(rec_norm, existing):
     from rapidfuzz import fuzz
@@ -211,8 +230,9 @@ def best_match(rec_norm, existing):
             best, best_score = row, score
     return (best, best_score) if best_score >= FUZZ_THRESHOLD else (None, best_score)
 
-def write_db(cur, recs, year, counters):
+def write_db(cur, recs, year, counters, cols_ok):
     existing = load_existing(cur)
+    upd_cols = [c for c in UPDATE_COLS if c in cols_ok]
     for rec in recs:
         ok, reasons = sane(rec, year)
         if reasons:
@@ -220,14 +240,13 @@ def write_db(cur, recs, year, counters):
         if not ok:
             counters["skip"] += 1
             continue
-        match, score = best_match(norm_name(rec["company_name"]), existing)
+        match, _ = best_match(norm_name(rec["company_name"]), existing)
         if match:
             rid, db_name, _, db_nsym, db_sym = match
             sets, vals = [], []
-            for c in UPDATE_COLS:                       # fill-EMPTY-only
+            for c in upd_cols:
                 if rec.get(c) is not None:
                     sets.append(f"{c} = COALESCE({c}, %s)"); vals.append(rec[c])
-            # symbol: only when BOTH symbol columns blank AND prefix matches the DB name
             if (not (db_nsym or "").strip() and not (db_sym or "").strip()
                     and rec["nse_symbol"] and symbol_prefix_ok(rec["nse_symbol"], db_name)):
                 sets.append("nse_symbol = COALESCE(nse_symbol, %s)")
@@ -238,37 +257,36 @@ def write_db(cur, recs, year, counters):
                             vals + [rid])
                 counters["upd"] += 1
         else:
-            cols = ["company_name"] + [c for c in UPDATE_COLS if rec.get(c) is not None]
-            vals = [rec["company_name"]] + [rec[c] for c in UPDATE_COLS if rec.get(c) is not None]
-            if rec["nse_symbol"] and symbol_prefix_ok(rec["nse_symbol"], rec["company_name"]):
-                cols.append("nse_symbol"); vals.append(rec["nse_symbol"].upper())
-                counters["symw"] += 1
-            # existence check just ran (no fuzzy hit); exact-name guard = DO NOTHING semantics
             cur.execute("SELECT 1 FROM ipo_intelligence WHERE company_name = %s LIMIT 1",
                         (rec["company_name"],))
             if cur.fetchone():
                 counters["skip"] += 1
                 continue
+            cols = ["company_name"] + [c for c in upd_cols if rec.get(c) is not None]
+            vals = [rec["company_name"]] + [rec[c] for c in upd_cols if rec.get(c) is not None]
+            if rec["nse_symbol"] and symbol_prefix_ok(rec["nse_symbol"], rec["company_name"]):
+                cols.append("nse_symbol"); vals.append(rec["nse_symbol"].upper())
+                counters["symw"] += 1
             ph = ", ".join(["%s"] * len(cols))
             cur.execute(f"INSERT INTO ipo_intelligence ({', '.join(cols)}) VALUES ({ph})", vals)
             counters["ins"] += 1
             existing.append((None, rec["company_name"], norm_name(rec["company_name"]),
-                             rec.get("nse_symbol"), None))   # avoid dup-insert within run
+                             rec.get("nse_symbol"), None))
 
 # -------------------------------------------------------------------- main --
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--year", type=int, help="single year")
-    ap.add_argument("--from", dest="y0", type=int, help="backfill start year")
-    ap.add_argument("--to", dest="y1", type=int, help="backfill end year")
-    ap.add_argument("--write-db", action="store_true", help="write (default: dry-run)")
+    ap.add_argument("--year", type=int)
+    ap.add_argument("--from", dest="y0", type=int)
+    ap.add_argument("--to", dest="y1", type=int)
+    ap.add_argument("--write-db", action="store_true")
     a = ap.parse_args()
     if a.year:
         years = [a.year]
     elif a.y0 and a.y1:
         years = list(range(a.y0, a.y1 + 1))
     else:
-        years = [datetime.date.today().year]   # pipeline mode: current year only
+        years = [datetime.date.today().year]
 
     raw = fetch_all(years)
     counters = {"ins": 0, "upd": 0, "symw": 0, "skip": 0}
@@ -281,24 +299,20 @@ def main():
             sys.exit("DATABASE_URL not set (run: set -a && . ./.env && set +a)")
         conn = psycopg2.connect(DB, connect_timeout=15)
         cur = conn.cursor()
+        cols_ok = valid_columns(cur)
         for year in years:
-            recs = [map_row(r) for r in raw.get(year, [])]
-            recs = [r for r in recs if r["company_name"]]
-            log.info(f"{year}: {len(recs)} mapped rows -> writing")
-            write_db(cur, recs, year, counters)
-            conn.commit()                       # sanity already ran per-row BEFORE this
+            log.info(f"{year}: writing {len(raw.get(year, []))} rows")
+            write_db(cur, raw.get(year, []), year, counters, cols_ok)
+            conn.commit()
         conn.close()
     else:
         for year in years:
-            for r in raw.get(year, []):
-                m = map_row(r)
-                if not m["company_name"]:
-                    continue
+            for m in raw.get(year, []):
                 ok, reasons = sane(m, year)
                 flag = "" if ok else "  REJECT"
-                log.info(f"  {m['company_name'][:38]:38} open={m['open_date']} "
+                log.info(f"  {(m['company_name'] or '?')[:38]:38} open={m['open_date']} "
                          f"list={m['listing_date']} px={m['issue_price']} "
-                         f"sz={m['issue_size_cr']} sym={m['nse_symbol']}{flag}"
+                         f"sz={m['issue_size_cr']} sym={m['nse_symbol']} brlm={m['brlm_names']}{flag}"
                          + (f"  [{'; '.join(reasons)}]" if reasons else ""))
         log.info("DRY-RUN — add --write-db to write.")
     print(f"ins={counters['ins']} upd={counters['upd']} symw={counters['symw']} skip={counters['skip']}")
