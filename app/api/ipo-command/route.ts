@@ -31,11 +31,33 @@ export async function GET() {
          OR ipo_open_date >= CURRENT_DATE
       ORDER BY COALESCE(listing_date, ipo_open_date)`;
 
-    // latest floor/ceiling per symbol (ipo_daily_levels) for card-level risk lines
-    const dl = await sql`
-      SELECT DISTINCT ON (symbol) UPPER(symbol) AS sym, floor, ceiling, close,
-             cushion, broke_floor, broke_ceiling, t
-      FROM ipo_daily_levels ORDER BY symbol, date DESC`;
+    // floor/ceiling derived from candles (first-5-session low/high — the canonical
+    // definition, same as the legacy page). No dependency on side tables.
+    const dlRaw = await sql`
+      WITH w AS (
+        SELECT UPPER(REGEXP_REPLACE(c.symbol_final,'\\.NS$','')) AS sym,
+               p.date, p.low, p.high, p.close,
+               ROW_NUMBER() OVER (PARTITION BY c.symbol_final ORDER BY p.date) AS rn
+        FROM ipo_consolidated c
+        JOIN price_candles p
+          ON UPPER(p.symbol) = UPPER(REGEXP_REPLACE(c.symbol_final,'\\.NS$',''))
+         AND p.date >= c.listing_date
+        WHERE c.listing_date >= CURRENT_DATE - 45 AND c.symbol_final IS NOT NULL)
+      SELECT sym,
+             MIN(low)  FILTER (WHERE rn <= 5) AS floor,
+             MAX(high) FILTER (WHERE rn <= 5) AS ceiling,
+             (ARRAY_AGG(close ORDER BY date DESC))[1] AS last_close,
+             MAX(rn) AS t
+      FROM w GROUP BY sym`;
+    const dl = dlRaw.map((r) => {
+      const f = r.floor == null ? null : Number(r.floor);
+      const cg = r.ceiling == null ? null : Number(r.ceiling);
+      const lc = r.last_close == null ? null : Number(r.last_close);
+      return { sym: r.sym, floor: f, ceiling: cg, t: r.t,
+        cushion: f && lc ? +(((lc - f) / f) * 100).toFixed(1) : null,
+        broke_floor: f != null && lc != null && lc < f,
+        broke_ceiling: cg != null && lc != null && lc > cg };
+    });
 
     // live symbols = listing today OR ticks in the last 3h
     const liveSyms = await sql`
