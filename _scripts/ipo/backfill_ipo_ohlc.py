@@ -89,7 +89,7 @@ def eligible(cur, symbol=None, limit=2000):
            FROM ipo_intelligence
            WHERE nse_symbol IS NOT NULL AND nse_symbol NOT IN ('', 'nan')
              AND listing_date IS NOT NULL
-             AND listing_date < CURRENT_DATE - INTERVAL '7 days'"""
+             AND listing_date <= CURRENT_DATE"""
     p = []
     if symbol:
         q += " AND (nse_symbol ILIKE %s OR company_name ILIKE %s)"; p += [f"%{symbol}%", f"%{symbol}%"]
