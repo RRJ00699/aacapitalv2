@@ -31,7 +31,7 @@ export async function GET() {
          OR ipo_open_date >= CURRENT_DATE
       ORDER BY COALESCE(listing_date, ipo_open_date)`;
 
-    // floor/ceiling derived from candles (first-5-session low/high — the canonical
+    // floor/ceiling derived from candles (first-5-session low/high - the canonical
     // definition, same as the legacy page). No dependency on side tables.
     const dlRaw = await sql`
       WITH w AS (
