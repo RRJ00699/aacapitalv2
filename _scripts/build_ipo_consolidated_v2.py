@@ -224,6 +224,8 @@ MAP = [
   ("last10_ipo_avg_return",   "i.last10_ipo_avg_return"),
   # ---- derived scores (AACapital model) ----
   ("ipo_score",               "i.ipo_score"),
+  ("score_band",              "i.score_band"),
+  ("score_evidence",          "i.score_evidence"),
   ("raw_score",               "i.raw_score"),
   ("lqi_base",                "i.lqi_base"),
   ("lqi_final",               "i.lqi_final"),

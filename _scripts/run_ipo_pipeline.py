@@ -78,6 +78,7 @@ def main():
     ok&=step("derive listing_open",         ["fill_listing_open_from_candles.py"])
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
+    step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     ok&=step("daily floor/ceiling levels",  ["ipo_daily_levels.py","--from-db","--write-db"])
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
