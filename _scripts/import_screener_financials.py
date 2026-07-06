@@ -18,7 +18,7 @@ Usage:
   python _scripts/import_screener_financials.py --dir ./data/fundamental_raw --diag   # parse 1 file, print, no DB
 Env: DATABASE_URL (or NEON_DATABASE_URL)
 """
-import os, sys, glob, argparse, datetime
+import os, re, sys, glob, argparse, datetime
 import openpyxl
 
 URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
@@ -161,31 +161,50 @@ SCREENER_BASE = "https://www.screener.in"
 
 
 def download_one(symbol, out_dir, cookie, ua, timeout=30):
-    """Download {symbol}_10yr.xlsx from Screener. Returns (status, reason).
-    status: 'exists' | 'downloaded' | 'failed'. Mirrors screener-pipeline.ts."""
+    """Download {symbol}_10yr.xlsx from Screener via the CURRENT export flow:
+    GET the company page -> find the export form's numeric id -> POST
+    /user/company/export/{id}/ with the CSRF token. (The old GET
+    /company/{sym}/export/ endpoint was removed by Screener -> universal 404s.)
+    Returns (status, reason): 'exists' | 'downloaded' | 'failed'."""
     import requests
     out = os.path.join(out_dir, f"{symbol}_10yr.xlsx")
     if os.path.exists(out) and os.path.getsize(out) > 5000:
         return "exists", ""
-    headers = {"Cookie": cookie, "User-Agent": ua}
+    m = re.search(r"csrftoken=([^;\s]+)", cookie or "")
+    csrf = m.group(1) if m else ""
+    sess = requests.Session()
+    sess.headers.update({"Cookie": cookie, "User-Agent": ua})
     reason = "no response"
-    for url in (f"{SCREENER_BASE}/company/{symbol}/consolidated/export/",
-                f"{SCREENER_BASE}/company/{symbol}/export/"):
-        headers["Referer"] = url.rsplit("export/", 1)[0]
+    for page in (f"{SCREENER_BASE}/company/{symbol}/consolidated/",
+                 f"{SCREENER_BASE}/company/{symbol}/"):
         try:
-            r = requests.get(url, headers=headers, timeout=timeout)
+            r = sess.get(page, timeout=timeout)
         except Exception as e:
-            reason = f"{type(e).__name__}: {str(e)[:40]}"
-            continue
+            reason = f"{type(e).__name__}: {str(e)[:40]}"; continue
+        if r.status_code == 404:
+            reason = "HTTP 404 (bad slug: Screener name differs from NSE ticker)"; continue
         if r.status_code != 200:
-            snippet = r.text[:120].replace("\n", " ") if hasattr(r, "text") else ""
-            reason = f"HTTP {r.status_code} | {snippet}"     # 404 bad slug · 403/302 auth · 'cloudflare'=challenge
+            reason = f"page HTTP {r.status_code}"; continue
+        mm = re.search(r"/user/company/export/(\d+)/", r.text)
+        if not mm:
+            if "login" in r.url or "Login" in r.text[:2000]:
+                reason = "not logged in (cookie expired)"
+            else:
+                reason = "export id not found on page (layout change?)"
             continue
-        if r.content[:4].hex() == "504b0304":                # real .xlsx (zip) signature
+        try:
+            rr = sess.post(f"{SCREENER_BASE}/user/company/export/{mm.group(1)}/",
+                           data={"csrfmiddlewaretoken": csrf},
+                           headers={"Referer": page, "X-CSRFToken": csrf},
+                           timeout=timeout)
+        except Exception as e:
+            reason = f"{type(e).__name__}: {str(e)[:40]}"; continue
+        if rr.status_code == 200 and rr.content[:4].hex() == "504b0304":
             with open(out, "wb") as f:
-                f.write(r.content)
+                f.write(rr.content)
             return "downloaded", ""
-        reason = f"not xlsx | {r.text[:120].replace(chr(10),' ')}"
+        reason = f"export HTTP {rr.status_code} | {rr.text[:100].replace(chr(10),' ')}"
+        break
     return "failed", reason
 
 
