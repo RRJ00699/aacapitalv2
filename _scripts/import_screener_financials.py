@@ -207,7 +207,9 @@ def download_one(symbol, out_dir, cookie, ua, timeout=30):
             with open(out, "wb") as f:
                 f.write(rr.content)
             return "downloaded", ""
-        reason = f"export HTTP {rr.status_code} | {rr.text[:100].replace(chr(10),' ')}"
+        t = re.search(r"<title>(.*?)</title>", rr.text[:3000], re.S)
+        reason = (f"export HTTP {rr.status_code} | final_url={rr.url} | "
+                  f"title={t.group(1).strip()[:60] if t else '?'}")
         break
     return "failed", reason
 
