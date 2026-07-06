@@ -14,7 +14,7 @@ const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
 // MUST mirror the JOBS whitelist keys in _scripts/job_runner.py.
 const ALLOWED_JOBS = new Set([
   "pipeline", "pipeline_weekly", "token", "gmp",
-  "sbi_download", "sbi_parse", "levels", "theses", "sync", "exit_backtest", "universe_candles", "universe_backfill", "screener_download", "screener_import", "coverage", "base_backtest", "convergence",
+  "sbi_download", "sbi_parse", "levels", "theses", "sync", "exit_backtest", "universe_candles", "universe_backfill", "screener_download", "screener_import", "coverage", "base_backtest", "screener_fetch", "convergence",
 ]);
 
 // Same DDL job_runner.py uses, so the first enqueue works even before the VM

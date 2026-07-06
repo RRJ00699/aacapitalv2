@@ -30,6 +30,7 @@ JOBS = {
     "universe_backfill": ["_scripts/kite-sync-candles.py", "--backfill"],
     "screener_download": ["_scripts/download_screener_playwright.py", "--stale"],
     "screener_import":  ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw"],
+    "screener_fetch":   ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw", "--download", "--limit", "40"],
     "coverage":         ["_scripts/data_coverage_report.py"],
     "base_backtest":    ["_scripts/base_backtest.py"],
 }

@@ -2,7 +2,7 @@
 // app/dashboard/settings/page.tsx — set service secrets from the phone.
 import { useEffect, useState } from "react";
 const C={bg:"#FAFAF8",s:"#FFF",bd:"#E5E7EB",tx:"#111827",mt:"#6B7280",gr:"#16A34A",grB:"#F0FDF4",grD:"#BBF7D0"};
-const FIELDS=[["screener_username","Screener.in email"],["screener_password","Screener.in password"],["ntfy_topic","ntfy topic (push notifications)"]];
+const FIELDS=[["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["ntfy_topic","ntfy topic (push notifications)"]];
 export default function Settings(){
   const [state,setState]=useState<Record<string,string>>({});
   const [vals,setVals]=useState<Record<string,string>>({});
@@ -14,6 +14,11 @@ export default function Settings(){
     .then(r=>r.ok?(setMsg(k+" saved ✓"),setVals(v=>({...v,[k]:""})),load()):setMsg("save failed"));
   return(<div style={{padding:"18px 20px",background:C.bg,minHeight:"100vh",maxWidth:640,margin:"auto",
     color:C.tx,font:'14px/1.5 -apple-system,"Segoe UI",Inter,sans-serif'}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
+          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:"#2563EB",textDecoration:"none",
+            background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
+      </div>
       <a href="/dashboard/admin" style={{display:"inline-block",fontSize:13,fontWeight:600,
         color:"#2563EB",textDecoration:"none",background:"#EFF6FF",border:"1px solid #BFDBFE",
         borderRadius:8,padding:"5px 10px",marginBottom:12}}>← Admin</a>

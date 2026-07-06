@@ -252,6 +252,15 @@ def main():
     if args.download:
         cookie = os.environ.get("SCREENER_COOKIE") or args.cookie
         if not cookie:
+            try:
+                import psycopg2
+                _c = psycopg2.connect(os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL"),
+                                      connect_timeout=10).cursor()
+                _c.execute("SELECT value FROM platform_config WHERE key='screener_cookie'")
+                _r = _c.fetchone(); cookie = _r[0] if _r and _r[0] else None
+            except Exception:
+                cookie = None
+        if not cookie:
             sys.exit("Set the cookie: $env:SCREENER_COOKIE='csrftoken=...; sessionid=...'  (or --cookie '...')")
         try:
             import requests  # noqa: F401

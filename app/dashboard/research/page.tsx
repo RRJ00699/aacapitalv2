@@ -26,6 +26,11 @@ export default function Research(){
   useEffect(()=>{fetch("/api/research").then(r=>r.json()).then(j=>j.error?setErr(j.error):setD(j)).catch(e=>setErr(String(e)));},[]);
   const card:React.CSSProperties={background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16};
   return(<div style={{padding:"18px 22px",background:C.bg,minHeight:"100vh",maxWidth:1100,margin:"auto",color:C.text,font:'14px/1.45 -apple-system,"Segoe UI",Inter,sans-serif'}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
+          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:"#2563EB",textDecoration:"none",
+            background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
+      </div>
     <div style={{display:"flex",gap:14,alignItems:"baseline",marginBottom:4}}>
       <a href="/dashboard/ipo2" style={{fontSize:13,fontWeight:600,color:C.blue,textDecoration:"none",background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 10px"}}>← IPO Command Center</a>
       <h1 style={{fontSize:20,fontWeight:800,margin:0}}>🔬 Research · Score v0</h1></div>
