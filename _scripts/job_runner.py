@@ -26,6 +26,11 @@ JOBS = {
     "sync":            ["_scripts/git_sync.py"],
     "exit_backtest":   ["_scripts/exit_rule_backtest.py"],
     "convergence":     ["_scripts/compute_convergence_ranking.py"],
+    "universe_candles": ["_scripts/kite-sync-candles.py", "--days", "5"],
+    "universe_backfill": ["_scripts/kite-sync-candles.py", "--backfill"],
+    "screener_download": ["_scripts/download_screener_playwright.py", "--stale"],
+    "screener_import":  ["_scripts/import_screener_financials.py"],
+    "coverage":         ["_scripts/data_coverage_report.py"],
 }
 
 def ensure_table(cur):
