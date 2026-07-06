@@ -15,9 +15,9 @@ import { StockSearch } from "@/components/features/stock-search";
 const TABS = [
   { v: "today",         l: "Today",         href: "/today",          icon: Home },
   { v: "stocks",        l: "Stocks",        href: "/stocks",         icon: TrendingUp },
+  { v: "ipo",           l: "IPO",           href: "/ipo",            icon: Zap },
   { v: "opportunities", l: "Opportunities", href: "/opportunities",  icon: Activity },
   { v: "watchlist",     l: "Watch",         href: "/watchlist",      icon: Star },
-  { v: "ipo",           l: "IPO",           href: "/ipo",            icon: Zap },
   { v: "portfolio",     l: "Portfolio",     href: "/portfolio",      icon: Briefcase },
   { v: "research",      l: "Research",      href: "/research",       icon: Settings2 },
 ];
