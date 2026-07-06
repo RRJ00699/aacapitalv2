@@ -4,6 +4,7 @@
 // live capture exists. Ships at /dashboard/ipo2 for side-by-side verification;
 // cutover to /dashboard/ipo is a separate one-line commit after approval.
 import { useEffect, useState, useCallback } from "react";
+import AppShell from "@/components/app-shell/AppShell";
 
 const C = { bg:"#FAFAF8", surface:"#FFFFFF", border:"#E5E7EB", text:"#111827",
   sub:"#374151", meta:"#6B7280", dim:"#9CA3AF",
@@ -83,7 +84,7 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
     </svg>);
 }
 
-export default function IpoCommand() {
+function IpoCommand() {
   const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
@@ -108,11 +109,6 @@ export default function IpoCommand() {
   return (
     <div style={{padding:"16px 20px",background:C.bg,minHeight:"100vh",maxWidth:1180,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
-          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:C.blue,textDecoration:"none",
-            background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
-      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
@@ -326,5 +322,13 @@ export default function IpoCommand() {
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Lead = first-named manager · cells need n≥8 · "pending" fills after tonight's d10 precompute.</div>
       </div>}
     </div>
+  );
+}
+
+export default function IpoRoute() {
+  return (
+    <AppShell current="ipo">
+      <IpoCommand />
+    </AppShell>
   );
 }
