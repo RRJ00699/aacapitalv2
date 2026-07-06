@@ -36,6 +36,7 @@ export default function Access() {
             <div style={{flex:1,minWidth:200}}>
               <div style={{fontWeight:700}}>{String(r.name||"(no name)")}</div>
               <div style={{fontSize:12.5,color:C.mt}}>{String(r.email)} · {String(r.requested_at||"").slice(0,16).replace("T"," ")}</div>
+              {r.note ? <div style={{fontSize:12.5,color:C.tx,marginTop:2}}>&ldquo;{String(r.note)}&rdquo;</div> : null}
             </div>
             <button style={btn(C.grB,C.grD,C.gr)} onClick={()=>act(String(r.email),"approve")}>✓ Approve</button>
             <button style={btn(C.rdB,C.rdD,C.rd)} onClick={()=>act(String(r.email),"deny")}>✕ Deny</button>
