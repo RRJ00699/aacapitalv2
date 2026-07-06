@@ -14,6 +14,9 @@ export default function Settings(){
     .then(r=>r.ok?(setMsg(k+" saved ✓"),setVals(v=>({...v,[k]:""})),load()):setMsg("save failed"));
   return(<div style={{padding:"18px 20px",background:C.bg,minHeight:"100vh",maxWidth:640,margin:"auto",
     color:C.tx,font:'14px/1.5 -apple-system,"Segoe UI",Inter,sans-serif'}}>
+      <a href="/dashboard/admin" style={{display:"inline-block",fontSize:13,fontWeight:600,
+        color:"#2563EB",textDecoration:"none",background:"#EFF6FF",border:"1px solid #BFDBFE",
+        borderRadius:8,padding:"5px 10px",marginBottom:12}}>← Admin</a>
     <h1 style={{fontSize:19,fontWeight:800,margin:"0 0 4px"}}>⚙️ Service secrets</h1>
     <p style={{fontSize:12.5,color:C.mt,margin:"0 0 16px"}}>Stored in platform_config (same vault as the Kite token). Scripts &amp; auth read them automatically — no SSH, no Vercel.</p>
     {msg&&<div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:600,marginBottom:12}}>{msg}</div>}
