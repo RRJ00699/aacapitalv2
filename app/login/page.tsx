@@ -8,6 +8,8 @@ const C = { bg:"#FAFAF8", surface:"#FFFFFF", border:"#E5E7EB", text:"#111827",
 
 export default function Login() {
   const [busy, setBusy] = useState(false);
+  const requested = typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("requested");
   return (
     <main style={{ minHeight:"100dvh", display:"grid", placeItems:"center",
       background:`radial-gradient(1100px 600px at 50% -10%, #FFF7E6 0%, ${C.bg} 55%)`,
@@ -29,6 +31,12 @@ export default function Login() {
         {/* card */}
         <div style={{ marginTop:28, background:C.surface, border:`1px solid ${C.border}`,
           borderRadius:16, padding:"26px 24px", boxShadow:"0 10px 34px rgba(17,24,39,.06)" }}>
+          {requested && (
+            <div style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", color:C.green,
+              borderRadius:10, padding:"10px 12px", fontSize:13, fontWeight:600, marginBottom:16 }}>
+              ✓ Access request sent — the owner has been notified. Once approved, just sign in again.
+            </div>
+          )}
           <div style={{ fontSize:14.5, fontWeight:700, color:C.text }}>Private research platform</div>
           <div style={{ fontSize:12.5, color:C.meta, marginTop:4, marginBottom:20 }}>
             Access is limited to invited accounts.
