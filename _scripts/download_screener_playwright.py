@@ -76,18 +76,18 @@ def main():
     args = ap.parse_args()
 
     def _cfg(key):
-    try:
-        import psycopg2
-        c = psycopg2.connect(os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL"),
-                             connect_timeout=10).cursor()
-        c.execute("SELECT value FROM platform_config WHERE key=%s", (key,))
-        r = c.fetchone()
-        return r[0] if r and r[0] else None
-    except Exception:
-        return None
+        try:
+            import psycopg2
+            c = psycopg2.connect(os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL"),
+                                 connect_timeout=10).cursor()
+            c.execute("SELECT value FROM platform_config WHERE key=%s", (key,))
+            r = c.fetchone()
+            return r[0] if r and r[0] else None
+        except Exception:
+            return None
 
-email = (os.environ.get("SCREENER_USERNAME") or os.environ.get("SCREENER_EMAIL")
-         or _cfg("screener_username"))
+    email = (os.environ.get("SCREENER_USERNAME") or os.environ.get("SCREENER_EMAIL")
+             or _cfg("screener_username"))
     pw = os.environ.get("SCREENER_PASSWORD") or _cfg("screener_password")
     if not email or not pw:
         sys.exit("Set SCREENER_USERNAME and SCREENER_PASSWORD")
