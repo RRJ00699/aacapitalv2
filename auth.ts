@@ -28,7 +28,11 @@ async function dbAllowedOrRequest(email: string, name: string | null): Promise<b
               SET requested_at = now(),
                   status = CASE WHEN access_requests.status = 'denied'
                                 THEN 'denied' ELSE 'pending' END`;
-    const topic = process.env.NTFY_TOPIC;
+    let topic = process.env.NTFY_TOPIC;
+    if (!topic) {
+      const t = await sql`SELECT value FROM platform_config WHERE key='ntfy_topic' LIMIT 1`;
+      topic = t[0]?.value as string | undefined;
+    }
     if (topic) {
       await fetch(`https://ntfy.sh/${topic}`, {
         method: "POST",
