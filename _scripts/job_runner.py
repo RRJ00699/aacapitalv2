@@ -25,6 +25,7 @@ JOBS = {
     "theses":          ["_scripts/test_untested_theses.py"],
     "sync":            ["_scripts/git_sync.py"],
     "exit_backtest":   ["_scripts/exit_rule_backtest.py"],
+    "convergence":     ["_scripts/compute_convergence_ranking.py"],
 }
 
 def ensure_table(cur):
