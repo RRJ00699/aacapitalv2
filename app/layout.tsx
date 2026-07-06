@@ -1,10 +1,25 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
   title: "AACapital — Institutional Research Platform",
   description: "NSE/BSE/NASDAQ/NYSE — Tier 1A Research, Screener, IPO Analysis",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "AACapital",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#FAFAF8",
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -273,8 +273,8 @@ export default function IpoCommand() {
       </>}
 
       {/* UPCOMING */}
-      {view==="upcoming" && <div style={card}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
+      {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
+        <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>Band</th><th style={th}>Evidence / status</th></tr></thead>
           <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(c.listing_date)}</td>
@@ -287,9 +287,9 @@ export default function IpoCommand() {
       </div>}
 
       {/* POST-LISTING AUDIT */}
-      {view==="post" && <div style={card}>
+      {view==="post" && <div style={{...card,overflowX:"auto"}}>
         <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
-        <table style={{width:"100%",borderCollapse:"collapse",marginTop:8}}>
+        <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Band</th>
             <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th></tr></thead>
           <tbody>{(d?.post||[]).map((r,i)=>(
@@ -305,9 +305,9 @@ export default function IpoCommand() {
       </div>}
 
       {/* BRLM */}
-      {view==="brlm" && <div style={card}>
+      {view==="brlm" && <div style={{...card,overflowX:"auto"}}>
         <b style={{fontSize:14}}>Book managers — empirical, from our own outcomes</b>
-        <table style={{width:"100%",borderCollapse:"collapse",marginTop:8}}>
+        <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Lead manager</th><th style={th}>IPOs</th><th style={th}>Pop rate</th>
             <th style={th}>Med gap</th><th style={th}>10s win</th><th style={th}>10s median</th></tr></thead>
           <tbody>{(d?.brlm||[]).map((r,i)=>(

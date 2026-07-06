@@ -1,0 +1,12 @@
+{
+  "name": "AACapital",
+  "short_name": "AACapital",
+  "description": "IPO research machine — grades, levels, live listing-day cockpit",
+  "start_url": "/ipo",
+  "display": "standalone",
+  "background_color": "#FAFAF8",
+  "theme_color": "#FAFAF8",
+  "icons": [
+    { "src": "/icon.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}
