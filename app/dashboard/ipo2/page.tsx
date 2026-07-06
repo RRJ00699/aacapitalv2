@@ -17,16 +17,16 @@ const BAND: Record<string,{c:string;bg:string;bd:string}> = {
   STRONG:{c:C.green,bg:C.greenBg,bd:C.greenBd}, FAVORABLE:{c:C.blue,bg:C.blueBg,bd:C.blueBd},
   NEUTRAL:{c:C.meta,bg:C.grayBg,bd:C.border}, AVOID:{c:C.red,bg:C.redBg,bd:C.redBd} };
 const PLAYS = [
-  { t:"MID gap (+4% to +15% open) — THE EDGE", s:"84.1% · +9.4% · n=69", c:C.green,
-    d:"Let it run. Peak strength ~session 8-18. Best cell: MID × 500-2000cr = 82%/+10.9. No day-1 profit-taking." },
-  { t:"Mega issue (>₹2000cr) — any gap", s:"81.8% · +9.2% · n=77", c:C.blue,
-    d:"Institutions must build positions after listing. Works even on HIGH gaps (92%, n=12 hint)." },
-  { t:"LOW gap (<+4%)", s:"70.8% · +5.2% · n=212", c:C.meta,
-    d:"Steady, manage to floor. Only ≥₹500cr — LOW × 150-500cr is a coin flip (50%/+0.4)." },
-  { t:"HIGH gap (>+15%)", s:"64.0% · +5.4% · n=89", c:C.amber,
-    d:"Pop & fade — exit fast if taken. Decayed to 50% in 2025+. Exception: mega-size." },
-  { t:"SKIP: ₹150-500cr + LOW/HIGH · PE 30-60 middles", s:"51.2% · +0.8% · n=84", c:C.red,
-    d:"The AVOID band wins only 36% in 2025+. Skipping these IS the profit." } ];
+  { t:"MID gap (+4% to +15% open) — THE ONLY CORE TRADE", s:"sell D1 close: 65% · +3.3% · tail −9", c:C.green,
+    d:"Executable edge (exit-rule backtest, n=69): sell at day-1 close 65%/+3.3, or +5% target else D5 = 64%/+5.0 median (deeper −14.5 tail). Patient D10 close: 65%/+5.1. Oracle ceiling 84% is hindsight — these are the real numbers." },
+  { t:"Mega issue (>₹2000cr) — any gap", s:"81.8% oracle · n=77", c:C.blue,
+    d:"The one HIGH-gap exception: institutions must build positions post-listing. Pair with MID rules; size for the tail." },
+  { t:"LOW gap (<+4%) — DO NOT TRADE", s:"every exit ≈ 50% · ~0% median · n=214", c:C.red,
+    d:"Exit-rule backtest verdict: no executable rule extracts anything. The old 70.8% was oracle hindsight. Skip." },
+  { t:"HIGH gap (>+15%) — lottery, not a strategy", s:"40-46% win · median negative · n=89", c:C.amber,
+    d:"Highest MEANS (+7-10%) from rare monsters, but most fade. Only mega-size justifies entry. Median trade loses." },
+  { t:"SKIP: ₹150-500cr + AVOID band", s:"51.2% · +0.8% · n=84", c:C.red,
+    d:"2025+: wins only 36%. Skipping these IS the profit." } ];
 
 type R = Record<string, unknown>;
 const N = (v: unknown) => (v == null ? null : Number(v));
@@ -134,7 +134,7 @@ export default function IpoCommand() {
           <a href="/dashboard/research" style={{marginLeft:"auto",fontSize:12.5,color:C.blue,fontWeight:600}}>Full evidence →</a>
         </div>
         <div style={{fontSize:11.5,color:C.dim,marginTop:8}}>
-          “Worked” = made money buying at the listing open and selling at the best close within 10 trading days.
+          “Worked” = best close within 10 sessions beat the open (a CEILING, not an executable exit — see Playbook for real exit rules: MID sell-D1-close = 65%/+3.3).
           Grades: STRONG 89.5% (n=38) · FAVORABLE 76.0% (n=96) · baseline 72% (n=370) · AVOID 51.2% (n=84) · validated 2026-07-05.
         </div>
       </div>
