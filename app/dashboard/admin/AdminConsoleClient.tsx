@@ -144,6 +144,11 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
       {/* header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 }}>
+            {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
+              <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:C.blue,textDecoration:"none",
+                background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
+          </div>
           <a href="/ipo" style={{
             fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px",
