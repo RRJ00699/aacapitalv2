@@ -31,6 +31,7 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "universe_backfill",label:"Backfill universe (3yr)",desc: "Heavy one-time: 3 years of candles for the full universe", heavy: true },
   { key: "screener_download",label:"Screener: download stale",desc:"10-yr Excel sheets for missing/behind companies (needs SCREENER_USERNAME/PASSWORD in VM .env)", heavy: true },
   { key: "screener_import", label: "Screener: import",      desc: "Parse downloaded sheets into annual_financials" },
+  { key: "base_backtest",   label: "Base-breakout backtest", desc: "Does buying post-listing base breakouts work? Grid of base definitions (read-only)" },
   { key: "convergence",     label: "Rebuild Top Convergence", desc: "Recompute the Today screen ranking (5 factors, live data)" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
