@@ -9,17 +9,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { TrendingUp, Zap, Home, Activity, Briefcase, Star, Settings2, Wrench } from "lucide-react";
 import { StockSearch } from "@/components/features/stock-search";
 
 const TABS = [
-  { v: "today",         l: "Today",         href: "/today",          icon: Home },
-  { v: "stocks",        l: "Stocks",        href: "/stocks",         icon: TrendingUp },
-  { v: "ipo",           l: "IPO",           href: "/ipo",            icon: Zap },
-  { v: "opportunities", l: "Opportunities", href: "/opportunities",  icon: Activity },
-  { v: "watchlist",     l: "Watch",         href: "/watchlist",      icon: Star },
-  { v: "portfolio",     l: "Portfolio",     href: "/portfolio",      icon: Briefcase },
-  { v: "research",      l: "Research",      href: "/research",       icon: Settings2 },
+  { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
+  { v: "stocks",        l: "Stocks",        href: "/stocks",         e: "📈" },
+  { v: "ipo",           l: "IPO",           href: "/ipo",            e: "⚡" },
+  { v: "opportunities", l: "Opportunities", href: "/opportunities",  e: "📡" },
+  { v: "watchlist",     l: "Watch",         href: "/watchlist",      e: "⭐" },
+  { v: "portfolio",     l: "Portfolio",     href: "/portfolio",      e: "💼" },
+  { v: "research",      l: "Research",      href: "/research",       e: "🔬" },
 ];
 
 export default function AppNav({
@@ -64,17 +63,17 @@ export default function AppNav({
       <div style={{ width: 320, marginRight: 6, position: "relative", zIndex: 99999 }}>
         <StockSearch onSelect={onSearchSelect} placeholder="Search stock..." />
       </div>
-      {TABS.map(({ v, l, href, icon: Icon }) => {
+      {TABS.map(({ v, l, href, e }) => {
         const active = current === v;
         return (
           <Link key={v} href={href} prefetch={false} style={tabStyle(active)}>
-            <Icon size={13} />{l}
+            <span style={{ fontSize: 13 }}>{e}</span>{l}
           </Link>
         );
       })}
       {isAdmin && (
         <Link href="/dashboard/admin" prefetch={false} style={tabStyle(current === "admin")}>
-          <Wrench size={13} />Admin
+          <span style={{ fontSize: 13 }}>🛠</span>Admin
         </Link>
       )}
       {refreshTime && <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "#374151" }}>↻{refreshTime}</div>}

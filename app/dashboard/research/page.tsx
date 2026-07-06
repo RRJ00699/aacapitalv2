@@ -1,5 +1,6 @@
 "use client";
 // app/dashboard/research/page.tsx — Score v0 evidence: factors, band history, live grades.
+import AppShell from "@/components/app-shell/AppShell";
 import { useEffect, useState } from "react";
 const C={bg:"#FAFAF8",surface:"#FFF",border:"#E5E7EB",text:"#111827",sub:"#374151",meta:"#6B7280",dim:"#9CA3AF",
 green:"#16A34A",greenBg:"#F0FDF4",greenBd:"#BBF7D0",blue:"#2563EB",blueBg:"#EFF6FF",blueBd:"#BFDBFE",
@@ -20,17 +21,12 @@ function Chip({b}:{b?:string|null}){const s=BANDS[b||""]||BANDS.NEUTRAL;
 return <span style={{color:s.c,background:s.bg,border:`1px solid ${s.bd}`,borderRadius:8,padding:"2px 9px",fontSize:11,fontWeight:700}}>{b||"UNSCORED"}</span>;}
 const th:React.CSSProperties={textAlign:"left",fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,padding:"7px 8px",borderBottom:`1px solid ${C.border}`};
 const td:React.CSSProperties={fontSize:13,color:C.sub,padding:"7px 8px",borderBottom:`1px solid ${C.border}`};
-export default function Research(){
+function Research(){
   const [d,setD]=useState<{upcoming:R[];recent:R[]}|null>(null);
   const [err,setErr]=useState<string|null>(null);
   useEffect(()=>{fetch("/api/research").then(r=>r.json()).then(j=>j.error?setErr(j.error):setD(j)).catch(e=>setErr(String(e)));},[]);
   const card:React.CSSProperties={background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16};
   return(<div style={{padding:"18px 22px",background:C.bg,minHeight:"100vh",maxWidth:1100,margin:"auto",color:C.text,font:'14px/1.45 -apple-system,"Segoe UI",Inter,sans-serif'}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-        {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
-          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:"#2563EB",textDecoration:"none",
-            background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
-      </div>
     <div style={{display:"flex",gap:14,alignItems:"baseline",marginBottom:4}}>
       <a href="/dashboard/ipo2" style={{fontSize:13,fontWeight:600,color:C.blue,textDecoration:"none",background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 10px"}}>← IPO Command Center</a>
       <h1 style={{fontSize:20,fontWeight:800,margin:0}}>🔬 Research · Score v0</h1></div>
@@ -70,3 +66,11 @@ export default function Research(){
         <td style={{...td,fontWeight:700,color:r.d10_best_pct==null?C.dim:(Number(r.d10_best_pct)>0?C.green:C.red)}}>
           {r.d10_best_pct==null?"pending":`${Number(r.d10_best_pct).toFixed(1)}%`}</td></tr>))}</tbody></table></div>
   </div>);}
+
+export default function ResearchRoute() {
+  return (
+    <AppShell current="research">
+      <Research />
+    </AppShell>
+  );
+}
