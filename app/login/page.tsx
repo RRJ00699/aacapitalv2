@@ -6,6 +6,32 @@ import { useState } from "react";
 const C = { bg:"#FAFAF8", surface:"#FFFFFF", border:"#E5E7EB", text:"#111827",
   meta:"#6B7280", dim:"#9CA3AF", gold:"#B8860B", green:"#16A34A" };
 
+function NoteBox() {
+  const [note, setNote] = useState("");
+  const [state, setState] = useState<"idle"|"sent"|"err">("idle");
+  if (state === "sent")
+    return <div style={{ marginTop:8, fontSize:12, fontWeight:500 }}>Note delivered ✓</div>;
+  return (
+    <div style={{ marginTop:10, display:"flex", gap:6 }}>
+      <input value={note} onChange={(e)=>setNote(e.target.value)} maxLength={200}
+        placeholder="Who are you? (optional note to the owner)"
+        style={{ flex:1, border:"1px solid #BBF7D0", borderRadius:8, padding:"8px 10px",
+          fontSize:12.5, background:"#fff", color:"#111827" }}/>
+      <button onClick={()=>{
+          fetch("/api/access-note", { method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ note }) })
+          .then(r=>setState(r.ok?"sent":"err")).catch(()=>setState("err"));
+        }}
+        disabled={!note.trim()}
+        style={{ border:"1px solid #BBF7D0", background:"#fff", borderRadius:8,
+          padding:"8px 12px", fontSize:12.5, fontWeight:700, cursor:"pointer", color:"#16A34A" }}>
+        Send
+      </button>
+      {state==="err" && <span style={{fontSize:11,alignSelf:"center"}}>failed — retry</span>}
+    </div>);
+}
+
 export default function Login() {
   const [busy, setBusy] = useState(false);
   const requested = typeof window !== "undefined" &&
@@ -18,7 +44,8 @@ export default function Login() {
 
         {/* brand */}
         <img src="/icon.png" alt="AACapital" width={72} height={72}
-          style={{ borderRadius:18, boxShadow:"0 8px 28px rgba(184,134,11,.22)", marginBottom:18 }}/>
+          style={{ display:"block", margin:"0 auto 18px", borderRadius:18,
+            boxShadow:"0 8px 28px rgba(184,134,11,.22)" }}/>
         <h1 style={{ margin:0, fontSize:28, fontWeight:800, letterSpacing:-0.5, color:C.text }}>
           AACapital
         </h1>
@@ -35,6 +62,7 @@ export default function Login() {
             <div style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", color:C.green,
               borderRadius:10, padding:"10px 12px", fontSize:13, fontWeight:600, marginBottom:16 }}>
               ✓ Access request sent — the owner has been notified. Once approved, just sign in again.
+              <NoteBox />
             </div>
           )}
           <div style={{ fontSize:14.5, fontWeight:700, color:C.text }}>Private research platform</div>
