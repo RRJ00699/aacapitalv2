@@ -23,6 +23,8 @@ JOBS = {
     "sbi_parse":       ["_scripts/parse_sbi_notes.py", "--dir", "data/research_notes", "--write-db"],
     "levels":          ["_scripts/ipo_daily_levels.py", "--from-db", "--write-db"],
     "theses":          ["_scripts/test_untested_theses.py"],
+    "sync":            ["_scripts/git_sync.py"],
+    "exit_backtest":   ["_scripts/exit_rule_backtest.py"],
 }
 
 def ensure_table(cur):
