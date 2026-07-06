@@ -108,6 +108,11 @@ export default function IpoCommand() {
   return (
     <div style={{padding:"16px 20px",background:C.bg,minHeight:"100vh",maxWidth:1180,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        {[["/today","🏠 Today"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
+          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:C.blue,textDecoration:"none",
+            background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
+      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
