@@ -31,7 +31,7 @@ load_dotenv(".env.local")
 load_dotenv(".env")
 
 API_KEY      = os.getenv("KITE_API_KEY", "br9m41pn8nvvywnl")
-DATABASE_URL = os.getenv("CANDLES_DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
+DATABASE_URL = os.getenv("CANDLES_DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 NEON_URL     = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 
 parser = argparse.ArgumentParser()
