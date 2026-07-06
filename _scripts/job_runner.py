@@ -31,6 +31,7 @@ JOBS = {
     "screener_download": ["_scripts/download_screener_playwright.py", "--stale"],
     "screener_import":  ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw"],
     "coverage":         ["_scripts/data_coverage_report.py"],
+    "base_backtest":    ["_scripts/base_backtest.py"],
 }
 
 def ensure_table(cur):
