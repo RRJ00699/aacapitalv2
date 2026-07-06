@@ -61,9 +61,14 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
   const px = ticks.map(t => N(t.ltp)).filter((x): x is number => x != null);
   const vw = ticks.map(t => N(t.vwap)).filter((x): x is number => x != null);
   if (px.length < 2) return <div style={{fontSize:12,color:C.dim,padding:"18px 0"}}>Collecting ticks…</div>;
-  const all = [...px, ...vw, ...(floor?[floor]:[]), ...(ceil?[ceil]:[])];
-  const lo = Math.min(...all), hi = Math.max(...all), sp = hi - lo || 1;
-  const W = 640, H = 150, y = (v:number) => 12 + (1-(v-lo)/sp)*(H-24);
+  const q = (a:number[], p:number) => { const s=[...a].sort((x,y)=>x-y);
+    return s[Math.min(s.length-1, Math.max(0, Math.round(p*(s.length-1))))]; };
+  const cand = [q(px,0.02), q(px,0.98), ...(vw.length?[q(vw,0.02),q(vw,0.98)]:[]),
+    ...(floor!=null?[floor]:[]), ...(ceil!=null?[ceil]:[])];
+  let lo = Math.min(...cand), hi = Math.max(...cand);
+  const pad = (hi-lo || 1) * 0.06; lo -= pad; hi += pad; const sp = hi - lo || 1;
+  const W = 640, H = 150,
+    y = (v:number) => 12 + (1 - (Math.min(hi, Math.max(lo, v)) - lo)/sp) * (H-24);
   const path = (a:number[]) => a.map((v,i)=>`${i?"L":"M"}${(i/(a.length-1))*W},${y(v)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%"}}>
@@ -175,9 +180,10 @@ export default function IpoCommand() {
                       color:ltp>=open?C.green:C.red}}>{((ltp-open)/open*100).toFixed(1)}% vs open ₹{open}</span>}
                     {vwap!=null&&<span style={{...num,fontSize:12,color:C.meta}}>VWAP ₹{vwap} · {ltp!=null&&ltp>=vwap?"above":"below"}</span>}
                   </div>
-                  <Spark ticks={ticks} floor={N(lv.floor_price)} ceil={N(lv.ceiling_price)}/>
+                  {(()=>{const L=(d?.dl||[]).find(x=>x.sym===sym);
+                    return <Spark ticks={ticks} floor={N(L?.floor) ?? N(lv.floor_price)} ceil={N(L?.ceiling) ?? N(lv.ceiling_price)}/>;})()}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:8}}>
-                    {[["OBIR",last.obir,N(last.obir)!=null&&N(last.obir)!>=1?C.green:C.red],
+                    {[["OBIR",N(last.obir)==null?"—":N(last.obir)!.toFixed(2),N(last.obir)!=null&&N(last.obir)!>=1?C.green:C.red],
                       ["Momentum",last.momentum,C.text],["Signal",last.signal,C.text],
                       ["Floor defenses",lv.floor_defenses,C.text]].map((t,i)=>(
                       <div key={i} style={{border:`1px solid ${C.border}`,borderRadius:9,padding:"8px 10px"}}>
@@ -191,7 +197,7 @@ export default function IpoCommand() {
                   {blk.map((b,i)=>(
                     <div key={i} style={{display:"flex",gap:8,fontSize:12.5,padding:"6px 9px",borderRadius:8,
                       border:`1px solid ${C.greenBd}`,background:C.greenBg,marginBottom:6}}>
-                      <span style={{...num,fontSize:10.5,color:C.dim,minWidth:42}}>{String(b.at).slice(11,16)}</span>
+                      <span style={{...num,fontSize:10.5,color:C.dim,minWidth:42}}>{new Date(String(b.at)).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false,hour:"2-digit",minute:"2-digit"})}</span>
                       <span><b>{Number(b.qty).toLocaleString()} @ ₹{String(b.price)}</b> — {String(b.mult)}× median</span></div>))}
                   <div style={{fontSize:12,color:C.meta,marginTop:8}}>
                     {String(lv.risk_note||"")} {lv.circuit_locked?" · ⚠ circuit locked":""}</div>
