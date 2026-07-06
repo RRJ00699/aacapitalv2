@@ -18,7 +18,8 @@ export async function GET() {
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   try {
     await ensure();
-    const requests = await sql`SELECT email, name, status, requested_at
+    await sql`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS note TEXT`;
+    const requests = await sql`SELECT email, name, status, requested_at, note
       FROM access_requests ORDER BY requested_at DESC LIMIT 50`;
     const allowed = await sql`SELECT email, added_by, added_at
       FROM allowed_users ORDER BY added_at DESC LIMIT 100`;
