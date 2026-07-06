@@ -75,6 +75,7 @@ def main():
     step("anchor-deal conviction match",   ["match_anchor_deals.py","--apply"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("candles: in-window daily sync",  ["sync_inwindow_candles.py"])
+    step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"])
     ok&=step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"])
     ok&=step("derive listing_open",         ["fill_listing_open_from_candles.py"])
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
