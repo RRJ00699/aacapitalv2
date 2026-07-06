@@ -14,6 +14,11 @@ export default function Settings(){
     .then(r=>r.ok?(setMsg(k+" saved ✓"),setVals(v=>({...v,[k]:""})),load()):setMsg("save failed"));
   return(<div style={{padding:"18px 20px",background:C.bg,minHeight:"100vh",maxWidth:640,margin:"auto",
     color:C.tx,font:'14px/1.5 -apple-system,"Segoe UI",Inter,sans-serif'}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {[["/today","🏠 Today"],["/stocks","📈 Stocks"],["/ipo","⚡ IPO"],["/dashboard/research","🔬 Research"],["/dashboard/journal","📓 Journal"],["/dashboard/admin","🛠 Admin"]].map(([h,l])=>(
+          <a key={h} href={h} style={{fontSize:12.5,fontWeight:600,color:"#2563EB",textDecoration:"none",
+            background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"5px 11px"}}>{l}</a>))}
+      </div>
       <a href="/dashboard/admin" style={{display:"inline-block",fontSize:13,fontWeight:600,
         color:"#2563EB",textDecoration:"none",background:"#EFF6FF",border:"1px solid #BFDBFE",
         borderRadius:8,padding:"5px 10px",marginBottom:12}}>← Admin</a>
