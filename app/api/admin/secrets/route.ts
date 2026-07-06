@@ -5,7 +5,7 @@ import { neon } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
-const KEYS = ["screener_username", "screener_password", "ntfy_topic"];
+const KEYS = ["screener_username", "screener_password", "screener_cookie", "ntfy_topic"];
 
 export async function GET() {
   const admin = await getAdminEmail();
