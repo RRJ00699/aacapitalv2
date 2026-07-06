@@ -24,6 +24,8 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
   { key: "levels",          label: "Rebuild daily levels",  desc: "Recompute floor/ceiling → ipo_daily_levels" },
   { key: "theses",          label: "Re-test theses",        desc: "Re-run the untested-thesis checks" },
+  { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
+  { key: "exit_backtest",   label: "Exit-rule backtest",    desc: "Which first-5-day exit maximizes return after buying the open (read-only)" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
 ];
