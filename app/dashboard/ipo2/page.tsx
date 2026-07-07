@@ -237,6 +237,32 @@ function IpoCommand() {
 
       {/* PLAYBOOK */}
       {view==="pb" && <>
+        <div style={{...card, background:"#FFFBEB", border:"1.5px solid #FDE68A"}}>
+          <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
+          <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
+            Written so anyone in the family can follow it. Proven on 372 real IPOs.
+          </div>
+          {[
+            ["1","BUY only in the happy-but-not-crazy zone",
+             "On its first morning, look at the opening price vs the IPO price. Opened 4% to 15% higher? That is the zone — people want it, but the party has not peaked. Opened flat, lower, or +15%+? Do NOT buy. (Flat = nobody wants it; huge pop = the profit already went to the lottery winners who got allotment.)"],
+            ["2","EXCEPTION: giant IPOs (bigger than ₹2,000 crore)",
+             "Companies this big must be bought by mutual funds and insurers for weeks after listing — they cannot fill their quota in one day. Giants get a pass even on a big opening pop."],
+            ["3","SELL the same day, at the close. Every time.",
+             "No waiting, no hoping, no news-watching. Buy near the open, sell at 3:30 PM. History says holding longer does not pay better and risks more."],
+          ].map(([n,t,d2])=>(
+            <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
+              <div style={{minWidth:34,height:34,borderRadius:"50%",background:"#B8860B",color:"#fff",
+                display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16}}>{n}</div>
+              <div><div style={{fontWeight:800,fontSize:13.5}}>{t}</div>
+                <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{d2}</div></div>
+            </div>))}
+          <div style={{marginTop:10,padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",
+            borderRadius:9,fontSize:12.5,color:"#166534"}}>
+            <b>The honest math:</b> in the zone, this wins about <b>65 times out of 100</b>, making ~3% per day traded.
+            The 35 losses average small, but the worst days lose ~9% — so <b>never bet money where −9% would hurt</b>.
+            Everything outside the rules: watch, enjoy, do nothing. Skipping IS the strategy.
+          </div>
+        </div>
         <div style={card}><b style={{fontSize:14}}>The playbook — what to do, by setup.</b>
           <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Entry: buy at listing open only when the setup qualifies.
             Exit: best close ≤10 sessions · hard invalidation on a close below the floor.</div></div>
