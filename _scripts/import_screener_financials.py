@@ -170,10 +170,12 @@ def download_one(symbol, out_dir, cookie, ua, timeout=30):
     out = os.path.join(out_dir, f"{symbol}_10yr.xlsx")
     if os.path.exists(out) and os.path.getsize(out) > 5000:
         return "exists", ""
-    m = re.search(r"csrftoken=([^;\s]+)", cookie or "")
-    csrf = m.group(1) if m else ""
     sess = requests.Session()
-    sess.headers.update({"Cookie": cookie, "User-Agent": ua})
+    sess.headers.update({"User-Agent": ua})
+    for kv in (cookie or "").split(";"):
+        k, _, v = kv.strip().partition("=")
+        if k and v:
+            sess.cookies.set(k.strip(), v.strip(), domain="www.screener.in")
     reason = "no response"
     for page in (f"{SCREENER_BASE}/company/{symbol}/consolidated/",
                  f"{SCREENER_BASE}/company/{symbol}/"):
@@ -193,9 +195,11 @@ def download_one(symbol, out_dir, cookie, ua, timeout=30):
                 reason = "export id not found on page (layout change?)"
             continue
         try:
+            csrf = sess.cookies.get("csrftoken", "")
             rr = sess.post(f"{SCREENER_BASE}/user/company/export/{mm.group(1)}/",
                            data={"csrfmiddlewaretoken": csrf},
-                           headers={"Referer": page, "X-CSRFToken": csrf},
+                           headers={"Referer": page, "X-CSRFToken": csrf,
+                                    "Origin": SCREENER_BASE},
                            timeout=timeout)
         except Exception as e:
             reason = f"{type(e).__name__}: {str(e)[:40]}"; continue
@@ -203,7 +207,9 @@ def download_one(symbol, out_dir, cookie, ua, timeout=30):
             with open(out, "wb") as f:
                 f.write(rr.content)
             return "downloaded", ""
-        reason = f"export HTTP {rr.status_code} | {rr.text[:100].replace(chr(10),' ')}"
+        t = re.search(r"<title>(.*?)</title>", rr.text[:3000], re.S)
+        reason = (f"export HTTP {rr.status_code} | final_url={rr.url} | "
+                  f"title={t.group(1).strip()[:60] if t else '?'}")
         break
     return "failed", reason
 
