@@ -2,7 +2,8 @@
 """
 purge_candles_after_lockin.py — trim price_candles to the pre-lock-in window (our game).
 Deletes candles dated AFTER each IPO's lock-in (anchor_lock30_date, or listing_date+30d proxy),
-plus an optional buffer. DRY-RUN by default; needs --apply to actually delete.
+plus an optional buffer. EXEMPTS any symbol in trade_journal (positions kept in full).
+DRY-RUN by default; needs --apply to actually delete.
 
 ⚠️ IRREVERSIBLE. This removes the post-lock tail (e.g. the T+40-hold backtest data).
    It does NOT touch the pre-lock window (listing → ~T+30), which covers exit-on-strength
@@ -31,7 +32,10 @@ def main():
     cur.execute("SELECT count(*) FROM price_candles"); total=cur.fetchone()[0]
     q_count=f"""SELECT count(*) FROM price_candles pc
                 JOIN ipo_intelligence i ON i.nse_symbol = pc.symbol
-                WHERE i.listing_date IS NOT NULL AND pc.date > {CUTOFF}"""
+                WHERE i.listing_date IS NOT NULL AND pc.date > {CUTOFF}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM trade_journal tj
+                      WHERE UPPER(tj.symbol) = UPPER(pc.symbol))"""
     cur.execute(q_count,(a.buffer,)); todel=cur.fetchone()[0]
     print(f"price_candles total: {total:,}")
     print(f"after lock-in + {a.buffer}d buffer → would delete: {todel:,}  (keep {total-todel:,})")
@@ -41,7 +45,10 @@ def main():
     cur.execute(f"""DELETE FROM price_candles pc
                     USING ipo_intelligence i
                     WHERE i.nse_symbol = pc.symbol AND i.listing_date IS NOT NULL
-                      AND pc.date > {CUTOFF}""",(a.buffer,))
+                      AND pc.date > {CUTOFF}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM trade_journal tj
+                      WHERE UPPER(tj.symbol) = UPPER(pc.symbol))""",(a.buffer,))
     conn.commit()
     print(f"✓ deleted {cur.rowcount:,} post-lock-in candle rows.")
 
