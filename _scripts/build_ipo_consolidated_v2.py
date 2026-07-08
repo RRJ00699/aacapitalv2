@@ -328,12 +328,13 @@ def main():
     """)
 
     # gap_bucket: realized listing gap (listing_open - issue_price)/issue_price
-    #   LOW <10% | MID 10-30% (the validated playable edge) | HIGH >30%
+    #   LOW <4% | MID 4-15% (the validated playable edge: buy open, sell D1 close) | HIGH >15%
+    #   (aligned 2026-07-08 to the traded band; old 10/30 era relabeled)
     cur.execute("""
       UPDATE ipo_consolidated SET gap_bucket = CASE
         WHEN issue_price IS NULL OR issue_price = 0 OR listing_open IS NULL THEN NULL
-        WHEN (listing_open - issue_price) / issue_price * 100 < 10  THEN 'LOW'
-        WHEN (listing_open - issue_price) / issue_price * 100 <= 30 THEN 'MID'
+        WHEN (listing_open - issue_price) / issue_price * 100 < 4   THEN 'LOW'
+        WHEN (listing_open - issue_price) / issue_price * 100 <= 15 THEN 'MID'
         ELSE 'HIGH' END
     """)
 
@@ -384,7 +385,7 @@ def main():
     # tp1_exit_note: static research note (the validated MID-gap exit window)
     cur.execute("""
       UPDATE ipo_consolidated
-      SET tp1_exit_note = 'Validated edge is MID-gap (10-30%); historical TP near listing+20td. Research signal, not a buy call.'
+      SET tp1_exit_note = 'Validated edge is MID-gap (4-15%): buy open, sell D1 close (65%/+3.3 med). Research signal, not a buy call.'
       WHERE gap_bucket = 'MID'
     """)
 
