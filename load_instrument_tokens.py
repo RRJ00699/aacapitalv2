@@ -16,7 +16,18 @@ KITE_ACCESS_TOKEN = os.environ.get("KITE_ACCESS_TOKEN", "")
 if not DATABASE_URL:
     print("ERROR: DATABASE_URL not set"); exit(1)
 if not KITE_ACCESS_TOKEN:
-    print("ERROR: KITE_ACCESS_TOKEN not set — run: python _scripts/kite_login.py"); exit(1)
+    # Fallback: the freshly-refreshed token in Neon platform_config (same source
+    # ipo_candle_backfill.py uses; kite_login.py is retired).
+    try:
+        _c = psycopg2.connect(DATABASE_URL); _cur = _c.cursor()
+        _cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
+        _row = _cur.fetchone(); _cur.close(); _c.close()
+        if _row and _row[0] and str(_row[0]).strip():
+            KITE_ACCESS_TOKEN = str(_row[0]).strip()
+    except Exception as _e:
+        print(f"Neon token read failed: {_e}")
+if not KITE_ACCESS_TOKEN:
+    print("ERROR: no Kite token in env or Neon — run refresh_kite_token.py"); exit(1)
 
 from kiteconnect import KiteConnect
 kite = KiteConnect(api_key=KITE_API_KEY)
