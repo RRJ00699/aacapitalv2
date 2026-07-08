@@ -97,6 +97,17 @@ def main():
 
     today    = date.today().isoformat()
     updated  = skipped = errors = 0
+    candles_written = 0
+
+    # only UPDATE master columns that actually exist (post-prune schema is 208
+    # cols; return_day7/30/cmp etc. were dropped — writing them aborted every
+    # row on 2026-07-08, updated=0). Checked once, applied per-row below.
+    ccur = conn.cursor()
+    ccur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_intelligence'")
+    master_cols = {r[0] for r in ccur.fetchall()}
+    ccur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='price_candles'")
+    has_volume = "volume" in {r[0] for r in ccur.fetchall()}
+    ccur.close()
 
     for ipo in ipos:
         company      = ipo["company_name"]
@@ -111,11 +122,16 @@ def main():
             continue
 
         from_date = listing_date or (date.today() - timedelta(days=365 * 3)).isoformat()
-        log.info(f"  {company} ({symbol}) from {from_date}")
+        # cap the window at listing+70d: matches the purge policy (pre-lock
+        # window is all we keep), and stays under Kite's 2000-day request
+        # limit that killed every pre-2021 fetch on 2026-07-08.
+        d0 = date.fromisoformat(str(from_date)[:10])
+        to_date = min(date.today(), d0 + timedelta(days=70)).isoformat()
+        log.info(f"  {company} ({symbol}) {from_date} -> {to_date}")
 
         try:
             candles = kite.historical_data(
-                token, from_date=from_date, to_date=today, interval="day"
+                token, from_date=from_date, to_date=to_date, interval="day"
             )
         except Exception as e:
             log.error(f"  Kite error: {e}")
@@ -158,27 +174,49 @@ def main():
 
         try:
             ucur = conn.cursor()
-            ucur.execute("""
-                UPDATE ipo_intelligence SET
-                    listing_gap_pct    = COALESCE(listing_gap_pct, %s),
-                    return_day7        = %s,
-                    return_day30       = %s,
-                    return_day90       = %s,
-                    return_cmp         = %s,
-                    max_upside_pct     = %s,
-                    max_drawdown_day30 = %s,
-                    archetype          = COALESCE(NULLIF(archetype, 'UNKNOWN'), %s),
-                    listing_date       = COALESCE(listing_date, %s),
-                    updated_at         = NOW()
-                WHERE id = %s
-            """, [
-                r_list, r_d7, r_d30, r_d90, r_cmp,
-                max_up, max_down, arch,
-                listing_date, ipo["id"],
-            ])
+            # 1) the actual candles -> price_candles (this was MISSING: the
+            # script's docstring promised candles but never wrote them; the
+            # nightly derives listing fields/d10/cir/levels from this table)
+            rows = [(symbol, c["date"].date() if hasattr(c["date"], "date") else str(c["date"])[:10],
+                     c["open"], c["high"], c["low"], c["close"], c.get("volume"))
+                    for c in candles]
+            if has_volume:
+                psycopg2.extras.execute_values(ucur, """
+                    INSERT INTO price_candles (symbol, date, open, high, low, close, volume)
+                    VALUES %s
+                    ON CONFLICT (symbol, date) DO UPDATE SET
+                        open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+                        close=EXCLUDED.close, volume=EXCLUDED.volume""", rows)
+            else:
+                psycopg2.extras.execute_values(ucur, """
+                    INSERT INTO price_candles (symbol, date, open, high, low, close)
+                    VALUES %s
+                    ON CONFLICT (symbol, date) DO UPDATE SET
+                        open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+                        close=EXCLUDED.close""", [r[:6] for r in rows])
+            candles_written += len(rows)
+
+            # 2) master fields — only the columns that survived the prune
+            sets, vals = [], []
+            for col, val, fill_empty in [
+                ("return_day90",       r_d90,  False),
+                ("return_cmp",         r_cmp,  False),
+                ("max_upside_pct",     max_up, False),
+                ("max_drawdown_day30", max_down, False),
+                ("archetype",          arch,   False),
+                ("listing_date",       listing_date, True),
+            ]:
+                if col in master_cols:
+                    sets.append(f"{col} = COALESCE({col}, %s)" if fill_empty else f"{col} = %s")
+                    vals.append(val)
+            if "updated_at" in master_cols:
+                sets.append("updated_at = NOW()")
+            if sets:
+                ucur.execute(f"UPDATE ipo_intelligence SET {', '.join(sets)} WHERE id = %s",
+                             vals + [ipo["id"]])
             conn.commit()
             updated += 1
-            log.info(f"    gap={r_list}%  d30={r_d30}%  d90={r_d90}%  [{arch}]  n={len(candles)}")
+            log.info(f"    candles={len(rows)}  d90={r_d90}%  [{arch}]")
         except Exception as e:
             conn.rollback()
             log.error(f"    DB error: {e}")
@@ -187,15 +225,13 @@ def main():
         time.sleep(0.35)  # Kite rate limit ~3 req/sec
 
     # ── Final report ───────────────────────────────────────────────────────────
-    log.info(f"\nDone — updated={updated}  skipped={skipped}  errors={errors}")
+    log.info(f"\nDone — updated={updated}  candles_written={candles_written}  "
+             f"skipped={skipped}  errors={errors}")
     rcur = conn.cursor()
-    rcur.execute("""
-        SELECT COUNT(*), COUNT(listing_gap_pct), COUNT(return_day30),
-               COUNT(return_day90), COUNT(archetype)
-        FROM ipo_intelligence
-    """)
+    count_cols = [c for c in ("listing_gap_pct", "return_day90", "archetype") if c in master_cols]
+    rcur.execute(f"SELECT COUNT(*){''.join(f', COUNT({c})' for c in count_cols)} FROM ipo_intelligence")
     r = rcur.fetchone()
-    log.info(f"Coverage — total={r[0]}  gap={r[1]}  d30={r[2]}  d90={r[3]}  archetype={r[4]}")
+    log.info("Coverage — total=%s  %s" % (r[0], "  ".join(f"{c}={v}" for c, v in zip(count_cols, r[1:]))))
     conn.close()
 
 
