@@ -78,27 +78,38 @@ def main():
     rev, pat = col("revenue", "rev", "sales", "total_income"), col("pat", "net_profit", "profit")
     ebi, bor = col("ebitda", "operating_profit"), col("borrowings", "total_borrowings", "debt")
     nw = col("net_worth", "networth", "equity")
-    print(f"annual_financials columns used: {symc},{rev},{pat},{ebi},{bor},{nw}")
+    eqc, res = col("equity_capital", "equity_share_capital"), col("reserves")
+    fyc = col("fiscal_year", "fy")
+    ebi_expr = f"f.{ebi}" if ebi else ("(COALESCE(f.pbt,0)+COALESCE(f.interest,0)+COALESCE(f.depreciation,0))"
+                                       if "pbt" in afc else "NULL")
+    nw_expr = f"f.{nw}" if nw else (f"(COALESCE(f.{eqc},0)+COALESCE(f.{res},0))" if eqc and res else "NULL")
+    print(f"using: year={fyc} rev={rev} pat={pat} ebitda={'col' if ebi else 'pbt+int+dep'} nw={'col' if nw else 'eq+res'}")
     if not (rev and pat): sys.exit("required columns missing")
 
     cur.execute(f"""
-        SELECT i.id, UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol)), i.gap_bucket, i.d10_best_pct,
-               ARRAY_AGG(f.fy ORDER BY f.fy), ARRAY_AGG(f.{rev} ORDER BY f.fy),
-               ARRAY_AGG(f.{pat} ORDER BY f.fy),
-               ARRAY_AGG({f'f.{ebi}' if ebi else 'NULL'} ORDER BY f.fy),
-               ARRAY_AGG({f'f.{bor}' if bor else 'NULL'} ORDER BY f.fy),
-               ARRAY_AGG({f'f.{nw}' if nw else 'NULL'} ORDER BY f.fy)
+        SELECT i.id, UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol)), i.listing_gap_pct, i.d10_best_pct,
+               ARRAY_AGG(f.{fyc} ORDER BY f.{fyc}), ARRAY_AGG(f.{rev} ORDER BY f.{fyc}),
+               ARRAY_AGG(f.{pat} ORDER BY f.{fyc}),
+               ARRAY_AGG({ebi_expr} ORDER BY f.{fyc}),
+               ARRAY_AGG({f'f.{bor}' if bor else 'NULL'} ORDER BY f.{fyc}),
+               ARRAY_AGG({nw_expr} ORDER BY f.{fyc})
         FROM ipo_intelligence i
         JOIN annual_financials f ON UPPER(f.{symc}) = UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol))
         WHERE i.listing_date IS NOT NULL
         GROUP BY 1,2,3,4 HAVING COUNT(*) >= 2""")
     wrote = 0
     dist = {}
-    for pid, sym, gb, d10, fy, rv, pt, eb, br, nwv in cur.fetchall():
+    def bucket(g):
+        try: g = float(g)
+        except (TypeError, ValueError): return "?"
+        return "LOW" if g < 4 else ("MID" if g <= 15 else "HIGH")
+    for pid, sym, gp, d10, fy, rv, pt, eb, br, nwv in cur.fetchall():
+        gb = bucket(gp)
         fys = [dict(rev=rv[i], pat=pt[i], ebitda=eb[i], borrowings=br[i], net_worth=nwv[i])
                for i in range(len(fy))][-4:]
         rg, pg, de, fl = flags_from(fys)
-        tag = f"QF:{len(fl)}|{','.join(fl)}" if fl else "QF:0|clean"
+        from psycopg2.extras import Json
+        tag = Json({"qf": len(fl), "flags": fl, "src": "annual_financials"})
         if a.apply:
             cur.execute("""UPDATE ipo_intelligence SET
                 revenue_cagr_3y = COALESCE(revenue_cagr_3y, %s),
@@ -108,7 +119,7 @@ def main():
                 WHERE id=%s""", (rg, pg, de, tag, pid))
             wrote += 1
         if d10 is not None:
-            key = ("2+ flags" if len(fl) >= 2 else ("1 flag" if fl else "clean"), (gb or "?").upper())
+            key = ("2+ flags" if len(fl) >= 2 else ("1 flag" if fl else "clean"), gb)
             dist.setdefault(key, []).append(float(d10))
     if a.apply: conn.commit()
     print(f"IPOs {'written' if a.apply else 'computable'}: {wrote if a.apply else 'dry'}")

@@ -25,14 +25,19 @@ def main():
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("DATABASE_URL not set")
     conn = psycopg2.connect(DB, connect_timeout=20); cur = conn.cursor()
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='annual_financials'")
+    afc = {r[0] for r in cur.fetchall()}
+    patc = next((c for c in ("net_profit", "pat", "profit_after_tax") if c in afc), None)
+    symc = "symbol" if "symbol" in afc else "nse_symbol"
+    if not patc: sys.exit(f"no profit column found; annual_financials has: {sorted(afc)}")
 
-    cur.execute("""
-        SELECT sf.industry, sf.market_cap, af.pat
+    cur.execute(f"""
+        SELECT sf.industry, sf.market_cap, af.p
         FROM stock_fundamentals sf
         JOIN LATERAL (
-            SELECT pat FROM annual_financials af
-            WHERE af.symbol = sf.nse_symbol AND af.pat IS NOT NULL
-            ORDER BY af.fy DESC LIMIT 1
+            SELECT {patc} AS p FROM annual_financials af
+            WHERE af.{symc} = sf.nse_symbol AND af.{patc} IS NOT NULL
+            ORDER BY af.fiscal_year DESC LIMIT 1
         ) af ON TRUE
         WHERE sf.industry IS NOT NULL AND sf.market_cap > 0""")
     by_ind = {}
@@ -47,9 +52,14 @@ def main():
     print(f"industries with computable median PE (n>=4): {len(med)}")
     nmed = {norm(k): v for k, v in med.items()}
 
-    cur.execute("""SELECT id, sector FROM ipo_intelligence
-                   WHERE peer_median_pe IS NULL AND sector IS NOT NULL""")
-    rows = cur.fetchall()
+    # primary: the IPO's own Screener industry (exact taxonomy) via symbol join
+    cur.execute("""SELECT i.id, sf.industry, i.sector
+                   FROM ipo_intelligence i
+                   LEFT JOIN stock_fundamentals sf
+                     ON sf.nse_symbol = UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol))
+                   WHERE i.peer_median_pe IS NULL
+                     AND (sf.industry IS NOT NULL OR i.sector IS NOT NULL)""")
+    rows = [(pid, ind if ind else sec) for pid, ind, sec in cur.fetchall()]
     filled = miss = 0
     unmatched = {}
     for pid, sec in rows:
