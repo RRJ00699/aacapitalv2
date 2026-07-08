@@ -83,6 +83,7 @@ def main():
     step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
     step("d10 outcome precompute",        ["compute_d10.py"])
     step("reconcile listing dates",     ["reconcile_listing_dates.py","--apply"])
+    step("close-in-range strength",     ["close_in_range.py","--apply"])
     step("master computables backfill",   ["backfill_master_computables.py","--apply"])
     step("sector cleanup",                ["fix_sectors.py","--apply"])
     step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
