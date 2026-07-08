@@ -6,7 +6,7 @@ Fills: listing_gap_pct, return_day7, return_day30, return_day90, archetype.
 Run: python _scripts/ipo_candle_backfill.py
 """
 
-import os, time, logging
+import os, sys, time, logging
 import psycopg2, psycopg2.extras
 from datetime import date, timedelta
 
@@ -68,6 +68,15 @@ def main():
         ORDER BY listing_date DESC NULLS LAST
     """)
     ipos = cur.fetchall()
+    # optional targeted mode: --symbols GLS,PARAS,... (or BACKFILL_SYMBOLS env)
+    only = [s.strip().upper() for s in
+            (os.environ.get("BACKFILL_SYMBOLS", "") or "").split(",") if s.strip()]
+    for a in sys.argv[1:]:
+        if a.startswith("--symbols="):
+            only = [s.strip().upper() for s in a.split("=", 1)[1].split(",") if s.strip()]
+    if only:
+        ipos = [r for r in ipos if (r["symbol"] or "").upper() in only]
+        log.info(f"Targeted mode: {len(ipos)} IPOs matching --symbols {','.join(only)}")
     log.info(f"IPOs to process: {len(ipos)}")
 
     # ── Load instrument token map ──────────────────────────────────────────────
