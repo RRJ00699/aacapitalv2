@@ -90,44 +90,49 @@ def run(conn, apply=False):
             WHERE i.company_name ILIKE %s AND i.listing_date IS NOT NULL
             GROUP BY 1,2,3,4,5""", (pattern,))
         rows = cur.fetchall()
-        if len(rows) != 1:
-            print(f"  ?? pattern {pattern!r}: {len(rows)} master rows — expected 1, SKIPPED")
+        if not rows:
+            print(f"  ?? pattern {pattern!r}: 0 master rows — SKIPPED")
             skipped += 1
             continue
-        pid, name, sym, ldate, gap, dmin, dmax, ncand, npre = rows[0]
-        action = decide(sym, correct)
-        lead = (ldate - dmin).days if dmin else None
-        anomalous = lead is not None and lead > ANOMALY_DAYS
-        print(f"  {name[:34]:34} {str(sym):11} listed {ldate}  candles "
-              f"{ncand} ({npre} pre-listing, first {dmin}, lead {lead}d)  "
-              f"gap={gap} [{gapband(gap)}]")
-        if not anomalous:
-            print(f"     -> clean (no anomaly) — nothing to do")
-            continue
-        if action == "REMAP":
-            print(f"     -> REMAP {sym} -> {correct}; null {len(null_remap)} derived; drop levels rows")
-        else:
-            print(f"     -> PURGE {npre} pre-listing candles of {correct}; null {len(null_base)} derived; drop levels rows")
-        if not apply:
-            fixed += 1
-            continue
+        if len(rows) > 1:
+            # duplicate master rows (dedupe stragglers) — fix each; the anomaly
+            # gate keeps this safe and idempotent per row. Dedupe separately.
+            print(f"  !! pattern {pattern!r}: {len(rows)} master rows (dupes?) — fixing each")
+        for row in rows:
+            pid, name, sym, ldate, gap, dmin, dmax, ncand, npre = row
+            action = decide(sym, correct)
+            lead = (ldate - dmin).days if dmin else None
+            anomalous = lead is not None and lead > ANOMALY_DAYS
+            print(f"  {name[:34]:34} {str(sym):11} listed {ldate}  candles "
+                  f"{ncand} ({npre} pre-listing, first {dmin}, lead {lead}d)  "
+                  f"gap={gap} [{gapband(gap)}]")
+            if not anomalous:
+                print(f"     -> clean (no anomaly) — nothing to do")
+                continue
+            if action == "REMAP":
+                print(f"     -> REMAP {sym} -> {correct}; null {len(null_remap)} derived; drop levels rows")
+            else:
+                print(f"     -> PURGE {npre} pre-listing candles of {correct}; null {len(null_base)} derived; drop levels rows")
+            if not apply:
+                fixed += 1
+                continue
 
-        if action == "REMAP":
-            cur.execute("UPDATE ipo_intelligence SET nse_symbol=%s, symbol=%s WHERE id=%s",
-                        (correct, correct, pid))
-            nulls = null_remap
-            # levels rows sit under the WRONG (other company's) symbol
-            cur.execute("DELETE FROM ipo_daily_levels WHERE UPPER(symbol)=UPPER(%s)", (sym,))
-        else:
-            cur.execute("""DELETE FROM price_candles
-                           WHERE UPPER(symbol)=UPPER(%s) AND date < %s""", (correct, ldate))
-            print(f"     purged {cur.rowcount} pre-listing candles")
-            nulls = null_base
-            cur.execute("DELETE FROM ipo_daily_levels WHERE UPPER(symbol)=UPPER(%s)", (correct,))
-        if nulls:
-            cur.execute(f"UPDATE ipo_intelligence SET {', '.join(c + '=NULL' for c in nulls)} "
-                        f"WHERE id=%s", (pid,))
-        fixed += 1
+            if action == "REMAP":
+                cur.execute("UPDATE ipo_intelligence SET nse_symbol=%s, symbol=%s WHERE id=%s",
+                            (correct, correct, pid))
+                nulls = null_remap
+                # levels rows sit under the WRONG (other company's) symbol
+                cur.execute("DELETE FROM ipo_daily_levels WHERE UPPER(symbol)=UPPER(%s)", (sym,))
+            else:
+                cur.execute("""DELETE FROM price_candles
+                               WHERE UPPER(symbol)=UPPER(%s) AND date < %s""", (correct, ldate))
+                print(f"     purged {cur.rowcount} pre-listing candles")
+                nulls = null_base
+                cur.execute("DELETE FROM ipo_daily_levels WHERE UPPER(symbol)=UPPER(%s)", (correct,))
+            if nulls:
+                cur.execute(f"UPDATE ipo_intelligence SET {', '.join(c + '=NULL' for c in nulls)} "
+                            f"WHERE id=%s", (pid,))
+            fixed += 1
 
     if apply:
         conn.commit()
