@@ -40,7 +40,7 @@ async function getListingToday(): Promise<ListingSignal[]> {
       lqi_final                     AS lqi_score,
       archetype                     AS conviction,
       NULL::numeric                 AS last_price,
-      listing_vwap                  AS vwap,
+      NULL::numeric                 AS vwap,
       NULL::boolean                 AS above_vwap,
       listing_volume,
       NULL::bigint                  AS buy_qty,
