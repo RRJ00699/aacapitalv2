@@ -35,7 +35,10 @@ def main():
         # Fallback: read the freshly-refreshed token from Neon platform_config
         # (refresh_kite_token.py writes it there; same source other scripts use).
         try:
-            import psycopg2
+            # NOTE: no local `import psycopg2` here — it shadowed the module-level
+            # import as a function-local for ALL of main(), so any run where the
+            # env token WAS set (this branch skipped) crashed at psycopg2.connect
+            # later with UnboundLocalError. Module is imported at top; use that.
             conn = psycopg2.connect(DATABASE_URL); cur = conn.cursor()
             cur.execute("SELECT value FROM platform_config WHERE key = 'kite_access_token'")
             row = cur.fetchone(); cur.close(); conn.close()
