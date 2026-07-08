@@ -58,7 +58,7 @@ MAP = [
   ("issue_category",          "COALESCE(d.issue_category, s.issue_category)"),
   ("issue_type",              "d.issue_type"),
   ("pricing_method",          "d.pricing_method"),
-  ("greenshoe_price",         "i.greenshoe_price"),
+  ("greenshoe_price",         "NULL::numeric"),  # pruned source col
   # ---- shareholding ----
   ("promoter_holding_before", "COALESCE(i.promoter_pre_equity, d.promoter_pre_pct)"),
   ("promoter_holding_after",  "COALESCE(i.promoter_post_equity, i.promoter_holding_post, d.promoter_post_pct)"),
@@ -83,14 +83,19 @@ MAP = [
   ("debt_equity",             "COALESCE(i.debt_equity, d.debt_equity)"),
   ("eps_pre",                 "COALESCE(i.eps_pre, d.eps_pre)"),
   ("eps_post",                "COALESCE(i.eps_post, d.eps_post)"),
-  ("cash_flow_positive",      "i.cash_flow_positive"),
-  ("operating_cf_growth",     "i.operating_cf_growth"),
+  ("cash_flow_positive",      "NULL::boolean"),  # pruned source col
+  ("operating_cf_growth",     "NULL::numeric"),  # pruned source col
   ("period_ended",            "d.period_ended"),
   # ---- valuation ----
   ("ipo_pe",                  "COALESCE(i.ipo_pe, i.pe_ratio)"),
   ("ipo_pe_pre",              "COALESCE(i.ipo_pe_pre, d.pe_pre)"),
   ("ipo_pe_post",             "COALESCE(i.ipo_pe_post, d.pe_post)"),
   ("ipo_pb",                  "COALESCE(i.ipo_pb, d.pbv)"),
+  # restored (over-deleted in e68b489 — live sources; only the pruned fallbacks dropped):
+  # peer_median_pe is written nightly by compute_peer_pe.py and read by the
+  # valuation_premium UPDATE below — deleting it was the 'exited 1' crash.
+  ("peer_median_pe",          "i.peer_median_pe"),
+  ("peer_pb",                 "i.peer_pb"),
   # ---- subscription (final) ----
   ("final_qib",               "COALESCE(s.qib_x, i.qib_subscription_x, i.qib_subscription)"),
   ("final_qib_ex_anchor",     "s.qib_ex_anchor_x"),
@@ -102,20 +107,23 @@ MAP = [
   ("final_employee",          "s.employee_x"),
   ("final_total",             "COALESCE(s.total_x, i.total_subscription_x, i.total_subscription)"),
   ("nii_alloc_pct",           "s.nii_alloc_pct"),
+  # restored (over-deleted in e68b489 — s.* sources are live subscription data):
+  ("qib_alloc_pct",           "s.qib_alloc_pct"),
+  ("retail_alloc_pct",        "s.retail_alloc_pct"),
   ("structure_type",          "s.structure_type"),
   # ---- subscription day-by-day ----
-  ("day1_qib",                "COALESCE(i.sub_day1_qib, i.qib_day1_x)"),
-  ("day1_nii",                "COALESCE(i.sub_day1_nii, i.nii_day1_x)"),
-  ("day1_retail",             "COALESCE(i.sub_day1_retail, i.retail_day1_x)"),
-  ("day2_qib",                "COALESCE(i.sub_day2_qib, i.qib_day2_x)"),
-  ("day2_nii",                "COALESCE(i.sub_day2_nii, i.nii_day2_x)"),
-  ("day2_retail",             "i.sub_day2_retail"),
-  ("day3_qib",                "COALESCE(i.sub_day3_qib, i.qib_day3_x)"),
-  ("day3_nii",                "i.sub_day3_nii"),
-  ("day3_retail",             "i.sub_day3_retail"),
-  ("qib_backloaded",          "i.qib_backloaded"),
-  ("hni_leverage_ratio",      "i.hni_leverage_ratio"),
-  ("hni_breakeven_premium",   "i.hni_breakeven_premium"),
+  ("day1_qib",                "NULL::numeric"),  # pruned source col
+  ("day1_nii",                "NULL::numeric"),  # pruned source col
+  ("day1_retail",             "NULL::numeric"),  # pruned source col
+  ("day2_qib",                "NULL::numeric"),  # pruned source col
+  ("day2_nii",                "NULL::numeric"),  # pruned source col
+  ("day2_retail",             "NULL::numeric"),  # pruned source col
+  ("day3_qib",                "NULL::numeric"),  # pruned source col
+  ("day3_nii",                "NULL::numeric"),  # pruned source col
+  ("day3_retail",             "NULL::numeric"),  # pruned source col
+  ("qib_backloaded",          "NULL::boolean"),  # pruned source col
+  ("hni_leverage_ratio",      "NULL::numeric"),  # pruned source col
+  ("hni_breakeven_premium",   "NULL::numeric"),  # pruned source col
   # ---- GMP ----
   ("gmp_value",               "i.gmp_value"),
   ("gmp_pct",                 "COALESCE(i.gmp_percentage, i.gmp_pct_t1)"),
@@ -153,9 +161,9 @@ MAP = [
   ("anchor_lockup_90d_shares","i.anchor_lockup_90d_shares"),
   # ---- lead managers / registrar ----
   ("brlm_names",              "COALESCE(i.brlm_names, d.lead_managers)"),
-  ("brlm_tier",               "i.brlm_tier"),
+  ("brlm_tier",               "NULL::text"),  # pruned source col
   ("brlm_score",              "i.brlm_score"),
-  ("brlm_historical_win_rate","i.brlm_historical_win_rate"),
+  ("brlm_historical_win_rate","NULL::numeric"),  # pruned source col
   ("brlm_avg_listing_gain",   "i.brlm_avg_listing_gain"),
   ("brlm_pct_negative",       "i.brlm_pct_negative"),
   ("registrar",               "d.registrar"),
@@ -169,15 +177,17 @@ MAP = [
   ("listing_delivery_pct",    "i.listing_delivery_pct"),
   ("listing_gap_pct",         "i.listing_gap_pct"),
   ("listing_vs_gmp_pct",      "i.listing_vs_gmp_pct"),
-  ("above_vwap",              "i.above_vwap"),
-  ("buy_qty",                 "i.buy_qty"),
-  ("sell_qty",                "i.sell_qty"),
-  ("day1_liquid_float",       "i.day1_liquid_float"),
-  ("float_turnover_ratio",    "i.float_turnover_ratio"),
+  # restored (over-deleted in e68b489 — listing_volume_val is importer-fed):
+  ("listing_volume",          "COALESCE(i.listing_volume, i.listing_volume_val)"),
+  ("above_vwap",              "NULL::boolean"),  # pruned source col
+  ("buy_qty",                 "NULL::bigint"),  # pruned source col
+  ("sell_qty",                "NULL::bigint"),  # pruned source col
+  ("day1_liquid_float",       "NULL::bigint"),  # pruned source col
+  ("float_turnover_ratio",    "NULL::numeric"),  # pruned source col
   ("hit_uc_day1",             "i.hit_uc_day1"),
   ("hit_lc_day1",             "i.hit_lc_day1"),
-  ("hit_uc_day2",             "i.hit_uc_day2"),
-  ("hit_lc_day2",             "i.hit_lc_day2"),
+  ("hit_uc_day2",             "NULL::boolean"),  # pruned source col
+  ("hit_lc_day2",             "NULL::boolean"),  # pruned source col
   ("ohlc_source",             "i.ohlc_source"),
   # ---- post-listing returns ----
   # NOTE: the stored return_day1..return_day365 columns are CORRUPTED (inconsistent
@@ -190,9 +200,9 @@ MAP = [
   ("return_open_20d",         "i.return_open_20d"),
   ("max_upside_pct",          "i.max_upside_pct"),
   ("max_upside_30d",          "i.max_upside_30d"),
-  ("max_drawdown_day1",       "i.max_drawdown_day1"),
+  ("max_drawdown_day1",       "NULL::numeric"),  # pruned source col
   ("max_drawdown_day30",      "COALESCE(i.max_drawdown_day30, i.max_drawdown_30d)"),
-  ("nifty_alpha_day30",       "i.nifty_alpha_day30"),
+  ("nifty_alpha_day30",       "NULL::numeric"),  # pruned source col
   ("days_to_break_issue",     "i.days_to_break_issue"),
   ("days_to_new_high",        "i.days_to_new_high"),
   ("achieved_10pct",          "i.achieved_10pct"),
@@ -217,26 +227,26 @@ MAP = [
   ("operator_risk_flags",     "i.operator_risk_flags"),
   ("expected_return",         "i.expected_return"),
   ("prob_10pct_profit",       "i.prob_10pct_profit"),
-  ("prob_gain_10_20",         "i.prob_gain_10_20"),
-  ("prob_gain_20_50",         "i.prob_gain_20_50"),
-  ("prob_gain_gt50",          "i.prob_gain_gt50"),
-  ("prob_loss_0_10",          "i.prob_loss_0_10"),
+  ("prob_gain_10_20",         "NULL::numeric"),  # pruned source col
+  ("prob_gain_20_50",         "NULL::numeric"),  # pruned source col
+  ("prob_gain_gt50",          "NULL::numeric"),  # pruned source col
+  ("prob_loss_0_10",          "NULL::numeric"),  # pruned source col
   ("prob_loss_gt10",          "i.prob_loss_gt10"),
   ("confidence_level",        "i.confidence_level"),
   ("suggested_action",        "i.suggested_action"),
-  ("position_size",           "i.position_size"),
+  ("position_size",           "NULL::numeric"),  # pruned source col
   ("play_recommendation",     "i.play_recommendation"),
   ("play_confidence",         "i.play_confidence"),
   ("play_stop_loss_pct",      "i.play_stop_loss_pct"),
   ("play_target_pct",         "i.play_target_pct"),
   ("play_hold_window",        "i.play_hold_window"),
-  ("buy_at_open_score",       "i.buy_at_open_score"),
-  ("vwap_entry_score",        "i.vwap_entry_score"),
-  ("post30_score",            "i.post30_score"),
-  ("anchor_expiry_score",     "i.anchor_expiry_score"),
-  ("risk_warning",            "i.risk_warning"),
-  ("key_reasons",             "i.key_reasons"),
-  ("similar_ipo_count",       "i.similar_ipo_count"),
+  ("buy_at_open_score",       "NULL::numeric"),  # pruned source col
+  ("vwap_entry_score",        "NULL::numeric"),  # pruned source col
+  ("post30_score",            "NULL::numeric"),  # pruned source col
+  ("anchor_expiry_score",     "NULL::numeric"),  # pruned source col
+  ("risk_warning",            "NULL::text"),  # pruned source col
+  ("key_reasons",             "NULL::text"),  # pruned source col
+  ("similar_ipo_count",       "NULL::integer"),  # pruned source col
   ("similar_ipos",            "i.similar_ipos"),
   # ---- provenance ----
   ("chittorgarh_imported",    "i.chittorgarh_imported"),
@@ -255,7 +265,30 @@ def main():
     # 321 newly-resolved rows — where nse_symbol is null but symbol is verified — attach
     # their financials/subscription instead of silently missing.
     SYM = "COALESCE(NULLIF(UPPER(i.nse_symbol),''), NULLIF(UPPER(i.symbol),''))"
-    select_sql = ",\n      ".join(f"{expr} AS {col}" for col, expr in MAP)
+
+    # ── guard: a pruned/renamed source column must never kill the nightly again ──
+    # (failure class of e68b489 and the 2026-07-08 'rebuild consolidated exited 1':
+    # prune_dead_columns dropped master cols the MAP still referenced; Postgres dies
+    # on the FIRST missing one per query, so each manual fix just exposed the next.)
+    # Any i./d./s. ref absent from the live schema is swapped for NULL, loudly.
+    import re
+    live = {}
+    for alias, tbl in (("i", "ipo_intelligence"), ("d", "ipo_issue_details"),
+                       ("s", "ipo_subscription_history")):
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (tbl,))
+        live[alias] = {r[0] for r in cur.fetchall()}
+    missing = set()
+    def heal(expr):
+        def sub(m):
+            a, c = m.group(1), m.group(2)
+            if c in live[a]: return m.group(0)
+            missing.add(f"{a}.{c}"); return "NULL"
+        return re.sub(r"\b([ids])\.([a-z_0-9]+)\b", sub, expr)
+    healed = [(col, heal(expr)) for col, expr in MAP]
+    if missing:
+        print(f"  ⚠️ {len(missing)} source col(s) not in live schema, NULLed in build: {sorted(missing)}")
+
+    select_sql = ",\n      ".join(f"{expr} AS {col}" for col, expr in healed)
     build = f"""
       DROP TABLE IF EXISTS ipo_consolidated;
       CREATE TABLE ipo_consolidated AS
