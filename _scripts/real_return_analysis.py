@@ -69,13 +69,26 @@ def report(title, recs):
         print()
 
 def run(candle_recs, master_recs, relabeled):
+    # recs: (gap, ret, year, size_cr) — size may be None
     report("A) CANDLE universe — gap from d1 candle OPEN vs issue (clean labels)",
-           candle_recs)
+           [r[:3] for r in candle_recs])
     print(f"stored listing_gap_pct bucket disagreed with candle-open gap on "
           f"{relabeled} of {len(candle_recs)} rows (old close-based fills)\n")
     report("B) MASTER-FIELD universe — listing_open/listing_day_close columns "
-           "(wider history)", master_recs)
-    mid_all = stats([r for g, r, y in master_recs if gapband(g) == "MID"])
+           "(wider history)", [r[:3] for r in master_recs])
+    print("=" * 66)
+    print("C) VALIDATED SCOPE — issue size >= 200cr only (the backtest's cut)")
+    print("=" * 66)
+    for label, recs in (("candle", candle_recs), ("master", master_recs)):
+        big = [(g, r, y) for g, r, y, sz in recs if sz is not None and float(sz) >= 200]
+        for era, cond in (("ALL", lambda y: True),
+                          (f"<={ERA_SPLIT-1}", lambda y: y is not None and y < ERA_SPLIT),
+                          (f">={ERA_SPLIT}", lambda y: y is not None and y >= ERA_SPLIT)):
+            line(f"{label} >=200cr {era:7} MID",
+                 stats([r for g, r, y in big if gapband(g) == "MID" and cond(y)]))
+        print()
+
+    mid_all = stats([r for g, r, y, sz in master_recs if gapband(g) == "MID"])
     if mid_all:
         print(f"Master full-history MID vs benchmark (65/+3.3): "
               f"win {mid_all[1]-BENCH['win']:+.1f}pts, med {mid_all[2]-BENCH['med']:+.2f}")
@@ -91,6 +104,7 @@ def fetch():
     # A) candle universe: gap AND outcome both from the d1 candle + issue_price
     cur.execute("""
         SELECT i.issue_price, i.listing_gap_pct, EXTRACT(YEAR FROM i.listing_date)::int,
+               i.issue_size_cr,
                ARRAY_AGG(p.open ORDER BY p.date), ARRAY_AGG(p.close ORDER BY p.date)
         FROM ipo_intelligence i
         JOIN price_candles p
@@ -98,28 +112,28 @@ def fetch():
          AND p.date >= i.listing_date
         WHERE i.listing_date IS NOT NULL AND COALESCE(i.is_sme, FALSE) = FALSE
           AND i.issue_price > 0
-        GROUP BY i.id, i.issue_price, i.listing_gap_pct, 3""")
+        GROUP BY i.id, i.issue_price, i.listing_gap_pct, 3, 4""")
     candle_recs, relabeled = [], 0
-    for ip, stored_gap, yr, o, c in cur.fetchall():
+    for ip, stored_gap, yr, sz, o, c in cur.fetchall():
         gap = pct(o[0], ip)            # OPEN vs issue — the honest gap
         ret = pct(c[0], o[0])
         if gap is None or ret is None: continue
-        candle_recs.append((gap, ret, yr))
+        candle_recs.append((gap, ret, yr, sz))
         if stored_gap is not None and gapband(float(stored_gap)) != gapband(gap):
             relabeled += 1
 
     # B) master-field universe: no candle requirement, wider history
     cur.execute("""
         SELECT issue_price, listing_open, listing_day_close,
-               EXTRACT(YEAR FROM listing_date)::int
+               EXTRACT(YEAR FROM listing_date)::int, issue_size_cr
         FROM ipo_intelligence
         WHERE listing_date IS NOT NULL AND COALESCE(is_sme, FALSE) = FALSE
           AND issue_price > 0 AND listing_open > 0 AND listing_day_close > 0""")
     master_recs = []
-    for ip, lo, lc, yr in cur.fetchall():
+    for ip, lo, lc, yr, sz in cur.fetchall():
         gap, ret = pct(lo, ip), pct(lc, lo)
         if gap is not None and ret is not None:
-            master_recs.append((gap, ret, yr))
+            master_recs.append((gap, ret, yr, sz))
     conn.close()
     print(f"universes: candle={len(candle_recs)}  master-field={len(master_recs)}\n")
     return candle_recs, master_recs, relabeled
@@ -127,8 +141,8 @@ def fetch():
 def selftest():
     assert gapband(3.9) == "LOW" and gapband(4) == "MID" and gapband(15) == "MID" and gapband(15.1) == "HIGH"
     assert abs(pct(103.3, 100) - 3.3) < 1e-9 and pct(100, 0) is None
-    old = [(8.0, 3.3, 2018)] * 13 + [(8.0, -2.0, 2018)] * 7          # old era MID: 65%
-    new = [(8.0, 0.8, 2024)] * 10 + [(8.0, -1.0, 2024)] * 10         # new era MID: 50%
+    old = [(8.0, 3.3, 2018, 500)] * 13 + [(8.0, -2.0, 2018, 150)] * 7   # old era MID: 65%
+    new = [(8.0, 0.8, 2024, 500)] * 10 + [(8.0, -1.0, 2024, 90)] * 10    # new era MID: 50%
     run(old + new, old + new, relabeled=3)
     print("\nSELFTEST OK")
 
