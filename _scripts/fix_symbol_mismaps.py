@@ -38,7 +38,7 @@ ANOMALY_DAYS = 60   # first candle earlier than listing_date - this => wrong his
 # company_name pattern (ILIKE) -> correct NSE symbol. Curated 2026-07-08 from the
 # reconciler SKIP list; all are 2020-22 mainboard listings, symbols verified.
 EXPECTED = [
-    ("%glenmark life%",     "GLS"),
+    ("%glenmark life%",     "ALIVUS"),   # renamed Jan-2025 (ex-GLS, Nirma acq.); Kite only knows ALIVUS
     ("%indigo paints%",     "INDIGOPNTS"),
     ("%latent%",            "LATENTVIEW"),
     ("%electronics mart%",  "EMIL"),
@@ -102,7 +102,11 @@ def run(conn, apply=False):
             pid, name, sym, ldate, gap, dmin, dmax, ncand, npre = row
             action = decide(sym, correct)
             lead = (ldate - dmin).days if dmin else None
-            anomalous = lead is not None and lead > ANOMALY_DAYS
+            # act on: pre-listing candles (wrong history) OR wrong symbol with NO
+            # candles at all (renamed ticker, e.g. GLS->ALIVUS — nothing to purge,
+            # just fix the mapping so the backfill can find the instrument).
+            anomalous = (lead is not None and lead > ANOMALY_DAYS) or \
+                        (action == "REMAP" and (ncand or 0) == 0)
             print(f"  {name[:34]:34} {str(sym):11} listed {ldate}  candles "
                   f"{ncand} ({npre} pre-listing, first {dmin}, lead {lead}d)  "
                   f"gap={gap} [{gapband(gap)}]")
