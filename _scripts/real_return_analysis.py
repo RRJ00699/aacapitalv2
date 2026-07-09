@@ -1,101 +1,110 @@
-import psycopg2, os, math
+#!/usr/bin/env python3
+"""
+real_return_analysis.py — re-verify the validated strategy on current data.
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
-conn = psycopg2.connect(DATABASE_URL)
-cur = conn.cursor()
+The trade: MID gap (+4..15% listing open vs issue) -> buy open, sell D1 close.
+Benchmark to beat/hold: 65% win / +3.3% median (validated 2026-07).
 
-# First — understand exactly what columns we have and what they mean
-cur.execute("""
-    SELECT 
-        company_name,
-        issue_price,
-        listing_open,
-        listing_day_close,
-        return_listing_open,   -- (listing_open - issue_price) / issue_price × 100
-        return_day1_close,     -- (listing_day_close - issue_price) / issue_price × 100
-        -- The REAL return if you BUY at listing open:
-        CASE WHEN listing_open > 0 AND listing_day_close > 0
-            THEN ROUND(((listing_day_close - listing_open) / listing_open * 100)::numeric, 2)
-        END as real_buy_at_open_return,
-        -- Return from open to Day7
-        CASE WHEN listing_open > 0 AND return_day7 IS NOT NULL
-            THEN ROUND((((issue_price * (1 + return_day7/100)) - listing_open) / listing_open * 100)::numeric, 2)
-        END as real_return_day7,
-        play_recommendation,
-        qib_subscription_x
-    FROM ipo_intelligence
-    WHERE listing_open > 0
-      AND listing_day_close > 0
-      AND is_sme = FALSE
-      AND play_recommendation = 'BUY_AT_OPEN'
-    ORDER BY listing_date DESC
-    LIMIT 20
-""")
+v2 rewrite (2026-07-09): the old version grouped by play_recommendation (the
+repudiated playbook era) and read pruned columns (return_day7/30/day1_close).
+This one computes the outcome the honest way — D1 open->close from
+price_candles — and buckets by the traded band (LOW<4 / MID 4-15 / HIGH>15,
+same as gap_bucket since the 4/15 alignment).
 
-rows = cur.fetchall()
-print("SAMPLE BUY_AT_OPEN IPOs — Real return from listing open price:")
-print(f"{'Company':35s} {'Issue':>6} {'Open':>6} {'D1Close':>7} {'GMP%':>6} {'REAL%':>7}")
-print("-" * 75)
-for r in rows:
-    co, ip, lo, lc, ret_open, ret_d1, real_ret, real_d7, play, qib = r
-    if ip and lo and lc:
-        gmp_pct  = ret_open or 0
-        real_pct = real_ret or 0
-        print(f"{str(co)[:35]:35s} ₹{ip:>5.0f} ₹{lo:>5.0f} ₹{lc:>6.0f} "
-              f"{gmp_pct:>+6.1f}% {real_pct:>+7.1f}%")
+Read-only. Run whenever data changes (e.g. after the symbol-mismap repairs):
+  python _scripts/real_return_analysis.py
+  python _scripts/real_return_analysis.py --selftest   # no DB
+Env: DATABASE_URL (or NEON_DATABASE_URL)
+"""
+import os, sys, argparse
 
-# Now aggregate properly
-print("\n\n" + "="*70)
-print("REAL RETURNS — Buying at listing open, selling EOD")
-print("="*70)
+BENCH = {"win": 65.0, "med": 3.3}
 
-cur.execute("""
-    SELECT 
-        play_recommendation,
-        COUNT(*) as ipos,
-        -- Wrong metric (what I was showing before)
-        ROUND(AVG(return_listing_open)::numeric, 1) as wrong_avg_gmp_gain,
-        -- Correct metric: buy at open, sell at day1 close
-        ROUND(AVG(
-            CASE WHEN listing_open > 0 AND listing_day_close > 0
-                THEN (listing_day_close - listing_open) / listing_open * 100
-            END
-        )::numeric, 1) as real_avg_eod_return,
-        -- Buy at open, hold 7 days
-        ROUND(AVG(
-            CASE WHEN listing_open > 0 AND return_day7 IS NOT NULL AND issue_price > 0
-                THEN ((issue_price * (1 + return_day7/100)) - listing_open) / listing_open * 100
-            END
-        )::numeric, 1) as real_avg_day7_return,
-        -- Buy at open, hold 30 days
-        ROUND(AVG(
-            CASE WHEN listing_open > 0 AND return_day30 IS NOT NULL AND issue_price > 0
-                THEN ((issue_price * (1 + return_day30/100)) - listing_open) / listing_open * 100
-            END
-        )::numeric, 1) as real_avg_day30_return,
-        -- Win rate: closed Day1 above open
-        SUM(CASE WHEN listing_day_close > listing_open THEN 1 ELSE 0 END) as eod_winners,
-        SUM(CASE WHEN listing_day_close < listing_open THEN 1 ELSE 0 END) as eod_losers,
-        -- UC/LC stats
-        SUM(CASE WHEN hit_uc_day1 THEN 1 ELSE 0 END) as hit_uc,
-        SUM(CASE WHEN hit_lc_day1 THEN 1 ELSE 0 END) as hit_lc
-    FROM ipo_intelligence
-    WHERE listing_open > 0 AND listing_day_close > 0
-      AND is_sme = FALSE AND play_recommendation IS NOT NULL
-    GROUP BY play_recommendation
-    ORDER BY real_avg_eod_return DESC NULLS LAST
-""")
+def pct(a, b):
+    try:
+        a, b = float(a), float(b)
+    except (TypeError, ValueError):
+        return None
+    if b <= 0: return None
+    return (a / b - 1.0) * 100.0
 
-rows = cur.fetchall()
-cols = [d[0] for d in cur.description]
-for row in rows:
-    d = dict(zip(cols, row))
-    print(f"\n  {d['play_recommendation']} ({d['ipos']} IPOs)")
-    print(f"    ❌ Wrong metric I used: avg GMP gain = {d['wrong_avg_gmp_gain']}%")
-    print(f"    ✅ Real return (buy open, sell EOD):   {d['real_avg_eod_return']}%")
-    print(f"    ✅ Real return (buy open, hold 7d):    {d['real_avg_day7_return']}%")
-    print(f"    ✅ Real return (buy open, hold 30d):   {d['real_avg_day30_return']}%")
-    print(f"    EOD winners: {d['eod_winners']} | EOD losers: {d['eod_losers']}")
-    print(f"    Hit UC Day1: {d['hit_uc']} | Hit LC Day1: {d['hit_lc']}")
+def gapband(g):
+    if g is None: return None
+    g = float(g)
+    return "LOW" if g < 4 else ("MID" if g <= 15 else "HIGH")
 
-conn.close()
+def stats(rets):
+    n = len(rets)
+    if n < 5: return None
+    s = sorted(rets)
+    med = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+    return n, sum(1 for r in rets if r > 0) / n * 100, med, sum(rets) / n
+
+def line(tag, st):
+    if not st:
+        print(f"  {tag:22} n<5 — not printable"); return
+    print(f"  {tag:22} n={st[0]:<4} win={st[1]:5.1f}% med={st[2]:+6.2f} mean={st[3]:+6.2f}")
+
+def run(recs):
+    buckets = {}
+    for gap, ret in recs:
+        b = gapband(gap)
+        if b: buckets.setdefault(b, []).append(ret)
+        buckets.setdefault("ALL", []).append(ret)
+    print("REAL RETURNS — buy listing open, sell D1 close (from candles)\n")
+    for b in ("LOW", "MID", "HIGH", "ALL"):
+        line(b, stats(buckets.get(b, [])))
+    mid = stats(buckets.get("MID", []))
+    print()
+    if mid:
+        dwin, dmed = mid[1] - BENCH["win"], mid[2] - BENCH["med"]
+        print(f"MID vs validated benchmark (65%/+3.3): win {dwin:+.1f}pts, median {dmed:+.2f}")
+        if mid[1] >= 55 and mid[2] > 0:
+            print("VERDICT: edge HOLDS on current data.")
+        else:
+            print("VERDICT: edge DEGRADED — investigate before the next trade.")
+    else:
+        print("MID bucket too thin to verify (n<5) — check gap coverage.")
+
+def fetch():
+    import psycopg2
+    DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+    if not DB: sys.exit("DATABASE_URL not set")
+    conn = psycopg2.connect(DB, connect_timeout=20); cur = conn.cursor()
+    # gap from master (open vs issue); outcome strictly from the day-1 candle
+    cur.execute("""
+        SELECT i.listing_gap_pct, ARRAY_AGG(p.open ORDER BY p.date), ARRAY_AGG(p.close ORDER BY p.date)
+        FROM ipo_intelligence i
+        JOIN price_candles p
+          ON UPPER(p.symbol)=UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol))
+         AND p.date >= i.listing_date
+        WHERE i.listing_date IS NOT NULL
+          AND COALESCE(i.is_sme, FALSE) = FALSE
+        GROUP BY i.id, i.listing_gap_pct""")
+    recs = []
+    for gap, o, c in cur.fetchall():
+        ret = pct(c[0], o[0])
+        if ret is not None and gap is not None:
+            recs.append((float(gap), ret))
+    conn.close()
+    print(f"usable IPOs (mainboard, gap + d1 candle): {len(recs)}\n")
+    return recs
+
+def selftest():
+    assert gapband(3.9) == "LOW" and gapband(4) == "MID" and gapband(15) == "MID" and gapband(15.1) == "HIGH"
+    assert gapband(None) is None
+    assert abs(pct(103.3, 100) - 3.3) < 1e-9 and pct(100, 0) is None
+    recs = [(8.0, 3.3)] * 13 + [(8.0, -2.0)] * 7 + [(2.0, 1.0)] * 6 + [(20.0, -1.5)] * 6
+    run(recs)  # MID: n=20, win 65%, med +3.3 -> HOLDS
+    print("\nSELFTEST OK")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        selftest(); return
+    run(fetch())
+
+if __name__ == "__main__":
+    main()
