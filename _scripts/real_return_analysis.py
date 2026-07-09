@@ -1,24 +1,36 @@
 #!/usr/bin/env python3
 """
-real_return_analysis.py — re-verify the validated strategy on current data.
+real_return_analysis.py — re-verify the validated strategy, DECOMPOSED.
 
 The trade: MID gap (+4..15% listing open vs issue) -> buy open, sell D1 close.
-Benchmark to beat/hold: 65% win / +3.3% median (validated 2026-07).
+Benchmark: 65% win / +3.3% median.
 
-v2 rewrite (2026-07-09): the old version grouped by play_recommendation (the
-repudiated playbook era) and read pruned columns (return_day7/30/day1_close).
-This one computes the outcome the honest way — D1 open->close from
-price_candles — and buckets by the traded band (LOW<4 / MID 4-15 / HIGH>15,
-same as gap_bucket since the 4/15 alignment).
+v3 (2026-07-09): the first clean-data run said DEGRADED (MID 52.1%/+0.76,
+n=48) and HIGH looked positive — contradicting every prior backtest. Two
+artifacts could manufacture that, so this version separates them:
 
-Read-only. Run whenever data changes (e.g. after the symbol-mismap repairs):
+  A) GAP-LABEL CONTAMINATION — the old ipo_candle_backfill filled
+     listing_gap_pct with day-1 CLOSE vs issue (not OPEN vs issue). Wrong
+     gap -> wrong bucket. Here the gap is computed from the d1 candle OPEN
+     vs issue_price; we also report how many stored labels disagree.
+  B) ERA SKEW — candles only cover the synced era (mostly 2021+). The
+     master-field universe (listing_open/listing_day_close columns, no
+     candle needed) reaches further back. Both universes are reported,
+     split by era (<=2022 vs >=2023), so regime decay is visible separately
+     from data artifacts.
+
+Read the grid: if full-history master MID ~= benchmark but recent-era rows
+sit ~52%, the edge is REGIME-DEPENDENT (act accordingly). If every cut sits
+~52%, the 65/+3.3 benchmark itself was inflated by bad labels.
+
   python _scripts/real_return_analysis.py
-  python _scripts/real_return_analysis.py --selftest   # no DB
+  python _scripts/real_return_analysis.py --selftest
 Env: DATABASE_URL (or NEON_DATABASE_URL)
 """
 import os, sys, argparse
 
 BENCH = {"win": 65.0, "med": 3.3}
+ERA_SPLIT = 2023   # <= 2022 = "old era", >= 2023 = "new era"
 
 def pct(a, b):
     try:
@@ -42,60 +54,96 @@ def stats(rets):
 
 def line(tag, st):
     if not st:
-        print(f"  {tag:22} n<5 — not printable"); return
-    print(f"  {tag:22} n={st[0]:<4} win={st[1]:5.1f}% med={st[2]:+6.2f} mean={st[3]:+6.2f}")
+        print(f"  {tag:30} n<5 — not printable"); return
+    print(f"  {tag:30} n={st[0]:<4} win={st[1]:5.1f}% med={st[2]:+6.2f} mean={st[3]:+6.2f}")
 
-def run(recs):
-    buckets = {}
-    for gap, ret in recs:
-        b = gapband(gap)
-        if b: buckets.setdefault(b, []).append(ret)
-        buckets.setdefault("ALL", []).append(ret)
-    print("REAL RETURNS — buy listing open, sell D1 close (from candles)\n")
-    for b in ("LOW", "MID", "HIGH", "ALL"):
-        line(b, stats(buckets.get(b, [])))
-    mid = stats(buckets.get("MID", []))
-    print()
-    if mid:
-        dwin, dmed = mid[1] - BENCH["win"], mid[2] - BENCH["med"]
-        print(f"MID vs validated benchmark (65%/+3.3): win {dwin:+.1f}pts, median {dmed:+.2f}")
-        if mid[1] >= 55 and mid[2] > 0:
-            print("VERDICT: edge HOLDS on current data.")
-        else:
-            print("VERDICT: edge DEGRADED — investigate before the next trade.")
-    else:
-        print("MID bucket too thin to verify (n<5) — check gap coverage.")
+def report(title, recs):
+    """recs: (gap, ret, year)"""
+    print("=" * 66); print(title); print("=" * 66)
+    for era, cond in (("ALL YEARS", lambda y: True),
+                      (f"<= {ERA_SPLIT-1}", lambda y: y is not None and y < ERA_SPLIT),
+                      (f">= {ERA_SPLIT}", lambda y: y is not None and y >= ERA_SPLIT)):
+        for b in ("LOW", "MID", "HIGH"):
+            sub = [r for g, r, y in recs if gapband(g) == b and cond(y)]
+            line(f"{era:9} {b}", stats(sub))
+        print()
+
+def run(candle_recs, master_recs, relabeled):
+    # recs: (gap, ret, year, size_cr) — size may be None
+    report("A) CANDLE universe — gap from d1 candle OPEN vs issue (clean labels)",
+           [r[:3] for r in candle_recs])
+    print(f"stored listing_gap_pct bucket disagreed with candle-open gap on "
+          f"{relabeled} of {len(candle_recs)} rows (old close-based fills)\n")
+    report("B) MASTER-FIELD universe — listing_open/listing_day_close columns "
+           "(wider history)", [r[:3] for r in master_recs])
+    print("=" * 66)
+    print("C) VALIDATED SCOPE — issue size >= 200cr only (the backtest's cut)")
+    print("=" * 66)
+    for label, recs in (("candle", candle_recs), ("master", master_recs)):
+        big = [(g, r, y) for g, r, y, sz in recs if sz is not None and float(sz) >= 200]
+        for era, cond in (("ALL", lambda y: True),
+                          (f"<={ERA_SPLIT-1}", lambda y: y is not None and y < ERA_SPLIT),
+                          (f">={ERA_SPLIT}", lambda y: y is not None and y >= ERA_SPLIT)):
+            line(f"{label} >=200cr {era:7} MID",
+                 stats([r for g, r, y in big if gapband(g) == "MID" and cond(y)]))
+        print()
+
+    mid_all = stats([r for g, r, y, sz in master_recs if gapband(g) == "MID"])
+    if mid_all:
+        print(f"Master full-history MID vs benchmark (65/+3.3): "
+              f"win {mid_all[1]-BENCH['win']:+.1f}pts, med {mid_all[2]-BENCH['med']:+.2f}")
+    print("\nRead: A-recent ~52% AND B-old ~65% -> regime decay (real).")
+    print("      every cut ~52% -> the benchmark was label-inflated (artifact).")
 
 def fetch():
     import psycopg2
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("DATABASE_URL not set")
     conn = psycopg2.connect(DB, connect_timeout=20); cur = conn.cursor()
-    # gap from master (open vs issue); outcome strictly from the day-1 candle
+
+    # A) candle universe: gap AND outcome both from the d1 candle + issue_price
     cur.execute("""
-        SELECT i.listing_gap_pct, ARRAY_AGG(p.open ORDER BY p.date), ARRAY_AGG(p.close ORDER BY p.date)
+        SELECT i.issue_price, i.listing_gap_pct, EXTRACT(YEAR FROM i.listing_date)::int,
+               i.issue_size_cr,
+               ARRAY_AGG(p.open ORDER BY p.date), ARRAY_AGG(p.close ORDER BY p.date)
         FROM ipo_intelligence i
         JOIN price_candles p
           ON UPPER(p.symbol)=UPPER(COALESCE(NULLIF(i.nse_symbol,''), i.symbol))
          AND p.date >= i.listing_date
-        WHERE i.listing_date IS NOT NULL
-          AND COALESCE(i.is_sme, FALSE) = FALSE
-        GROUP BY i.id, i.listing_gap_pct""")
-    recs = []
-    for gap, o, c in cur.fetchall():
+        WHERE i.listing_date IS NOT NULL AND COALESCE(i.is_sme, FALSE) = FALSE
+          AND i.issue_price > 0
+        GROUP BY i.id, i.issue_price, i.listing_gap_pct, 3, 4""")
+    candle_recs, relabeled = [], 0
+    for ip, stored_gap, yr, sz, o, c in cur.fetchall():
+        gap = pct(o[0], ip)            # OPEN vs issue — the honest gap
         ret = pct(c[0], o[0])
-        if ret is not None and gap is not None:
-            recs.append((float(gap), ret))
+        if gap is None or ret is None: continue
+        candle_recs.append((gap, ret, yr, sz))
+        if stored_gap is not None and gapband(float(stored_gap)) != gapband(gap):
+            relabeled += 1
+
+    # B) master-field universe: no candle requirement, wider history
+    cur.execute("""
+        SELECT issue_price, listing_open, listing_day_close,
+               EXTRACT(YEAR FROM listing_date)::int, issue_size_cr
+        FROM ipo_intelligence
+        WHERE listing_date IS NOT NULL AND COALESCE(is_sme, FALSE) = FALSE
+          AND issue_price > 0 AND listing_open > 0 AND listing_day_close > 0""")
+    master_recs = []
+    for ip, lo, lc, yr, sz in cur.fetchall():
+        gap, ret = pct(lo, ip), pct(lc, lo)
+        if gap is not None and ret is not None:
+            master_recs.append((gap, ret, yr, sz))
     conn.close()
-    print(f"usable IPOs (mainboard, gap + d1 candle): {len(recs)}\n")
-    return recs
+    print(f"universes: candle={len(candle_recs)}  master-field={len(master_recs)}\n")
+    return candle_recs, master_recs, relabeled
 
 def selftest():
     assert gapband(3.9) == "LOW" and gapband(4) == "MID" and gapband(15) == "MID" and gapband(15.1) == "HIGH"
-    assert gapband(None) is None
     assert abs(pct(103.3, 100) - 3.3) < 1e-9 and pct(100, 0) is None
-    recs = [(8.0, 3.3)] * 13 + [(8.0, -2.0)] * 7 + [(2.0, 1.0)] * 6 + [(20.0, -1.5)] * 6
-    run(recs)  # MID: n=20, win 65%, med +3.3 -> HOLDS
+    old = [(8.0, 3.3, 2018, 500)] * 13 + [(8.0, -2.0, 2018, 150)] * 7   # old era MID: 65%
+    new = [(8.0, 0.8, 2024, 500)] * 10 + [(8.0, -1.0, 2024, 90)] * 10    # new era MID: 50%
+    run(old + new, old + new, relabeled=3)
     print("\nSELFTEST OK")
 
 def main():
@@ -104,7 +152,7 @@ def main():
     a = ap.parse_args()
     if a.selftest:
         selftest(); return
-    run(fetch())
+    run(*fetch())
 
 if __name__ == "__main__":
     main()
