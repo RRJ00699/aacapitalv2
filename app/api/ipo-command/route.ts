@@ -20,6 +20,18 @@ export async function GET() {
              listing_gap_pct, final_qib, final_nii, final_retail, final_total,
              brlm_names,
              UPPER(REGEXP_REPLACE(COALESCE(symbol_final, nse_symbol, symbol, ''), '\\.NS$','')) AS sym,
+             (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
+             (SELECT peer_name FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
+             (SELECT peer_ps FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_peer_ps,
+             (SELECT note_ps FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
              CASE
                WHEN ipo_open_date <= CURRENT_DATE AND ipo_close_date >= CURRENT_DATE THEN 'OPEN'
                WHEN listing_date = CURRENT_DATE THEN 'LISTING'
