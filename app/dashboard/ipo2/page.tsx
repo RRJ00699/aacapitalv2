@@ -171,6 +171,15 @@ function IpoCommand() {
                   <Chip b={meta.score_band as string}/>
                   <span style={{fontSize:12,color:C.meta}}>{String(meta.score_evidence||"")}</span>
                 </div>
+                {meta.sbi_rating ? (
+                  <div style={{fontSize:12,marginTop:4,padding:"4px 8px",background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:6,color:C.text}}>
+                    <b>SBI:</b> <span style={{fontWeight:700,color:String(meta.sbi_rating).toLowerCase().includes("subscribe")?C.green:C.meta}}>{String(meta.sbi_rating)}</span>
+                    {meta.sbi_peer ? <span style={{color:C.meta}}> · peer {String(meta.sbi_peer)}{meta.sbi_peer_ps?` ${meta.sbi_peer_ps}x`:""}</span> : null}
+                    {meta.sbi_highlight ? <div style={{color:C.meta,marginTop:2,fontSize:11.5,lineHeight:1.35}}>{String(meta.sbi_highlight).slice(0,180)}</div> : null}
+                  </div>
+                ) : (
+                  <div style={{fontSize:11,marginTop:4,color:C.meta,fontStyle:"italic"}}>SBI note: not in system</div>
+                )}
                 <span style={{fontSize:12,color:C.meta}}>gap {lv.gap_pct!=null?`${lv.gap_pct}% ${lv.gap_bucket||""}`:"—"} · verdict: {String(lv.verdict||"—")}</span>
               </div>
               <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10}}>
