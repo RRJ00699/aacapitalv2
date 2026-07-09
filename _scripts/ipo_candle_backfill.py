@@ -60,9 +60,11 @@ def main():
     # ── Load IPOs ──────────────────────────────────────────────────────────────
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT id, company_name, symbol, issue_price, listing_date::text
+        SELECT id, company_name,
+               COALESCE(NULLIF(nse_symbol,''), symbol) AS symbol,
+               issue_price, listing_date::text
         FROM ipo_intelligence
-        WHERE symbol IS NOT NULL
+        WHERE COALESCE(NULLIF(nse_symbol,''), symbol) IS NOT NULL
           AND issue_price IS NOT NULL
           AND issue_price > 0
         ORDER BY listing_date DESC NULLS LAST
@@ -115,9 +117,10 @@ def main():
         issue_price  = float(ipo["issue_price"])
         listing_date = ipo.get("listing_date")
 
-        token = token_map.get(symbol)
+        token = token_map.get(symbol) or token_map.get((symbol or "").strip().upper())
         if not token:
-            log.warning(f"  No token: {symbol}")
+            near = [k for k in token_map if k and k[:3] == (symbol or "")[:3]][:5]
+            log.warning(f"  No token: {symbol}  (nearest in dump: {near})")
             skipped += 1
             continue
 
