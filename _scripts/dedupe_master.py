@@ -7,6 +7,13 @@ into the keeper's NULLs -> delete the loser. Keepers chosen from audit evidence
 
   python _scripts/dedupe_master.py            # dry: shows keeper/loser + field gains
   python _scripts/dedupe_master.py --apply
+  python _scripts/dedupe_master.py --auto     # ALSO find pairs by (symbol, listing_date)
+  python _scripts/dedupe_master.py --auto --apply
+
+--auto (added 2026-07-09): the hardcoded PAIRS are last audit's evidence; new
+dupes keep appearing (Knack x2, Paras x2, Home First x2). Auto mode groups rows
+sharing UPPER(COALESCE(nse_symbol,symbol)) + listing_date; keeper = row with the
+most non-null fields (ties: lowest id). Same snapshot->merge-up->delete flow.
 """
 import os, csv, sys, argparse
 
@@ -24,7 +31,10 @@ PAIRS = [
 ]
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--apply", action="store_true")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--auto", action="store_true",
+                    help="also find dupes by (symbol, listing_date), keeper = most-filled row")
     a = ap.parse_args()
     import psycopg2
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
@@ -35,12 +45,31 @@ def main():
     cols = [r[0] for r in cur.fetchall()]
     non_id = [c for c in cols if c != "id"]
 
+    pairs = list(PAIRS)
+    if a.auto:
+        cur.execute("""
+            SELECT ARRAY_AGG(id ORDER BY id), UPPER(COALESCE(NULLIF(nse_symbol,''), symbol)), listing_date
+            FROM ipo_intelligence
+            WHERE COALESCE(NULLIF(nse_symbol,''), symbol) IS NOT NULL AND listing_date IS NOT NULL
+            GROUP BY 2, 3 HAVING COUNT(*) > 1""")
+        groups = cur.fetchall()
+        notnull_expr = " + ".join(f"(CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END)" for c in non_id)
+        for ids, sym, ldate in groups:
+            cur.execute(f"SELECT id, {notnull_expr} FROM ipo_intelligence WHERE id = ANY(%s) "
+                        f"ORDER BY 2 DESC, id ASC", (list(ids),))
+            ranked = [r[0] for r in cur.fetchall()]
+            keeper = ranked[0]
+            for loser in ranked[1:]:
+                pairs.append((keeper, loser, f"auto: same ({sym}, {ldate}); keeper most-filled"))
+        print(f"auto mode: {len(groups)} duplicate group(s) found\n")
+
     snap = "dedupe_master_snapshot.csv"
     rows_out = []
-    for keeper, loser, why in PAIRS:
+    for keeper, loser, why in pairs:
         cur.execute(f"SELECT {', '.join(cols)} FROM ipo_intelligence WHERE id IN (%s,%s)",
                     (keeper, loser))
-        got = {r[0]: r for r in cur.fetchall()}
+        idpos = cols.index("id")
+        got = {r[idpos]: r for r in cur.fetchall()}
         if keeper not in got or loser not in got:
             print(f"SKIP ({keeper},{loser}): missing — already merged?"); continue
         rows_out += [got[keeper], got[loser]]
