@@ -129,6 +129,10 @@ def main():
         # window is all we keep), and stays under Kite's 2000-day request
         # limit that killed every pre-2021 fetch on 2026-07-08.
         d0 = date.fromisoformat(str(from_date)[:10])
+        # start 7d BEFORE the recorded listing date: a true IPO has no earlier
+        # trades (harmless), but a wrong recorded date (Knack: Jul 8 vs real
+        # Jul 7) hides the first candle the reconciler needs to fix the date.
+        from_date = (d0 - timedelta(days=7)).isoformat()
         to_date = min(date.today(), d0 + timedelta(days=70)).isoformat()
         log.info(f"  {company} ({symbol}) {from_date} -> {to_date}")
 
