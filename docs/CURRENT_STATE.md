@@ -133,7 +133,18 @@ Score v0 (`ipo_score.py`): 7 evidence-backed weights, bands monotonic 51/76/76/9
   writes `price_candles`** (it never did), window capped listing+70d (Kite 2000-day limit),
   master UPDATE built from live columns only.
 
-**Pending to close the mismap thread:** merge #54 → Admin→Sync →
+**Mismap thread CLOSED 2026-07-09 (late night):** all 8 repaired + verified.
+Discoveries en route: Glenmark Life = **ALIVUS** since Jan-2025 (ticker renames are a
+standing hazard — Kite dumps only know current symbols; near-miss logging in the backfill
+diagnoses them); the 6 purge-case IPOs' clean candles already existed (purge preserved
+them); Knack's Jul-8 listing date was correct all along (single candle in an 8-day window);
+`dedupe_master.py --auto` now finds dupes generically by (symbol, listing_date) — merged
+KNACK/PARAS/HOMEFIRST pairs, master 700 -> 697 rows; reconciler dry-run: 0 anomalies.
+The stale `$env:KITE_ACCESS_TOKEN` on the laptop caused every "Incorrect api_key" error
+of the night — **always `Remove-Item Env:KITE_ACCESS_TOKEN` before manual Kite runs.**
+PRs #54–#60 all merged (incl. gap_bucket 4/15 alignment + CURRENT_STATE itself).
+
+**Remaining (single item):** merge #54 → Admin→Sync →
 `load_instrument_tokens.py` → `ipo_candle_backfill.py --symbols=GLS,INDIGOPNTS,LATENTVIEW,
 EMIL,MEDANTA,PARAS,HOMEFIRST,RAINBOW` → full pipeline (VM) → reconciler dry-run (8 should
 pass) → **re-run `real_return_analysis` to re-verify 65/+3.3 on clean data** (Glenmark Life
