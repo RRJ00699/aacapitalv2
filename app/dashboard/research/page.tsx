@@ -30,8 +30,25 @@ function Research(){
     <div style={{display:"flex",gap:14,alignItems:"baseline",marginBottom:4}}>
       <a href="/dashboard/ipo2" style={{fontSize:13,fontWeight:600,color:C.blue,textDecoration:"none",background:C.blueBg,border:`1px solid ${C.blueBd}`,borderRadius:8,padding:"5px 10px"}}>← IPO Command Center</a>
       <h1 style={{fontSize:20,fontWeight:800,margin:0}}>🔬 Research · Score v0</h1></div>
-    <p style={{fontSize:13,color:C.meta,margin:"4px 0 16px"}}>Every grade traces to these tables. n=370 (2010–26) · entry = listing open · exit = best close ≤10 sessions · baseline 72% / +5.9%. Research signal, not a buy call.</p>
+    <p style={{fontSize:13,color:C.meta,margin:"4px 0 16px"}}>Every grade traces to these tables. Below: the older score model (MID-centric). NOTE: on clean data the MID edge weakened to ~coin-flip — kept here as secondary reference while the verified edge above is primary. Research signal, not a buy call.</p>
     {err&&<div style={{...card,color:C.red,borderColor:C.redBd}}>{err}</div>}
+    <div style={{...card,borderColor:C.blueBd,background:C.blueBg}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+        <span style={{fontSize:11,fontWeight:800,color:"#fff",background:C.blue,borderRadius:6,padding:"2px 8px"}}>VERIFIED EDGE</span>
+        <b style={{fontSize:15}}>Large-cap HIGH-gap · buy open → sell D1 close</b></div>
+      <div style={{fontSize:13,color:C.text,marginBottom:6}}>
+        Gap <b>&gt;+15%</b> AND issue <b>≥ ₹1,000cr</b> → buy at listing open, sell at day-1 close.</div>
+      <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:13,color:C.sub,marginBottom:6}}>
+        <span><b style={{color:C.text}}>65%</b> win</span>
+        <span><b style={{color:C.text}}>+4.5%</b> median</span>
+        <span>n=<b style={{color:C.text}}>49</b></span>
+        <span>p10 <b style={{color:C.red}}>−10.9%</b></span>
+        <span style={{color:C.green}}>leakage-free ✓</span></div>
+      <div style={{fontSize:12,color:C.meta}}>
+        Clean-data verified 2026-07-08 (survived the MID collapse). Bull-tape confirmed (66% n=38);
+        <b> bear-tape untested</b> — big HIGH-gap IPOs don&apos;t list in weak markets. If Nifty &lt; 200EMA, stand aside.
+        Rare setup — few per year. Size for the −11% tail. Research signal, not a buy call.</div>
+    </div>
     <div style={card}><b>Upcoming IPOs — live grades</b>
       <table style={{width:"100%",borderCollapse:"collapse",marginTop:8}}><thead><tr>
         <th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size ₹cr</th><th style={th}>Grade</th><th style={th}>Evidence</th></tr></thead>
