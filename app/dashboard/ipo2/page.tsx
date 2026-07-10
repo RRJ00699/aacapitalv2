@@ -315,10 +315,11 @@ function IpoCommand() {
         {cards.filter(c=>c.state==="OPEN").map((c,i)=>(
           <div key={i} style={card}>
             <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}>
+                {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
                 <b>{String(c.company_name||"")}</b>
-                <span style={{fontSize:12,color:C.meta}}>closes {D(c.close_date)}</span>
-                <Chip b={c.score_band as string}/></div>
+                {c.quality_promoter===true&&<QTag/>}
+                <span style={{fontSize:12,color:C.meta}}>closes {D(c.close_date)}</span></div>
               <span style={{...num,fontSize:12,color:C.meta}}>₹{String(c.issue_price??"—")} · ₹{Number(c.issue_size_cr||0).toLocaleString()}Cr</span></div>
             {[["QIB",c.final_qib],["NII",c.final_nii],["Retail",c.final_retail]].map(([k,v],j)=>(
               v==null?null:
@@ -327,6 +328,7 @@ function IpoCommand() {
                 <div style={{height:7,borderRadius:4,background:C.grayBg,flex:1,position:"relative",overflow:"hidden"}}>
                   <div style={{position:"absolute",inset:0,width:`${Math.min(100,Number(v))}%`,background:C.green,borderRadius:4}}/></div>
                 <span style={{...num,fontWeight:700}}>{Number(v).toFixed(1)}×</span></div>))}
+            <Reasons trade={c.why_trade as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
             <div style={{fontSize:12,color:C.dim,marginTop:8}}>Figures = last nightly sync · live intraday capture is the next data build. QIBs bid late — a low day-1 is normal.</div>
           </div>))}
         {cards.filter(c=>c.state==="OPEN").length===0&&<div style={card}><span style={{fontSize:13,color:C.meta}}>No IPO is open for bidding right now.</span></div>}
@@ -335,13 +337,13 @@ function IpoCommand() {
       {/* UPCOMING */}
       {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>Band</th><th style={th}>Evidence / status</th></tr></thead>
+          <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
           <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(c.listing_date)}</td>
-              <td style={{...td,fontWeight:600,color:C.text}}>{String(c.company_name||"")}</td>
+              <td style={{...td,fontWeight:600,color:C.text}}>{String(c.company_name||"")}{c.quality_promoter===true?" ★":""}</td>
               <td style={{...td,...num}}>{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}cr`:"—"}</td>
-              <td style={td}><Chip b={c.score_band as string}/></td>
-              <td style={{...td,fontSize:12,color:C.meta}}>{String(c.score_evidence||"—")}</td></tr>))}</tbody>
+              <td style={td}>{c.verdict!=null?<Verdict v={c.verdict as string}/>:<Chip b={c.score_band as string}/>}</td>
+              <td style={{...td,fontSize:12,color:C.meta}}>{String(c.why_trade||c.why_caution||c.why_avoid||c.score_evidence||"—").split(" ; ")[0]}</td></tr>))}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Pre-listing scores use size/valuation only — the gap weight applies itself at the open.</div>
       </div>}
@@ -350,12 +352,12 @@ function IpoCommand() {
       {view==="post" && <div style={{...card,overflowX:"auto"}}>
         <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
-          <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Band</th>
+          <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Verdict</th>
             <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th></tr></thead>
           <tbody>{(d?.post||[]).map((r,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}</td>
-              <td style={td}><Chip b={r.score_band as string}/></td>
+              <td style={td}>{r.verdict!=null?<Verdict v={r.verdict as string}/>:<Chip b={r.score_band as string}/>}</td>
               <td style={td}>{String(r.gap_bucket||"—")}</td>
               <td style={{...td,...num}}>{r.listing_gap_pct!=null?`${Number(r.listing_gap_pct).toFixed(1)}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:N(r.d10_best_pct)==null?C.dim:(N(r.d10_best_pct)!>0?C.green:C.red)}}>
