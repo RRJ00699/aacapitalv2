@@ -11,7 +11,7 @@ const C = { bg:"#FAFAF8", surface:"#FFFFFF", border:"#E5E7EB", text:"#111827",
   green:"#16A34A", greenBg:"#F0FDF4", greenBd:"#BBF7D0",
   blue:"#2563EB", blueBg:"#EFF6FF", blueBd:"#BFDBFE",
   amber:"#D97706", amberBg:"#FFFBEB", amberBd:"#FDE68A",
-  red:"#DC2626", redBg:"#FEF2F2", redBd:"#FECACA", grayBg:"#F3F4F6" };
+  red:"#DC2626", redBg:"#FEF2F2", redBd:"#FECACA", grayBg:"#F3F4F6", gold:"#c99a2e" };
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
 
 const BAND: Record<string,{c:string;bg:string;bd:string}> = {
@@ -49,6 +49,30 @@ function State({ s }: { s?: string | null }) {
   const [c,bg,bd] = m[s || ""] || m.INWINDOW;
   return <span style={{color:c,background:bg,border:`1px solid ${bd}`,borderRadius:8,
     padding:"2px 9px",fontSize:11,fontWeight:700}}>{s || ""}</span>;
+}
+function Verdict({ v }: { v?: string | null }) {
+  const m: Record<string,[string,string,string]> = {
+    TRADE:[C.green,C.greenBg,C.greenBd], CAUTION:["#c2830c","#fdf6e6","#f0dfae"],
+    AVOID:[C.red,C.redBg,C.redBd] };
+  const [c,bg,bd] = m[v || ""] || m.CAUTION;
+  return <span style={{color:c,background:bg,border:`1px solid ${bd}`,borderRadius:8,
+    padding:"4px 11px",fontSize:11,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>
+    {v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":"⚠ "}{v || "CAUTION"}</span>;
+}
+function QTag() {
+  return <span style={{color:C.gold||"#c99a2e",background:"#fdf7e6",border:"1px solid #f0dfae",
+    borderRadius:5,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>★ Quality promoter</span>;
+}
+function Reasons({ trade, caution, avoid }: { trade?:string|null; caution?:string|null; avoid?:string|null }) {
+  const rows: [string,string,string,string][] = [];
+  (trade||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["PASS",C.green,C.greenBg,t]));
+  (caution||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["CHECK","#c2830c","#fdf6e6",t]));
+  (avoid||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["JUNK",C.red,C.redBg,t]));
+  if(!rows.length) return null;
+  return <div style={{marginTop:9}}>{rows.map(([lab,col,bg,txt],i)=>(
+    <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,margin:"4px 0",lineHeight:1.45}}>
+      <span style={{flexShrink:0,fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:4,marginTop:2,color:col,background:bg}}>{lab}</span>
+      <span style={{color:C.sub}}>{txt}</span></div>))}</div>;
 }
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:12, padding:"14px 16px", marginBottom:12 };
@@ -219,9 +243,13 @@ function IpoCommand() {
           liveSyms.includes(String(c.sym)) ? null :
           <div key={i} style={card}>
             <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                <b>{String(c.company_name||"")}</b><State s={c.state as string}/><Chip b={c.score_band as string}/>
-                <span style={{fontSize:12,color:C.meta}}>{String(c.score_evidence||"")}</span></div>
+              <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}>
+                {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
+                <b style={{fontSize:16}}>{String(c.company_name||"")}</b>
+                {c.quality_promoter===true&&<QTag/>}
+                <State s={c.state as string}/>
+                {c.regime!=null&&<span style={{fontSize:11.5,fontWeight:700,color:c.regime==="bull"?C.green:C.red}}>{c.regime==="bull"?"▲ bull":"▼ bear"}</span>}
+              </div>
               <span style={{...num,fontSize:12,color:C.meta}}>
                 {c.issue_price!=null?`₹${c.issue_price} · `:""}{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}Cr`:""}
                 {c.listing_date?` · lists ${D(c.listing_date)}`:""}</span></div>
@@ -232,15 +260,11 @@ function IpoCommand() {
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}
               <span style={{fontSize:12,color:C.dim}}>demand ≠ edge — QIB level tested non-predictive</span></div>}
-            {(()=>{const L=(d?.dl||[]).find(x=>x.sym===c.sym); if(!L||L.floor==null) return null;
-              const bf=!!L.broke_floor, bc=!!L.broke_ceiling;
-              return <div style={{fontSize:12,marginTop:7,color:C.sub}}>
-                <b style={{color:C.text}}>Level:</b>{" "}
-                <span style={{color:bf?C.red:C.sub}}>floor ₹{Number(L.floor).toFixed(2)}{bf?" ⚠ broken":""}</span>
-                {" · "}<span style={{color:bc?C.green:C.sub}}>ceiling ₹{Number(L.ceiling).toFixed(2)}{bc?" ↑ broken":""}</span>
-                {L.cushion!=null&&<>{" · "}cushion {Number(L.cushion).toFixed(1)}%</>}
-                {L.t!=null&&<span style={{color:C.dim}}>{" · "}session {String(L.t)} · bands freeze after 5 · respected 78%/75% hist.</span>}
-              </div>;})()}
+            <Reasons trade={c.why_trade as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
+            {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
+              <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
+              <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
+              <span>▸ <b style={{color:C.text}}>Order</b> ICICI GTT-OCO</span></div>}
           </div>))}
       </>}
 
