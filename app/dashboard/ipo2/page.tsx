@@ -126,6 +126,64 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
     </svg>);
 }
 
+function Calculator() {
+  const [cap, setCap] = useState("10000");
+  const [prices, setPrices] = useState("110, 115, 120");
+  const [buyPx, setBuyPx] = useState("");
+  const [sellPx, setSellPx] = useState("");
+  const [shares, setShares] = useState("");
+  const capN = Number(cap)||0;
+  const priceList = prices.split(",").map(s=>Number(s.trim())).filter(x=>x>0);
+  const inp: React.CSSProperties = {padding:"10px 12px",borderRadius:9,border:`1px solid ${C.border}`,
+    fontSize:15,width:"100%",fontFamily:MONO,color:C.text,background:"#fff"};
+  const lbl: React.CSSProperties = {fontSize:12,fontWeight:700,color:C.meta,marginBottom:5,display:"block"};
+  const bp=Number(buyPx)||0, sp=Number(sellPx)||0, sh=Number(shares)||0;
+  const pct = bp>0&&sp>0 ? ((sp-bp)/bp)*100 : null;
+  const pnl = pct!=null&&sh>0 ? (sp-bp)*sh : null;
+  return <>
+    <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
+      <b style={{fontSize:16}}>🧮 Share sizer — how many shares for your capital</b>
+      <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
+        On listing day (9:45–10:15) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
+        <div style={{flex:1,minWidth:160}}><label style={lbl}>Your capital (₹)</label>
+          <input style={inp} value={cap} onChange={e=>setCap(e.target.value)} inputMode="numeric"/></div>
+        <div style={{flex:2,minWidth:220}}><label style={lbl}>Likely listing prices (comma-separated)</label>
+          <input style={inp} value={prices} onChange={e=>setPrices(e.target.value)}/></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+        {priceList.map((p,i)=>{
+          const n=Math.floor(capN/p), left=capN-n*p;
+          return <div key={i} style={{border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",background:C.bg}}>
+            <div style={{fontSize:12,color:C.meta,fontWeight:700}}>at ₹{p}</div>
+            <div style={{...num,fontSize:28,fontWeight:800,color:C.blue,margin:"4px 0"}}>{n}</div>
+            <div style={{fontSize:12,color:C.meta}}>shares · ₹{left.toLocaleString()} left</div>
+          </div>;})}
+      </div>
+    </div>
+
+    <div style={{...card,borderTop:`3px solid ${C.green}`}}>
+      <b style={{fontSize:16}}>📈 Return calculator — your gain or loss</b>
+      <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>Enter your buy price and the current/sell price. Optionally add shares for the ₹ amount.</div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Buy price (₹)</label>
+          <input style={inp} value={buyPx} onChange={e=>setBuyPx(e.target.value)} inputMode="decimal" placeholder="111"/></div>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Current / sell (₹)</label>
+          <input style={inp} value={sellPx} onChange={e=>setSellPx(e.target.value)} inputMode="decimal" placeholder="125"/></div>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Shares (optional)</label>
+          <input style={inp} value={shares} onChange={e=>setShares(e.target.value)} inputMode="numeric" placeholder="90"/></div>
+      </div>
+      {pct!=null && <div style={{display:"flex",gap:20,alignItems:"baseline",padding:"16px 18px",borderRadius:11,
+        background:pct>=0?C.greenBg:C.redBg,border:`1px solid ${pct>=0?C.greenBd:C.redBd}`}}>
+        <div><div style={{fontSize:12,color:C.meta,fontWeight:700}}>Gross return</div>
+          <div style={{...num,fontSize:32,fontWeight:800,color:pct>=0?C.green:C.red}}>{pct>=0?"+":""}{pct.toFixed(2)}%</div></div>
+        {pnl!=null && <div><div style={{fontSize:12,color:C.meta,fontWeight:700}}>On {sh} shares</div>
+          <div style={{...num,fontSize:32,fontWeight:800,color:pct>=0?C.green:C.red}}>{pnl>=0?"+":"−"}₹{Math.abs(pnl).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>}
+      </div>}
+    </div>
+  </>;
+}
+
 function IpoCommand() {
   const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
@@ -145,7 +203,7 @@ function IpoCommand() {
   const cards = d?.cards || [];
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["command","⚡ Command Center"],["pb","🎯 Quick Profit Playbook"],
+  const pills: [string,string][] = [["command","⚡ Command Center"],["calc","🧮 Calculator"],["track","📊 Track Record"],["pb","🎯 Quick Profit Playbook"],
     ["open","📋 Open Now"],["upcoming","📅 Upcoming"],["post","📈 Post-Listing"],["brlm","🏆 BRLM"]];
 
   return (
@@ -262,7 +320,7 @@ function IpoCommand() {
           let subs: [string,number][] = [];
           try { const o=JSON.parse(String(c.sub_scores||"{}")); subs=Object.entries(o) as [string,number][]; } catch {}
           return (
-          <div key={i} style={card}>
+          <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:"#fbfffc"}:card}>
             <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
               <ScoreRing score={c.vscore as number} conf={c.vconf as number}/>
               <div style={{flex:1,minWidth:0}}>
@@ -301,6 +359,50 @@ function IpoCommand() {
       </>}
 
       {/* PLAYBOOK */}
+      {view==="calc" && <Calculator/>}
+
+      {view==="track" && <>
+        {(()=>{
+          const t=(d?.track||[]) as R[];
+          const wins=t.filter(x=>N(x.ret_last)!=null&&N(x.ret_last)!>0).length;
+          const wr=t.length?Math.round(wins/t.length*100):0;
+          const avg=t.length?t.reduce((s,x)=>s+(N(x.ret_last)||0),0)/t.length:0;
+          const med=(()=>{const a=t.map(x=>N(x.ret_last)||0).sort((p,q)=>p-q);return a.length?a[Math.floor(a.length/2)]:0;})();
+          return <>
+          <div style={{...card,borderTop:`3px solid ${C.green}`}}>
+            <b style={{fontSize:16}}>📊 Our TRADE calls — did they work?</b>
+            <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:12}}>
+              Every IPO the framework said TRADE, with its actual buy-open outcome. Honest scorecard — updated nightly.</div>
+            <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+              {[["Win rate",`${wr}%`,`${wins}/${t.length} closed green`,C.green],
+                ["Median return",`${med>=0?"+":""}${med.toFixed(1)}%`,"typical outcome",med>=0?C.green:C.red],
+                ["Average return",`${avg>=0?"+":""}${avg.toFixed(1)}%`,"mean buy-open",avg>=0?C.green:C.red]].map(([k,v,s,col],i)=>(
+                <div key={i} style={{flex:1,minWidth:150,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px"}}>
+                  <div style={{fontSize:11.5,color:C.meta,fontWeight:700}}>{k as string}</div>
+                  <div style={{...num,fontSize:28,fontWeight:800,color:col as string,margin:"3px 0"}}>{v as string}</div>
+                  <div style={{fontSize:11.5,color:C.dim}}>{s as string}</div></div>))}
+            </div>
+          </div>
+          <div style={{...card,overflowX:"auto"}}>
+            <table style={{minWidth:620,width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Gap</th>
+                <th style={th}>Setup</th><th style={th}>Peak</th><th style={th}>Latest</th></tr></thead>
+              <tbody>{t.map((r,i)=>(
+                <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
+                  <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}{r.quality_promoter?" ★":""}</td>
+                  <td style={{...td,...num}}>{N(r.gap_pct)!=null?`${N(r.gap_pct)!>=0?"+":""}${Number(r.gap_pct).toFixed(0)}%`:"—"}</td>
+                  <td style={{...td,fontSize:11.5,color:C.meta}}>{r.quality_promoter?"Quality":"Gap 0-15"} · {String(r.regime||"")}</td>
+                  <td style={{...td,...num,color:C.green}}>{N(r.ret_peak)!=null?`+${Number(r.ret_peak).toFixed(1)}%`:"—"}</td>
+                  <td style={{...td,...num,fontWeight:700,color:N(r.ret_last)==null?C.dim:(N(r.ret_last)!>=0?C.green:C.red)}}>
+                    {N(r.ret_last)!=null?`${N(r.ret_last)!>=0?"+":""}${Number(r.ret_last).toFixed(1)}%`:"—"}</td></tr>))}</tbody>
+            </table>
+            {t.length===0&&<div style={{fontSize:13,color:C.meta,padding:8}}>No listed TRADE calls yet — they'll appear here as framework-flagged IPOs list.</div>}
+            <div style={{fontSize:12,color:C.dim,marginTop:8}}>Peak = best close within 21 sessions (a ceiling, not an exit). Latest = most recent close. Buy-open basis.</div>
+          </div>
+          </>;
+        })()}
+      </>}
+
       {view==="pb" && <>
         <div style={{...card, background:"#FFFBEB", border:"1.5px solid #FDE68A"}}>
           <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
