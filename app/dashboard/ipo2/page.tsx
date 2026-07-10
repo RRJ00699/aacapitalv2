@@ -74,6 +74,22 @@ function Reasons({ trade, caution, avoid }: { trade?:string|null; caution?:strin
       <span style={{flexShrink:0,fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:4,marginTop:2,color:col,background:bg}}>{lab}</span>
       <span style={{color:C.sub}}>{txt}</span></div>))}</div>;
 }
+function ScoreRing({ score, conf }: { score?: number|null; conf?: number|null }) {
+  if (score == null) return <div style={{width:56,textAlign:"center"}}>
+    <div style={{width:52,height:52,borderRadius:"50%",border:`3px dashed ${C.border}`,display:"grid",placeItems:"center",fontSize:10,color:C.dim,margin:"0 auto"}}>n/a</div>
+    <div style={{fontSize:8.5,color:C.dim,marginTop:2,textTransform:"uppercase",letterSpacing:.5}}>data thin</div></div>;
+  const col = score>=65?C.green:score>=40?"#c2830c":C.red;
+  const r=22, c=2*Math.PI*r, off=c*(1-score/100);
+  return <div style={{width:56,textAlign:"center"}}>
+    <div style={{position:"relative",width:52,height:52,margin:"0 auto"}}>
+      <svg width="52" height="52" style={{transform:"rotate(-90deg)"}}>
+        <circle cx="26" cy="26" r={r} fill="none" stroke={C.grayBg} strokeWidth="4"/>
+        <circle cx="26" cy="26" r={r} fill="none" stroke={col} strokeWidth="4" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={off}/></svg>
+      <span style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:16,fontWeight:800,color:col}}>{score}</span>
+    </div>
+    <div style={{fontSize:8.5,color:C.dim,marginTop:1,textTransform:"uppercase",letterSpacing:.4}}>{conf!=null?`${conf}% conf`:"score"}</div></div>;
+}
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:12, padding:"14px 16px", marginBottom:12 };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
@@ -239,33 +255,45 @@ function IpoCommand() {
               </div>
             </div>);
         })}
-        {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>(
-          liveSyms.includes(String(c.sym)) ? null :
+        {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>{
+          if (liveSyms.includes(String(c.sym))) return null;
+          let subs: [string,number][] = [];
+          try { const o=JSON.parse(String(c.sub_scores||"{}")); subs=Object.entries(o) as [string,number][]; } catch {}
+          return (
           <div key={i} style={card}>
-            <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap"}}>
-                {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
-                <b style={{fontSize:16}}>{String(c.company_name||"")}</b>
-                {c.quality_promoter===true&&<QTag/>}
-                <State s={c.state as string}/>
-                {c.regime!=null&&<span style={{fontSize:11.5,fontWeight:700,color:c.regime==="bull"?C.green:C.red}}>{c.regime==="bull"?"▲ bull":"▼ bear"}</span>}
+            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+              <ScoreRing score={c.vscore as number} conf={c.vconf as number}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",marginBottom:3}}>
+                  {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
+                  {c.quality_promoter===true&&<QTag/>}
+                  <State s={c.state as string}/>
+                  {c.regime!=null&&<span style={{fontSize:11.5,fontWeight:700,color:c.regime==="bull"?C.green:C.red}}>{c.regime==="bull"?"▲ bull":"▼ bear"}</span>}
+                </div>
+                <b style={{fontSize:17}}>{String(c.company_name||"")}</b>
+                {subs.length>0&&<div style={{marginTop:4,fontSize:11.5,color:C.meta,display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {subs.map(([k,v])=><span key={k}>{k} <b style={{color:v>=65?C.green:v>=40?"#c2830c":C.red}}>{v}</b></span>)}
+                </div>}
               </div>
-              <span style={{...num,fontSize:12,color:C.meta}}>
-                {c.issue_price!=null?`₹${c.issue_price} · `:""}{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}Cr`:""}
-                {c.listing_date?` · lists ${D(c.listing_date)}`:""}</span></div>
-            {c.final_qib!=null&&<div style={{display:"flex",gap:12,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+              <span style={{...num,fontSize:12,color:C.meta,textAlign:"right",flexShrink:0}}>
+                {c.issue_price!=null?`₹${c.issue_price}`:""}<br/>{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}Cr`:""}
+                {c.listing_date?<><br/>lists {D(c.listing_date)}</>:""}</span>
+            </div>
+            {c.ai_summary!=null&&<div style={{display:"flex",gap:8,marginTop:11,fontSize:13,color:C.sub,lineHeight:1.5,
+              background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"9px 12px"}}>
+              <span>🤖</span><span>{String(c.ai_summary)}</span></div>}
+            {c.final_qib!=null&&<div style={{display:"flex",gap:12,alignItems:"center",marginTop:9,flexWrap:"wrap"}}>
               <span style={{fontSize:12,color:C.meta,minWidth:30}}>QIB</span>
               <div style={{height:7,borderRadius:4,background:C.grayBg,flex:1,minWidth:120,position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,width:`${Math.min(100,Number(c.final_qib))}%`,background:C.green,borderRadius:4}}/></div>
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
-              {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}
-              <span style={{fontSize:12,color:C.dim}}>demand ≠ edge — QIB level tested non-predictive</span></div>}
+              {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
             <Reasons trade={c.why_trade as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
               <span>▸ <b style={{color:C.text}}>Order</b> ICICI GTT-OCO</span></div>}
-          </div>))}
+          </div>);})}
       </>}
 
       {/* PLAYBOOK */}
