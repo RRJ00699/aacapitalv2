@@ -37,8 +37,14 @@ export async function GET() {
                WHEN listing_date = CURRENT_DATE THEN 'LISTING'
                WHEN listing_date > CURRENT_DATE THEN 'UPCOMING'
                WHEN listing_date >= CURRENT_DATE - 30 THEN 'INWINDOW'
-             END AS state
-      FROM ipo_consolidated
+             END AS state,
+             (SELECT verdict FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS verdict,
+             (SELECT why_trade FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_trade,
+             (SELECT why_caution FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_caution,
+             (SELECT why_avoid FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_avoid,
+             (SELECT regime FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS regime,
+             (SELECT quality_promoter FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS quality_promoter
+      FROM ipo_consolidated c
       WHERE listing_date >= CURRENT_DATE - 30 OR ipo_close_date >= CURRENT_DATE
          OR ipo_open_date >= CURRENT_DATE
       ORDER BY COALESCE(listing_date, ipo_open_date)`;
@@ -120,12 +126,12 @@ export async function GET() {
     const post = hasD10.length
       ? await sql`SELECT company_name, listing_date, score_band, gap_bucket,
                          listing_gap_pct, d10_best_pct
-                  FROM ipo_consolidated
+                  FROM ipo_consolidated c
                   WHERE listing_date < CURRENT_DATE AND score_band IS NOT NULL
                   ORDER BY listing_date DESC LIMIT 30`
       : await sql`SELECT company_name, listing_date, score_band, gap_bucket,
                          listing_gap_pct, NULL AS d10_best_pct
-                  FROM ipo_consolidated
+                  FROM ipo_consolidated c
                   WHERE listing_date < CURRENT_DATE AND score_band IS NOT NULL
                   ORDER BY listing_date DESC LIMIT 30`;
 
@@ -137,7 +143,7 @@ export async function GET() {
                ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY listing_gap_pct)::numeric, 1) AS med_gap,
                ROUND(AVG(CASE WHEN d10_best_pct > 0 THEN 100 ELSE 0 END), 0) AS d10_win,
                ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d10_best_pct)::numeric, 1) AS d10_med
-        FROM ipo_consolidated
+        FROM ipo_consolidated c
         WHERE brlm_names IS NOT NULL AND listing_gap_pct IS NOT NULL
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`
       : await sql`
@@ -145,7 +151,7 @@ export async function GET() {
                ROUND(AVG(CASE WHEN listing_gap_pct > 0 THEN 100 ELSE 0 END), 0) AS pop_rate,
                ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY listing_gap_pct)::numeric, 1) AS med_gap,
                NULL AS d10_win, NULL AS d10_med
-        FROM ipo_consolidated
+        FROM ipo_consolidated c
         WHERE brlm_names IS NOT NULL AND listing_gap_pct IS NOT NULL
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`;
 
