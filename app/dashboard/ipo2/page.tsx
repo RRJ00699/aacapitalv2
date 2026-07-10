@@ -296,8 +296,35 @@ function IpoCommand() {
             Everything outside the rules: watch, enjoy, do nothing. Skipping IS the strategy.
           </div>
         </div>
-        <div style={card}><b style={{fontSize:14}}>The playbook — what to do, by setup.</b>
-          <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Entry: buy at listing open only when the setup qualifies.
+
+        <div style={card}>
+          <b style={{fontSize:15}}>The two strategies — validated</b>
+          <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:12}}>
+            Backtested on the clean data contract · 771 IPOs · size ≥ ₹200cr, 2021+ · buy-open outcome ·
+            <b> tested 2026-07-10</b> · data = Golden master (341/341) reconciled to BSE (431/431)
+          </div>
+          {[
+            ["S1","Gap 0–15% + bull market","#16A34A","#F0FDF4","#BBF7D0",
+             "Issue→listing gap in the 0–15% sweet spot, Nifty above its 200-EMA. Buy at open.",
+             "62% win · +11.4% median · n=50"],
+            ["S2","Quality promoter + bull","#B8860B","#FFFBEB","#FDE68A",
+             "Existing/blue-chip promoter (market trusts the numbers). Runs even on a big gap — IREDA +56, Waaree +66, Tata Tech +140 all paid.",
+             "64–71% win · +12–15% median · n=22"],
+          ].map(([tag,name,col,bg,bd,desc,stat])=>(
+            <div key={tag} style={{display:"flex",gap:12,padding:"11px 0",borderTop:tag!=="S1"?`1px solid ${C.border}`:"none"}}>
+              <div style={{minWidth:38,height:38,borderRadius:9,background:bg,border:`1px solid ${bd}`,color:col,
+                display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13}}>{tag}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+                  <span style={{fontWeight:800,fontSize:14}}>{name}</span>
+                  <span style={{...num,fontSize:12.5,fontWeight:700,color:col}}>{stat}</span></div>
+                <div style={{fontSize:12.5,color:C.sub,marginTop:3}}>{desc}</div></div>
+            </div>))}
+          <div style={{marginTop:10,padding:"9px 12px",background:C.grayBg,borderRadius:9,fontSize:12,color:C.meta}}>
+            <b>Golden rule:</b> gap &gt;50% on a non-quality name = skip (hype priced in — 38% win, −5% median).
+            Quality promoters are the exception. <b>Exit both:</b> trailing −5%.
+          </div>
+        </div>
             Exit: best close ≤10 sessions · hard invalidation on a close below the floor.</div></div>
         {PLAYS.map((p,i)=>(
           <div key={i} style={{...card,borderLeft:`4px solid ${p.c}`,borderRadius:"0 12px 12px 0"}}>
