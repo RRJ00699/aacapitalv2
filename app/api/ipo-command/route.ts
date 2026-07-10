@@ -47,7 +47,8 @@ export async function GET() {
              (SELECT ai_summary FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS ai_summary,
              (SELECT score FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vscore,
              (SELECT confidence FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vconf,
-             (SELECT sub_scores FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS sub_scores
+             (SELECT sub_scores FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS sub_scores,
+             (SELECT why_passes FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_passes
       FROM ipo_consolidated c
       WHERE listing_date >= CURRENT_DATE - 30 OR ipo_close_date >= CURRENT_DATE
          OR ipo_open_date >= CURRENT_DATE

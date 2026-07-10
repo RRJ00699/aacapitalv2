@@ -53,19 +53,21 @@ function State({ s }: { s?: string | null }) {
 function Verdict({ v }: { v?: string | null }) {
   const m: Record<string,[string,string,string]> = {
     TRADE:[C.green,C.greenBg,C.greenBd], CAUTION:["#c2830c","#fdf6e6","#f0dfae"],
-    AVOID:[C.red,C.redBg,C.redBd] };
+    WATCH:[C.blue,C.blueBg,C.blueBd], AVOID:[C.red,C.redBg,C.redBd] };
   const [c,bg,bd] = m[v || ""] || m.CAUTION;
+  const icon = v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":v==="WATCH"?"👁 ":"⚠ ";
   return <span style={{color:c,background:bg,border:`1px solid ${bd}`,borderRadius:8,
     padding:"4px 11px",fontSize:11,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>
-    {v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":"⚠ "}{v || "CAUTION"}</span>;
+    {icon}{v || "CAUTION"}</span>;
 }
 function QTag() {
   return <span style={{color:C.gold||"#c99a2e",background:"#fdf7e6",border:"1px solid #f0dfae",
     borderRadius:5,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>★ Quality promoter</span>;
 }
-function Reasons({ trade, caution, avoid }: { trade?:string|null; caution?:string|null; avoid?:string|null }) {
+function Reasons({ trade, passes, caution, avoid }: { trade?:string|null; passes?:string|null; caution?:string|null; avoid?:string|null }) {
   const rows: [string,string,string,string][] = [];
   (trade||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["PASS",C.green,C.greenBg,t]));
+  (passes||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["✓",C.green,C.greenBg,t]));
   (caution||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["CHECK","#c2830c","#fdf6e6",t]));
   (avoid||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["JUNK",C.red,C.redBg,t]));
   if(!rows.length) return null;
@@ -288,11 +290,13 @@ function IpoCommand() {
                 <div style={{position:"absolute",inset:0,width:`${Math.min(100,Number(c.final_qib))}%`,background:C.green,borderRadius:4}}/></div>
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
-            <Reasons trade={c.why_trade as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
+            <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
               <span>▸ <b style={{color:C.text}}>Order</b> ICICI GTT-OCO</span></div>}
+            {c.verdict==="WATCH"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.blue}}>
+              👁 On listing day: check the gap against the Playbook — quality passes, the gap decides the trade.</div>}
           </div>);})}
       </>}
 
