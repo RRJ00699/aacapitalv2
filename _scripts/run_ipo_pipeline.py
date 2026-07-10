@@ -98,7 +98,7 @@ def main():
     step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
     step("convergence snapshot (history)", ["snapshot_convergence.py"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
-    ok&=step("daily floor/ceiling levels",  ["ipo_daily_levels.py","--from-db","--write-db"])
+    # REMOVED: OBIR floor/ceiling compute (no value, burned CU-hrs) — 2026-07-10
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
     step("backup critical tables",           ["backup_critical_tables.py"])
