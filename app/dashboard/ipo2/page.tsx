@@ -353,6 +353,9 @@ function IpoCommand() {
             Quality promoters are the exception. <b>Exit both:</b> trailing −5%.
           </div>
         </div>
+
+        <div style={card}><b style={{fontSize:14}}>The playbook — what to do, by setup.</b>
+          <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Entry: buy at listing open only when the setup qualifies.
             Exit: best close ≤10 sessions · hard invalidation on a close below the floor.</div></div>
         {PLAYS.map((p,i)=>(
           <div key={i} style={{...card,borderLeft:`4px solid ${p.c}`,borderRadius:"0 12px 12px 0"}}>
