@@ -125,12 +125,14 @@ export async function GET() {
       WHERE table_name='ipo_consolidated' AND column_name='d10_best_pct'`;
     const post = hasD10.length
       ? await sql`SELECT company_name, listing_date, score_band, gap_bucket,
-                         listing_gap_pct, d10_best_pct
+                         listing_gap_pct, d10_best_pct,
+                         (SELECT verdict FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS verdict
                   FROM ipo_consolidated c
                   WHERE listing_date < CURRENT_DATE AND score_band IS NOT NULL
                   ORDER BY listing_date DESC LIMIT 30`
       : await sql`SELECT company_name, listing_date, score_band, gap_bucket,
-                         listing_gap_pct, NULL AS d10_best_pct
+                         listing_gap_pct, NULL AS d10_best_pct,
+                         (SELECT verdict FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS verdict
                   FROM ipo_consolidated c
                   WHERE listing_date < CURRENT_DATE AND score_band IS NOT NULL
                   ORDER BY listing_date DESC LIMIT 30`;
