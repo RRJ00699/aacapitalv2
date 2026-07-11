@@ -16,47 +16,38 @@ export async function GET() {
   if (gate) return gate;
   try {
     const cards = await sql`
-      SELECT company_name, listing_date, ipo_open_date AS open_date, ipo_close_date AS close_date, issue_size_cr,
+      SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, issue_size_cr,
              issue_price, ipo_score, score_band, score_evidence, gap_bucket,
              listing_gap_pct, final_qib, final_nii, final_retail, final_total,
              brlm_names,
              UPPER(REGEXP_REPLACE(COALESCE(symbol_final, nse_symbol, symbol, ''), '\\.NS$','')) AS sym,
              (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
-                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
              (SELECT peer_name FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
-                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
              (SELECT peer_ps FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
-                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_peer_ps,
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer_ps,
              (SELECT note_ps FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
-                     OR n.company ILIKE '%'||split_part(company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
              CASE
-               WHEN ipo_open_date <= CURRENT_DATE AND ipo_close_date >= CURRENT_DATE THEN 'OPEN'
-               WHEN listing_date = CURRENT_DATE THEN 'LISTING'
-               WHEN listing_date > CURRENT_DATE THEN 'UPCOMING'
-               WHEN listing_date >= CURRENT_DATE - 30 THEN 'INWINDOW'
+               WHEN c.ipo_open_date <= CURRENT_DATE AND c.ipo_close_date >= CURRENT_DATE THEN 'OPEN'
+               WHEN c.listing_date = CURRENT_DATE THEN 'LISTING'
+               WHEN c.listing_date > CURRENT_DATE THEN 'UPCOMING'
+               WHEN c.listing_date >= CURRENT_DATE - 30 THEN 'INWINDOW'
              END AS state,
-             (SELECT verdict FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS verdict,
-             (SELECT why_trade FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_trade,
-             (SELECT why_caution FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_caution,
-             (SELECT why_avoid FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_avoid,
-             (SELECT regime FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS regime,
-             (SELECT quality_promoter FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS quality_promoter,
-             (SELECT ai_summary FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS ai_summary,
-             (SELECT score FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vscore,
-             (SELECT confidence FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vconf,
-             (SELECT sub_scores FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS sub_scores,
-             (SELECT why_passes FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_passes,
-             (SELECT red_flags FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS red_flags,
-             (SELECT green_checks FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS green_checks,
-             (SELECT red_count FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS red_count,
-             (SELECT green_count FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS green_count
+             v.verdict, v.why_trade, v.why_caution, v.why_avoid, v.regime,
+             v.quality_promoter, v.ai_summary, v.score AS vscore, v.confidence AS vconf,
+             v.sub_scores, v.why_passes,
+             f.red_flags, f.green_checks, f.red_count, f.green_count
       FROM ipo_consolidated c
-      WHERE listing_date >= CURRENT_DATE - 30 OR ipo_close_date >= CURRENT_DATE
-         OR ipo_open_date >= CURRENT_DATE
+      LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
+      LEFT JOIN ipo_flags f ON f.company_name = c.company_name
+      WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
+         OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY
         CASE WHEN listing_date >= CURRENT_DATE OR ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(listing_date, ipo_open_date) DESC`;
