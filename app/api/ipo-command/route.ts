@@ -1,3 +1,4 @@
+// deploy: retrigger 2026-07-11b
 // app/api/ipo-command/route.ts
 // Single feed for the redesigned IPO page (/dashboard/ipo2). Read-only.
 // Sections: command (upcoming/open/in-window w/ score), live (ticks + levels +
