@@ -170,7 +170,7 @@ export async function GET() {
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`;
 
     // TRACK RECORD — IPOs our framework said TRADE, with actual buy-open outcome
-    let track: R[] = [];
+    let track: Record<string, unknown>[] = [];
     try {
       track = await sql`
       WITH traded AS (
