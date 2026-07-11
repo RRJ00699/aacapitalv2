@@ -205,7 +205,7 @@ function Calculator() {
 }
 
 function IpoCommand() {
-  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[]}|null>(null);
+  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[];track?:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
   const loadData = useCallback(() => {
