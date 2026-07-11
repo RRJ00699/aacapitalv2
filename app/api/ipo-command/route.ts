@@ -48,7 +48,11 @@ export async function GET() {
              (SELECT score FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vscore,
              (SELECT confidence FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS vconf,
              (SELECT sub_scores FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS sub_scores,
-             (SELECT why_passes FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_passes
+             (SELECT why_passes FROM ipo_verdicts v WHERE v.company_name = c.company_name LIMIT 1) AS why_passes,
+             (SELECT red_flags FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS red_flags,
+             (SELECT green_checks FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS green_checks,
+             (SELECT red_count FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS red_count,
+             (SELECT green_count FROM ipo_flags f WHERE f.company_name = c.company_name LIMIT 1) AS green_count
       FROM ipo_consolidated c
       WHERE listing_date >= CURRENT_DATE - 30 OR ipo_close_date >= CURRENT_DATE
          OR ipo_open_date >= CURRENT_DATE
