@@ -179,12 +179,12 @@ export async function GET() {
              AND p.date >= t.listing_date AND p.date <= t.listing_date + 21) AS peak_high
         FROM traded t
       )
-      SELECT company_name, listing_date, gap_pct, regime, quality_promoter,
-             listing_open, last_close, peak_high,
-             ROUND((((last_close - listing_open)/listing_open)*100)::numeric, 1) AS ret_last,
-             ROUND((((peak_high - listing_open)/listing_open)*100)::numeric, 1) AS ret_peak
+      SELECT outcome.company_name, outcome.listing_date, outcome.gap_pct, outcome.regime, outcome.quality_promoter,
+             outcome.listing_open, last_close, peak_high,
+             ROUND((((last_close - outcome.listing_open)/outcome.listing_open)*100)::numeric, 1) AS ret_last,
+             ROUND((((peak_high - outcome.listing_open)/outcome.listing_open)*100)::numeric, 1) AS ret_peak
       FROM outcome WHERE last_close IS NOT NULL
-      ORDER BY listing_date DESC`;
+      ORDER BY outcome.listing_date DESC`;
     } catch (e) { console.error("track query failed:", e); track = []; }
 
     return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track,
