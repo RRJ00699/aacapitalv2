@@ -100,6 +100,8 @@ def main():
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     # REMOVED: OBIR floor/ceiling compute (no value, burned CU-hrs) — 2026-07-10
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
+    step("compute red-flag scanner", ["compute_flags.py","--apply"])
+    step("post-listing momentum (distribution detect)", ["distribution_detect.py","--apply"])
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
     step("backup critical tables",           ["backup_critical_tables.py"])
