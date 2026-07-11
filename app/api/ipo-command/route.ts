@@ -160,32 +160,9 @@ export async function GET() {
         WHERE brlm_names IS NOT NULL AND listing_gap_pct IS NOT NULL
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`;
 
-    // TRACK RECORD — IPOs our framework said TRADE, with actual buy-open outcome
-    let track: Record<string, unknown>[] = [];
-    try {
-      track = await sql`
-      WITH traded AS (
-        SELECT v.company_name, v.gap_pct, v.regime, v.quality_promoter,
-               i.listing_date, i.listing_open,
-               UPPER(REGEXP_REPLACE(COALESCE(i.nse_symbol, i.symbol, ''), '\\.NS$','')) AS sym
-        FROM ipo_verdicts v
-        JOIN ipo_intelligence i ON i.company_name = v.company_name
-        WHERE v.verdict = 'TRADE' AND i.listing_open > 0 AND i.listing_date < CURRENT_DATE
-      ), outcome AS (
-        SELECT t.*,
-          (SELECT close FROM price_candles p WHERE UPPER(p.symbol)=t.sym AND p.date >= t.listing_date
-             ORDER BY p.date DESC LIMIT 1) AS last_close,
-          (SELECT MAX(high) FROM price_candles p WHERE UPPER(p.symbol)=t.sym
-             AND p.date >= t.listing_date AND p.date <= t.listing_date + 21) AS peak_high
-        FROM traded t
-      )
-      SELECT outcome.company_name, outcome.listing_date, outcome.gap_pct, outcome.regime, outcome.quality_promoter,
-             outcome.listing_open, last_close, peak_high,
-             ROUND((((last_close - outcome.listing_open)/outcome.listing_open)*100)::numeric, 1) AS ret_last,
-             ROUND((((peak_high - outcome.listing_open)/outcome.listing_open)*100)::numeric, 1) AS ret_peak
-      FROM outcome WHERE last_close IS NOT NULL
-      ORDER BY outcome.listing_date DESC`;
-    } catch (e) { console.error("track query failed:", e); track = []; }
+    // TRACK RECORD — computed in its own endpoint to keep this fast
+    const track: Record<string, unknown>[] = [];
+
 
     return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
