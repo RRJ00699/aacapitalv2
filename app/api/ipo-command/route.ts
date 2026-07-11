@@ -170,7 +170,9 @@ export async function GET() {
         GROUP BY 1 HAVING COUNT(*) >= 8 ORDER BY n DESC LIMIT 15`;
 
     // TRACK RECORD — IPOs our framework said TRADE, with actual buy-open outcome
-    const track = await sql`
+    let track: R[] = [];
+    try {
+      track = await sql`
       WITH traded AS (
         SELECT v.company_name, v.gap_pct, v.regime, v.quality_promoter,
                i.listing_date, i.listing_open,
@@ -192,6 +194,7 @@ export async function GET() {
              ROUND((((peak_high - listing_open)/listing_open)*100)::numeric, 1) AS ret_peak
       FROM outcome WHERE last_close IS NOT NULL
       ORDER BY listing_date DESC`;
+    } catch (e) { console.error("track query failed:", e); track = []; }
 
     return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
