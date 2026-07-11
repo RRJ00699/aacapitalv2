@@ -92,18 +92,25 @@ function ScoreRing({ score, conf }: { score?: number|null; conf?: number|null })
     </div>
     <div style={{fontSize:8.5,color:C.dim,marginTop:1,textTransform:"uppercase",letterSpacing:.4}}>{conf!=null?`${conf}% conf`:"score"}</div></div>;
 }
-function Flags({ red, green, redCount, greenCount }: { red?:string|null; green?:string|null; redCount?:number|null; greenCount?:number|null }) {
+function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null; green?:string|null; redCount?:number|null; greenCount?:number|null; verdict?:string|null }) {
   const [open,setOpen] = useState(false);
   const rc = redCount ?? 0, gc = greenCount ?? 0;
   if (rc===0 && gc===0) return null;
   const reds = (red||"").split(" ; ").filter(Boolean);
   const greens = (green||"").split(" ; ").filter(Boolean);
+  // risk framing — NOT a prediction; a position-sizing signal (principle-consistent)
+  const riskLine = rc>=4 ? "Higher-risk trade — the market prices these flags into the open, so size smaller and honor your stop."
+    : rc>=2 ? "Some risk flags — verify them and size accordingly if you trade the open."
+    : rc===1 ? "One flag to note — not disqualifying, but worth a look before trading."
+    : null;
   return <div style={{marginTop:9}}>
     <div onClick={()=>setOpen(!open)} style={{display:"inline-flex",gap:10,alignItems:"center",cursor:"pointer",userSelect:"none",fontSize:12.5,fontWeight:700}}>
       {rc>0 && <span style={{color:C.red}}>🚩 {rc} red flag{rc>1?"s":""}</span>}
       {gc>0 && <span style={{color:C.green}}>✓ {gc} pass{gc>1?"es":""}</span>}
       <span style={{color:C.dim,fontWeight:600,fontSize:11}}>{open?"▲ hide":"▼ details"}</span>
     </div>
+    {riskLine && verdict!=="AVOID" && <div style={{marginTop:6,fontSize:12,color:rc>=4?C.red:"#c2830c",background:rc>=4?C.redBg:"#fdf6e6",border:`1px solid ${rc>=4?C.redBd:"#f0dfae"}`,borderRadius:8,padding:"7px 11px",display:"flex",gap:7}}>
+      <span>⚠️</span><span>{riskLine}</span></div>}
     {open && <div style={{marginTop:7}}>
       {reds.map((t,i)=><div key={"r"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
         <span style={{color:C.red,flexShrink:0}}>🚩</span><span style={{color:C.sub}}>{t}</span></div>)}
@@ -223,7 +230,7 @@ function IpoCommand() {
   const cards = d?.cards || [];
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["command","⚡ Command Center"],["calc","🧮 Calculator"],["track","📊 Track Record"],["pb","🎯 Quick Profit Playbook"],
+  const pills: [string,string][] = [["command","⚡ Command Center"],["calc","🧮 Calculator"],["pb","🎯 Quick Profit Playbook"],
     ["open","📋 Open Now"],["upcoming","📅 Upcoming"],["post","📈 Post-Listing"],["brlm","🏆 BRLM"]];
 
   return (
@@ -369,7 +376,7 @@ function IpoCommand() {
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
             <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
-            <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number}/>
+            <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number} verdict={c.verdict as string}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
@@ -381,48 +388,6 @@ function IpoCommand() {
 
       {/* PLAYBOOK */}
       {view==="calc" && <Calculator/>}
-
-      {view==="track" && <>
-        {(()=>{
-          const t=(d?.track||[]) as R[];
-          const wins=t.filter(x=>N(x.ret_last)!=null&&N(x.ret_last)!>0).length;
-          const wr=t.length?Math.round(wins/t.length*100):0;
-          const avg=t.length?t.reduce((s,x)=>s+(N(x.ret_last)||0),0)/t.length:0;
-          const med=(()=>{const a=t.map(x=>N(x.ret_last)||0).sort((p,q)=>p-q);return a.length?a[Math.floor(a.length/2)]:0;})();
-          return <>
-          <div style={{...card,borderTop:`3px solid ${C.green}`}}>
-            <b style={{fontSize:16}}>📊 Our TRADE calls — did they work?</b>
-            <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:12}}>
-              Every IPO the framework said TRADE, with its actual buy-open outcome. Honest scorecard — updated nightly.</div>
-            <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-              {[["Win rate",`${wr}%`,`${wins}/${t.length} closed green`,C.green],
-                ["Median return",`${med>=0?"+":""}${med.toFixed(1)}%`,"typical outcome",med>=0?C.green:C.red],
-                ["Average return",`${avg>=0?"+":""}${avg.toFixed(1)}%`,"mean buy-open",avg>=0?C.green:C.red]].map(([k,v,s,col],i)=>(
-                <div key={i} style={{flex:1,minWidth:150,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px"}}>
-                  <div style={{fontSize:11.5,color:C.meta,fontWeight:700}}>{k as string}</div>
-                  <div style={{...num,fontSize:28,fontWeight:800,color:col as string,margin:"3px 0"}}>{v as string}</div>
-                  <div style={{fontSize:11.5,color:C.dim}}>{s as string}</div></div>))}
-            </div>
-          </div>
-          <div style={{...card,overflowX:"auto"}}>
-            <table style={{minWidth:620,width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Gap</th>
-                <th style={th}>Setup</th><th style={th}>Peak</th><th style={th}>Latest</th></tr></thead>
-              <tbody>{t.map((r,i)=>(
-                <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
-                  <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}{r.quality_promoter?" ★":""}</td>
-                  <td style={{...td,...num}}>{N(r.gap_pct)!=null?`${N(r.gap_pct)!>=0?"+":""}${Number(r.gap_pct).toFixed(0)}%`:"—"}</td>
-                  <td style={{...td,fontSize:11.5,color:C.meta}}>{r.quality_promoter?"Quality":"Gap 0-15"} · {String(r.regime||"")}</td>
-                  <td style={{...td,...num,color:C.green}}>{N(r.ret_peak)!=null?`+${Number(r.ret_peak).toFixed(1)}%`:"—"}</td>
-                  <td style={{...td,...num,fontWeight:700,color:N(r.ret_last)==null?C.dim:(N(r.ret_last)!>=0?C.green:C.red)}}>
-                    {N(r.ret_last)!=null?`${N(r.ret_last)!>=0?"+":""}${Number(r.ret_last).toFixed(1)}%`:"—"}</td></tr>))}</tbody>
-            </table>
-            {t.length===0&&<div style={{fontSize:13,color:C.meta,padding:8}}>No listed TRADE calls yet — they'll appear here as framework-flagged IPOs list.</div>}
-            <div style={{fontSize:12,color:C.dim,marginTop:8}}>Peak = best close within 21 sessions (a ceiling, not an exit). Latest = most recent close. Buy-open basis.</div>
-          </div>
-          </>;
-        })()}
-      </>}
 
       {view==="pb" && <>
         <div style={{...card, background:"#FFFBEB", border:"1.5px solid #FDE68A"}}>
