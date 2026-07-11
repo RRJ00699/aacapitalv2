@@ -92,6 +92,26 @@ function ScoreRing({ score, conf }: { score?: number|null; conf?: number|null })
     </div>
     <div style={{fontSize:8.5,color:C.dim,marginTop:1,textTransform:"uppercase",letterSpacing:.4}}>{conf!=null?`${conf}% conf`:"score"}</div></div>;
 }
+function Flags({ red, green, redCount, greenCount }: { red?:string|null; green?:string|null; redCount?:number|null; greenCount?:number|null }) {
+  const [open,setOpen] = useState(false);
+  const rc = redCount ?? 0, gc = greenCount ?? 0;
+  if (rc===0 && gc===0) return null;
+  const reds = (red||"").split(" ; ").filter(Boolean);
+  const greens = (green||"").split(" ; ").filter(Boolean);
+  return <div style={{marginTop:9}}>
+    <div onClick={()=>setOpen(!open)} style={{display:"inline-flex",gap:10,alignItems:"center",cursor:"pointer",userSelect:"none",fontSize:12.5,fontWeight:700}}>
+      {rc>0 && <span style={{color:C.red}}>🚩 {rc} red flag{rc>1?"s":""}</span>}
+      {gc>0 && <span style={{color:C.green}}>✓ {gc} pass{gc>1?"es":""}</span>}
+      <span style={{color:C.dim,fontWeight:600,fontSize:11}}>{open?"▲ hide":"▼ details"}</span>
+    </div>
+    {open && <div style={{marginTop:7}}>
+      {reds.map((t,i)=><div key={"r"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
+        <span style={{color:C.red,flexShrink:0}}>🚩</span><span style={{color:C.sub}}>{t}</span></div>)}
+      {greens.map((t,i)=><div key={"g"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
+        <span style={{color:C.green,flexShrink:0}}>✓</span><span style={{color:C.sub}}>{t}</span></div>)}
+    </div>}
+  </div>;
+}
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:12, padding:"14px 16px", marginBottom:12 };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
@@ -349,6 +369,7 @@ function IpoCommand() {
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
             <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
+            <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
