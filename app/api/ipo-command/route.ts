@@ -49,8 +49,8 @@ export async function GET() {
       WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
          OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY
-        CASE WHEN listing_date >= CURRENT_DATE OR ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
-        COALESCE(listing_date, ipo_open_date) DESC`;
+        CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
+        COALESCE(c.listing_date, c.ipo_open_date) DESC`;
 
     // floor/ceiling derived from candles (first-5-session low/high - the canonical
     // definition, same as the legacy page). No dependency on side tables.
