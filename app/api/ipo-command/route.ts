@@ -165,8 +165,15 @@ export async function GET() {
     // TRACK RECORD — computed in its own endpoint to keep this fast
     const track: Record<string, unknown>[] = [];
 
+    // ACCURACY LEADERBOARD — street (listing gain) vs ours (buy-open), separate games
+    let leaderboard: Record<string, unknown>[] = [];
+    try {
+      leaderboard = await sql`SELECT source, call_type, n, avg_outcome, hit_rate, outcome_measure
+        FROM ipo_accuracy_leaderboard ORDER BY
+        CASE WHEN source LIKE 'Street%' THEN 0 ELSE 1 END, avg_outcome DESC NULLS LAST`;
+    } catch (e) { console.error("leaderboard:", e); leaderboard = []; }
 
-    return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track,
+    return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track, leaderboard,
       generated_at: new Date().toISOString() });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
