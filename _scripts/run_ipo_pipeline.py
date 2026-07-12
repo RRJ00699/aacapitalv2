@@ -102,11 +102,17 @@ def main():
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner", ["compute_flags.py","--apply"])
     step("post-listing momentum (distribution detect)", ["distribution_detect.py","--apply"])
+    # --- RHP forensic pipeline (governance/legal/concentration moat) ---
+    step("download RHPs (new/recent only)", ["download_rhps.py","--csv","ipo_full_columns.csv","--output","rhps","--days-back","45","--days-ahead","120"])
+    step("extract + store RHPs (skip already-done)", ["rhp_batch.py","--dir","rhps"])
+    # --- street consensus + accuracy leaderboard ---
+    step("accuracy leaderboard (street vs ours)", ["compute_leaderboard.py","--apply"])
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
     step("backup critical tables",           ["backup_critical_tables.py"])
     if a.weekly:
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
+        step("data hygiene (stale purge)",   ["purge_stale_data.py","--apply"])
     # health gate LAST — fails loud if anything regressed
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
     step("value-sanity report",             ["check_value_sanity.py"])
