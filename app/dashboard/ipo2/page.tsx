@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from "react";
 import AppShell from "@/components/app-shell/AppShell";
 
-const C = { bg:"#E6EBF2", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
+const C = { bg:"#DDE3EC", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
   sub:"#3A4560", meta:"#68738C", dim:"#98A2B6",
   green:"#1B7A6A", greenBg:"#E8F4F1", greenBd:"#BEE0D8",
   blue:"#2E5A9E", blueBg:"#EAF0F9", blueBd:"#C2D4EC",
@@ -318,7 +318,7 @@ function IpoCommand() {
     ["open","📋 Open Now"],["upcoming","📅 Upcoming"],["post","📈 Post-Listing"],["brlm","🏆 BRLM"]];
 
   return (
-    <div style={{padding:"16px 20px",background:C.bg,minHeight:"100vh",maxWidth:1180,margin:"auto",
+    <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1180,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
