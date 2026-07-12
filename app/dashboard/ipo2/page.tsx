@@ -146,6 +146,62 @@ function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null
     </div>}
   </div>;
 }
+
+function TrustReport({ gate, oneLine, mos, full, confidence, company }:
+  { gate?:string|null; oneLine?:string|null; mos?:string|null; full?:any; confidence?:string|null; company?:string }) {
+  const [open,setOpen] = useState(false);
+  if (!gate && !oneLine) return null;
+  const gc: Record<string,[string,string,string]> = {
+    clean:["#0e7a4d","#e7f7ef","#bfe6d2"], watch:["#b7791f","#fdf6e6","#efdcae"],
+    reject:["#c0392b","#fdeceb","#f5cdc8"] };
+  const [col,bg,bd] = gc[(gate||"watch").toLowerCase()] || gc.watch;
+  const fj = (typeof full==="string") ? (()=>{try{return JSON.parse(full)}catch{return null}})() : full;
+  const db = fj?.db_fields || {};
+  // build a compact flag row from db_fields (only the concerning ones)
+  const flags: string[] = [];
+  if (db.auditor_qualified===true) flags.push("⚠ auditor qualified");
+  if (db.sebi_action===true) flags.push("⚠ SEBI action");
+  if (db.criminal_litigation===true) flags.push("⚠ criminal case");
+  if (db.customer_concentration_high===true) flags.push("● customer concentration");
+  if (db.ofs_heavy===true) flags.push("● OFS-heavy exit");
+  if (db.promoter_pledge_flag===true) flags.push("⚠ promoter pledge");
+  if (db.numbers_integrity_flag==="watch") flags.push("● numbers: watch");
+  if (db.cash_conversion_flag==="weak") flags.push("⚠ weak cash conversion");
+  if (db.debt_trend==="rising") flags.push("● debt rising");
+  if (db.working_capital_flag==="watch") flags.push("● working capital");
+  if (db.contingent_liabilities_material===true) flags.push("● contingent liab.");
+  const clean = flags.length===0;
+  return (
+    <div style={{marginTop:11,border:`1px solid ${bd}`,borderRadius:11,overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:9,padding:"9px 13px",background:bg,cursor:"pointer"}}
+           onClick={()=>setOpen(!open)}>
+        <span style={{fontSize:10,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",
+          color:col,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px",background:"#fff"}}>
+          🔍 RHP Trust · {(gate||"watch").toUpperCase()}</span>
+        {mos && <span style={{fontSize:11,color:col,fontWeight:600}}>margin of safety: {mos}</span>}
+        {confidence && <span style={{fontSize:10.5,color:"#888"}}>· confidence {confidence}</span>}
+        <span style={{marginLeft:"auto",fontSize:11,color:col}}>{open?"▲ hide":"▼ details"}</span>
+      </div>
+      {oneLine && <div style={{padding:"9px 13px",fontSize:12.5,color:"#3a4152",lineHeight:1.5,borderTop:`1px solid ${bd}`}}>{oneLine}</div>}
+      {!clean && <div style={{padding:"0 13px 9px",display:"flex",gap:6,flexWrap:"wrap"}}>
+        {flags.map((f,i)=><span key={i} style={{fontSize:11,color:col,background:bg,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px"}}>{f}</span>)}
+      </div>}
+      {clean && oneLine && <div style={{padding:"0 13px 9px",fontSize:11.5,color:"#0e7a4d"}}>✓ No governance red flags in the RHP</div>}
+      {open && fj && <div style={{padding:"11px 13px",borderTop:`1px solid ${bd}`,fontSize:12,color:"#3a4152",lineHeight:1.55}}>
+        {fj.trust_summary && <p style={{marginBottom:9}}>{fj.trust_summary}</p>}
+        {Array.isArray(fj.top_3_material_risks) && fj.top_3_material_risks.length>0 && <>
+          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:"#666",margin:"8px 0 5px"}}>Top material risks</div>
+          {fj.top_3_material_risks.map((r:string,i:number)=><div key={i} style={{display:"flex",gap:7,marginBottom:4}}><span style={{color:col}}>{i+1}.</span><span>{r}</span></div>)}
+        </>}
+        {fj.aacapital_decision?.dd_note && <>
+          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:"#666",margin:"9px 0 4px"}}>Due-diligence to verify</div>
+          <div style={{fontSize:11.5,color:"#555"}}>{fj.aacapital_decision.dd_note}</div></>}
+        <div style={{marginTop:9,fontSize:10.5,color:"#999"}}>Source: Red Herring Prospectus · extracted by Claude Sonnet · research signal, not a buy call</div>
+      </div>}
+    </div>
+  );
+}
+
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:12, padding:"14px 16px", marginBottom:12 };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
@@ -405,6 +461,7 @@ function IpoCommand() {
             <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
             <StreetConsensus consensus={c.street_consensus as string} brokers={c.street_brokers as number} verdict={c.verdict as string}/>
             <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number} verdict={c.verdict as string}/>
+            <TrustReport gate={c.rhp_gate as string} oneLine={c.rhp_one_line as string} mos={c.rhp_mos as string} full={c.rhp_full} confidence={c.rhp_confidence as string} company={String(c.company_name||"")}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
