@@ -25,7 +25,7 @@ export default function AppShell({
   const [workspaceSymbol, setWorkspaceSymbol] = useState<string | null>(null);
 
   return (
-    <div style={{ background: "linear-gradient(160deg,#D6DCE6,#C7CFDD)", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'DM Sans',sans-serif", color: "#1A2438" }}>
+    <div style={{ background: "linear-gradient(160deg,#CDD5E1,#BAC5D6)", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'DM Sans',sans-serif", color: "#1A2438" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
