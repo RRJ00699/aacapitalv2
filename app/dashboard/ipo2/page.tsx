@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from "react";
 import AppShell from "@/components/app-shell/AppShell";
 
-const C = { bg:"#EEF1F5", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
+const C = { bg:"#E6EBF2", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
   sub:"#3A4560", meta:"#68738C", dim:"#98A2B6",
   green:"#1B7A6A", greenBg:"#E8F4F1", greenBd:"#BEE0D8",
   blue:"#2E5A9E", blueBg:"#EAF0F9", blueBd:"#C2D4EC",
@@ -204,7 +204,7 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
 
 const card: React.CSSProperties = { background:"linear-gradient(180deg,#FBFCFD,#F4F6FA)", border:`1px solid ${C.border}`,
   borderRadius:16, padding:"16px 18px", marginBottom:14,
-  boxShadow:"0 1px 0 rgba(255,255,255,.8) inset, 0 8px 26px -12px rgba(28,36,58,.20), 0 2px 6px -3px rgba(28,36,58,.10)" };
+  boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 12px 32px -10px rgba(28,36,58,.28), 0 3px 10px -3px rgba(28,36,58,.16)" };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
   textTransform:"uppercase", letterSpacing:.5, padding:"7px 8px", borderBottom:`1px solid ${C.border}` };
 const td: React.CSSProperties = { fontSize:13, color:C.sub, padding:"7px 8px",
