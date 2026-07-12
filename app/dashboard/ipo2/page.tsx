@@ -6,12 +6,12 @@
 import { useEffect, useState, useCallback } from "react";
 import AppShell from "@/components/app-shell/AppShell";
 
-const C = { bg:"#FAFAF8", surface:"#FFFFFF", border:"#E5E7EB", text:"#111827",
-  sub:"#374151", meta:"#6B7280", dim:"#9CA3AF",
-  green:"#16A34A", greenBg:"#F0FDF4", greenBd:"#BBF7D0",
-  blue:"#2563EB", blueBg:"#EFF6FF", blueBd:"#BFDBFE",
-  amber:"#D97706", amberBg:"#FFFBEB", amberBd:"#FDE68A",
-  red:"#DC2626", redBg:"#FEF2F2", redBd:"#FECACA", grayBg:"#F3F4F6", gold:"#c99a2e" };
+const C = { bg:"#EEF1F5", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
+  sub:"#3A4560", meta:"#68738C", dim:"#98A2B6",
+  green:"#1B7A6A", greenBg:"#E8F4F1", greenBd:"#BEE0D8",
+  blue:"#2E5A9E", blueBg:"#EAF0F9", blueBd:"#C2D4EC",
+  amber:"#9A6A12", amberBg:"#FAF2E2", amberBd:"#E8D3A0",
+  red:"#C43D2F", redBg:"#FBEEEC", redBd:"#EEC9C3", grayBg:"#EDF0F4", gold:"#A07A16" };
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
 
 const BAND: Record<string,{c:string;bg:string;bd:string}> = {
@@ -202,8 +202,9 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
   );
 }
 
-const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
-  borderRadius:12, padding:"14px 16px", marginBottom:12 };
+const card: React.CSSProperties = { background:"linear-gradient(180deg,#FBFCFD,#F4F6FA)", border:`1px solid ${C.border}`,
+  borderRadius:16, padding:"16px 18px", marginBottom:14,
+  boxShadow:"0 1px 0 rgba(255,255,255,.8) inset, 0 8px 26px -12px rgba(28,36,58,.20), 0 2px 6px -3px rgba(28,36,58,.10)" };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
   textTransform:"uppercase", letterSpacing:.5, padding:"7px 8px", borderBottom:`1px solid ${C.border}` };
 const td: React.CSSProperties = { fontSize:13, color:C.sub, padding:"7px 8px",
