@@ -42,10 +42,12 @@ export async function GET() {
              v.verdict, v.why_trade, v.why_caution, v.why_avoid, v.regime,
              v.quality_promoter, v.ai_summary, v.score AS vscore, v.confidence AS vconf,
              v.sub_scores, v.why_passes,
-             f.red_flags, f.green_checks, f.red_count, f.green_count
+             f.red_flags, f.green_checks, f.red_count, f.green_count,
+             bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score
       FROM ipo_consolidated c
       LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
       LEFT JOIN ipo_flags f ON f.company_name = c.company_name
+      LEFT JOIN ipo_broker_consensus bc ON bc.company = c.company_name
       WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
          OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY

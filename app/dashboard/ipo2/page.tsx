@@ -92,6 +92,33 @@ function ScoreRing({ score, conf }: { score?: number|null; conf?: number|null })
     </div>
     <div style={{fontSize:8.5,color:C.dim,marginTop:1,textTransform:"uppercase",letterSpacing:.4}}>{conf!=null?`${conf}% conf`:"score"}</div></div>;
 }
+function StreetConsensus({ consensus, brokers, verdict }: { consensus?:string|null; brokers?:number|null; verdict?:string|null }) {
+  if (!consensus) return null;
+  // historical honesty: STRONG APPLY underperformed APPLY at open (crowd conviction isn't edge)
+  const cLabel = String(consensus);
+  const bn = brokers ?? 0;
+  const cColor = cLabel.includes("STRONG") ? "#8a6d0b" : cLabel==="APPLY" ? C.green : cLabel==="AVOID" ? C.red : C.dim;
+  // do we diverge? (we say caution/avoid while street says apply)
+  const weCautious = verdict==="AVOID" || verdict==="CAUTION";
+  const streetBullish = cLabel.includes("APPLY");
+  const diverge = weCautious && streetBullish;
+  return <div style={{marginTop:9,padding:"9px 12px",borderRadius:9,background:"#faf9f6",border:`1px solid ${C.border}`}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <div style={{fontSize:12.5}}>
+        <span style={{color:C.dim,fontWeight:600}}>Street:</span>{" "}
+        <span style={{color:cColor,fontWeight:800}}>{cLabel}</span>
+        {bn>0 && <span style={{color:C.dim}}> · {bn} broker{bn>1?"s":""}</span>}
+      </div>
+      <div style={{fontSize:12.5}}>
+        <span style={{color:C.dim,fontWeight:600}}>AACapital:</span>{" "}
+        <span style={{color:verdict==="TRADE"?C.green:verdict==="AVOID"?C.red:C.gold,fontWeight:800}}>{verdict||"—"}</span>
+      </div>
+    </div>
+    {diverge && <div style={{marginTop:6,fontSize:11.5,color:C.sub,borderTop:`1px solid ${C.border}`,paddingTop:6}}>
+      Street's call is about applying at the IPO price — and those calls have listed well (STRONG APPLY averaged strong listing gains). But you're buying at open, where that gain is largely priced in. Our read weighs the gap and our flags for the open-buy entry, which is a different decision.
+    </div>}
+  </div>;
+}
 function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null; green?:string|null; redCount?:number|null; greenCount?:number|null; verdict?:string|null }) {
   const [open,setOpen] = useState(false);
   const rc = redCount ?? 0, gc = greenCount ?? 0;
@@ -376,6 +403,7 @@ function IpoCommand() {
               <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
               {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
             <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
+            <StreetConsensus consensus={c.street_consensus as string} brokers={c.street_brokers as number} verdict={c.verdict as string}/>
             <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number} verdict={c.verdict as string}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
