@@ -115,7 +115,7 @@ function StreetConsensus({ consensus, brokers, verdict }: { consensus?:string|nu
       </div>
     </div>
     {diverge && <div style={{marginTop:6,fontSize:11.5,color:C.sub,borderTop:`1px solid ${C.border}`,paddingTop:6}}>
-      We're more cautious than the street here — see our flags below. Historically, the crowd's "STRONG APPLY" calls averaged roughly flat at open, so consensus enthusiasm isn't itself an edge.
+      Street's call is about applying at the IPO price — and those calls have listed well (STRONG APPLY averaged strong listing gains). But you're buying at open, where that gain is largely priced in. Our read weighs the gap and our flags for the open-buy entry, which is a different decision.
     </div>}
   </div>;
 }
