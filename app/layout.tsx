@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import "./globals.css"
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister"
 
 export const metadata: Metadata = {
   title: "AACapital — IPO Power House",
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body style={{ margin: 0, padding: 0 }}>
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>
