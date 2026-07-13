@@ -1,16 +1,10 @@
 "use client";
 // components/app-shell/AppShell.tsx
-// The shared chrome for every routed page: global style, AppNav, the stock-research
-// overlay (opened via the useOpenStock() context from any page), and Footer.
-// A route page becomes:  <AppShell current="today"><Body/></AppShell>
+// Shared chrome for every routed page: global style, AppNav (with IPO search), Footer.
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { ReactNode } from "react";
 import AppNav from "./AppNav";
 import Footer from "@/components/Footer";
-
-const OpenStockCtx = createContext<(symbol: string) => void>(() => {});
-/** Open the global stock-research overlay from any page inside AppShell. */
-export const useOpenStock = () => useContext(OpenStockCtx);
 
 export default function AppShell({
   current,
@@ -21,7 +15,12 @@ export default function AppShell({
   children: ReactNode;
   refreshTime?: string;
 }) {
-  const [workspaceSymbol, setWorkspaceSymbol] = useState<string | null>(null);
+  // IPO search selection → broadcast so the IPO page can scroll to / highlight it.
+  const handleSearchSelect = (company: string) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company } }));
+    }
+  };
 
   return (
     <div style={{ background: "linear-gradient(160deg,#CDD5E1,#BAC5D6)", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'DM Sans',sans-serif", color: "#1A2438" }}>
@@ -34,11 +33,9 @@ export default function AppShell({
         .fade{animation:fade .3s ease}
       `}</style>
 
-      <AppNav current={current} onSearchSelect={(s) => setWorkspaceSymbol(s)} refreshTime={refreshTime} />
+      <AppNav current={current} onSearchSelect={handleSearchSelect} refreshTime={refreshTime} />
 
-      <OpenStockCtx.Provider value={(s) => setWorkspaceSymbol(s)}>
-        {children}
-      </OpenStockCtx.Provider>
+      {children}
 
       <Footer />
     </div>
