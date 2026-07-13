@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 
-type Entry = { id: number; who: string; severity: string; what: string; created_at: string };
+type Entry = { id: number; who: string; severity: string; what: string; minutes: number | null; created_at: string };
 
 const C = {
   surface: "#FBFCFD", surface2: "#F4F6FA", border: "#DAE0E8", line: "#E7EBF1",
@@ -16,6 +16,7 @@ export default function TrackerClient() {
   const [who, setWho] = useState("");
   const [sev, setSev] = useState("mid");
   const [what, setWhat] = useState("");
+  const [mins, setMins] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -35,10 +36,10 @@ export default function TrackerClient() {
     try {
       const r = await fetch("/api/tracker", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ who: who.trim(), severity: sev, what: what.trim() }),
+        body: JSON.stringify({ who: who.trim(), severity: sev, what: what.trim(), minutes: mins ? parseInt(mins,10) : null }),
       });
       const d = await r.json();
-      if (d.ok && d.entry) { setRows([d.entry, ...rows]); setWho(""); setWhat(""); setSev("mid"); }
+      if (d.ok && d.entry) { setRows([d.entry, ...rows]); setWho(""); setWhat(""); setSev("mid"); setMins(""); }
     } catch { /* keep */ }
     setSaving(false);
   }
@@ -50,15 +51,23 @@ export default function TrackerClient() {
 
   const fmt = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const opts = { timeZone: "America/Chicago" as const };
+    return d.toLocaleDateString(undefined, { ...opts, weekday: "short", month: "short", day: "numeric" })
+      + " · " + d.toLocaleTimeString(undefined, { ...opts, hour: "2-digit", minute: "2-digit" })
+      + " CST";
   };
 
   // scoreboard
   const tally: Record<string, number> = {};
-  rows.forEach((e) => { tally[e.who] = (tally[e.who] || 0) + (W[e.severity] || 1); });
+  const timeCost: Record<string, number> = {};
+  rows.forEach((e) => {
+    tally[e.who] = (tally[e.who] || 0) + (W[e.severity] || 1);
+    timeCost[e.who] = (timeCost[e.who] || 0) + (e.minutes || 0);
+  });
   const board = Object.entries(tally).sort((a, b) => b[1] - a[1]);
   const maxScore = board[0]?.[1] || 1;
+  const totalMins = Object.values(timeCost).reduce((a, b) => a + b, 0);
+  const hrs = (m: number) => m >= 60 ? `${(m/60).toFixed(1)}h` : `${m}m`;
 
   const sevColor = (s: string) => s === "high" ? C.red : s === "low" ? C.accent : C.amber;
   const sevBg = (s: string) => s === "high" ? C.redBg : s === "low" ? "#E8F4F1" : C.amberBg;
@@ -92,13 +101,17 @@ export default function TrackerClient() {
             <label style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase", color: C.dim }}>Who / what</label>
             <input style={inp} value={who} onChange={(e) => setWho(e.target.value)} placeholder="Claude, a call, myself…" />
           </div>
-          <div style={{ flex: "0 0 30%", minWidth: 110, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ flex: "0 0 26%", minWidth: 100, display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase", color: C.dim }}>Severity</label>
             <select style={inp} value={sev} onChange={(e) => setSev(e.target.value)}>
               <option value="low">Low — minor</option>
               <option value="mid">Mid — annoying</option>
               <option value="high">High — cost me time</option>
             </select>
+          </div>
+          <div style={{ flex: "0 0 24%", minWidth: 90, display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase", color: C.dim }}>Time lost (min)</label>
+            <input style={inp} type="number" min="0" value={mins} onChange={(e) => setMins(e.target.value)} placeholder="e.g. 30" />
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
@@ -121,13 +134,17 @@ export default function TrackerClient() {
       {/* scoreboard */}
       {board.length > 0 && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", marginBottom: 18, boxShadow: "0 4px 16px -10px rgba(28,36,58,.18)" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: C.meta, marginBottom: 9 }}>🏆 Frustration scoreboard</div>
+          <div style={{ display: "flex", alignItems: "baseline", marginBottom: 9 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: C.meta }}>🏆 Frustration scoreboard</span>
+            <span style={{ marginLeft: "auto", fontSize: 11, color: C.meta }}>{totalMins > 0 ? `${hrs(totalMins)} lost total` : ""}</span>
+          </div>
           {board.map(([name, score]) => (
             <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: C.text, minWidth: 90 }}>{name}</span>
               <span style={{ flex: 1, height: 6, background: C.line, borderRadius: 4, overflow: "hidden", margin: "0 4px" }}>
                 <span style={{ display: "block", height: "100%", width: `${Math.round(score / maxScore * 100)}%`, background: C.red, borderRadius: 4 }} />
               </span>
+              <span style={{ fontSize: 11, color: C.meta, minWidth: 38, textAlign: "right" }}>{timeCost[name] ? hrs(timeCost[name]) : ""}</span>
               <span style={{ fontSize: 12, fontWeight: 800, color: C.red, minWidth: 22, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{score}</span>
             </div>
           ))}
@@ -153,7 +170,7 @@ export default function TrackerClient() {
             </div>
             <div style={{ fontSize: 14, lineHeight: 1.5, color: C.sub, whiteSpace: "pre-wrap", wordWrap: "break-word" }}>{e.what}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, paddingTop: 9, borderTop: `1px solid ${C.line}` }}>
-              <span style={{ fontSize: 11, color: C.meta, fontVariantNumeric: "tabular-nums" }}>{fmt(e.created_at)}</span>
+              <span style={{ fontSize: 11, color: C.meta, fontVariantNumeric: "tabular-nums" }}>{fmt(e.created_at)}{e.minutes ? ` · ${e.minutes}m lost` : ""}</span>
               <button onClick={() => del(e.id)} style={{ marginLeft: "auto", fontSize: 11, color: C.dim, cursor: "pointer", background: "none", border: "none", fontFamily: "inherit", padding: "2px 6px", borderRadius: 6 }}>delete</button>
             </div>
           </div>
