@@ -441,7 +441,7 @@ function IpoCommand() {
           return (
           <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:"#fbfffc"}:card}>
             <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-              <ScoreRing score={c.vscore as number} conf={c.vconf as number}/>
+              <ScoreRing score={(c.vscore ?? c.ipo_score) as number} conf={c.vconf as number}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",marginBottom:3}}>
                   {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
