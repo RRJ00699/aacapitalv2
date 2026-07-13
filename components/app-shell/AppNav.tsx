@@ -12,16 +12,10 @@ import Link from "next/link";
 import { StockSearch } from "@/components/features/stock-search";
 
 // IPO Power House — nav trimmed to the IPO engine. Today kept beside it.
-// Other tabs (stocks/opportunities/watchlist/portfolio/research) are hidden from nav
 // but their routes still exist — restore a line here to bring one back.
 const TABS = [
   { v: "ipo",           l: "IPO",           href: "/ipo",            e: "⚡" },
   { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
-  // { v: "stocks",        l: "Stocks",        href: "/stocks",         e: "📈" },
-  // { v: "opportunities", l: "Opportunities", href: "/opportunities",  e: "📡" },
-  // { v: "watchlist",     l: "Watch",         href: "/watchlist",      e: "⭐" },
-  // { v: "portfolio",     l: "Portfolio",     href: "/portfolio",      e: "💼" },
-  // { v: "research",      l: "Research",      href: "/research",       e: "🔬" },
 ];
 
 export default function AppNav({
