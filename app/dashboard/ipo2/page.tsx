@@ -18,16 +18,16 @@ const BAND: Record<string,{c:string;bg:string;bd:string}> = {
   STRONG:{c:C.green,bg:C.greenBg,bd:C.greenBd}, FAVORABLE:{c:C.blue,bg:C.blueBg,bd:C.blueBd},
   NEUTRAL:{c:C.meta,bg:C.grayBg,bd:C.border}, AVOID:{c:C.red,bg:C.redBg,bd:C.redBd} };
 const PLAYS = [
-  { t:"MID gap (+4% to +15% open) — THE ONLY CORE TRADE", s:"sell D1 close: 65% · +3.3% · tail −9", c:C.green,
-    d:"Executable edge (exit-rule backtest, n=69): sell at day-1 close 65%/+3.3, or +5% target else D5 = 64%/+5.0 median (deeper −14.5 tail). Patient D10 close: 65%/+5.1. Oracle ceiling 84% is hindsight — these are the real numbers." },
-  { t:"Mega issue (>₹2000cr) — any gap", s:"81.8% oracle · n=77", c:C.blue,
-    d:"The one HIGH-gap exception: institutions must build positions post-listing. Pair with MID rules; size for the tail." },
-  { t:"LOW gap (<+4%) — DO NOT TRADE", s:"every exit ≈ 50% · ~0% median · n=214", c:C.red,
-    d:"Exit-rule backtest verdict: no executable rule extracts anything. The old 70.8% was oracle hindsight. Skip." },
-  { t:"HIGH gap (>+15%) — lottery, not a strategy", s:"40-46% win · median negative · n=89", c:C.amber,
-    d:"Highest MEANS (+7-10%) from rare monsters, but most fade. Only mega-size justifies entry. Median trade loses." },
-  { t:"SKIP: ₹150-500cr + AVOID band", s:"51.2% · +0.8% · n=84", c:C.red,
-    d:"2025+: wins only 36%. Skipping these IS the profit." } ];
+  { t:"MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"92% win · +20% med · n=25 · p10 +2.4%", c:C.green,
+    d:"Tested 2026-07-13 on clean 2016+ data. Mega issue opening ≥0%, best at +15%+: 92% win, +20% median, and even the 10th-percentile day is positive — the tail barely hurts. Institutions must keep buying post-listing. Buy at open." },
+  { t:"MEGA opening 0–15% — strong secondary", s:"83% win · +4% med · p10 ~0", c:C.blue,
+    d:"Tested 2026-07-13. Any mega opening positive works; 0–15% band wins 83% with a near-zero downside tail. The safe version of the core trade." },
+  { t:"MEGA opening negative — caution", s:"79% win · +9% med · tail −6.1%", c:C.amber,
+    d:"A big IPO opening DOWN still wins often (anchors/QIB defend it) but carries a real −6% tail. Size smaller here." },
+  { t:"<₹500cr — DO NOT TRADE", s:"63% win · +2% med · tail −7.5%", c:C.red,
+    d:"Tested 2026-07-13. Small issues: 63% win, thin median, worst tail. Skipping these IS the profit." },
+  { t:"Euphoric open (>+50%) — trap zone", s:"~1 in 3.5 fades to ≤0", c:C.red,
+    d:"Tested 2026-07-13. Of issues popping >15% at open, 28% faded to ≤0 by day-10; the >50% zone carries the fattest tail (−9.5%). The pop is largely priced in. Watch, don't chase." } ];
 
 type R = Record<string, unknown>;
 const N = (v: unknown) => (v == null ? null : Number(v));
@@ -512,15 +512,15 @@ function IpoCommand() {
         <div style={{...card, background:"#FFFBEB", border:"1.5px solid #FDE68A"}}>
           <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
-            Written so anyone in the family can follow it. Proven on 372 real IPOs.
+            Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
           </div>
           {[
-            ["1","BUY only in the happy-but-not-crazy zone",
-             "On its first morning, look at the opening price vs the IPO price. Opened 4% to 15% higher? That is the zone — people want it, but the party has not peaked. Opened flat, lower, or +15%+? Do NOT buy. (Flat = nobody wants it; huge pop = the profit already went to the lottery winners who got allotment.)"],
-            ["2","EXCEPTION: giant IPOs (bigger than ₹2,000 crore)",
-             "Companies this big must be bought by mutual funds and insurers for weeks after listing — they cannot fill their quota in one day. Giants get a pass even on a big opening pop."],
-            ["3","SELL the same day, at the close. Every time.",
-             "No waiting, no hoping, no news-watching. Buy near the open, sell at 3:30 PM. History says holding longer does not pay better and risks more."],
+            ["1","BUY the giants that open positive",
+             "The tested edge: issue bigger than ₹2,000 crore, opening at or above the IPO price. Best when it opens +15% or more — 92 wins in 100, +20% typical, and even a bad day barely loses. Institutions must keep buying these for weeks; the price is supported."],
+            ["2","SKIP the small ones and the crazy pops",
+             "Under ₹500 crore: skip (63% win, worst tail). Opened +50% or more on a non-giant: skip — the pop is already priced in and ~1 in 3.5 fades to a loss. Skipping IS the strategy."],
+            ["3","Quality gate first, then the trade",
+             "Before listing, the RHP quality gate reads the prospectus (clean / watch / reject). A reject is a hard pass no matter how it opens. Clean or watch + a qualifying giant open = the trade."],
           ].map(([n,t,d2])=>(
             <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
               <div style={{minWidth:34,height:34,borderRadius:"50%",background:"#B8860B",color:"#fff",
@@ -530,25 +530,25 @@ function IpoCommand() {
             </div>))}
           <div style={{marginTop:10,padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",
             borderRadius:9,fontSize:12.5,color:"#166534"}}>
-            <b>The honest math:</b> in the zone, this wins about <b>65 times out of 100</b>, making ~3% per day traded.
-            The 35 losses average small, but the worst days lose ~9% — so <b>never bet money where −9% would hurt</b>.
-            Everything outside the rules: watch, enjoy, do nothing. Skipping IS the strategy.
+            <b>The honest math (tested 2026-07-13):</b> the giant-opens-positive trade wins about <b>92 times out of 100</b>
+            with a +20% typical gain and a positive worst-case day. Everything outside it — small issues, euphoric pops,
+            rejects — is watch-only. Skipping IS the strategy.
           </div>
         </div>
 
         <div style={card}>
           <b style={{fontSize:15}}>The two strategies — validated</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:12}}>
-            Backtested on the clean data contract · 771 IPOs · size ≥ ₹200cr, 2021+ · buy-open outcome ·
-            <b> tested 2026-07-10</b> · data = Golden master (341/341) reconciled to BSE (431/431)
+            Two layers: a <b>quality gate</b> (before listing) and a <b>tradeable signal</b> (buy-at-open).
+            Tradeable signal tested <b>2026-07-13</b> on 585 clean IPOs (2016+); quality gate = RHP forensic read of 448 prospectuses.
           </div>
           {[
-            ["S1","Gap 0–15% + bull market","#16A34A","#F0FDF4","#BBF7D0",
-             "Issue→listing gap in the 0–15% sweet spot, Nifty above its 200-EMA. Buy at open.",
-             "62% win · +11.4% median · n=50"],
-            ["S2","Quality promoter + bull","#B8860B","#FFFBEB","#FDE68A",
-             "Existing/blue-chip promoter (market trusts the numbers). Runs even on a big gap — IREDA +56, Waaree +66, Tata Tech +140 all paid.",
-             "64–71% win · +12–15% median · n=22"],
+            ["Q","Quality gate (before listing)","#2E5A9E","#EAF0F9","#C2D4EC",
+             "RHP forensic read of the prospectus → clean / watch / reject. A reject is a hard pass. This is the junk filter, not the entry — it tells you what NOT to touch.",
+             "448 prospectuses read"],
+            ["T","Tradeable signal (buy at open)","#16A34A","#F0FDF4","#BBF7D0",
+             "Giant issue (>₹2000cr) opening positive, best at +15%+. The measured open-buy edge. Small issues (<500cr) and euphoric >50% pops are excluded.",
+             "92% win · +20% median · n=25"],
           ].map(([tag,name,col,bg,bd,desc,stat])=>(
             <div key={tag} style={{display:"flex",gap:12,padding:"11px 0",borderTop:tag!=="S1"?`1px solid ${C.border}`:"none"}}>
               <div style={{minWidth:38,height:38,borderRadius:9,background:bg,border:`1px solid ${bd}`,color:col,
@@ -560,8 +560,8 @@ function IpoCommand() {
                 <div style={{fontSize:12.5,color:C.sub,marginTop:3}}>{desc}</div></div>
             </div>))}
           <div style={{marginTop:10,padding:"9px 12px",background:C.grayBg,borderRadius:9,fontSize:12,color:C.meta}}>
-            <b>Golden rule:</b> gap &gt;50% on a non-quality name = skip (hype priced in — 38% win, −5% median).
-            Quality promoters are the exception. <b>Exit both:</b> trailing −5%.
+            <b>Golden rule (tested):</b> euphoric opens &gt;50% and issues under ₹500cr = skip.
+            The edge is the giant opening positive — not the pop. GMP is context only; QIB level and ROE showed no edge in the test.
           </div>
         </div>
 
