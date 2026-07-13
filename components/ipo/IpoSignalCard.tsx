@@ -54,6 +54,12 @@ export interface IPORow {
   retail_subscription: number | null;
   nii_subscription: number | null;
 
+  // AACapital playbook rules (computed server-side)
+  playbook_rules?: { key: string; label: string; pass: boolean }[];
+  playbook_avoid?: string[];
+  playbook_setup?: string;
+  playbook_verdict?: string;
+
   // fundamentals
   ipo_pe: number | null;
   peer_median_pe: number | null;
@@ -192,7 +198,41 @@ export default function IpoSignalCard({ ipo, compact = false }: { ipo: IPORow; c
         )}
       </div>
 
-      {/* Key metrics — correctly wired */}
+      {/* AACapital Playbook rules — applied to this IPO */}
+      {!compact && ipo.playbook_rules && ipo.playbook_rules.length > 0 && (() => {
+        const setup = String(ipo.playbook_setup || "watch");
+        const setupCss: Record<string,{bg:string;c:string;t:string}> = {
+          stack:      { bg:"#E8F4F1", c:"#1B7A6A", t:"STACK SETUP" },
+          core:       { bg:"#E8F4F1", c:"#1B7A6A", t:"CORE TRADE" },
+          "core-lite":{ bg:"#EAF0F9", c:"#2E5A9E", t:"CORE-LITE" },
+          avoid:      { bg:"#FBEEEC", c:"#C43D2F", t:"AVOID" },
+          watch:      { bg:"#EDF0F4", c:"#68738C", t:"WATCH ONLY" },
+        };
+        const st = setupCss[setup] || setupCss.watch;
+        return (
+          <div className="px-4 py-3" style={{ borderTop: `1px solid ${C.grayBd}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: st.bg, color: st.c }}>{st.t}</span>
+              <span className="text-[10px] uppercase tracking-wide" style={{ color: C.textSub }}>AACapital rules</span>
+            </div>
+            <p className="text-[11px] mb-2" style={{ color: C.text }}>{ipo.playbook_verdict}</p>
+            <div className="flex flex-col gap-1">
+              {ipo.playbook_rules.map((r) => (
+                <div key={r.key} className="flex items-center gap-2 text-[11px]">
+                  <span style={{ color: r.pass ? "#1B7A6A" : "#C0C7D2", fontWeight: 700 }}>{r.pass ? "✓" : "✗"}</span>
+                  <span style={{ color: r.pass ? C.text : C.textSub }}>{r.label}</span>
+                </div>
+              ))}
+              {(ipo.playbook_avoid || []).map((a) => (
+                <div key={a} className="flex items-center gap-2 text-[11px]">
+                  <span style={{ color: "#C43D2F", fontWeight: 700 }}>⚠</span>
+                  <span style={{ color: "#C43D2F" }}>{a}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       {!compact && (
         <div className="px-4 py-3 grid grid-cols-2 gap-2">
           <Metric label="Total Sub." value={sub != null ? `${sub.toFixed(1)}x` : "—"} good={sub != null ? sub >= 10 : null} />
