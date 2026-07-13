@@ -36,6 +36,8 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "convergence",     label: "Rebuild Top Convergence", desc: "Recompute the Today screen ranking (5 factors, live data)" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
+  { key: "rhp_extract",     label: "RHP forensic extract",  desc: "Sonnet reads new RHPs (2016+, capped $20) → forensic JSON + raw text", heavy: true },
+  { key: "rhp_store",       label: "RHP store → DB",        desc: "Load extracted RHP summaries → ipo_rhp_intel (canonicalized, mislabel-guarded)" },
 ];
 
 type Run = {
