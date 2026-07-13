@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { Activity, Award, BarChart2, ChevronRight, Flame, Globe, RefreshCw } from "lucide-react"
+import { Activity, Globe, RefreshCw } from "lucide-react"
 
 type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN" | "BEARISH"
 type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM" | "RESEARCH" | "REVIEW"
@@ -262,111 +262,9 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
           </button>
         </div>
 
-        {/* ── Main 2-col grid ── */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
-
-          {/* LEFT */}
+        {/* ── Markets — Domestic + Global only ── */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="space-y-4 min-w-0">
-
-            {/* Regime hero */}
-            {loading ? <Skeleton className="h-40" /> : (
-              <section className={`relative overflow-hidden rounded-2xl border ${rc.border} bg-white p-5 shadow-sm`}>
-                <div className={`pointer-events-none absolute inset-y-0 right-0 w-2/5 bg-gradient-to-l ${rc.glow} to-transparent`}/>
-                <div className="relative flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">System Macro Regime</div>
-                    <div className={`text-[44px] font-black leading-none tracking-tight ${rc.text}`}>{rc.title}</div>
-                    <p className="mt-2 text-[14px] font-semibold text-slate-700">{rc.advice}</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {topSectors.length
-                        ? topSectors.map((s,i) => <React.Fragment key={s}><span className="text-[12px] font-medium text-slate-600">{s}</span>{i<topSectors.length-1&&<span className="text-slate-300">·</span>}</React.Fragment>)
-                        : <span className="text-[12px] text-slate-400">Sector rotation import pending</span>}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Deployment</div>
-                    <div className={`text-[34px] font-black ${rc.text}`}>{rc.deploy}</div>
-                    <div className="mt-2 h-2 rounded-full bg-slate-100">
-                      <div style={{width:`${rc.pct}%`}} className={`h-full rounded-full ${rc.bar}`}/>
-                    </div>
-                    <div className="mt-1.5 text-[11px] text-slate-500">{rc.tone}</div>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* Top Convergence + IPO DNA */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Card title="Top Convergence" meta="research candidates · not buy calls" icon={<Flame className="h-3.5 w-3.5 text-orange-500"/>}>
-                {loading ? <Skeleton className="h-36"/> : opps.length
-                  ? <div className="space-y-1 max-h-72 overflow-y-auto pr-1">{opps.map(o=>(
-                      <button key={o.symbol} onClick={()=>onStockSelect?.(o.symbol)}
-                        className="group flex w-full items-center justify-between rounded-xl border border-transparent px-2 py-2.5 text-left hover:border-slate-200 hover:bg-slate-50">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[13px] font-black text-slate-900 group-hover:text-teal-600">{o.symbol}</span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">Score {o.score}</span>
-                          </div>
-                          <div className="truncate text-[11px] text-slate-400">{o.reasons?.slice(0,2).join(" · ")}</div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Spark positive={o.score>=55}/>
-                          <ActionPill action={o.action}/>
-                          <ChevronRight className="h-3.5 w-3.5 text-slate-300"/>
-                        </div>
-                      </button>
-                    ))}</div>
-                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No convergence scores yet — run the ranking job.</div>
-                }
-              </Card>
-
-              <Card title="IPO DNA" meta="Primary Market" icon={<Award className="h-3.5 w-3.5 text-teal-600"/>}>
-                {loading ? <Skeleton className="h-36"/> : ipos.length
-                  ? <div className="space-y-1">{ipos.map(i=>{
-                      const isOpen = i.status === "OPEN"
-                      const badge = isOpen
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-blue-300 bg-blue-50 text-blue-700"
-                      return (
-                        <div key={i.name} className="flex items-center justify-between rounded-xl px-2 py-2.5 hover:bg-slate-50">
-                          <div className="min-w-0">
-                            <div className="truncate text-[13px] font-bold text-slate-900">{i.name}</div>
-                            <div className="font-mono text-[10px] text-slate-400">
-                              {isOpen ? "Closes" : "Opens"} {fmtDate(isOpen ? i.closeDate : i.openDate)}
-                            </div>
-                          </div>
-                          <span className={`inline-block min-w-[64px] rounded-full border px-3 py-0.5 text-center font-mono text-[10px] font-bold tracking-wider ${badge}`}>{i.status}</span>
-                        </div>
-                      )
-                    })}</div>
-                  : <div className="rounded-xl bg-slate-50 p-5 text-center text-[12px] text-slate-400">No open or upcoming IPOs.</div>
-                }
-              </Card>
-            </div>
-
-            {/* Sector Leadership */}
-            <Card title="Sector Leadership" meta="Rotation Engine" icon={<BarChart2 className="h-3.5 w-3.5 text-indigo-500"/>}>
-              {loading ? <Skeleton className="h-28"/> : sectors.length
-                ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{sectors.map(s=>(
-                    <div key={s.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                      <div className="min-w-0">
-                        <div className="truncate text-[12px] font-bold text-slate-900">{s.name}</div>
-                        <div className="text-[10px] text-slate-400">{s.signal==="Strong Rotate In"?"Strong Rotate In": s.signal==="Rotate In"?"Rotate In": s.signal??"Strong Rotate In"}</div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0 font-mono">
-                        <span className={num(s.performance)>=0?"text-[12px] font-bold text-emerald-600":"text-[12px] font-bold text-rose-600"}>{sgn(s.performance)}</span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-black text-indigo-700">{s.score??"—"}</span>
-                      </div>
-                    </div>
-                  ))}</div>
-                : <div className="rounded-xl bg-slate-50 p-4 text-center text-[12px] text-slate-400">Sector rotation data pending.</div>
-              }
-            </Card>
-          </div>
-
-          {/* RIGHT */}
-          <div className="space-y-4">
-
             {/* Domestic Market */}
             <Card title="Domestic Market" meta={brokerOk ? "Live / Cache" : "Cache"} icon={<Activity className="h-3.5 w-3.5 text-teal-600"/>}>
               {loading ? <Skeleton className="h-72"/> : (
@@ -422,7 +320,8 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
                 </div>
               )}
             </Card>
-
+          </div>
+          <div className="space-y-4 min-w-0">
             {/* Global Markets */}
             <Card title="Global Markets" meta="20 assets · Live" icon={<Globe className="h-3.5 w-3.5 text-blue-500"/>}>
               {loading ? <Skeleton className="h-48"/> : (
@@ -437,7 +336,6 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
                 </div>
               )}
             </Card>
-
           </div>
         </div>
 
