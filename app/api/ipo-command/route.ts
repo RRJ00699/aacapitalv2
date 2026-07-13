@@ -16,10 +16,10 @@ export async function GET() {
   if (gate) return gate;
   try {
     const cards = await sql`
-      SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, issue_size_cr,
-             issue_price, ipo_score, score_band, score_evidence, gap_bucket,
-             listing_gap_pct, final_qib, final_nii, final_retail, final_total,
-             brlm_names,
+      SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, c.issue_size_cr,
+             c.issue_price, c.ipo_score, c.score_band, c.score_evidence, c.gap_bucket,
+             c.listing_gap_pct, c.final_qib, c.final_nii, c.final_retail, final_total,
+             c.brlm_names,
              UPPER(REGEXP_REPLACE(COALESCE(symbol_final, nse_symbol, symbol, ''), '\\.NS$','')) AS sym,
              (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
