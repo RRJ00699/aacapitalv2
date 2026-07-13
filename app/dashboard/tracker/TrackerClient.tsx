@@ -51,10 +51,9 @@ export default function TrackerClient() {
 
   const fmt = (iso: string) => {
     const d = new Date(iso);
-    const opts = { timeZone: "America/Chicago" as const };
-    return d.toLocaleDateString(undefined, { ...opts, weekday: "short", month: "short", day: "numeric" })
-      + " · " + d.toLocaleTimeString(undefined, { ...opts, hour: "2-digit", minute: "2-digit" })
-      + " CST";
+    const date = d.toLocaleDateString("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit" });
+    return `${date} · ${time} CST`;
   };
 
   // scoreboard
