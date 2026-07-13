@@ -175,7 +175,7 @@ export default function IPOCommandCenterClient({ ipos, stats }: Props) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {["Company", "Status", "Signal", "Gap %", "Sub.", "P/E vs Peer", "RoE", "Level", "Listing"].map((h) => (
+                  {["Company", "Status", "Signal", "Setup", "Gap %", "Sub.", "P/E vs Peer", "RoE", "Level", "Listing"].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -200,6 +200,20 @@ export default function IPOCommandCenterClient({ ipos, stats }: Props) {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TONE_CSS[sig.tone]}`}>{sig.tier}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const setup = String(ipo.playbook_setup || "");
+                          const map: Record<string,{t:string;c:string}> = {
+                            stack:    { t:"STACK",   c:"bg-emerald-100 text-emerald-800" },
+                            core:     { t:"CORE",    c:"bg-emerald-100 text-emerald-700" },
+                            "core-lite":{ t:"CORE-",  c:"bg-blue-100 text-blue-700" },
+                            avoid:    { t:"AVOID",   c:"bg-red-100 text-red-700" },
+                            watch:    { t:"WATCH",   c:"bg-gray-100 text-gray-500" },
+                          };
+                          const m = map[setup] || map.watch;
+                          return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.c}`}>{m.t}</span>;
+                        })()}
                       </td>
                       <td className={`px-4 py-3 tabular-nums ${(g ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                         {g != null ? `${g > 0 ? "+" : ""}${g.toFixed(1)}%` : "—"}

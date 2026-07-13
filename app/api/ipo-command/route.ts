@@ -45,12 +45,14 @@ export async function GET() {
              ri.verdict AS rhp_verdict, ri.one_line AS rhp_one_line, ri.quality_gate AS rhp_gate,
              ri.margin_of_safety AS rhp_mos, ri.full_json AS rhp_full, ri.confidence AS rhp_confidence,
              f.red_flags, f.green_checks, f.red_count, f.green_count,
-             bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score
+             bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score,
+             ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high
       FROM ipo_consolidated c
       LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
       LEFT JOIN ipo_flags f ON f.company_name = c.company_name
       LEFT JOIN ipo_broker_consensus bc ON bc.company = c.company_name
       LEFT JOIN ipo_rhp_intel ri ON ri.company_name = c.company_name
+      LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'[^a-z0-9]','','g')
       WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
          OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY
@@ -176,7 +178,54 @@ export async function GET() {
         CASE WHEN source LIKE 'Street%' THEN 0 ELSE 1 END, avg_outcome DESC NULLS LAST`;
     } catch (e) { console.error("leaderboard:", e); leaderboard = []; }
 
-    return NextResponse.json({ cards, live, levels, blocks, post, brlm, dl, track, leaderboard,
+    // ── AACapital Playbook rules — applied to every IPO (tested 2026-07-13) ──
+    const enrichedCards = (cards as Record<string, unknown>[]).map((c) => {
+      const size  = Number(c.issue_size_cr) || 0;
+      const gap   = c.listing_gap_pct == null ? null : Number(c.listing_gap_pct);
+      const anc   = c.anchor_count == null ? null : Number(c.anchor_count);
+      const ofs   = Number(c.ofs_cr) || 0;
+      const fresh = Number(c.fresh_issue_cr) || 0;
+      const band  = c.band_high == null ? null : Number(c.band_high);
+      const gate  = String(c.rhp_gate || "");
+      const ofsPct = (ofs + fresh) > 0 ? (100 * ofs / (ofs + fresh)) : null;
+
+      const rules = [
+        { key: "mega",    label: "Mega issue (>₹2000cr)",        pass: size >= 2000 },
+        { key: "openpos", label: "Opens positive",               pass: gap != null && gap >= 0 },
+        { key: "gap15",   label: "Opens +15% or more",           pass: gap != null && gap >= 15 },
+        { key: "anchors", label: "30+ anchor investors",         pass: anc != null && anc > 30 },
+        { key: "fresh",   label: "Fresh-issue (not OFS-heavy)",  pass: ofsPct != null && ofsPct < 30 },
+        { key: "band",    label: "Affordable band (<₹300)",      pass: band != null && band < 300 },
+      ];
+      const avoid = [
+        size > 0 && size < 500 ? "Small issue (<₹500cr)" : null,
+        gap != null && gap > 50 ? "Euphoric open (>+50%)" : null,
+        gate === "reject" ? "RHP reject (junk)" : null,
+      ].filter(Boolean);
+
+      const passed = rules.filter(r => r.pass).length;
+      const megaOK = size >= 2000 && gap != null && gap >= 0;
+      const stack  = megaOK && anc != null && anc > 30;
+      let setup = "watch";
+      if (avoid.length) setup = "avoid";
+      else if (stack) setup = "stack";          // best: mega + positive + 30 anchors
+      else if (megaOK && gap != null && gap >= 15) setup = "core";
+      else if (megaOK) setup = "core-lite";
+
+      // clear one-line verdict for the card
+      const passedLabels = rules.filter(r => r.pass).map(r => r.label);
+      let verdict_line = "";
+      if (setup === "avoid")      verdict_line = `Skip — ${avoid.join(", ")}.`;
+      else if (setup === "stack") verdict_line = `STACK setup — mega, opens positive, 30+ anchors. The cleanest buy-at-open (85% historically).`;
+      else if (setup === "core")  verdict_line = `CORE trade — mega issue opening +15%+. Buy at open (92% historically).`;
+      else if (setup === "core-lite") verdict_line = `Core-lite — mega opening positive. Solid buy-at-open.`;
+      else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : `No buy-at-open rules met — watch only.`;
+
+      return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
+               playbook_passed: passed, playbook_verdict: verdict_line };
+    });
+
+    return NextResponse.json({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
       generated_at: new Date().toISOString() });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
