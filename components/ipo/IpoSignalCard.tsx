@@ -10,6 +10,7 @@
 // LQI is a quality input, not a verdict → small chip, demoted.
 // "Research signal, not a buy call."
 
+import PostListingDashboard from "@/components/ipo/PostListingDashboard";
 import { useState } from "react";
 import { signalFor, BASE_RATES, bucketOf, type Tone, type Signal } from "@/lib/ipoSignal";
 export { signalFor };
@@ -266,6 +267,16 @@ export default function IpoSignalCard({ ipo, compact = false }: { ipo: IPORow; c
       )}
       {open && ipo.tp1_exit_note && (
         <div className="px-4 py-2 text-[11px]" style={{ color: C.text, background: C.blueBg }}>{ipo.tp1_exit_note}</div>
+      )}
+
+      {/* Post-Listing Dashboard — only for listed IPOs with a symbol */}
+      {!compact && ipo.symbol && (ipo.ipo_status || "").toLowerCase().includes("list") && (
+        <div className="px-4 py-4" style={{ borderTop: `1px solid ${C.grayBd}`, background: "#FAFBFC" }}>
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: C.textSub }}>
+            Post-listing — hold or exit?
+          </div>
+          <PostListingDashboard symbol={ipo.symbol} />
+        </div>
       )}
     </div>
   );
