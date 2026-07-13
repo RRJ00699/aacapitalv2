@@ -5,6 +5,7 @@
 // cutover to /dashboard/ipo is a separate one-line commit after approval.
 import { useEffect, useState, useCallback } from "react";
 import AppShell from "@/components/app-shell/AppShell";
+import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 
 const C = { bg:"#DDE3EC", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
   sub:"#3A4560", meta:"#68738C", dim:"#98A2B6",
@@ -320,8 +321,14 @@ function IpoCommand() {
     ["open","📋 Open Now"],["upcoming","📅 Upcoming"],["post","📈 Post-Listing"],["brlm","🏆 BRLM"]];
 
   return (
-    <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1180,margin:"auto",
-      font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text}}>
+    <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
+      font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text,
+      alignItems:"start"}} className="ipo-shell">
+      <style>{`
+        .ipo-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
+        @media (max-width:900px){.ipo-shell{grid-template-columns:1fr}.ipo-shell aside{order:-1}}
+      `}</style>
+      <div style={{minWidth:0}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
@@ -652,6 +659,8 @@ function IpoCommand() {
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Lead = first-named manager · cells need n≥8 · "pending" fills after tonight's d10 precompute.</div>
       </div>}
+      </div>
+      <MarketsSidebar />
     </div>
   );
 }
