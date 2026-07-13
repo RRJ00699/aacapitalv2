@@ -7,7 +7,6 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 import AppNav from "./AppNav";
 import Footer from "@/components/Footer";
-import { StockResearchWorkspace } from "@/components/features/stock-research-workspace";
 
 const OpenStockCtx = createContext<(symbol: string) => void>(() => {});
 /** Open the global stock-research overlay from any page inside AppShell. */
@@ -40,10 +39,6 @@ export default function AppShell({
       <OpenStockCtx.Provider value={(s) => setWorkspaceSymbol(s)}>
         {children}
       </OpenStockCtx.Provider>
-
-      {workspaceSymbol && (
-        <StockResearchWorkspace symbol={workspaceSymbol} onClose={() => setWorkspaceSymbol(null)} />
-      )}
 
       <Footer />
     </div>

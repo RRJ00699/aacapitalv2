@@ -9,7 +9,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { StockSearch } from "@/components/features/stock-search";
 
 // IPO Power House — nav trimmed to the IPO engine. Today kept beside it.
 // but their routes still exist — restore a line here to bring one back.
@@ -60,9 +59,6 @@ export default function AppNav({
         </div>
       </div>
       <div style={{ flex: 1 }} />
-      <div style={{ width: 320, marginRight: 6, position: "relative", zIndex: 99999 }}>
-        <StockSearch onSelect={onSearchSelect} placeholder="Search stock..." />
-      </div>
       {TABS.map(({ v, l, href, e }) => {
         const active = current === v;
         return (
