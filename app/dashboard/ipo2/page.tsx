@@ -345,7 +345,6 @@ function IpoCommand() {
               <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.4}}>{s[0]}</div>
               <div style={{fontSize:17,fontWeight:800,color:s[3] as string}}>{s[1]}</div>
               <div style={{fontSize:12,color:C.meta}}>{s[2]}</div></div>))}
-          <a href="/dashboard/research" style={{marginLeft:"auto",fontSize:12.5,color:C.blue,fontWeight:600}}>Full evidence →</a>
         </div>
         <div style={{fontSize:11.5,color:C.dim,marginTop:8}}>
           “Worked” = best close within 10 sessions beat the open (a CEILING, not an executable exit — see Playbook for real exit rules: MID sell-D1-close = 65%/+3.3).
