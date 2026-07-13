@@ -15,7 +15,8 @@ import { StockSearch } from "@/components/features/stock-search";
 // but their routes still exist — restore a line here to bring one back.
 const TABS = [
   { v: "ipo",           l: "IPO",           href: "/ipo",            e: "⚡" },
-  { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
+  // Today removed from nav — Domestic + Global markets now live on the IPO page.
+  // { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
 ];
 
 export default function AppNav({
