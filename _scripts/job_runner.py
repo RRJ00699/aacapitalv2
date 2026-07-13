@@ -14,6 +14,10 @@ import psycopg2
 DB = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 
 # WHITELIST — the only commands the UI can trigger. Add here to expose a new button.
+# IPO Power House — IPO-focused jobs only.
+# Removed: theses (script deleted), exit_backtest/base_backtest/convergence (old
+# experiments), screener_* (the Screener side-quest), coverage/universe_backfill
+# (one-time backfills). Keep the daily flow IPO-only.
 JOBS = {
     "pipeline":        ["_scripts/run_ipo_pipeline.py"],
     "pipeline_weekly": ["_scripts/run_ipo_pipeline.py", "--weekly"],
@@ -22,18 +26,9 @@ JOBS = {
     "sbi_download":    ["_scripts/download_sbi_notes.py", "--out", "data/research_notes"],
     "sbi_parse":       ["_scripts/parse_sbi_notes.py", "--dir", "data/research_notes", "--write-db"],
     "levels":          ["_scripts/ipo_daily_levels.py", "--from-db", "--write-db"],
-    "theses":          ["_scripts/test_untested_theses.py"],
-    "sync":            ["_scripts/git_sync.py"],
-    "exit_backtest":   ["_scripts/exit_rule_backtest.py"],
-    "convergence":     ["_scripts/compute_convergence_ranking.py"],
     "universe_candles": ["_scripts/kite-sync-candles.py", "--days", "5"],
-    "universe_backfill": ["_scripts/kite-sync-candles.py", "--backfill"],
-    "screener_download": ["_scripts/download_screener_playwright.py", "--stale"],
-    "screener_import":  ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw"],
-    "screener_fetch":   ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw", "--download", "--limit", "40"],
-    "coverage":         ["_scripts/data_coverage_report.py"],
-    "base_backtest":    ["_scripts/base_backtest.py"],
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
+    "sync":            ["_scripts/git_sync.py"],
 }
 
 def ensure_table(cur):
