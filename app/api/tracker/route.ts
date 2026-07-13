@@ -43,7 +43,9 @@ const SEED: { who: string; severity: string; what: string; day: number; hhmm: st
   { who: "Claude", severity: "high", what: "Built the RHP downloader as a 1035-filing manifest walker instead of your simple 'check newest page, grab the new one' design. Every 'fix' patched my own overcomplication.", day: 13, hhmm: "09:50" },
   { who: "Claude", severity: "mid",  what: "Kept throwing commands without saying WHERE to run them (PC vs VM). You ran VM commands in PowerShell and back, repeatedly.", day: 13, hhmm: "10:15" },
   { who: "Claude", severity: "mid",  what: "Asked clarifying-question prompts when you wanted action — 'your fucking prompt is driving us out of our vision.'", day: 13, hhmm: "10:40" },
-];
+
+  { who: "Claude", severity: "mid",  what: "Kept firing interactive popup prompts that irritate you and break focus — 'those pop up irritate me, make me deviate, why can't you keep it straight.'", day: 13, hhmm: "11:30" },
+  { who: "Claude", severity: "low",  what: "Had to be told the tracker's real purpose: it's for a real person with a family and hard time constraints — not a game. Behind every prompt is that person.", day: 13, hhmm: "11:35" },];
 
 async function seedIfEmpty(admin: string) {
   const existing = await sql`SELECT 1 FROM distraction_log WHERE owner_email = ${admin} LIMIT 1`;
