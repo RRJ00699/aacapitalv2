@@ -25,8 +25,10 @@ async function ensureTable() {
       who         TEXT NOT NULL,
       severity    TEXT NOT NULL DEFAULT 'mid',
       what        TEXT NOT NULL,
+      minutes     INTEGER,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
+  await sql`ALTER TABLE distraction_log ADD COLUMN IF NOT EXISTS minutes INTEGER`;
 }
 
 // Real project history (Jul 5–13 2026), grounded in the actual transcripts.
@@ -71,7 +73,7 @@ export async function GET() {
     await ensureTable();
     await seedIfEmpty(admin);
     const rows = await sql`
-      SELECT id, who, severity, what, created_at
+      SELECT id, who, severity, what, minutes, created_at
       FROM distraction_log
       WHERE owner_email = ${admin}
       ORDER BY created_at DESC`;
@@ -89,15 +91,16 @@ export async function POST(req: NextRequest) {
   const who = String(body.who ?? "").trim().slice(0, 120);
   const what = String(body.what ?? "").trim().slice(0, 2000);
   const sev = ["low", "mid", "high"].includes(body.severity) ? body.severity : "mid";
+  const minutes = Number.isFinite(body.minutes) && body.minutes >= 0 ? Math.round(body.minutes) : null;
   if (!who || !what) {
     return NextResponse.json({ ok: false, error: "who and what are required" }, { status: 400 });
   }
   try {
     await ensureTable();
     const row = await sql`
-      INSERT INTO distraction_log (owner_email, who, severity, what)
-      VALUES (${admin}, ${who}, ${sev}, ${what})
-      RETURNING id, who, severity, what, created_at`;
+      INSERT INTO distraction_log (owner_email, who, severity, what, minutes)
+      VALUES (${admin}, ${who}, ${sev}, ${what}, ${minutes})
+      RETURNING id, who, severity, what, minutes, created_at`;
     return NextResponse.json({ ok: true, entry: row[0] });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "db error";
