@@ -18,16 +18,18 @@ const BAND: Record<string,{c:string;bg:string;bd:string}> = {
   STRONG:{c:C.green,bg:C.greenBg,bd:C.greenBd}, FAVORABLE:{c:C.blue,bg:C.blueBg,bd:C.blueBd},
   NEUTRAL:{c:C.meta,bg:C.grayBg,bd:C.border}, AVOID:{c:C.red,bg:C.redBg,bd:C.redBd} };
 const PLAYS = [
-  { t:"MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"92% win · +20% med · n=25 · p10 +2.4%", c:C.green,
-    d:"Tested 2026-07-13 on clean 2016+ data. Mega issue opening ≥0%, best at +15%+: 92% win, +20% median, and even the 10th-percentile day is positive — the tail barely hurts. Institutions must keep buying post-listing. Buy at open." },
-  { t:"MEGA opening 0–15% — strong secondary", s:"83% win · +4% med · p10 ~0", c:C.blue,
-    d:"Tested 2026-07-13. Any mega opening positive works; 0–15% band wins 83% with a near-zero downside tail. The safe version of the core trade." },
-  { t:"MEGA opening negative — caution", s:"79% win · +9% med · tail −6.1%", c:C.amber,
-    d:"A big IPO opening DOWN still wins often (anchors/QIB defend it) but carries a real −6% tail. Size smaller here." },
-  { t:"<₹500cr — DO NOT TRADE", s:"63% win · +2% med · tail −7.5%", c:C.red,
-    d:"Tested 2026-07-13. Small issues: 63% win, thin median, worst tail. Skipping these IS the profit." },
-  { t:"Euphoric open (>+50%) — trap zone", s:"~1 in 3.5 fades to ≤0", c:C.red,
-    d:"Tested 2026-07-13. Of issues popping >15% at open, 28% faded to ≤0 by day-10; the >50% zone carries the fattest tail (−9.5%). The pop is largely priced in. Watch, don't chase." } ];
+  { t:"1 · MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"92% win · +19% med · positive floor", c:C.green,
+    d:"A large issue (over ₹2000 crore) that opens at or above its IPO price. Best when it opens +15% or more. Buy at listing open. Two iterations passed (2026-07-10 and 2026-07-13); even the unlucky day stays positive. Institutions must keep buying these for weeks — the price is supported." },
+  { t:"2 · MORE THAN 30 ANCHORS — confirmed buy signal", s:"77% win vs 68% · tail halves", c:C.green,
+    d:"Tested 2026-07-13. IPOs with 30+ anchor investors win 77% buying at open (vs 68% below 30), and the downside tail shrinks from −6.6% to −2.6%. 50+ anchors is even stronger (79%). A heavy anchor book means big institutions are committed." },
+  { t:"3 · THE STACK — 30+ anchors + mega + positive open", s:"85% win · +13% med · ~zero floor", c:C.green,
+    d:"Tested 2026-07-13. Layer the two edges: a mega issue, opening positive, with 30+ anchors = 85% win and a near-zero downside. The single cleanest setup. When all three line up, this is the trade." },
+  { t:"4 · LOW PRICE BAND + FRESH ISSUE — strong", s:"82–90% win · small tail", c:C.blue,
+    d:"Tested 2026-07-13. Cheaper bands (under ₹300) win far more at open (77–90%) than expensive ones (₹600+ sag to 58%). Fresh-issue IPOs (under 30% OFS) win 82% vs OFS-heavy. Cheap + fresh + 30 anchors reached 94% (small sample — promising)." },
+  { t:"AVOID · small, pricey, or euphoric", s:"skip — this is the profit", c:C.red,
+    d:"Under ₹500cr: 63% win, worst tail — skip. Band over ₹600 or OFS-heavy: weak. Opened +50% or more: the pop is priced in and ~1 in 3.5 fades to a loss. Skipping these IS the strategy." },
+  { t:"GATE · RHP quality read (before listing)", s:"junk filter, not the entry", c:C.amber,
+    d:"Before listing, the RHP forensic read flags clean / watch / reject. A reject is a hard pass regardless of how it opens. This is the quality filter that keeps junk out — separate from the buy-at-open signals above." } ];
 
 type R = Record<string, unknown>;
 const N = (v: unknown) => (v == null ? null : Number(v));
@@ -515,12 +517,12 @@ function IpoCommand() {
             Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
           </div>
           {[
-            ["1","BUY the giants that open positive",
-             "The tested edge: issue bigger than ₹2,000 crore, opening at or above the IPO price. Best when it opens +15% or more — 92 wins in 100, +20% typical, and even a bad day barely loses. Institutions must keep buying these for weeks; the price is supported."],
-            ["2","SKIP the small ones and the crazy pops",
-             "Under ₹500 crore: skip (63% win, worst tail). Opened +50% or more on a non-giant: skip — the pop is already priced in and ~1 in 3.5 fades to a loss. Skipping IS the strategy."],
-            ["3","Quality gate first, then the trade",
-             "Before listing, the RHP quality gate reads the prospectus (clean / watch / reject). A reject is a hard pass no matter how it opens. Clean or watch + a qualifying giant open = the trade."],
+            ["1","BUY giants that open positive — with 30+ anchors best",
+             "Issue over ₹2,000 crore, opening at or above IPO price (best +15%+). Add 30 or more anchor investors and the win rate climbs to 85% with almost no downside. Buy at listing open."],
+            ["2","SKIP small, pricey, euphoric, and rejects",
+             "Under ₹500cr, band over ₹600, opened +50%+, or an RHP-reject: skip. The pop is priced in or the risk is real. Skipping IS the strategy."],
+            ["3","Cheaper + fresh beats expensive + OFS",
+             "Low price bands (under ₹300) and fresh-issue IPOs (not sell-heavy) win far more at open. Two iterations passed (2026-07-10, 2026-07-13)."],
           ].map(([n,t,d2])=>(
             <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
               <div style={{minWidth:34,height:34,borderRadius:"50%",background:"#B8860B",color:"#fff",
@@ -530,9 +532,9 @@ function IpoCommand() {
             </div>))}
           <div style={{marginTop:10,padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",
             borderRadius:9,fontSize:12.5,color:"#166534"}}>
-            <b>The honest math (tested 2026-07-13):</b> the giant-opens-positive trade wins about <b>92 times out of 100</b>
-            with a +20% typical gain and a positive worst-case day. Everything outside it — small issues, euphoric pops,
-            rejects — is watch-only. Skipping IS the strategy.
+            <b>The honest math (two iterations: 2026-07-10 &amp; 2026-07-13):</b> the core giant-opens-positive trade wins
+            ~92 in 100; adding 30+ anchors on a mega issue reaches <b>85% with a near-zero downside floor</b>.
+            Everything outside the rules — small, pricey, euphoric, or reject — is watch-only.
           </div>
         </div>
 
