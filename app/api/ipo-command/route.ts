@@ -18,20 +18,20 @@ export async function GET() {
     const cards = await sql`
       SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, c.issue_size_cr,
              c.issue_price, c.ipo_score, c.score_band, c.score_evidence, c.gap_bucket,
-             c.listing_gap_pct, c.final_qib, c.final_nii, c.final_retail, final_total,
+             c.listing_gap_pct, c.final_qib, c.final_nii, c.final_retail, c.final_total,
              c.brlm_names,
-             UPPER(REGEXP_REPLACE(COALESCE(symbol_final, nse_symbol, symbol, ''), '\\.NS$','')) AS sym,
+             UPPER(REGEXP_REPLACE(COALESCE(c.symbol_final, c.nse_symbol, c.symbol, ''), '\\.NS$','')) AS sym,
              (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
-                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
              (SELECT peer_name FROM ipo_research_notes n WHERE n.source='SBI'
-                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
              (SELECT peer_ps FROM ipo_research_notes n WHERE n.source='SBI'
-                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer_ps,
              (SELECT note_ps FROM ipo_research_notes n WHERE n.source='SBI'
-                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(symbol_final,nse_symbol,symbol))
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
              CASE
                WHEN c.ipo_open_date <= CURRENT_DATE AND c.ipo_close_date >= CURRENT_DATE THEN 'OPEN'
