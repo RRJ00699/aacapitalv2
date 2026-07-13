@@ -33,8 +33,7 @@ JOBS = {
     "screener_fetch":   ["_scripts/import_screener_financials.py", "--dir", "data/fundamental_raw", "--download", "--limit", "40"],
     "coverage":         ["_scripts/data_coverage_report.py"],
     "base_backtest":    ["_scripts/base_backtest.py"],
-    "rhp_extract":      ["_scripts/rhp_sonnet.py", "--dir", "rhps", "--year-min", "2016", "--cap", "20"],
-    "rhp_store":        ["_scripts/rhp_sonnet_store.py", "--dir", "rhp_summaries", "--apply"],
+    "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
 }
 
 def ensure_table(cur):
