@@ -1,4 +1,4 @@
 import { redirect } from "next/navigation";
 export default function RootPage() {
-  redirect("/today");
+  redirect("/dashboard/ipo2");
 }
