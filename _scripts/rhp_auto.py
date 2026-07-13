@@ -78,13 +78,13 @@ def main():
     print(f"=== RHP AUTO (future IPOs · mainboard · ${CAP} cap) ===")
     if not a.apply:
         print("DRY RUN — steps that would run:")
-        print("  1) download_sebi_rhps_playwright.py            (new SEBI filings only)")
+        print("  1) download_sebi_rhps_playwright.py --pages 1  (newest SEBI page only)")
         print("  2) rhp_sonnet.py --dir rhps --year-min 2016 --cap 1  (mainboard, $1)")
         print("  3) rhp_sonnet_store.py --dir rhp_summaries --apply")
         print("  4) purge PDFs past anchor lock-in (keeps UI link)")
         purge_after_lockin(apply=False)
         return
-    ok = run("download", ["_scripts/download_sebi_rhps_playwright.py"])
+    ok = run("download", ["_scripts/download_sebi_rhps_playwright.py", "--pages", "1"])
     run("extract", ["_scripts/rhp_sonnet.py", "--dir", "rhps", "--year-min", "2016", "--cap", CAP])
     run("store",   ["_scripts/rhp_sonnet_store.py", "--dir", "rhp_summaries", "--apply"])
     print("\n[purge] PDFs past anchor lock-in")
