@@ -78,7 +78,7 @@ export default function TrackerClient() {
     <div style={{ maxWidth: 680, margin: "auto", padding: "16px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <span style={{ fontSize: 22 }}>🦁</span>
-        <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: C.text }}>Distraction Tracker</span>
+        <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: C.text }}>Frustration Tracker</span>
         <span style={{ fontSize: 12, color: C.meta, marginLeft: "auto" }}>private · only you</span>
       </div>
       <div style={{ fontSize: 12, color: C.meta, marginBottom: 16, lineHeight: 1.5 }}>
