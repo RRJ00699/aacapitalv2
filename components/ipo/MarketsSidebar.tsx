@@ -41,7 +41,7 @@ export default function MarketsSidebar() {
     ]).then(([gg, ss]) => {
       if (!live) return;
       const g = (gg?.india) || gg || {};
-      const s = (ss?.snapshot) || ss || {};
+      const s = (ss?.data) || (ss?.snapshot) || ss || {};
       setDom({
         nifty: fmt(first(g.nifty, s.nifty_price), 0),
         niftyChg: has(first(g.niftyChg, s.nifty_change_pct)) ? num(first(g.niftyChg, s.nifty_change_pct)) : null,
