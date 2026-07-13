@@ -16,7 +16,14 @@ defense; this is the second (survives account-level problems, enables local diff
 """
 import os, sys, gzip, shutil, datetime
 DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
-TABLES = ["ipo_intelligence", "trade_journal", "ipo_research_notes", "ipo_gmp"]
+TABLES = [
+    # core IPO tables — the ground truth that must never be lost
+    "ipo_consolidated", "ipo_intelligence", "ipo_rhp_intel", "price_candles", "delivery_data",
+    # supporting IPO data
+    "ipo_research_notes", "ipo_gmp", "ipo_verdicts", "ipo_flags", "ipo_broker_consensus",
+    # app data
+    "platform_config", "distraction_log", "trade_journal",
+]
 KEEP_DAYS = 14
 
 def main():
