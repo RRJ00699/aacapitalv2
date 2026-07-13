@@ -1,4 +1,10 @@
-// app/api/tracker/route.ts
+
+  { who: "Family", severity: "high", what: "Ignoring family while buried in this. A real father spending his time on the screen instead of with them — that's the cost that hurts most.", day: 13, hhmm: "11:00" },
+  { who: "Family", severity: "high", what: "Whole weekend swallowed. Kids being fed while I chase this — 'behind every prompt there's a real person with a real family and serious time constraints.'", day: 12, hhmm: "20:00" },
+  { who: "Goal", severity: "mid", what: "Where we started: a clean IPO research tool. Where we ended: hours lost to Claude's mistakes and side-quests instead of the actual goal.", day: 13, hhmm: "11:45" },
+  { who: "Goal", severity: "mid", what: "Trusting Claude cost me time on my own goal — kept having to re-walk finished work and correct hallucinations.", day: 10, hhmm: "18:30" },
+  { who: "Claude", severity: "mid", what: "Kept firing popup prompts that break focus — 'those pop up irritate me, why can't you keep it straight.'", day: 13, hhmm: "11:30" },
+  { who: "Claude", severity: "high", what: "Didn't understand a simple, clear request — built a whole backtest when you just wanted this frustration screen. 'What the fuck are you doing.'", day: 13, hhmm: "11:50" },// app/api/tracker/route.ts
 // Private distraction/frustration tracker. web -> Neon only. Admin-gated (only you).
 //   GET    -> all entries, newest first
 //   POST   -> add an entry { who, severity, what }
