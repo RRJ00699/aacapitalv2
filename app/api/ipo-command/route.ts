@@ -188,9 +188,19 @@ export async function GET() {
 
     // ── Fair Value (Rakesh's 3-step model): base PE × quality ±15% × structure ±10% ──
     function fairValue(c: Record<string, unknown>) {
-      const eps = Number(c.eps_post) || 0;
-      const peerPE = Number(c.peer_median_pe) || 0;
       const price = Number(c.issue_price) || 0;
+      // Prefer post-issue EPS; fall back to deriving it from ipo_pe (eps = price / P/E)
+      // so fair value lights up on the ~392 IPOs that have ipo_pe even when eps_post is null.
+      let eps = Number(c.eps_post) || 0;
+      let epsSource = "post-issue EPS";
+      if (eps <= 0) {
+        const ipoPe = Number(c.ipo_pe) || 0;
+        if (ipoPe > 0 && price > 0) {
+          eps = price / ipoPe;
+          epsSource = "EPS derived from issue P/E";
+        }
+      }
+      const peerPE = Number(c.peer_median_pe) || 0;
       if (eps <= 0 || peerPE <= 0 || price <= 0) {
         return { fair_value: null, fair_mos: null, fair_verdict: null, fair_note: "Insufficient data (need EPS + peer P/E)." };
       }
@@ -220,7 +230,7 @@ export async function GET() {
         fair_value: Math.round(fv),
         fair_mos: Math.round(mos * 10) / 10,
         fair_verdict: verdict,
-        fair_note: `EPS ₹${eps.toFixed(1)} × peer P/E ${peerPE.toFixed(0)} × quality ${q.toFixed(2)} × structure ${sfac.toFixed(2)}`,
+        fair_note: `EPS ₹${eps.toFixed(1)}${epsSource.includes("derived") ? "*" : ""} × peer P/E ${peerPE.toFixed(0)} × quality ${q.toFixed(2)} × structure ${sfac.toFixed(2)}${epsSource.includes("derived") ? " · *EPS est. from issue P/E" : ""}`,
       };
     }
 
