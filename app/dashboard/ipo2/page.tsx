@@ -240,10 +240,10 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
       <div style={{display:"flex",alignItems:"center",gap:9,padding:"9px 13px",background:bg,cursor:"pointer"}}
            onClick={()=>setOpen(!open)}>
         <span style={{fontSize:10,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",
-          color:col,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px",background:"#fff"}}>
+          color:col,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px",background:C.surface}}>
           🔍 RHP Trust · {(gate||"watch").toUpperCase()}</span>
         {mos && <span style={{fontSize:11,color:col,fontWeight:600}}>margin of safety: {mos}</span>}
-        {confidence && <span style={{fontSize:10.5,color:"#888"}}>· confidence {confidence}</span>}
+        {confidence && <span style={{fontSize:10.5,color:C.meta}}>· confidence {confidence}</span>}
         <span style={{marginLeft:"auto",fontSize:11,color:col}}>{open?"▲ hide":"▼ details"}</span>
       </div>
       {oneLine && <div style={{padding:"9px 13px",fontSize:12.5,color:C.sub,lineHeight:1.5,borderTop:`1px solid ${bd}`}}>{oneLine}</div>}
@@ -254,13 +254,13 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
       {open && fj && <div style={{padding:"11px 13px",borderTop:`1px solid ${bd}`,fontSize:12,color:C.sub,lineHeight:1.55}}>
         {fj.trust_summary && <p style={{marginBottom:9}}>{fj.trust_summary}</p>}
         {Array.isArray(fj.top_3_material_risks) && fj.top_3_material_risks.length>0 && <>
-          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:"#666",margin:"8px 0 5px"}}>Top material risks</div>
+          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:C.meta,margin:"8px 0 5px"}}>Top material risks</div>
           {fj.top_3_material_risks.map((r:string,i:number)=><div key={i} style={{display:"flex",gap:7,marginBottom:4}}><span style={{color:col}}>{i+1}.</span><span>{r}</span></div>)}
         </>}
         {fj.aacapital_decision?.dd_note && <>
-          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:"#666",margin:"9px 0 4px"}}>Due-diligence to verify</div>
-          <div style={{fontSize:11.5,color:"#555"}}>{fj.aacapital_decision.dd_note}</div></>}
-        <div style={{marginTop:9,fontSize:10.5,color:"#999"}}>Source: Red Herring Prospectus · extracted by Claude Sonnet · research signal, not a buy call</div>
+          <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:C.meta,margin:"9px 0 4px"}}>Due-diligence to verify</div>
+          <div style={{fontSize:11.5,color:C.sub}}>{fj.aacapital_decision.dd_note}</div></>}
+        <div style={{marginTop:9,fontSize:10.5,color:C.dim}}>Source: Red Herring Prospectus · extracted by Claude Sonnet · research signal, not a buy call</div>
       </div>}
     </div>
   );
@@ -314,7 +314,7 @@ function Calculator() {
   const capN = Number(cap)||0;
   const priceList = prices.split(",").map(s=>Number(s.trim())).filter(x=>x>0);
   const inp: React.CSSProperties = {padding:"10px 12px",borderRadius:9,border:`1px solid ${C.border}`,
-    fontSize:15,width:"100%",fontFamily:MONO,color:C.text,background:"#fff"};
+    fontSize:15,width:"100%",fontFamily:MONO,color:C.text,background:C.surface};
   const lbl: React.CSSProperties = {fontSize:12,fontWeight:700,color:C.meta,marginBottom:5,display:"block"};
   const bp=Number(buyPx)||0, sp=Number(sellPx)||0, sh=Number(shares)||0;
   const pct = bp>0&&sp>0 ? ((sp-bp)/bp)*100 : null;
@@ -620,7 +620,7 @@ function IpoCommand() {
              "Low price bands (under ₹300) and fresh-issue IPOs (not sell-heavy) win far more at open. Two iterations passed (2026-07-10, 2026-07-13)."],
           ].map(([n,t,d2])=>(
             <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
-              <div style={{minWidth:34,height:34,borderRadius:"50%",background:C.gold,color:"#fff",
+              <div style={{minWidth:34,height:34,borderRadius:"50%",background:C.gold,color:C.bg,
                 display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16}}>{n}</div>
               <div><div style={{fontWeight:800,fontSize:13.5}}>{t}</div>
                 <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{d2}</div></div>
