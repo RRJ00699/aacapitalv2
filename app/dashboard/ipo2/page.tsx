@@ -246,6 +246,10 @@ function Calculator() {
   const [buyPx, setBuyPx] = useState("");
   const [sellPx, setSellPx] = useState("");
   const [shares, setShares] = useState("");
+  const [ladderPx, setLadderPx] = useState("100");
+  const [ladderStep, setLadderStep] = useState("2");
+  const [ladderSh, setLadderSh] = useState("");
+  const lp = Number(ladderPx)||0, step = Number(ladderStep)||0, lsh = Number(ladderSh)||0;
   const capN = Number(cap)||0;
   const priceList = prices.split(",").map(s=>Number(s.trim())).filter(x=>x>0);
   const inp: React.CSSProperties = {padding:"10px 12px",borderRadius:9,border:`1px solid ${C.border}`,
@@ -293,6 +297,31 @@ function Calculator() {
           <div style={{...num,fontSize:32,fontWeight:800,color:pct>=0?C.green:C.red}}>{pct>=0?"+":""}{pct.toFixed(2)}%</div></div>
         {pnl!=null && <div><div style={{fontSize:12,color:C.meta,fontWeight:700}}>On {sh} shares</div>
           <div style={{...num,fontSize:32,fontWeight:800,color:pct>=0?C.green:C.red}}>{pnl>=0?"+":"−"}₹{Math.abs(pnl).toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>}
+      </div>}
+    </div>
+
+    <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
+      <b style={{fontSize:16}}>🪜 Target ladder — price at each % gain</b>
+      <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
+        Enter your buy price and a step %. See the price at each gain level — set your targets fast.</div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Buy price (₹)</label>
+          <input style={inp} value={ladderPx} onChange={e=>setLadderPx(e.target.value)} inputMode="decimal" placeholder="100"/></div>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Step %</label>
+          <input style={inp} value={ladderStep} onChange={e=>setLadderStep(e.target.value)} inputMode="decimal" placeholder="2"/></div>
+        <div style={{flex:1,minWidth:130}}><label style={lbl}>Shares (optional)</label>
+          <input style={inp} value={ladderSh} onChange={e=>setLadderSh(e.target.value)} inputMode="numeric" placeholder="90"/></div>
+      </div>
+      {lp>0&&step>0 && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+        {Array.from({length:12},(_,i)=>{
+          const g=step*(i+1);
+          const price=lp*(1+g/100);
+          const gain=lsh>0?(price-lp)*lsh:null;
+          return <div key={i} style={{border:`1px solid ${C.greenBd}`,borderRadius:11,padding:"12px 14px",background:C.greenBg}}>
+            <div style={{fontSize:12,color:C.green,fontWeight:800}}>+{g.toFixed(g%1?1:0)}%</div>
+            <div style={{...num,fontSize:22,fontWeight:800,color:C.text,margin:"3px 0"}}>₹{price.toFixed(2)}</div>
+            {gain!=null && <div style={{fontSize:11.5,color:C.meta}}>+₹{gain.toLocaleString(undefined,{maximumFractionDigits:0})}</div>}
+          </div>;})}
       </div>}
     </div>
   </>;
