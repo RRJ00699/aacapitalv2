@@ -12,8 +12,8 @@
   "vars": {
     "ALLOWED_EMAILS": "try.rakeshreddy@gmail.com,jesravani1@gmail.com",
     "ADMIN_EMAILS": "try.rakeshreddy@gmail.com",
-    "AUTH_URL": "https://aacapitalv2.try-rakeshreddy.workers.dev",
-    "NEXT_PUBLIC_APP_URL": "https://aacapitalv2.try-rakeshreddy.workers.dev",
+    "AUTH_URL": "https://aacapitalprivatelimited.com",
+    "NEXT_PUBLIC_APP_URL": "https://aacapitalprivatelimited.com",
     "GITHUB_REPO": "RRJ00699/aacapitalv2",
     "NTFY_TOPIC": "aacapital-access"
   }
