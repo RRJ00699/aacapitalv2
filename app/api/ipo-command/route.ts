@@ -46,7 +46,9 @@ export async function GET() {
              ri.margin_of_safety AS rhp_mos, ri.full_json AS rhp_full, ri.confidence AS rhp_confidence,
              f.red_flags, f.green_checks, f.red_count, f.green_count,
              bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score,
-             ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high
+             ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high,
+             c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,
+             c.profit_cagr_3y, c.debt_equity, c.ofs_pct, c.structure_type, c.return_listing_open
       FROM ipo_consolidated c
       LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
       LEFT JOIN ipo_flags f ON f.company_name = c.company_name
@@ -182,6 +184,44 @@ export async function GET() {
         CASE WHEN source LIKE 'Street%' THEN 0 ELSE 1 END, avg_outcome DESC NULLS LAST`;
     } catch (e) { console.error("leaderboard:", e); leaderboard = []; }
 
+    // ── Fair Value (Rakesh's 3-step model): base PE × quality ±15% × structure ±10% ──
+    function fairValue(c: Record<string, unknown>) {
+      const eps = Number(c.eps_post) || 0;
+      const peerPE = Number(c.peer_median_pe) || 0;
+      const price = Number(c.issue_price) || 0;
+      if (eps <= 0 || peerPE <= 0 || price <= 0) {
+        return { fair_value: null, fair_mos: null, fair_verdict: null, fair_note: "Insufficient data (need EPS + peer P/E)." };
+      }
+      // Step 1: base
+      const base = eps * peerPE;
+      // Step 2: quality factor ±15% (ROE, revenue CAGR, low debt)
+      const roe = Number(c.roe) || 0;
+      const revCagr = Number(c.revenue_cagr_3y) || 0;
+      const de = Number(c.debt_equity);
+      let q = 1.0;
+      if (roe >= 18) q += 0.06; else if (roe > 0 && roe < 10) q -= 0.06;
+      if (revCagr >= 20) q += 0.05; else if (revCagr > 0 && revCagr < 8) q -= 0.05;
+      if (!isNaN(de) && de <= 0.3) q += 0.04; else if (!isNaN(de) && de > 1.5) q -= 0.04;
+      q = Math.max(0.85, Math.min(1.15, q));
+      // Step 3: structure factor ±10% (fresh vs OFS)
+      const ofsPct = Number(c.ofs_pct);
+      let sfac = 1.0;
+      if (!isNaN(ofsPct)) {
+        if (ofsPct < 20) sfac += 0.06;        // mostly fresh — capex/expansion, good
+        else if (ofsPct > 60) sfac -= 0.08;   // mostly OFS — promoter cash-out, weak
+      }
+      sfac = Math.max(0.90, Math.min(1.10, sfac));
+      const fv = base * q * sfac;
+      const mos = ((fv / price) - 1) * 100;   // margin of safety vs issue price
+      const verdict = mos >= 10 ? "undervalued" : mos <= -10 ? "rich" : "fair";
+      return {
+        fair_value: Math.round(fv),
+        fair_mos: Math.round(mos * 10) / 10,
+        fair_verdict: verdict,
+        fair_note: `EPS ₹${eps.toFixed(1)} × peer P/E ${peerPE.toFixed(0)} × quality ${q.toFixed(2)} × structure ${sfac.toFixed(2)}`,
+      };
+    }
+
     // ── AACapital Playbook rules — applied to every IPO (tested 2026-07-13) ──
     const enrichedCards = (cards as Record<string, unknown>[]).map((c) => {
       const size  = Number(c.issue_size_cr) || 0;
@@ -226,7 +266,7 @@ export async function GET() {
       else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : `No buy-at-open rules met — watch only.`;
 
       return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
-               playbook_passed: passed, playbook_verdict: verdict_line };
+               playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c) };
     });
 
     return NextResponse.json({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
