@@ -13,8 +13,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
 const CACHE_KEY = "ipo-command:v1";
 const CACHE_TTL_S = 600; // 10 min — Neon queried at most ~6x/hr instead of every load
-async function getKV(): Promise<KVNamespace | null> {
-  try { return (getCloudflareContext().env as unknown as { CACHE?: KVNamespace }).CACHE ?? null; }
+async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
   catch { return null; } // not on CF (local/Vercel) → no cache, query direct
 }
 
