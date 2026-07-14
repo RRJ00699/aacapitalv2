@@ -50,12 +50,15 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 - Negative listings = different playbook (buy the bounce, not panic)
 - Testing: do neg-listers share traits (P/E, OFS%, GMP)? Can GMP predict a negative listing?
 - If predictable → real edge: know to expect dip-then-pop pre-listing
-- STATUS: research_bundle.py tests this. Run + review.
+- ✅ RESULT: NEG-listers are OFS-HEAVY (27% vs 3% for pos-listers!) + higher P/E (80 vs 68) + bigger. GMP does NOT predict it (34% both, GMP>10 still lists neg 30%).
+- USABLE RULE: high OFS% + high P/E → expect weak/negative listing → dip-then-pop setup (Turtlemint). Surface on card as a listing-day expectation flag.
+- STATUS: pattern found. Add "likely weak open" flag to card + note the bounce setup.
 
 ### 13. Real-time exit architecture (DECIDED)
 - MODE A (daily, from stored candles): journey page hold decision. NO new infra. 95% of value.
 - MODE B (live Kite/OBIR): listing-day page only, intraday. Reuses existing OBIR/tape code.
-- lock8/trail12 needs: entry (stored at listing) + peak (daily high) + today's price.
+- lock8/trail12 needs: entry (stored at listing) + peak (high) + current price.
+- FREQUENCY (Rakesh): for IPOs, 2h or 4h candles better than daily — catches intraday moves during the volatile early hold without needing live tick. Check if Kite sync can pull intraday candles for IPO symbols.
 
 ## 🔧 INFRA / DATA HYGIENE
 ### 7. Pipeline timing — add pre-open (~08:00 IST) + post-close (~19:00 IST) runs for final subscription
