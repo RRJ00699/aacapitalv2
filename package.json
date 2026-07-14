@@ -42,7 +42,8 @@
     "swr": "^2.4.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.14",
-    "@opennextjs/cloudflare": "^1.20.1"
+    "@opennextjs/cloudflare": "^1.20.1",
+    "pg-cloudflare": "^1.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
