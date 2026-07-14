@@ -19,6 +19,30 @@ function vwap(cs: Candle[]) {
   return vol > 0 ? pv / vol : null;
 }
 
+// ── distribution detectors — the "when to sell" signals ──
+function volumeFade(cs: Candle[]) {
+  // On up-days, is volume drying up? Fading up-day volume = buyers exhausting.
+  const ups = cs.filter((c) => c.close > c.open);
+  if (ups.length < 4) return { fading: false, recentAvg: null as number | null, earlyAvg: null as number | null };
+  const half = Math.floor(ups.length / 2);
+  const early = ups.slice(0, half), recent = ups.slice(half);
+  const avg = (a: Candle[]) => a.reduce((x, c) => x + Number(c.volume), 0) / a.length;
+  const earlyAvg = avg(early), recentAvg = avg(recent);
+  return { fading: recentAvg < earlyAvg * 0.7, recentAvg, earlyAvg };
+}
+function peakDrawdown(cs: Candle[]) {
+  // How far off the post-listing peak are we, and is it rolling over (lower highs)?
+  if (!cs.length) return { peak: null as number | null, offPeakPct: null as number | null, lowerHighs: false };
+  const peak = Math.max(...cs.map((c) => c.high));
+  const price = cs[cs.length - 1].close;
+  const offPeakPct = peak ? ((price / peak - 1) * 100) : null;
+  // lower highs over the last 5 sessions = rolling over
+  const tail = cs.slice(-5).map((c) => c.high);
+  let lowerHighs = tail.length >= 3;
+  for (let i = 1; i < tail.length; i++) if (tail[i] > tail[i - 1]) lowerHighs = false;
+  return { peak, offPeakPct, lowerHighs };
+}
+
 function volumeProfile(cs: Candle[], bins = 12) {
   // volume-at-price histogram: where did shares actually change hands?
   if (!cs.length) return { nodes: [], poc: null as number | null, lo: 0, hi: 0 };
@@ -71,6 +95,9 @@ export async function GET(req: NextRequest) {
 
     // ── signal 2: volume profile (20d) ──
     const vp = volumeProfile(window);
+    // distribution signals (the "when to sell" tells)
+    const vFade = volumeFade(rows);
+    const pDraw = peakDrawdown(rows);
     const abovePOC = vp.poc != null && price >= vp.poc;  // trading above the heaviest node = support below
 
     // ── signal 3: free-float absorption ──
@@ -107,8 +134,11 @@ export async function GET(req: NextRequest) {
     let verdict: "accumulation" | "base" | "distribution";
     const unlockSoon = upcoming != null && upcoming < 14;
     const unlockImminent = upcoming != null && upcoming < 7;
-    if (aboveVwap && abovePOC && !unlockSoon) verdict = "accumulation";
-    else if (!aboveVwap && (!abovePOC || unlockImminent)) verdict = "distribution";
+    // distribution tells: rolling over off the peak with fading up-day volume
+    const rollingOver = pDraw.lowerHighs && (pDraw.offPeakPct != null && pDraw.offPeakPct < -8);
+    const buyersExhausting = vFade.fading;
+    if (aboveVwap && abovePOC && !unlockSoon && !rollingOver) verdict = "accumulation";
+    else if ((!aboveVwap && (!abovePOC || unlockImminent)) || (rollingOver && buyersExhausting)) verdict = "distribution";
     else verdict = "base";
 
     // behavioral instruction — names the user's known bias and says do the opposite
@@ -127,6 +157,8 @@ export async function GET(req: NextRequest) {
         vwap: { value: runVwap, daily: dailyVwap, price, above: aboveVwap, gapPct: vwapGapPct },
         volumeProfile: { ...vp, abovePOC },
         floatAbsorption: { cumVol, sharesIssued, turnover: floatTurnover },
+        volumeFade: { fading: vFade.fading, recentUpVol: vFade.recentAvg, earlyUpVol: vFade.earlyAvg },
+        peakDrawdown: { peak: pDraw.peak, offPeakPct: pDraw.offPeakPct, lowerHighs: pDraw.lowerHighs },
         anchorLockin: { lock30, lock90, nextUnlockDays: upcoming },
         // forward slots — light up when data feeds run
         delivery: { available: false, note: "Run the NSE bhavcopy feed to enable (daily, going forward)." },
