@@ -10,8 +10,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare"
 // price ~30s per symbol means we don't hammer Zerodha/Yahoo (or Neon) on every
 // poll, exactly like a real trading app throttles its price feed.
 const QUOTE_TTL_S = 30
-async function getKV(): Promise<KVNamespace | null> {
-  try { return (getCloudflareContext().env as unknown as { CACHE?: KVNamespace }).CACHE ?? null }
+async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null }
   catch { return null }
 }
 
