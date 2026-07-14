@@ -202,7 +202,11 @@ export async function GET() {
       }
       const peerPE = Number(c.peer_median_pe) || 0;
       if (eps <= 0 || peerPE <= 0 || price <= 0) {
-        return { fair_value: null, fair_mos: null, fair_verdict: null, fair_note: "Insufficient data (need EPS + peer P/E)." };
+        const missing: string[] = [];
+        if (eps <= 0) missing.push("EPS (no eps_post or issue P/E)");
+        if (peerPE <= 0) missing.push("peer P/E");
+        if (price <= 0) missing.push("issue price");
+        return { fair_value: null, fair_mos: null, fair_verdict: null, fair_note: `needs ${missing.join(" + ")}` };
       }
       // Step 1: base
       const base = eps * peerPE;
