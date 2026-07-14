@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 // Styled to match the ipo2 palette.
 
 type GRow = { label: string; value: string; change: number | null };
-const C = { surface:"#FBFCFD", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
-  sub:"#3A4560", meta:"#68738C", green:"#0E7A4D", red:"#C4443A" };
+const C = { surface:"var(--t-surface)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
+  sub:"var(--t-sub)", meta:"var(--t-meta)", green:"var(--t-green)", red:"var(--t-red)" };
 
 const has = (v: unknown) => v !== null && v !== undefined && v !== "" && !(typeof v === "number" && isNaN(v));
 const num = (v: unknown) => (has(v) ? Number(v) : NaN);
@@ -19,7 +19,7 @@ const sgn = (n: number | null) => (n==null?"—":`${n>=0?"+":""}${n.toFixed(2)}%
 function Tile({ label, value, sub, tone }: { label:string; value:string; sub?:string; tone?:"up"|"down"|null }) {
   const col = tone==="up"?C.green:tone==="down"?C.red:C.text;
   return (
-    <div style={{ background:"#F4F6FA", border:`1px solid ${C.line}`, borderRadius:10, padding:"8px 10px" }}>
+    <div style={{ background:"var(--t-surface2)", border:`1px solid ${C.line}`, borderRadius:10, padding:"8px 10px" }}>
       <div style={{ fontSize:9.5, fontWeight:800, letterSpacing:.6, textTransform:"uppercase", color:C.meta }}>{label}</div>
       <div style={{ fontSize:17, fontWeight:800, fontFamily:"ui-monospace,monospace", color:col }}>{value}</div>
       {sub && <div style={{ fontSize:9.5, color:col }}>{sub}</div>}
@@ -100,7 +100,7 @@ export default function MarketsSidebar() {
         {loading ? <div style={{ fontSize:12, color:C.meta, padding:"8px 0" }}>Loading…</div> : (
           <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:360, overflowY:"auto" }}>
             {glob.length ? glob.map(g => (
-              <div key={g.label} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"#F4F6FA", border:`1px solid ${C.line}`, borderRadius:8 }}>
+              <div key={g.label} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"var(--t-surface2)", border:`1px solid ${C.line}`, borderRadius:8 }}>
                 <span style={{ fontSize:11.5, color:C.sub, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{g.label}</span>
                 <span style={{ fontSize:12, fontWeight:700, color:C.text, fontFamily:"ui-monospace,monospace", minWidth:66, textAlign:"right" }}>{g.value}</span>
                 <span style={{ fontSize:11, fontWeight:700, fontFamily:"ui-monospace,monospace", minWidth:52, textAlign:"right", color:(g.change??0)>=0?C.green:C.red }}>{sgn(g.change)}</span>

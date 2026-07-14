@@ -23,11 +23,11 @@ export default function AppShell({
   };
 
   return (
-    <div style={{ background: "linear-gradient(160deg,#CDD5E1,#BAC5D6)", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'DM Sans',sans-serif", color: "#1A2438" }}>
+    <div style={{ background: "var(--t-bg)", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'DM Sans',sans-serif", color: "var(--t-text)" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        ::-webkit-scrollbar{width:4px;height:4px;}::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:2px;}
+        ::-webkit-scrollbar{width:4px;height:4px;}::-webkit-scrollbar-thumb{background:var(--t-border);border-radius:2px;}
         input,button,textarea{outline:none;font-family:inherit;}
         @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
         .fade{animation:fade .3s ease}
