@@ -70,9 +70,12 @@ def main():
     step("anchor + subscription enrich",  ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
     step("refresh GMP",                   ["ipo/refresh_gmp.py"])
     step("delivery pct (NSE bhavcopy)",    ["fetch_delivery_bhavcopy.py","--backfill-days","3"])
-    step("bulk/block deals (NSE)",         ["fetch_institutional_deals.py"])
-    step("insider trades (NSE, exp.)",     ["fetch_insider_trades.py"])
-    step("anchor-deal conviction match",   ["match_anchor_deals.py","--apply"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("bulk/block deals (NSE)",         ["fetch_institutional_deals.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("insider trades (NSE, exp.)",     ["fetch_insider_trades.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("anchor-deal conviction match",   ["match_anchor_deals.py","--apply"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok&=step("candles: in-window daily sync",  ["sync_inwindow_candles.py"])
     step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"])
@@ -88,15 +91,19 @@ def main():
     step("sector cleanup",                ["fix_sectors.py","--apply"])
     step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
     step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
-    step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
-    step("convergence snapshot (history)", ["snapshot_convergence.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("convergence snapshot (history)", ["snapshot_convergence.py"])
     step("d10 outcome precompute",        ["compute_d10.py"])
     step("master computables backfill",   ["backfill_master_computables.py","--apply"])
     step("sector cleanup",                ["fix_sectors.py","--apply"])
     step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
     step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
-    step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
-    step("convergence snapshot (history)", ["snapshot_convergence.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
+    # [IPO-only] removed non-IPO step (writes to dropped table):
+    #step("convergence snapshot (history)", ["snapshot_convergence.py"])
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     # REMOVED: OBIR floor/ceiling compute (no value, burned CU-hrs) — 2026-07-10
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
