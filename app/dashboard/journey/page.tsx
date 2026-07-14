@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 
 type Journey = {
@@ -17,7 +17,7 @@ const C = {
   red: "var(--t-red)", redBg: "var(--t-redBg)", redBd: "var(--t-redBd)", gold: "var(--t-gold)",
 }
 
-export default function JourneyPage() {
+function JourneyInner() {
   const params = useSearchParams()
   const sym = (params.get("sym") || "").toUpperCase()
   const [d, setD] = useState<Journey | null>(null)
@@ -133,8 +133,16 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Tile({ label, val, col }: { label: string; val: string; col: string }) {
-  return <div style={{ background: "#12202B", border: `1px solid ${C.bd}`, borderRadius: 9, padding: "10px 12px" }}>
+  return <div style={{ background: "var(--t-bg)", border: `1px solid ${C.bd}`, borderRadius: 9, padding: "10px 12px" }}>
     <div style={{ color: C.meta, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
     <div style={{ color: col, fontSize: 16, fontWeight: 700, marginTop: 3 }}>{val}</div>
   </div>
+}
+
+export default function JourneyPage() {
+  return (
+    <Suspense fallback={<Shell><p style={{ color: C.meta }}>Loading…</p></Shell>}>
+      <JourneyInner />
+    </Suspense>
+  )
 }
