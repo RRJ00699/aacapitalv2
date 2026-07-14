@@ -10,6 +10,8 @@ type Sig = {
   volumeProfile: { nodes: { price: number; vol: number; pct: number }[]; poc: number | null; lo: number; hi: number; abovePOC: boolean };
   floatAbsorption: { cumVol: number; sharesIssued: number | null; turnover: number | null };
   anchorLockin: { lock30: number | null; lock90: number | null; nextUnlockDays: number | null };
+  volumeFade: { fading: boolean; recentUpVol: number | null; earlyUpVol: number | null };
+  peakDrawdown: { peak: number | null; offPeakPct: number | null; lowerHighs: boolean };
   delivery: { available: boolean; note: string };
   relativeStrength: { available: boolean; note: string };
 };
@@ -155,6 +157,32 @@ export default function PostListingDashboard({ symbol }: { symbol: string }) {
           )}
           <div style={{ marginTop: 6, fontSize: 11, color: "#98A1AE" }}>
             30d: {s.anchorLockin.lock30 != null ? `${s.anchorLockin.lock30}d` : "—"} · 90d: {s.anchorLockin.lock90 != null ? `${s.anchorLockin.lock90}d` : "—"}
+          </div>
+        </Card>
+
+        {/* Volume fade — buyers exhausting */}
+        <Card title="Volume fade — up-day demand" hint="distribution tell"
+          tone={s.volumeFade.fading ? "bad" : "good"}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: s.volumeFade.fading ? "#B23A2E" : "#0F6E56" }}>
+            {s.volumeFade.fading ? "FADING" : "HOLDING"}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: "#5A6472", lineHeight: 1.5 }}>
+            {s.volumeFade.fading
+              ? "Up-day volume is drying up — buyers are exhausting. Rallies on lighter volume don't hold. A sell tell."
+              : "Up-day volume is holding — real buying still supports the moves."}
+          </div>
+        </Card>
+
+        {/* Peak drawdown — rolling over */}
+        <Card title="Off the peak" hint="rolling over?"
+          tone={s.peakDrawdown.lowerHighs && (s.peakDrawdown.offPeakPct ?? 0) < -8 ? "bad" : null}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: (s.peakDrawdown.offPeakPct ?? 0) < -8 ? "#B23A2E" : "#1A2438" }}>
+            {s.peakDrawdown.offPeakPct != null ? `${s.peakDrawdown.offPeakPct > 0 ? "+" : ""}${fmt(s.peakDrawdown.offPeakPct, 1)}%` : "—"}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: "#5A6472", lineHeight: 1.5 }}>
+            {s.peakDrawdown.lowerHighs
+              ? `Off the ₹${fmtInt(s.peakDrawdown.peak)} peak, making lower highs — rolling over. When this pairs with fading volume, it's distributing.`
+              : `Off the ₹${fmtInt(s.peakDrawdown.peak)} peak. Not yet making lower highs.`}
           </div>
         </Card>
       </div>
