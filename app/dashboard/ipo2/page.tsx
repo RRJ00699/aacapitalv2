@@ -79,10 +79,13 @@ function Reasons({ trade, passes, caution, avoid }: { trade?:string|null; passes
       <span style={{flexShrink:0,fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:4,marginTop:2,color:col,background:bg}}>{lab}</span>
       <span style={{color:C.sub}}>{txt}</span></div>))}</div>;
 }
-function ScoreRing({ score, conf }: { score?: number|null; conf?: number|null }) {
-  if (score == null) return <div style={{width:56,textAlign:"center"}}>
-    <div style={{width:52,height:52,borderRadius:"50%",border:`3px dashed ${C.border}`,display:"grid",placeItems:"center",fontSize:10,color:C.dim,margin:"0 auto"}}>n/a</div>
-    <div style={{fontSize:8.5,color:C.dim,marginTop:2,textTransform:"uppercase",letterSpacing:.5}}>data thin</div></div>;
+function ScoreRing({ score, conf, verdict }: { score?: number|null; conf?: number|null; verdict?: string|null }) {
+  if (score == null) {
+    const vcol = verdict==="TRADE"?C.green:verdict==="WATCH"?C.blue:verdict==="CAUTION"?"#c2830c":verdict==="AVOID"?C.red:C.dim;
+    return <div style={{width:56,textAlign:"center"}}>
+      <div style={{width:52,height:52,borderRadius:"50%",border:`3px dashed ${verdict?vcol:C.border}`,display:"grid",placeItems:"center",fontSize:verdict?9:10,fontWeight:700,color:verdict?vcol:C.dim,margin:"0 auto",lineHeight:1,padding:2}}>{verdict||"n/a"}</div>
+      <div style={{fontSize:8.5,color:C.dim,marginTop:2,textTransform:"uppercase",letterSpacing:.5}}>{verdict?"pre-listing":"data thin"}</div></div>;
+  }
   const col = score>=65?C.green:score>=40?"#c2830c":C.red;
   const r=22, c=2*Math.PI*r, off=c*(1-score/100);
   return <div style={{width:56,textAlign:"center"}}>
@@ -470,7 +473,7 @@ function IpoCommand() {
           return (
           <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:"#fbfffc"}:card}>
             <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-              <ScoreRing score={(c.vscore ?? c.ipo_score) as number} conf={c.vconf as number}/>
+              <ScoreRing score={(c.vscore ?? c.ipo_score) as number} conf={c.vconf as number} verdict={c.verdict as string}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",marginBottom:3}}>
                   {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
