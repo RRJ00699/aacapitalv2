@@ -17,24 +17,12 @@
 }
 /* ── Midnight Teal (dark) ── */
 [data-theme="dark"] {
-  --t-bg:#0E1A24; --t-surface:#17272F; --t-surface2:#1D3038; --t-border:#2A4250; --t-line:#213540;
-  --t-text:#F0F6F4; --t-sub:#CAD8D5; --t-meta:#8B9FA9; --t-dim:#5E727C;
-  --t-green:#3BD3A6; --t-greenBg:#13322A; --t-greenBd:#1F5F4A;
-  --t-blue:#66A6EC; --t-blueBg:#152A3E; --t-blueBd:#2C4E70;
-  --t-amber:#E8BC6A; --t-amberBg:#302818; --t-amberBd:#5E4C28;
-  --t-red:#EF8377; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#1B2D37; --t-gold:#E8BC6A;
-  --t-header:#0A141C; --t-headerText:#F0F6F4;
+  --t-bg:#0A121A; --t-surface:#131F29; --t-surface2:#1A2933; --t-border:#22333F; --t-line:#1D2C36; --t-text:#F4F9F7; --t-sub:#D2E0DC; --t-meta:#93A6B0; --t-dim:#63767F; --t-green:#4FE6B8; --t-greenBg:#0F2D25; --t-greenBd:#1E6350; --t-blue:#6BAAEF; --t-blueBg:#152A3E; --t-blueBd:#2C4E70; --t-amber:#EAC170; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F08B7F; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#18262F; --t-gold:#EAC170; --t-header:#0A141C; --t-headerText:#F4F9F7;
 }
 /* auto: honor OS dark unless a manual choice set data-theme */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --t-bg:#0E1A24; --t-surface:#17272F; --t-surface2:#1D3038; --t-border:#2A4250; --t-line:#213540;
-    --t-text:#F0F6F4; --t-sub:#CAD8D5; --t-meta:#8B9FA9; --t-dim:#5E727C;
-    --t-green:#3BD3A6; --t-greenBg:#13322A; --t-greenBd:#1F5F4A;
-    --t-blue:#66A6EC; --t-blueBg:#152A3E; --t-blueBd:#2C4E70;
-    --t-amber:#E8BC6A; --t-amberBg:#302818; --t-amberBd:#5E4C28;
-    --t-red:#EF8377; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#1B2D37; --t-gold:#E8BC6A;
-    --t-header:#0A141C; --t-headerText:#F0F6F4;
+    --t-bg:#0A121A; --t-surface:#131F29; --t-surface2:#1A2933; --t-border:#22333F; --t-line:#1D2C36; --t-text:#F4F9F7; --t-sub:#D2E0DC; --t-meta:#93A6B0; --t-dim:#63767F; --t-green:#4FE6B8; --t-greenBg:#0F2D25; --t-greenBd:#1E6350; --t-blue:#6BAAEF; --t-blueBg:#152A3E; --t-blueBd:#2C4E70; --t-amber:#EAC170; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F08B7F; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#18262F; --t-gold:#EAC170; --t-header:#0A141C; --t-headerText:#F4F9F7;
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
