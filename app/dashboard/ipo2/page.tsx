@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
+import IpoCard from "@/components/ipo/IpoCard";
 
 const C = { bg:"var(--t-bg)", surface:"var(--t-surface)", surface2:"var(--t-surface2)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
   sub:"var(--t-sub)", meta:"var(--t-meta)", dim:"var(--t-dim)",
@@ -534,50 +535,8 @@ function IpoCommand() {
         })}
         {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>{
           if (liveSyms.includes(String(c.sym))) return null;
-          let subs: [string,number][] = [];
-          try { const o=JSON.parse(String(c.sub_scores||"{}")); subs=Object.entries(o) as [string,number][]; } catch {}
-          return (
-          <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:C.greenBg}:card}>
-            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-              <ScoreRing score={(c.vscore ?? c.ipo_score) as number} conf={c.vconf as number} verdict={c.verdict as string}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",marginBottom:3}}>
-                  {c.verdict!=null&&<Verdict v={c.verdict as string}/>}
-                  {c.quality_promoter===true&&<QTag/>}
-                  <State s={c.state as string}/>
-                  {c.regime!=null&&<span style={{fontSize:11.5,fontWeight:700,color:c.regime==="bull"?C.green:C.red}}>{c.regime==="bull"?"▲ bull":"▼ bear"}</span>}
-                </div>
-                <b style={{fontSize:17}}>{String(c.company_name||"")}</b>
-                {subs.length>0&&<div style={{marginTop:4,fontSize:11.5,color:C.meta,display:"flex",gap:12,flexWrap:"wrap"}}>
-                  {subs.map(([k,v])=><span key={k}>{k} <b style={{color:v>=65?C.green:v>=40?C.amber:C.red}}>{v}</b></span>)}
-                </div>}
-              </div>
-              <span style={{...num,fontSize:12,color:C.meta,textAlign:"right",flexShrink:0}}>
-                {c.issue_price!=null?`₹${c.issue_price}`:""}<br/>{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}Cr`:""}
-                {c.listing_date?<><br/>lists {D(c.listing_date)}</>:""}</span>
-            </div>
-            {c.ai_summary!=null&&<div style={{display:"flex",gap:8,marginTop:11,fontSize:13,color:C.sub,lineHeight:1.5,
-              background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"9px 12px"}}>
-              <span>🤖</span><span>{String(c.ai_summary)}</span></div>}
-            {c.final_qib!=null&&<div style={{display:"flex",gap:12,alignItems:"center",marginTop:9,flexWrap:"wrap"}}>
-              <span style={{fontSize:12,color:C.meta,minWidth:30}}>QIB</span>
-              <div style={{height:7,borderRadius:4,background:C.grayBg,flex:1,minWidth:120,position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",inset:0,width:`${Math.min(100,Number(c.final_qib))}%`,background:C.green,borderRadius:4}}/></div>
-              <span style={{...num,fontWeight:700,color:C.green}}>{Number(c.final_qib).toFixed(1)}×</span>
-              {c.final_total!=null&&<span style={{...num,fontSize:12,color:C.meta}}>Total {Number(c.final_total).toFixed(1)}×</span>}</div>}
-            <Reasons trade={c.why_trade as string} passes={c.why_passes as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
-            <StreetConsensus consensus={c.street_consensus as string} brokers={c.street_brokers as number} verdict={c.verdict as string}/>
-            <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number} verdict={c.verdict as string}/>
-            <TrustReport gate={c.rhp_gate as string} oneLine={c.rhp_one_line as string} mos={c.rhp_mos as string} full={c.rhp_full} confidence={c.rhp_confidence as string} company={String(c.company_name||"")}/>
-            <FairValueCard c={c}/>
-            <WeakOpenFlag c={c}/>
-            {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
-              <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
-              <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
-              <span>▸ <b style={{color:C.text}}>Order</b> ICICI GTT-OCO</span></div>}
-            {c.verdict==="WATCH"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.blue}}>
-              👁 On listing day: check the gap against the Playbook — quality passes, the gap decides the trade.</div>}
-          </div>);})}
+          return <IpoCard key={i} c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}/>;
+        })}
       </>}
 
       {/* PLAYBOOK */}
