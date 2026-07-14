@@ -44,6 +44,19 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 - Whole app, every screen, cohesive. Fix: readability (contrast, near-black text, whitespace)
 - STATUS: palette locked, build as ONE big careful pass.
 
+## 🔬 NEW RESEARCH (from Rakesh's insights)
+### 12. Negative-listing pattern study
+- Turtlemint listed -10% → that's WHY it popped after (weak hands shaken out, bounce)
+- Negative listings = different playbook (buy the bounce, not panic)
+- Testing: do neg-listers share traits (P/E, OFS%, GMP)? Can GMP predict a negative listing?
+- If predictable → real edge: know to expect dip-then-pop pre-listing
+- STATUS: research_bundle.py tests this. Run + review.
+
+### 13. Real-time exit architecture (DECIDED)
+- MODE A (daily, from stored candles): journey page hold decision. NO new infra. 95% of value.
+- MODE B (live Kite/OBIR): listing-day page only, intraday. Reuses existing OBIR/tape code.
+- lock8/trail12 needs: entry (stored at listing) + peak (daily high) + today's price.
+
 ## 🔧 INFRA / DATA HYGIENE
 ### 7. Pipeline timing — add pre-open (~08:00 IST) + post-close (~19:00 IST) runs for final subscription
 ### 8. "candles: full NSE universe" step fails (exit 1) + re-bloats price_candles — trim it
