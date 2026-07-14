@@ -16,19 +16,22 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 - × IPO-structure factor ±10% (fresh vs OFS, use of proceeds)
 - Output: IPO price · fair value · margin of safety · undervalued/fair/rich
 - DATA: buildable for ~400 IPOs (peer_median_pe 428, ipo_pe 392, cagr 427, roe 246, D/E 476, ofs_pct 316). Thin where peer data missing → show "insufficient data" honestly.
-- STATUS: data confirmed, ready to build.
+- SBI parser DOES extract peer_median_pe/peer_ps/peer_name (parse_sbi_notes.py L56-90). peer_median_pe=428 already good. Run parser over all 240 notes to fill more.
+- STATUS: data confirmed + parser works, ready to build.
 
 ### 3. Dynamic Exit Strategy  [NO hard-code — backtested]
 - Turtlemint proof: hard +20% caps winners (₹152→sold at +20% misses ₹145 exit after ₹147 peak)
 - BACKTEST RESULT (357 IPOs): hold-to-30 avg100%/median20%/worst-76%; target+20% win76% but caps upside; trail-15% avg27%/worst-15% (lets winners run, caps loss)
-- NEXT: refined backtest — trailing stop that WIDENS as gain grows + distribution-signal exit. Find the rule that beats both.
-- STATUS: v1 backtest done. Need refined backtest → then bake into journey page.
+- ✅ WINNER (v2 backtest, 357 IPOs): PROFIT-LOCK — avg 42%, win 57%, worst -18%, captures 27% of >20% runners. Beats target+20% (caps winners) AND hold-30 (-76% blowups).
+- RULE: once +15% hit, never close below +5% floor (bank partial); else 18% trailing stop from peak.
+- STATUS: RULE LOCKED. Bake into journey page decision engine.
 
 ### 4. IPO Journey Page (listing → first anchor lock-in, ~30d)  [dedicated page]
 - Design: price-story chart (entry/VWAP/peak/low/now) + decision (hold/trim/exit + why) + lock-in timeline ribbon
 - Includes SECOND-DAY view (day 2, 3... progression) — was missing
 - Uses the 6 engines as annotations + the backtested exit rule
-- STATUS: designed, build after exit backtest refined.
+- ROLE: owns STAGE 3 (the HOLD) — your hardest, most emotional decision ("when do I sell?"). Shows profit-lock signal daily so you don't sell at the bottom (Turtlemint ₹130) or hold past distribution. This is the app's discipline motto made real.
+- STATUS: designed + role justified + exit rule LOCKED (profit-lock). Ready to build.
 
 ### 5. SBI + Hem Sonnet combined verdict  [test worth first]
 - Run cheap test: Sonnet reads both broker PDFs → combined good/junk verdict. Prove value before full build.
