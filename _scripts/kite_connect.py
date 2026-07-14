@@ -16,6 +16,19 @@ import logging
 import psycopg2
 from kiteconnect import KiteConnect
 
+# Self-load .env so DB access works even when the caller didn't export env vars
+# (the refresh script self-loads; the pipeline preflight calls us without a shell env).
+try:
+    from dotenv import load_dotenv
+    # repo root = parent of _scripts/ (this file lives in _scripts/)
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    load_dotenv(os.path.join(_root, ".env.local"))
+    load_dotenv(os.path.join(_root, ".env"))
+    load_dotenv(".env.local")  # also try cwd
+    load_dotenv(".env")
+except Exception:
+    pass
+
 log = logging.getLogger(__name__)
 
 API_KEY      = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
