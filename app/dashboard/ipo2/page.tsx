@@ -4,16 +4,32 @@
 // live capture exists. Ships at /dashboard/ipo2 for side-by-side verification;
 // cutover to /dashboard/ipo is a separate one-line commit after approval.
 import { useEffect, useState, useCallback } from "react";
+import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 
-const C = { bg:"#DDE3EC", surface:"#FBFCFD", surface2:"#F4F6FA", border:"#DAE0E8", line:"#E7EBF1", text:"#1A2438",
-  sub:"#3A4560", meta:"#68738C", dim:"#98A2B6",
-  green:"#1B7A6A", greenBg:"#E8F4F1", greenBd:"#BEE0D8",
-  blue:"#2E5A9E", blueBg:"#EAF0F9", blueBd:"#C2D4EC",
-  amber:"#9A6A12", amberBg:"#FAF2E2", amberBd:"#E8D3A0",
-  red:"#C43D2F", redBg:"#FBEEEC", redBd:"#EEC9C3", grayBg:"#EDF0F4", gold:"#A07A16" };
+const C = { bg:"var(--t-bg)", surface:"var(--t-surface)", surface2:"var(--t-surface2)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
+  sub:"var(--t-sub)", meta:"var(--t-meta)", dim:"var(--t-dim)",
+  green:"var(--t-green)", greenBg:"var(--t-greenBg)", greenBd:"var(--t-greenBd)",
+  blue:"var(--t-blue)", blueBg:"var(--t-blueBg)", blueBd:"var(--t-blueBd)",
+  amber:"var(--t-amber)", amberBg:"var(--t-amberBg)", amberBd:"var(--t-amberBd)",
+  red:"var(--t-red)", redBg:"var(--t-redBg)", redBd:"var(--t-redBd)", grayBg:"var(--t-grayBg)", gold:"var(--t-gold)" };
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+
+function ThemeToggle() {
+  const { mode, isDark, setMode } = useThemeControls();
+  // cycle: auto → light → dark → auto
+  const next = mode === "auto" ? "light" : mode === "light" ? "dark" : "auto";
+  const label = mode === "auto" ? "🌗 Auto" : mode === "light" ? "☀️ Day" : "🌙 Night";
+  return (
+    <button onClick={() => setMode(next)}
+      title={`Theme: ${mode} (tap to change)`}
+      style={{ border:`1px solid ${C.border}`, background:C.surface, color:C.text,
+        borderRadius:10, padding:"6px 13px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>
+      {label}
+    </button>
+  );
+}
 
 const BAND: Record<string,{c:string;bg:string;bd:string}> = {
   STRONG:{c:C.green,bg:C.greenBg,bd:C.greenBd}, FAVORABLE:{c:C.blue,bg:C.blueBg,bd:C.blueBd},
@@ -407,8 +423,7 @@ function IpoCommand() {
         <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
             {d ? ` refreshed ${new Date().toLocaleTimeString()}` : " loading…"}</div></div>
-        <button onClick={loadData} style={{border:`1px solid ${C.border}`,background:C.surface,
-          borderRadius:10,padding:"6px 13px",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>↻ Refresh</button>
+        <ThemeToggle/>
       </div>
 
       {/* engine strip — plain-English grades, rigor one line below */}
