@@ -37,7 +37,17 @@ function JourneyInner() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 60000) // live refresh every 60s
+    // Only poll live during IST market hours (Mon-Fri, 9:15-15:30 IST = 3:45-10:00 UTC).
+    // Outside market hours the price doesn't move, so polling would just wake Neon for nothing.
+    const inMarketHours = () => {
+      const now = new Date()
+      const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes()
+      const day = now.getUTCDay() // 0=Sun..6=Sat
+      if (day === 0 || day === 6) return false
+      return utcMin >= 225 && utcMin <= 600 // 3:45 UTC to 10:00 UTC
+    }
+    if (!inMarketHours()) return
+    const t = setInterval(() => { if (inMarketHours()) load() }, 60000)
     return () => clearInterval(t)
   }, [load])
 
