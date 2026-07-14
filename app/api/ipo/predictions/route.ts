@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
+import { neon } from "@neondatabase/serverless";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
 const connectionString =
   process.env.DATABASE_URL ||
@@ -12,21 +11,14 @@ const connectionString =
 
 if (!connectionString) throw new Error("Missing database connection string");
 
-const globalForIpo = globalThis as unknown as { ipoPredictionsPool?: Pool };
-
-const pool =
-  globalForIpo.ipoPredictionsPool ??
-  new Pool({
-    connectionString,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-    ssl: /localhost|127\.0\.0\.1|sslmode=disable/i.test(connectionString)
-      ? undefined
-      : { rejectUnauthorized: false },
-  });
-
-if (process.env.NODE_ENV !== "production") globalForIpo.ipoPredictionsPool = pool;
+// neon HTTP client (edge-compatible). Exposes .query(text, params) like pg.
+const sql = neon(connectionString);
+const pool = {
+  query: async (text: string, params?: unknown[]) => {
+    const rows = await sql.query(text, params ?? []);
+    return { rows };
+  },
+};
 
 const num = (v: unknown, fb = 0) => {
   const n = Number(v);
