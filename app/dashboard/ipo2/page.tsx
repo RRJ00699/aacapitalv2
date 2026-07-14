@@ -153,6 +153,48 @@ function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null
   </div>;
 }
 
+function FairValueCard({ c }: { c: Record<string, unknown> }) {
+  const fv = c.fair_value == null ? null : Number(c.fair_value);
+  const mos = c.fair_mos == null ? null : Number(c.fair_mos);
+  const verdict = c.fair_verdict as string | null;
+  const price = Number(c.issue_price) || 0;
+  if (fv == null || price <= 0) return null;
+  const col = verdict === "undervalued" ? C.green : verdict === "rich" ? C.red : C.amber;
+  const bg  = verdict === "undervalued" ? C.greenBg : verdict === "rich" ? C.redBg : C.amberBg;
+  const bd  = verdict === "undervalued" ? C.greenBd : verdict === "rich" ? C.redBd : C.amberBd;
+  return (
+    <div style={{ marginTop:10, padding:"12px 14px", background:bg, border:`1px solid ${bd}`, borderRadius:11 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <span style={{ fontSize:12, fontWeight:700, color:C.sub, textTransform:"uppercase", letterSpacing:.4 }}>Fair Value</span>
+        <span style={{ fontSize:11.5, fontWeight:700, color:col, textTransform:"uppercase", letterSpacing:.5 }}>{verdict}</span>
+      </div>
+      <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:7 }}>
+        <span style={{ fontSize:12.5, color:C.meta }}>Issue ₹{price.toFixed(0)}</span>
+        <span style={{ fontSize:15, color:C.dim }}>→</span>
+        <span style={{ fontSize:20, fontWeight:800, color:col }}>₹{fv.toLocaleString()}</span>
+        {mos != null && <span style={{ fontSize:13, fontWeight:700, color:col }}>{mos>=0?"+":""}{mos}% MoS</span>}
+      </div>
+      {c.fair_note && <div style={{ fontSize:10.5, color:C.dim, marginTop:6 }}>{String(c.fair_note)}</div>}
+    </div>
+  );
+}
+
+function WeakOpenFlag({ c }: { c: Record<string, unknown> }) {
+  // Negative-listing pattern (backtested): OFS-heavy + rich P/E → often opens weak → dip-then-pop
+  const ofsPct = c.ofs_pct == null ? null : Number(c.ofs_pct);
+  const pe = c.ipo_pe == null ? null : Number(c.ipo_pe);
+  const peerPE = c.peer_median_pe == null ? null : Number(c.peer_median_pe);
+  const listed = c.listing_gap_pct != null; // only flag pre-listing
+  if (listed || ofsPct == null || ofsPct < 50) return null;
+  const rich = pe != null && peerPE != null && peerPE > 0 && pe > peerPE * 1.1;
+  if (!rich) return null;
+  return (
+    <div style={{ marginTop:8, padding:"9px 12px", background:C.amberBg, border:`1px solid ${C.amberBd}`, borderRadius:10, fontSize:12, color:C.amber }}>
+      ⚠ <b>May open weak</b> — OFS-heavy ({ofsPct.toFixed(0)}%) + rich vs peers. Often dips then pops (buy-the-bounce setup, not a panic).
+    </div>
+  );
+}
+
 function TrustReport({ gate, oneLine, mos, full, confidence, company }:
   { gate?:string|null; oneLine?:string|null; mos?:string|null; full?:any; confidence?:string|null; company?:string }) {
   const [open,setOpen] = useState(false);
@@ -503,6 +545,8 @@ function IpoCommand() {
             <StreetConsensus consensus={c.street_consensus as string} brokers={c.street_brokers as number} verdict={c.verdict as string}/>
             <Flags red={c.red_flags as string} green={c.green_checks as string} redCount={c.red_count as number} greenCount={c.green_count as number} verdict={c.verdict as string}/>
             <TrustReport gate={c.rhp_gate as string} oneLine={c.rhp_one_line as string} mos={c.rhp_mos as string} full={c.rhp_full} confidence={c.rhp_confidence as string} company={String(c.company_name||"")}/>
+            <FairValueCard c={c}/>
+            <WeakOpenFlag c={c}/>
             {c.verdict==="TRADE"&&<div style={{marginTop:10,paddingTop:9,borderTop:`1px dashed ${C.border}`,fontSize:12,color:C.meta,display:"flex",gap:15,flexWrap:"wrap"}}>
               <span>▸ <b style={{color:C.text}}>Entry</b> buy at open</span>
               <span>▸ <b style={{color:C.text}}>Exit</b> trailing −5%</span>
