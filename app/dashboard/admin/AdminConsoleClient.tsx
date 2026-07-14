@@ -17,26 +17,20 @@ const C = {
 };
 
 // Mirrors the whitelist in _scripts/job_runner.py, with human labels.
+// IPO Power House — IPO-only job catalog. Mirrors the IPO-only whitelist in
+// _scripts/job_runner.py. Non-IPO jobs (theses, exit/base backtests, coverage,
+// universe backfill, screener, convergence) removed.
 const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }[] = [
-  { key: "pipeline",        label: "Run full pipeline",     desc: "scrape → regime → candles → listing-open → consolidated → levels → health", heavy: true },
+  { key: "pipeline",        label: "Run full pipeline",     desc: "scrape → enrich → GMP → delivery → candles → SBI → score → verdicts → consolidated → RHP → backup", heavy: true },
   { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Full pipeline plus the Sunday data purge", heavy: true },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
   { key: "levels",          label: "Rebuild daily levels",  desc: "Recompute floor/ceiling → ipo_daily_levels" },
-  { key: "theses",          label: "Re-test theses",        desc: "Re-run the untested-thesis checks" },
-  { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
-  { key: "exit_backtest",   label: "Exit-rule backtest",    desc: "Which first-5-day exit maximizes return after buying the open (read-only)" },
-  { key: "coverage",        label: "Data coverage report",  desc: "Row counts + freshness for every core table — the truth button" },
-  { key: "universe_candles",label: "Sync universe candles", desc: "All-NSE daily OHLCV, rolling 5 days (Kite)" },
-  { key: "universe_backfill",label:"Backfill universe (3yr)",desc: "Heavy one-time: 3 years of candles for the full universe", heavy: true },
-  { key: "screener_download",label:"Screener: download stale",desc:"10-yr Excel sheets for missing/behind companies (needs SCREENER_USERNAME/PASSWORD in VM .env)", heavy: true },
-  { key: "screener_import", label: "Screener: import",      desc: "Parse downloaded sheets into annual_financials" },
-  { key: "screener_fetch",   label: "Screener: fetch via cookie", desc: "Download missing/stale 10-yr sheets using your browser cookie (no login, no Cloudflare) then import runs on the files" },
-  { key: "base_backtest",   label: "Base-breakout backtest", desc: "Does buying post-listing base breakouts work? Grid of base definitions (read-only)" },
-  { key: "convergence",     label: "Rebuild Top Convergence", desc: "Recompute the Today screen ranking (5 factors, live data)" },
+  { key: "universe_candles",label: "Sync candles",          desc: "NSE daily OHLCV, rolling 5 days (Kite) — feeds post-listing dashboard" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
   { key: "rhp_auto",        label: "RHP auto (new IPOs)",   desc: "SEBI download → Sonnet extract (mainboard, $1 cap) → ipo_rhp_intel → purge PDF after anchor lock-in", heavy: true },
+  { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
 ];
 
 type Run = {
