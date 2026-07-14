@@ -398,11 +398,9 @@ function IpoCommand() {
       .catch(e => setErr(String(e)));
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
-  useEffect(() => {
-    if (!d?.live?.length) return;
-    const id = setInterval(loadData, 20000);
-    return () => clearInterval(id);
-  }, [d?.live?.length, loadData]);
+  // Note: IPO command data refreshes nightly (16:00 IST pipeline), so we do NOT
+  // poll on an interval — that kept Neon compute awake 24/7 and drove the bill up.
+  // The user can pull-to-refresh or reopen the app to re-fetch.
 
   const cards = d?.cards || [];
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
