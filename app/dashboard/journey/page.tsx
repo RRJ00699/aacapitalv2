@@ -12,9 +12,9 @@ type Journey = {
 }
 
 const C = {
-  bg: "#12202B", card: "#182A36", bd: "#274050", text: "#EAF1EF",
-  meta: "#7E93A0", green: "#4FE0B4", greenBg: "#16302A", greenBd: "#1E5C48",
-  red: "#E67C73", redBg: "#301A18", redBd: "#5C2A26", gold: "#F0C674",
+  bg: "var(--t-bg)", card: "var(--t-surface)", bd: "var(--t-border)", text: "var(--t-text)",
+  meta: "var(--t-meta)", green: "var(--t-green)", greenBg: "var(--t-greenBg)", greenBd: "var(--t-greenBd)",
+  red: "var(--t-red)", redBg: "var(--t-redBg)", redBd: "var(--t-redBd)", gold: "var(--t-gold)",
 }
 
 export default function JourneyPage() {
