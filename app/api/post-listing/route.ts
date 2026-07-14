@@ -82,6 +82,11 @@ export async function GET(req: NextRequest) {
         note: "No candles yet — signals appear once trading data lands." });
     }
 
+    // delivery % — recent NSE bhavcopy delivery data (low delivery = intraday churn, not real buying)
+    const delivRows = (await sql`
+      SELECT date, delivery_percentage FROM delivery_data
+      WHERE UPPER(symbol) = ${symbol} ORDER BY date DESC LIMIT 10`) as { date: string; delivery_percentage: number }[];
+
     const last = rows[rows.length - 1];
     const first = rows[0];
     const window = rows.slice(-20);               // last 20 sessions for profile
@@ -148,6 +153,27 @@ export async function GET(req: NextRequest) {
       distribution: "EXIT. Price is below institutional cost and the heavy-volume floor is broken. This is the ego-trade trap — do not wait for it to 'come back.' Cut it.",
     }[verdict];
 
+    // delivery signal: recent avg delivery % + trend. Low/falling = distribution (intraday churn).
+    let deliverySig: { available: boolean; recentPct: number | null; trend: string | null; note: string };
+    if (delivRows.length) {
+      const pcts = delivRows.map((r) => Number(r.delivery_percentage)).filter((x) => !isNaN(x));
+      const recentPct = pcts.length ? pcts.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(3, pcts.length) : null;
+      const earlyPct = pcts.length >= 6 ? pcts.slice(-3).reduce((a, b) => a + b, 0) / 3 : null;
+      const falling = recentPct != null && earlyPct != null && recentPct < earlyPct * 0.85;
+      const low = recentPct != null && recentPct < 30;
+      deliverySig = {
+        available: true, recentPct,
+        trend: falling ? "falling" : "steady",
+        note: low
+          ? `Delivery ${recentPct!.toFixed(0)}% — most volume is intraday churn, not real ownership. Weak hands, not accumulation.`
+          : falling
+          ? `Delivery slipping to ${recentPct!.toFixed(0)}% — buyers turning into traders. A distribution tell.`
+          : `Delivery ${recentPct!.toFixed(0)}% — healthy share of real ownership behind the volume.`,
+      };
+    } else {
+      deliverySig = { available: false, recentPct: null, trend: null, note: "No delivery data yet for this symbol." };
+    }
+
     return NextResponse.json({
       ok: true, symbol, hasData: true,
       company: m.company_name ?? symbol,
@@ -161,7 +187,7 @@ export async function GET(req: NextRequest) {
         peakDrawdown: { peak: pDraw.peak, offPeakPct: pDraw.offPeakPct, lowerHighs: pDraw.lowerHighs },
         anchorLockin: { lock30, lock90, nextUnlockDays: upcoming },
         // forward slots — light up when data feeds run
-        delivery: { available: false, note: "Run the NSE bhavcopy feed to enable (daily, going forward)." },
+        delivery: deliverySig,
         relativeStrength: { available: false, note: "Uses the live Nifty index value (added going forward)." },
       },
     });
