@@ -71,7 +71,7 @@ function State({ s }: { s?: string | null }) {
 }
 function Verdict({ v }: { v?: string | null }) {
   const m: Record<string,[string,string,string]> = {
-    TRADE:[C.green,C.greenBg,C.greenBd], CAUTION:["#c2830c","#fdf6e6","#f0dfae"],
+    TRADE:[C.green,C.greenBg,C.greenBd], CAUTION:[C.amber,C.amberBg,C.amberBd],
     WATCH:[C.blue,C.blueBg,C.blueBd], AVOID:[C.red,C.redBg,C.redBd] };
   const [c,bg,bd] = m[v || ""] || m.CAUTION;
   const icon = v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":v==="WATCH"?"👁 ":"⚠ ";
@@ -80,14 +80,14 @@ function Verdict({ v }: { v?: string | null }) {
     {icon}{v || "CAUTION"}</span>;
 }
 function QTag() {
-  return <span style={{color:C.gold||"#c99a2e",background:"#fdf7e6",border:"1px solid #f0dfae",
+  return <span style={{color:C.gold,background:C.amberBg,border:`1px solid ${C.amberBd}`,
     borderRadius:5,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>★ Quality promoter</span>;
 }
 function Reasons({ trade, passes, caution, avoid }: { trade?:string|null; passes?:string|null; caution?:string|null; avoid?:string|null }) {
   const rows: [string,string,string,string][] = [];
   (trade||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["PASS",C.green,C.greenBg,t]));
   (passes||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["✓",C.green,C.greenBg,t]));
-  (caution||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["CHECK","#c2830c","#fdf6e6",t]));
+  (caution||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["CHECK",C.amber,C.amberBg,t]));
   (avoid||"").split(" ; ").filter(Boolean).forEach(t=>rows.push(["JUNK",C.red,C.redBg,t]));
   if(!rows.length) return null;
   return <div style={{marginTop:9}}>{rows.map(([lab,col,bg,txt],i)=>(
@@ -97,12 +97,12 @@ function Reasons({ trade, passes, caution, avoid }: { trade?:string|null; passes
 }
 function ScoreRing({ score, conf, verdict }: { score?: number|null; conf?: number|null; verdict?: string|null }) {
   if (score == null) {
-    const vcol = verdict==="TRADE"?C.green:verdict==="WATCH"?C.blue:verdict==="CAUTION"?"#c2830c":verdict==="AVOID"?C.red:C.dim;
+    const vcol = verdict==="TRADE"?C.green:verdict==="WATCH"?C.blue:verdict==="CAUTION"?C.amber:verdict==="AVOID"?C.red:C.dim;
     return <div style={{width:56,textAlign:"center"}}>
       <div style={{width:52,height:52,borderRadius:"50%",border:`3px dashed ${verdict?vcol:C.border}`,display:"grid",placeItems:"center",fontSize:verdict?9:10,fontWeight:700,color:verdict?vcol:C.dim,margin:"0 auto",lineHeight:1,padding:2}}>{verdict||"n/a"}</div>
       <div style={{fontSize:8.5,color:C.dim,marginTop:2,textTransform:"uppercase",letterSpacing:.5}}>{verdict?"pre-listing":"data thin"}</div></div>;
   }
-  const col = score>=65?C.green:score>=40?"#c2830c":C.red;
+  const col = score>=65?C.green:score>=40?C.amber:C.red;
   const r=22, c=2*Math.PI*r, off=c*(1-score/100);
   return <div style={{width:56,textAlign:"center"}}>
     <div style={{position:"relative",width:52,height:52,margin:"0 auto"}}>
@@ -119,12 +119,12 @@ function StreetConsensus({ consensus, brokers, verdict }: { consensus?:string|nu
   // historical honesty: STRONG APPLY underperformed APPLY at open (crowd conviction isn't edge)
   const cLabel = String(consensus);
   const bn = brokers ?? 0;
-  const cColor = cLabel.includes("STRONG") ? "#8a6d0b" : cLabel==="APPLY" ? C.green : cLabel==="AVOID" ? C.red : C.dim;
+  const cColor = cLabel.includes("STRONG") ? C.amber : cLabel==="APPLY" ? C.green : cLabel==="AVOID" ? C.red : C.dim;
   // do we diverge? (we say caution/avoid while street says apply)
   const weCautious = verdict==="AVOID" || verdict==="CAUTION";
   const streetBullish = cLabel.includes("APPLY");
   const diverge = weCautious && streetBullish;
-  return <div style={{marginTop:9,padding:"9px 12px",borderRadius:9,background:"#faf9f6",border:`1px solid ${C.border}`}}>
+  return <div style={{marginTop:9,padding:"9px 12px",borderRadius:9,background:C.surface2,border:`1px solid ${C.border}`}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div style={{fontSize:12.5}}>
         <span style={{color:C.dim,fontWeight:600}}>Street:</span>{" "}
@@ -158,7 +158,7 @@ function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null
       {gc>0 && <span style={{color:C.green}}>✓ {gc} pass{gc>1?"es":""}</span>}
       <span style={{color:C.dim,fontWeight:600,fontSize:11}}>{open?"▲ hide":"▼ details"}</span>
     </div>
-    {riskLine && verdict!=="AVOID" && <div style={{marginTop:6,fontSize:12,color:rc>=4?C.red:"#c2830c",background:rc>=4?C.redBg:"#fdf6e6",border:`1px solid ${rc>=4?C.redBd:"#f0dfae"}`,borderRadius:8,padding:"7px 11px",display:"flex",gap:7}}>
+    {riskLine && verdict!=="AVOID" && <div style={{marginTop:6,fontSize:12,color:rc>=4?C.red:C.amber,background:rc>=4?C.redBg:C.amberBg,border:`1px solid ${rc>=4?C.redBd:C.amberBd}`,borderRadius:8,padding:"7px 11px",display:"flex",gap:7}}>
       <span>⚠️</span><span>{riskLine}</span></div>}
     {open && <div style={{marginTop:7}}>
       {reds.map((t,i)=><div key={"r"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
@@ -216,8 +216,8 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
   const [open,setOpen] = useState(false);
   if (!gate && !oneLine) return null;
   const gc: Record<string,[string,string,string]> = {
-    clean:["#0e7a4d","#e7f7ef","#bfe6d2"], watch:["#b7791f","#fdf6e6","#efdcae"],
-    reject:["#c0392b","#fdeceb","#f5cdc8"] };
+    clean:[C.green,C.greenBg,C.greenBd], watch:[C.amber,C.amberBg,C.amberBd],
+    reject:[C.red,C.redBg,C.redBd] };
   const [col,bg,bd] = gc[(gate||"watch").toLowerCase()] || gc.watch;
   const fj = (typeof full==="string") ? (()=>{try{return JSON.parse(full)}catch{return null}})() : full;
   const db = fj?.db_fields || {};
@@ -246,12 +246,12 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
         {confidence && <span style={{fontSize:10.5,color:"#888"}}>· confidence {confidence}</span>}
         <span style={{marginLeft:"auto",fontSize:11,color:col}}>{open?"▲ hide":"▼ details"}</span>
       </div>
-      {oneLine && <div style={{padding:"9px 13px",fontSize:12.5,color:"#3a4152",lineHeight:1.5,borderTop:`1px solid ${bd}`}}>{oneLine}</div>}
+      {oneLine && <div style={{padding:"9px 13px",fontSize:12.5,color:C.sub,lineHeight:1.5,borderTop:`1px solid ${bd}`}}>{oneLine}</div>}
       {!clean && <div style={{padding:"0 13px 9px",display:"flex",gap:6,flexWrap:"wrap"}}>
         {flags.map((f,i)=><span key={i} style={{fontSize:11,color:col,background:bg,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px"}}>{f}</span>)}
       </div>}
-      {clean && oneLine && <div style={{padding:"0 13px 9px",fontSize:11.5,color:"#0e7a4d"}}>✓ No governance red flags in the RHP</div>}
-      {open && fj && <div style={{padding:"11px 13px",borderTop:`1px solid ${bd}`,fontSize:12,color:"#3a4152",lineHeight:1.55}}>
+      {clean && oneLine && <div style={{padding:"0 13px 9px",fontSize:11.5,color:C.green}}>✓ No governance red flags in the RHP</div>}
+      {open && fj && <div style={{padding:"11px 13px",borderTop:`1px solid ${bd}`,fontSize:12,color:C.sub,lineHeight:1.55}}>
         {fj.trust_summary && <p style={{marginBottom:9}}>{fj.trust_summary}</p>}
         {Array.isArray(fj.top_3_material_risks) && fj.top_3_material_risks.length>0 && <>
           <div style={{fontWeight:700,fontSize:11,textTransform:"uppercase",letterSpacing:.4,color:"#666",margin:"8px 0 5px"}}>Top material risks</div>
@@ -266,7 +266,7 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
   );
 }
 
-const card: React.CSSProperties = { background:"linear-gradient(180deg,#FBFCFD,#F4F6FA)", border:`1px solid ${C.border}`,
+const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:16, padding:"16px 18px", marginBottom:14,
   boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 12px 32px -10px rgba(28,36,58,.28), 0 3px 10px -3px rgba(28,36,58,.16)" };
 const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
@@ -291,7 +291,7 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%"}}>
       {ceil != null && floor != null &&
-        <rect x="0" y={y(ceil)} width={W} height={Math.max(0,y(floor)-y(ceil))} fill="#EFF6FF"/>}
+        <rect x="0" y={y(ceil)} width={W} height={Math.max(0,y(floor)-y(ceil))} fill={C.blueBg}/>}
       {ceil != null && <><line x1="0" y1={y(ceil)} x2={W} y2={y(ceil)} stroke={C.blue} strokeDasharray="6 4"/>
         <text x="5" y={y(ceil)-4} fontSize="10" fill={C.blue}>ceiling ₹{ceil}</text></>}
       {floor != null && <><line x1="0" y1={y(floor)} x2={W} y2={y(floor)} stroke={C.red} strokeDasharray="6 4"/>
@@ -526,7 +526,7 @@ function IpoCommand() {
           let subs: [string,number][] = [];
           try { const o=JSON.parse(String(c.sub_scores||"{}")); subs=Object.entries(o) as [string,number][]; } catch {}
           return (
-          <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:"#fbfffc"}:card}>
+          <div key={i} style={c.verdict==="TRADE"?{...card,borderLeft:`4px solid ${C.green}`,background:C.greenBg}:card}>
             <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
               <ScoreRing score={(c.vscore ?? c.ipo_score) as number} conf={c.vconf as number} verdict={c.verdict as string}/>
               <div style={{flex:1,minWidth:0}}>
@@ -538,7 +538,7 @@ function IpoCommand() {
                 </div>
                 <b style={{fontSize:17}}>{String(c.company_name||"")}</b>
                 {subs.length>0&&<div style={{marginTop:4,fontSize:11.5,color:C.meta,display:"flex",gap:12,flexWrap:"wrap"}}>
-                  {subs.map(([k,v])=><span key={k}>{k} <b style={{color:v>=65?C.green:v>=40?"#c2830c":C.red}}>{v}</b></span>)}
+                  {subs.map(([k,v])=><span key={k}>{k} <b style={{color:v>=65?C.green:v>=40?C.amber:C.red}}>{v}</b></span>)}
                 </div>}
               </div>
               <span style={{...num,fontSize:12,color:C.meta,textAlign:"right",flexShrink:0}}>
@@ -606,7 +606,7 @@ function IpoCommand() {
             <p style={{fontSize:11,color:C.dim,marginTop:-2}}>Small samples (n&lt;10 ⚠) are directional only. Buy-open edges are modest by design — the pop is largely priced in at open.</p>
           </div>;
         })()}
-        <div style={{...card, background:"#FFFBEB", border:"1.5px solid #FDE68A"}}>
+        <div style={{...card, background:C.amberBg, border:`1.5px solid ${C.amberBd}`}}>
           <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
             Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
@@ -620,13 +620,13 @@ function IpoCommand() {
              "Low price bands (under ₹300) and fresh-issue IPOs (not sell-heavy) win far more at open. Two iterations passed (2026-07-10, 2026-07-13)."],
           ].map(([n,t,d2])=>(
             <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
-              <div style={{minWidth:34,height:34,borderRadius:"50%",background:"#B8860B",color:"#fff",
+              <div style={{minWidth:34,height:34,borderRadius:"50%",background:C.gold,color:"#fff",
                 display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16}}>{n}</div>
               <div><div style={{fontWeight:800,fontSize:13.5}}>{t}</div>
                 <div style={{fontSize:12.5,color:C.sub,marginTop:2}}>{d2}</div></div>
             </div>))}
-          <div style={{marginTop:10,padding:"9px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",
-            borderRadius:9,fontSize:12.5,color:"#166534"}}>
+          <div style={{marginTop:10,padding:"9px 12px",background:C.greenBg,border:`1px solid ${C.greenBd}`,
+            borderRadius:9,fontSize:12.5,color:C.green}}>
             <b>The honest math (two iterations: 2026-07-10 &amp; 2026-07-13):</b> the core giant-opens-positive trade wins
             ~92 in 100; adding 30+ anchors on a mega issue reaches <b>85% with a near-zero downside floor</b>.
             Everything outside the rules — small, pricey, euphoric, or reject — is watch-only.
@@ -640,10 +640,10 @@ function IpoCommand() {
             Tradeable signal tested <b>2026-07-13</b> on 585 clean IPOs (2016+); quality gate = RHP forensic read of 448 prospectuses.
           </div>
           {[
-            ["Q","Quality gate (before listing)","#2E5A9E","#EAF0F9","#C2D4EC",
+            ["Q","Quality gate (before listing)",C.blue,C.blueBg,C.blueBd,
              "RHP forensic read of the prospectus → clean / watch / reject. A reject is a hard pass. This is the junk filter, not the entry — it tells you what NOT to touch.",
              "448 prospectuses read"],
-            ["T","Tradeable signal (buy at open)","#16A34A","#F0FDF4","#BBF7D0",
+            ["T","Tradeable signal (buy at open)",C.green,C.greenBg,C.greenBd,
              "Giant issue (>₹2000cr) opening positive, best at +15%+. The measured open-buy edge. Small issues (<500cr) and euphoric >50% pops are excluded.",
              "92% win · +20% median · n=25"],
           ].map(([tag,name,col,bg,bd,desc,stat])=>(
@@ -719,7 +719,7 @@ function IpoCommand() {
         <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Verdict</th>
-            <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th></tr></thead>
+            <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th><th style={th}>Journey</th></tr></thead>
           <tbody>{(d?.post||[]).map((r,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}</td>
@@ -727,7 +727,8 @@ function IpoCommand() {
               <td style={td}>{String(r.gap_bucket||"—")}</td>
               <td style={{...td,...num}}>{r.listing_gap_pct!=null?`${Number(r.listing_gap_pct).toFixed(1)}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:N(r.d10_best_pct)==null?C.dim:(N(r.d10_best_pct)!>0?C.green:C.red)}}>
-                {r.d10_best_pct!=null?`${Number(r.d10_best_pct).toFixed(1)}%`:"pending"}</td></tr>))}</tbody>
+                {r.d10_best_pct!=null?`${Number(r.d10_best_pct).toFixed(1)}%`:"pending"}</td>
+              <td style={td}>{r.sym?<a href={`/dashboard/journey?sym=${r.sym}`} style={{color:C.blue,fontWeight:600,textDecoration:"none"}}>hold →</a>:"—"}</td></tr>))}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Misses feed the quarterly re-weight. 10-session outcomes precompute nightly.</div>
       </div>}
