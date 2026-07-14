@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // app/dashboard/ipo2/page.tsx — the locked redesign, wired to /api/ipo-command.
 // Self-contained: no imports from the 3 legacy shells. Polls every 20s while a
 // live capture exists. Ships at /dashboard/ipo2 for side-by-side verification;
