@@ -7,6 +7,16 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { requireUser } from "@/lib/api-guard";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+
+// KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
+// every page load. Data only changes nightly (cron), so a short TTL is safe.
+const CACHE_KEY = "ipo-command:v1";
+const CACHE_TTL_S = 600; // 10 min — Neon queried at most ~6x/hr instead of every load
+async function getKV(): Promise<KVNamespace | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: KVNamespace }).CACHE ?? null; }
+  catch { return null; } // not on CF (local/Vercel) → no cache, query direct
+}
 
 export const dynamic = "force-dynamic";
 const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
@@ -14,6 +24,15 @@ const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
 export async function GET() {
   const gate = await requireUser();
   if (gate) return gate;
+
+  const kv = await getKV();
+  if (kv) {
+    try {
+      const cached = await kv.get(CACHE_KEY);
+      if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
+    } catch { /* cache read failed — fall through to DB */ }
+  }
+
   try {
     const cards = await sql`
       SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, c.issue_size_cr,
@@ -285,8 +304,10 @@ export async function GET() {
                playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c) };
     });
 
-    return NextResponse.json({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
+    const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
       generated_at: new Date().toISOString() });
+    if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
+    return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
