@@ -6,7 +6,7 @@ import { neon } from "@neondatabase/serverless"
 
 export const dynamic = "force-dynamic"
 
-const API_KEY = process.env.KITE_API_KEY || "br9m41pn8nvvywnl"
+const API_KEY = process.env.KITE_API_KEY || ""
 
 async function getKiteToken(): Promise<string | null> {
   const sql = neon(process.env.DATABASE_URL!)

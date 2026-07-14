@@ -9,7 +9,7 @@ import { Client as LocalClient } from "pg";
 const NEON_URL  = process.env.NEON_DATABASE_URL!;
 const LOCAL_URL =
   process.env.LOCAL_DATABASE_URL ||
-  "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable";
+  process.env.LOCAL_DATABASE_URL || process.env.DATABASE_URL || "";
 
 const CLEAR_FIRST = process.argv.includes("--clear");
 

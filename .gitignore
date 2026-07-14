@@ -43,7 +43,7 @@ next-env.d.ts
 .vercel
 .env*
 
-# data files — local only
+# data files â€” local only
 /data/*.csv
 /data/**/*.xlsx
 /data/**/*.xls
@@ -51,3 +51,11 @@ next-env.d.ts
 
 __pycache__/
 *.pyc
+
+# secrets (added by security audit)
+.env.production
+.env.local
+.env*.local
+cf-secrets.json
+.dev.vars
+.dev.vars*
