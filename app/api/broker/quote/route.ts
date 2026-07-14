@@ -4,6 +4,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getBroker } from "@/lib/brokers"
 import { audit, clientIp } from "@/lib/security/audit"
+import { getCloudflareContext } from "@opennextjs/cloudflare"
+
+// KV cache for live quotes — the journey poll hits this every 60s. Caching the
+// price ~30s per symbol means we don't hammer Zerodha/Yahoo (or Neon) on every
+// poll, exactly like a real trading app throttles its price feed.
+const QUOTE_TTL_S = 30
+async function getKV(): Promise<KVNamespace | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: KVNamespace }).CACHE ?? null }
+  catch { return null }
+}
 
 async function yahooQuote(sym: string) {
   // Try Yahoo Finance v8 chart for latest price
@@ -44,6 +54,15 @@ export async function GET(req: NextRequest) {
   if (!sym)
     return NextResponse.json({ error: "sym required" }, { status: 400 })
 
+  const cacheKey = `quote:${exchange}:${sym}`
+  const kv = await getKV()
+  if (kv) {
+    try {
+      const hit = await kv.get(cacheKey)
+      if (hit) return new NextResponse(hit, { headers: { "content-type": "application/json", "x-cache": "HIT" } })
+    } catch { /* fall through to live fetch */ }
+  }
+
   // Try Zerodha first
   try {
     const broker    = getBroker()
@@ -51,14 +70,18 @@ export async function GET(req: NextRequest) {
     if (connected) {
       const quote = await broker.getQuote(sym, exchange)
       await audit("broker.quote.read", { ip: clientIp(req), detail: { sym, exchange } })
-      return NextResponse.json({ ok: true, ...quote, source: "zerodha" })
+      const body = JSON.stringify({ ok: true, ...quote, source: "zerodha" })
+      if (kv) { try { await kv.put(cacheKey, body, { expirationTtl: QUOTE_TTL_S }) } catch {} }
+      return new NextResponse(body, { headers: { "content-type": "application/json", "x-cache": "MISS" } })
     }
   } catch { /* fall through */ }
 
   // Zerodha offline → Yahoo Finance fallback
   try {
     const quote = await yahooQuote(sym)
-    return NextResponse.json(quote)
+    const body = JSON.stringify(quote)
+    if (kv) { try { await kv.put(cacheKey, body, { expirationTtl: QUOTE_TTL_S }) } catch {} }
+    return new NextResponse(body, { headers: { "content-type": "application/json", "x-cache": "MISS" } })
   } catch (err: any) {
     return NextResponse.json(
       { error: "Price unavailable", sym, source: "none" },
