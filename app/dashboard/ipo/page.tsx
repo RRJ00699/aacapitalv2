@@ -9,11 +9,14 @@ import { neon } from "@neondatabase/serverless";
 import IPOCommandCenterClient from "./IPOCommandCenterClient";
 import type { IPORow } from "@/components/ipo/IpoSignalCard";
 
-const sql = neon(process.env.NEON_DATABASE_URL!);
+export const dynamic = "force-dynamic"; // render at request time; never pre-render at build (DB not available then)
 
-export const revalidate = 900; // 15 min
+function getSql() {
+  return neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+}
 
 async function getIPOs(): Promise<IPORow[]> {
+  const sql = getSql();
   const r = await sql`
     SELECT
       ROW_NUMBER() OVER (ORDER BY listing_date DESC NULLS LAST, company_name) AS id,
@@ -80,6 +83,7 @@ async function getIPOs(): Promise<IPORow[]> {
 }
 
 async function getSummaryStats() {
+  const sql = getSql();
   const r = await sql`
     SELECT
       COUNT(*) FILTER (WHERE ipo_status IN ('OPEN','ALLOTMENT_PENDING'))                 AS open_count,
