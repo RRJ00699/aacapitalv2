@@ -12,7 +12,7 @@ type Sig = {
   anchorLockin: { lock30: number | null; lock90: number | null; nextUnlockDays: number | null };
   volumeFade: { fading: boolean; recentUpVol: number | null; earlyUpVol: number | null };
   peakDrawdown: { peak: number | null; offPeakPct: number | null; lowerHighs: boolean };
-  delivery: { available: boolean; note: string };
+  delivery: { available: boolean; recentPct: number | null; trend: string | null; note: string };
   relativeStrength: { available: boolean; note: string };
 };
 type Data = {
@@ -187,9 +187,23 @@ export default function PostListingDashboard({ symbol }: { symbol: string }) {
         </Card>
       </div>
 
+      {/* Delivery % — live when the bhavcopy feed has data */}
+      {s.delivery.available && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
+          <Card title="Delivery %" hint="real ownership vs churn"
+            tone={s.delivery.recentPct != null && s.delivery.recentPct < 30 ? "bad" : s.delivery.trend === "falling" ? "warn" : "good"}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: s.delivery.recentPct != null && s.delivery.recentPct < 30 ? "#B23A2E" : "#0F6E56" }}>
+              {s.delivery.recentPct != null ? `${fmt(s.delivery.recentPct, 0)}%` : "—"}
+              {s.delivery.trend === "falling" && <span style={{ fontSize: 12, color: "#B23A2E", marginLeft: 8 }}>▼ falling</span>}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12.5, color: "#5A6472", lineHeight: 1.5 }}>{s.delivery.note}</div>
+          </Card>
+        </div>
+      )}
+
       {/* ── FORWARD SLOTS — light up when feeds run ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
-        {[["Delivery %", s.delivery.note], ["Relative strength vs Nifty", s.relativeStrength.note]].map(([t, note]) => (
+        {[...(s.delivery.available ? [] : [["Delivery %", s.delivery.note]]), ["Relative strength vs Nifty", s.relativeStrength.note]].map(([t, note]) => (
           <div key={t} style={{ background: "#F7F8FA", border: "1px dashed #D5DAE1", borderRadius: 14, padding: "14px 16px" }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#98A1AE" }}>{t}</span>
             <p style={{ margin: "6px 0 0", fontSize: 12, color: "#98A1AE" }}>{note}</p>
