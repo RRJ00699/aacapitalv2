@@ -47,6 +47,7 @@ async function dbAllowedOrRequest(email: string, name: string | null): Promise<b
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true, // required on Cloudflare Workers (non-Vercel host) — else "Configuration" error
+  secret: process.env.AUTH_SECRET, // explicit — Workers env auto-detection can miss it
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
