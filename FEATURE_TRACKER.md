@@ -10,7 +10,10 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 - Show LIST DATE
 - STATUS: planned. Reuses playbook engine (ipo-command L185-229) + ipo/live route.
 
-### 2. Fair Value Range  [your 3-step model]
+### 2. Fair Value Range  [your 3-step model] ✅ DONE (PR #112 merged)
+_(kept below for reference)_
+
+### 2b. Fair Value Range  [your 3-step model]
 - Base = EPS × median peer P/E
 - × Quality factor ±15% (ROE, rev CAGR, D/E vs peers)
 - × IPO-structure factor ±10% (fresh vs OFS, use of proceeds)
@@ -56,7 +59,9 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 
 ### 13. Real-time exit architecture (DECIDED)
 - MODE A (daily, from stored candles): journey page hold decision. NO new infra. 95% of value.
-- MODE B (live Kite/OBIR): listing-day page only, intraday. Reuses existing OBIR/tape code.
+- MODE B (live Kite/OBIR): journey + listing-day page. Reuses /api/broker/quote (Zerodha->Yahoo fallback).
+- ✅ RAKESH'S LIVE-EXIT INSIGHT: don't wait for EOD close. Floor/trail levels FIXED from stored candles; compare LIVE price every 60s → exit fires INTRADAY the moment price crosses floor (catches ₹193→₹180 bleed at ₹193, not close).
+- journey API route BUILT (app/api/ipo/journey) — computes levels + live decision. UI next.
 - lock8/trail12 needs: entry (stored at listing) + peak (high) + current price.
 - FREQUENCY (Rakesh): for IPOs, 2h or 4h candles better than daily — catches intraday moves during the volatile early hold without needing live tick. Check if Kite sync can pull intraday candles for IPO symbols.
 
