@@ -22,9 +22,11 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 ### 3. Dynamic Exit Strategy  [NO hard-code — backtested]
 - Turtlemint proof: hard +20% caps winners (₹152→sold at +20% misses ₹145 exit after ₹147 peak)
 - BACKTEST RESULT (357 IPOs): hold-to-30 avg100%/median20%/worst-76%; target+20% win76% but caps upside; trail-15% avg27%/worst-15% (lets winners run, caps loss)
-- ✅ WINNER (v2 backtest, 357 IPOs): PROFIT-LOCK — avg 42%, win 57%, worst -18%, captures 27% of >20% runners. Beats target+20% (caps winners) AND hold-30 (-76% blowups).
-- RULE: once +15% hit, never close below +5% floor (bank partial); else 18% trailing stop from peak.
-- STATUS: RULE LOCKED. Bake into journey page decision engine.
+- ✅ FINAL RULE (v3, tuned for TYPICAL ipo): LOCK8/TRAIL12 — avg 12%, median +2%, win 53%, worst -12%, guides on 92% of trades (silent only 8%).
+- RULE: arm at +8% gain → protect +3% floor (sell if closes below after arming); else 12% trailing stop from peak. Sell whichever fires first.
+- COVERAGE: 75% of IPOs reach +15%, 88% reach +5% (buying at listing OPEN captures the intraday spike). So the rule arms on most trades.
+- WHY not the +15% version: it stayed SILENT on choppy IPOs (Turtlemint peaked +9%, never armed). The +8% arm fixes that — guides the typical IPO.
+- STATUS: RULE LOCKED (lock8/trail12). Bake into journey page.
 
 ### 4. IPO Journey Page (listing → first anchor lock-in, ~30d)  [dedicated page]
 - Design: price-story chart (entry/VWAP/peak/low/now) + decision (hold/trim/exit + why) + lock-in timeline ribbon
