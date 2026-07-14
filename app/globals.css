@@ -1,42 +1,39 @@
 @import "tailwindcss";
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --navy: #0f172a; --blue: #1d4ed8; --green: #16a34a;
-  --red: #dc2626; --amber: #d97706; --purple: #7c3aed;
+  --navy: #0f172a; --blue: #2563EB; --green: #16A34A;
+  --red: #EF4444; --amber: #F59E0B; --purple: #7c3aed;
 }
 
-/* ── AACapital theme tokens — Slate Blue (light) default ── */
+/* ── AACapital theme — premium institutional (light) default ──
+   Palette: cream surfaces, near-black text (WCAG AA 4.5:1+), gold accent.
+   Bloomberg/Stripe/Linear-inspired. Text darkened for 8-hour readability. */
 :root, [data-theme="light"] {
-  --t-bg:#EEF2F7; --t-surface:#FFFFFF; --t-surface2:#F6F9FC; --t-border:#D8E0EB; --t-line:#EAEFF5;
-  --t-text:#0F1B2D; --t-sub:#34425A; --t-meta:#5A687E; --t-dim:#95A1B5;
-  --t-green:#0B6E52; --t-greenBg:#E2F1EB; --t-greenBd:#B4DDCE;
-  --t-blue:#1E4FA0; --t-blueBg:#E8F0FB; --t-blueBd:#BFD5F0;
-  --t-amber:#8A5A00; --t-amberBg:#FBF1DC; --t-amberBd:#E9D19A;
-  --t-red:#BE3423; --t-redBg:#FBEBE9; --t-redBd:#F0C3BC; --t-grayBg:#EAEFF5; --t-gold:#8A6A0E;
-  --t-header:#152238; --t-headerText:#EEF3FA;
+  --t-bg:#F4F1EB; --t-surface:#FAF8F4; --t-surface2:#EFEBE3; --t-border:#DDD4C6; --t-line:#E6DFD3;
+  --t-text:#111827; --t-sub:#334155; --t-meta:#475569; --t-dim:#6B7280;
+  --t-green:#15803D; --t-greenBg:#E7F3EA; --t-greenBd:#BBE0C4;
+  --t-blue:#1D4ED8; --t-blueBg:#E8EFFC; --t-blueBd:#C0D3F5;
+  --t-amber:#92600A; --t-amberBg:#FBF1DC; --t-amberBd:#EAD3A0;
+  --t-red:#B91C1C; --t-redBg:#FCEBEA; --t-redBd:#F2C7C2; --t-grayBg:#EDE8E0; --t-gold:#B8860B;
+  --t-header:#E9E2D8; --t-headerText:#111827;
 }
-/* ── Midnight Teal (dark) ── */
+/* ── premium institutional (dark) — deep navy, gold accent, crisp light text ── */
 [data-theme="dark"] {
-  --t-bg:#0A121A; --t-surface:#131F29; --t-surface2:#1A2933; --t-border:#22333F; --t-line:#1D2C36; --t-text:#F4F9F7; --t-sub:#D2E0DC; --t-meta:#93A6B0; --t-dim:#63767F; --t-green:#4FE6B8; --t-greenBg:#0F2D25; --t-greenBd:#1E6350; --t-blue:#6BAAEF; --t-blueBg:#152A3E; --t-blueBd:#2C4E70; --t-amber:#EAC170; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F08B7F; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#18262F; --t-gold:#EAC170; --t-header:#0A141C; --t-headerText:#F4F9F7;
+  --t-bg:#0F172A; --t-surface:#1B2432; --t-surface2:#232F40; --t-border:#334155; --t-line:#2A3852; --t-text:#F8FAFC; --t-sub:#CBD5E1; --t-meta:#94A3B8; --t-dim:#64748B; --t-green:#22C55E; --t-greenBg:#14331F; --t-greenBd:#1E6337; --t-blue:#60A5FA; --t-blueBg:#152A44; --t-blueBd:#2C4E7A; --t-amber:#FBBF24; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F87171; --t-redBg:#3B1717; --t-redBd:#6B2E2E; --t-grayBg:#1C2637; --t-gold:#D4AF37; --t-header:#111827; --t-headerText:#F8FAFC;
 }
 /* auto: honor OS dark unless a manual choice set data-theme */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --t-bg:#0A121A; --t-surface:#131F29; --t-surface2:#1A2933; --t-border:#22333F; --t-line:#1D2C36; --t-text:#F4F9F7; --t-sub:#D2E0DC; --t-meta:#93A6B0; --t-dim:#63767F; --t-green:#4FE6B8; --t-greenBg:#0F2D25; --t-greenBd:#1E6350; --t-blue:#6BAAEF; --t-blueBg:#152A3E; --t-blueBd:#2C4E70; --t-amber:#EAC170; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F08B7F; --t-redBg:#331A17; --t-redBd:#632D28; --t-grayBg:#18262F; --t-gold:#EAC170; --t-header:#0A141C; --t-headerText:#F4F9F7;
+    --t-bg:#0F172A; --t-surface:#1B2432; --t-surface2:#232F40; --t-border:#334155; --t-line:#2A3852; --t-text:#F8FAFC; --t-sub:#CBD5E1; --t-meta:#94A3B8; --t-dim:#64748B; --t-green:#22C55E; --t-greenBg:#14331F; --t-greenBd:#1E6337; --t-blue:#60A5FA; --t-blueBg:#152A44; --t-blueBd:#2C4E7A; --t-amber:#FBBF24; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F87171; --t-redBg:#3B1717; --t-redBd:#6B2E2E; --t-grayBg:#1C2637; --t-gold:#D4AF37; --t-header:#111827; --t-headerText:#F8FAFC;
   }
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --navy: #0f172a; --blue: #1d4ed8; --green: #16a34a;
-  --red: #dc2626; --amber: #d97706; --purple: #7c3aed;
-}
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
   color: var(--t-text); background: var(--t-bg); -webkit-font-smoothing: antialiased;
   transition: background 0.2s ease, color 0.2s ease;
 }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--t-border); border-radius: 2px; }
 input, button, textarea, select { outline: none; font-family: inherit; }
 @keyframes spin { to { transform: rotate(360deg) } }
 @keyframes fade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
