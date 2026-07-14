@@ -1,71 +1,41 @@
 /**
- * db.ts — AACapital database helpers
- * - sql     => Neon/cloud DB for Vercel UI and intelligence tables
- * - localSql=> Local Postgres for large candle tables when LOCAL_DATABASE_URL exists
+ * db.ts — AACapital database helpers (edge-compatible)
+ * - sql      => Neon cloud DB (HTTP driver, works on Cloudflare Workers + Vercel)
+ * - localSql => falls back to the same Neon DB (no local Postgres on edge)
  *
- * Safe behavior:
- * - Loads .env.local / .env automatically in local dev.
- * - Does not crash Vercel build if LOCAL_DATABASE_URL is missing.
- * - Uses ssl only for cloud URLs, not localhost.
+ * Rewritten to use @neondatabase/serverless (HTTP) instead of `pg` (TCP Pool),
+ * because `pg` can't run on Cloudflare Workers (it needs pg-cloudflare/native
+ * sockets that don't bundle). The neon() HTTP driver is edge-native.
+ * Exported API is unchanged so all existing routes keep working as-is.
  */
 
-import { config } from 'dotenv'
-import { existsSync } from 'fs'
-import { Pool, type PoolConfig } from 'pg'
-import path from 'path'
-
-const envLocalPath = path.resolve(process.cwd(), '.env.local')
-const envPath = path.resolve(process.cwd(), '.env')
-if (existsSync(envLocalPath)) config({ path: envLocalPath })
-else if (existsSync(envPath)) config({ path: envPath })
-
-function isLocalUrl(url?: string | null): boolean {
-  return !!url && (/localhost|127\.0\.0\.1|\[::1\]/i.test(url) || /sslmode=disable/i.test(url))
-}
-
-function makePool(connectionString: string, name: string): Pool {
-  const cfg: PoolConfig = {
-    connectionString,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-  }
-  if (!isLocalUrl(connectionString)) cfg.ssl = { rejectUnauthorized: false }
-  const pool = new Pool(cfg)
-  pool.on('error', (err) => console.error(`[db:${name}] idle client error`, err))
-  return pool
-}
+import { neon } from '@neondatabase/serverless'
 
 const neonConnectionString = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL
-const localConnectionString = process.env.LOCAL_DATABASE_URL
 
 if (!neonConnectionString) {
   throw new Error('\n[db] DATABASE_URL or NEON_DATABASE_URL is required for AACapital cloud intelligence tables.\n')
 }
 
-const neonPool = makePool(neonConnectionString, 'neon')
-const localPool = localConnectionString ? makePool(localConnectionString, 'local') : null
+// One HTTP client; neon() is stateless (no pool/socket), safe per-request on edge.
+const client = neon(neonConnectionString)
 
 type QueryValue = unknown
 
-async function runQuery(pool: Pool, strings: TemplateStringsArray, values: QueryValue[]): Promise<any[]> {
-  let text = ''
-  strings.forEach((str, i) => {
-    text += str
-    if (i < values.length) text += `$${i + 1}`
-  })
-  const result = await pool.query(text, values as any[])
-  return result.rows
+async function runQuery(strings: TemplateStringsArray, values: QueryValue[]): Promise<any[]> {
+  // neon supports tagged-template queries with the same $1..$n semantics.
+  // Delegate directly to the neon tagged template.
+  return (await (client as any)(strings, ...values)) as any[]
 }
 
 export async function sql(strings: TemplateStringsArray, ...values: QueryValue[]): Promise<any[]> {
-  return runQuery(neonPool, strings, values)
+  return runQuery(strings, values)
 }
 
 export async function localSql(strings: TemplateStringsArray, ...values: QueryValue[]): Promise<any[]> {
-  // If LOCAL_DATABASE_URL is not available in Vercel, fall back to Neon so API routes still build/run.
-  // Routes already catch query failures and return partial data instead of crashing.
-  return runQuery(localPool || neonPool, strings, values)
+  // No local Postgres on edge — use the same Neon DB. Routes already tolerate
+  // partial data, so candle-heavy queries simply run against Neon.
+  return runQuery(strings, values)
 }
 
 export function normalizeSymbol(symbol: string | null | undefined): string {
