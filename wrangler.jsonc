@@ -4,8 +4,17 @@
   "name": "aacapital-v2",
   "compatibility_date": "2026-07-14",
   "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "ALLOWED_EMAILS": "try.rakeshreddy@gmail.com,jesravani1@gmail.com",
+    "ADMIN_EMAILS": "try.rakeshreddy@gmail.com",
+    "AUTH_URL": "https://aacapitalv2.try-rakeshreddy.workers.dev",
+    "NEXT_PUBLIC_APP_URL": "https://aacapitalv2.try-rakeshreddy.workers.dev",
+    "GITHUB_REPO": "RRJ00699/aacapitalv2",
+    "NTFY_TOPIC": "aacapital-access"
   }
 }
