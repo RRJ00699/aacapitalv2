@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
+import { requireUser } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ async function ensureTable() {
 }
 
 export async function GET() {
+  const gate = await requireUser(); if (gate) return gate;
   const admin = await getAdminEmail();
   if (!admin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   try {
@@ -62,6 +64,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   const admin = await getAdminEmail();
   if (!admin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
