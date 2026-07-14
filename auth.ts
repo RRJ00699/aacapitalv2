@@ -46,7 +46,13 @@ async function dbAllowedOrRequest(email: string, name: string | null): Promise<b
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  providers: [Google],
+  trustHost: true, // required on Cloudflare Workers (non-Vercel host) — else "Configuration" error
+  providers: [
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+    }),
+  ],
   session: { strategy: "jwt" },
   pages: { signIn: "/login", error: "/login" },
   callbacks: {
