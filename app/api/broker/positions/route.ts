@@ -2,8 +2,10 @@
 import { NextResponse } from "next/server"
 import { getBroker } from "@/lib/brokers"
 import { audit, clientIp } from "@/lib/security/audit"
+import { requireUser } from "@/lib/api-guard";
 
 export async function GET(req: Request) {
+  const gate = await requireUser(); if (gate) return gate;
   try {
     const broker = getBroker()
     const connected = await broker.isConnected()
