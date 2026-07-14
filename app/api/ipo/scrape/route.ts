@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { IPO_PIPELINE } from "@/lib/ipo/pipeline"
 import { scrapeIpoData } from "@/lib/scrapers/index"
+import { requireUser } from "@/lib/api-guard";
 
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   try {
     const body = await req.json().catch(() => ({}))
     const { name } = body

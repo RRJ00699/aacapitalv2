@@ -3,8 +3,10 @@ import { NextResponse } from "next/server"
 import { initDb } from "@/lib/db/schema"
 import { requireAdminSecret } from "@/lib/security/guard"
 import { audit, clientIp } from "@/lib/security/audit"
+import { requireUser } from "@/lib/api-guard";
 
 export async function POST(req: Request) {
+  const gate = await requireUser(); if (gate) return gate;
   // Returns 404 to anyone without x-admin-secret header (P1-B #2)
   const blocked = requireAdminSecret(req)
   if (blocked) return blocked

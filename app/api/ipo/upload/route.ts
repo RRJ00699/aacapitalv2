@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { parseSbiSecReport } from "@/lib/scrapers/index"
+import { requireUser } from "@/lib/api-guard";
 
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   try {
     const formData = await req.formData()
     const file = formData.get("file") as File | null

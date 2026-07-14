@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireUser } from "@/lib/api-guard";
 
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   try {
     const { ipo } = await req.json()
     if (!ipo) return NextResponse.json({ error: "Missing IPO data" }, { status: 400 })
