@@ -3,6 +3,7 @@
 // Called by Settings → Data Pipeline buttons
 
 import { NextRequest, NextResponse } from "next/server"
+import { requireUser } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic"
 
@@ -10,6 +11,7 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN
 const GITHUB_REPO  = process.env.GITHUB_REPO || "RRJ00699/aacapitalv2"
 
 export async function POST(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   try {
     const { mode = "full" } = await req.json()
 
