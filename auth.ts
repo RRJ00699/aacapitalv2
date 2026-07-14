@@ -9,10 +9,9 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { neon } from "@neondatabase/serverless";
 
-const ALLOWED = (process.env.ALLOWED_EMAILS ?? "")
-  .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-const ADMINS = (process.env.ADMIN_EMAILS ?? "")
-  .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+function emailList(v: string | undefined) {
+  return (v ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+}
 
 async function dbAllowedOrRequest(email: string, name: string | null): Promise<boolean> {
   try {
@@ -45,7 +44,7 @@ async function dbAllowedOrRequest(email: string, name: string | null): Promise<b
   return false;
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const { handlers, signIn, signOut, auth } = NextAuth(() => ({
   trustHost: true, // required on Cloudflare Workers (non-Vercel host) — else "Configuration" error
   secret: process.env.AUTH_SECRET, // explicit — Workers env auto-detection can miss it
   providers: [
@@ -60,6 +59,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signIn({ user }) {
       const email = user.email?.toLowerCase();
       if (!email) return false;
+      const ALLOWED = emailList(process.env.ALLOWED_EMAILS);
+      const ADMINS = emailList(process.env.ADMIN_EMAILS);
       if (ADMINS.includes(email) || ALLOWED.includes(email)) return true;   // ring 1
       if (ALLOWED.length === 0 && ADMINS.length === 0) return true;         // legacy open mode
       if (await dbAllowedOrRequest(email, user.name ?? null)) return true;  // ring 2
@@ -69,4 +70,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return !!auth?.user;
     },
   },
-});
+}));
