@@ -11,13 +11,22 @@ const connectionString =
 
 if (!connectionString) throw new Error("Missing database connection string");
 
-// neon HTTP client (edge-compatible). Exposes .query(text, params) like pg.
+// neon HTTP client (edge-compatible). Exposes .query(text, params) like pg,
+// plus a connect() that returns a client-like object (neon has no real
+// connections — each query is independent — so release() is a no-op).
 const sql = neon(connectionString);
 const pool = {
   query: async (text: string, params?: unknown[]) => {
     const rows = await sql.query(text, params ?? []);
     return { rows };
   },
+  connect: async () => ({
+    query: async (text: string, params?: unknown[]) => {
+      const rows = await sql.query(text, params ?? []);
+      return { rows };
+    },
+    release: () => {},
+  }),
 };
 
 const num = (v: unknown, fb = 0) => {
