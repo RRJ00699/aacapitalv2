@@ -67,7 +67,16 @@ _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 ### 10. Cloudflare migration — lay doc, execute fresh, Vercel stays live till proven
 ### 11. 21-table merge — fold ipo_intelligence→consolidated, resolve master/live/predictions overlap
 
+## 🔴 LIVE EXIT — architecture (Rakesh's insight, DECIDED)
+- Floor/trail LEVELS = fixed numbers from stored candles (entry + peak). Live price = one Kite quote.
+- Compare live price ≤ floor OR ≤ peak×0.88 → EXIT signal fires INTRADAY (11 AM, not EOD close).
+- Why: waiting for close bleeds ₹193→₹185. Live trigger exits at the break.
+- Infra EXISTS: /api/broker/quote (Zerodha→Yahoo fallback), /api/ipo/tape (OBIR), lib/ipo/tape.ts.
+- Journey page: fetch live quote on open + 60s auto-refresh while watching. No streaming/storage.
+- ✅ candle storage CLEAN: 21,750 rows / 432 IPO symbols (purge held, no re-bloat).
+
 ## ✅ DONE (this stretch)
+- PR #112 fair value + weak-open flag (MERGED)
 - IPO-only refactor (app/DB/pipeline/admin/cron) · PWA on phone · Kite token fix · score-circle verdict fallback · Laser RHP fuzzy-join · 3rd calculator (target ladder) · DB purge ~4M rows · delivery% + distribution signals wired · dupe-cleanup SQL (Kusumgar) · exit backtest v1
 
 ## ⚠️ DEPLOY DISCIPLINE
