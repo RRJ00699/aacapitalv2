@@ -174,7 +174,18 @@ function FairValueCard({ c }: { c: Record<string, unknown> }) {
   const mos = c.fair_mos == null ? null : Number(c.fair_mos);
   const verdict = c.fair_verdict as string | null;
   const price = Number(c.issue_price) || 0;
-  if (fv == null || price <= 0) return null;
+  if (fv == null) {
+    // honest: show WHY there's no fair value instead of a silent blank
+    const note = c.fair_note ? String(c.fair_note) : null;
+    if (!note) return null;
+    return (
+      <div style={{ marginTop:10, padding:"8px 12px", background:C.grayBg, border:`1px solid ${C.border}`, borderRadius:10 }}>
+        <span style={{ fontSize:11, fontWeight:700, color:C.meta, textTransform:"uppercase", letterSpacing:.4 }}>Fair Value</span>
+        <span style={{ fontSize:12, color:C.dim, marginLeft:8 }}>unavailable — {note}</span>
+      </div>
+    );
+  }
+  if (price <= 0) return null;
   const col = verdict === "undervalued" ? C.green : verdict === "rich" ? C.red : C.amber;
   const bg  = verdict === "undervalued" ? C.greenBg : verdict === "rich" ? C.redBg : C.amberBg;
   const bd  = verdict === "undervalued" ? C.greenBd : verdict === "rich" ? C.redBd : C.amberBd;
