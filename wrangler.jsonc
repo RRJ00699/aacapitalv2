@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "main": ".open-next/worker.js",
-  "name": "aacapital-v2",
+  "name": "aacapitalv2",
   "compatibility_date": "2026-07-14",
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
