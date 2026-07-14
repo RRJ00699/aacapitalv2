@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { IPO_PIPELINE } from "@/lib/ipo/pipeline"
+import { requireUser } from "@/lib/api-guard";
 
 async function fetchHtml(url: string): Promise<string> {
   try {
@@ -32,6 +33,7 @@ async function extractGmp(html: string, name: string): Promise<number | null> {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireUser(); if (gate) return gate;
   const active = IPO_PIPELINE.filter(i => i.status === "OPEN" || i.status === "UPCOMING")
   const results = []
 
