@@ -4,9 +4,48 @@
   --navy: #0f172a; --blue: #1d4ed8; --green: #16a34a;
   --red: #dc2626; --amber: #d97706; --purple: #7c3aed;
 }
+
+/* ── AACapital theme tokens — Slate Blue (light) default ── */
+:root, [data-theme="light"] {
+  --t-bg:#EDF1F6; --t-surface:#FFFFFF; --t-surface2:#F5F8FC; --t-border:#DDE4EE; --t-line:#E9EEF5;
+  --t-text:#17233A; --t-sub:#3C4A63; --t-meta:#5B6880; --t-dim:#8A96AC;
+  --t-green:#0F7A5E; --t-greenBg:#E4F1EC; --t-greenBd:#BBE0D3;
+  --t-blue:#2456A8; --t-blueBg:#E9F0FA; --t-blueBd:#C2D6F0;
+  --t-amber:#8A5A0E; --t-amberBg:#FBF2E0; --t-amberBd:#EAD3A0;
+  --t-red:#C23A2E; --t-redBg:#FBECEA; --t-redBd:#F0C7C1; --t-grayBg:#EBEFF5; --t-gold:#9A7414;
+  --t-header:#1B2A44; --t-headerText:#EEF3FA;
+}
+/* ── Midnight Teal (dark) ── */
+[data-theme="dark"] {
+  --t-bg:#12202B; --t-surface:#182A36; --t-surface2:#1E323F; --t-border:#274050; --t-line:#223642;
+  --t-text:#EAF1EF; --t-sub:#C4D2D0; --t-meta:#8397A2; --t-dim:#61757F;
+  --t-green:#34C79D; --t-greenBg:#16302A; --t-greenBd:#1E5C48;
+  --t-blue:#5B9BE0; --t-blueBg:#16283B; --t-blueBd:#2A4A6B;
+  --t-amber:#E0B15E; --t-amberBg:#2E2718; --t-amberBd:#5A4A28;
+  --t-red:#E67C73; --t-redBg:#301A18; --t-redBd:#5C2A26; --t-grayBg:#1C2E39; --t-gold:#E0B15E;
+  --t-header:#0E1922; --t-headerText:#EAF1EF;
+}
+/* auto: honor OS dark unless a manual choice set data-theme */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --t-bg:#12202B; --t-surface:#182A36; --t-surface2:#1E323F; --t-border:#274050; --t-line:#223642;
+    --t-text:#EAF1EF; --t-sub:#C4D2D0; --t-meta:#8397A2; --t-dim:#61757F;
+    --t-green:#34C79D; --t-greenBg:#16302A; --t-greenBd:#1E5C48;
+    --t-blue:#5B9BE0; --t-blueBg:#16283B; --t-blueBd:#2A4A6B;
+    --t-amber:#E0B15E; --t-amberBg:#2E2718; --t-amberBd:#5A4A28;
+    --t-red:#E67C73; --t-redBg:#301A18; --t-redBd:#5C2A26; --t-grayBg:#1C2E39; --t-gold:#E0B15E;
+    --t-header:#0E1922; --t-headerText:#EAF1EF;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy: #0f172a; --blue: #1d4ed8; --green: #16a34a;
+  --red: #dc2626; --amber: #d97706; --purple: #7c3aed;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #1A2438; background: #D6DCE6; -webkit-font-smoothing: antialiased;
+  color: var(--t-text); background: var(--t-bg); -webkit-font-smoothing: antialiased;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
