@@ -75,6 +75,17 @@ _NULLISH = {"", "-", "—", "n/a", "na", "nan", "none", "null", "tbd", "--"}
 
 
 # ── coercion helpers ──────────────────────────────────────────────────────────
+def norm_company(name):
+    """Canonical key for matching so 'Alpine Texworld Limited' == 'Alpine Texworld
+    Ltd.' == 'Alpine Texworld & Co'. Strips the corporate suffix, punctuation, and
+    the '&'/'and' variance, then lowercases. Prevents duplicate IPO rows."""
+    s = (name or "").lower()
+    s = s.replace("&", " and ")
+    for suf in (" limited", " ltd", " private", " pvt", " (india)", " india"):
+        s = s.replace(suf, " ")
+    return "".join(ch for ch in s if ch.isalnum())
+
+
 def clean_str(v):
     if v is None:
         return None
@@ -93,6 +104,20 @@ def clean_num(v):
         return float(s.split()[0])
     except (ValueError, IndexError):
         return None
+
+
+def size_cr(v):
+    """NSE's 'issueSize' unit is unreliable (observed values are ~1e5× the true
+    crore figure and don't map cleanly to rupees or lakhs). Rather than guess a
+    divisor and corrupt the size, we DON'T trust NSE for issue size — Chittorgarh
+    and IPOMatrix carry the correct crore value and win via COALESCE downstream.
+    Only accept an NSE value that is already in a plausible crore range."""
+    n = clean_num(v)
+    if n is None:
+        return None
+    if 1 <= n <= 100000:     # plausible as crore → accept
+        return round(n, 2)
+    return None              # implausible → drop, let a reliable source fill it
 
 
 def parse_date(v):
@@ -179,7 +204,7 @@ def normalise(item: dict, is_sme: bool) -> dict | None:
         "symbol":       first(item, "symbol", "ticker"),
         "is_sme":       is_sme,
         "issue_price":  issue_price,
-        "issue_size_cr": clean_num(first(item, "issueSize", "issueSizeCr")),
+        "issue_size_cr": size_cr(first(item, "issueSize", "issueSizeCr")),
         "lot_size":     int(clean_num(first(item, "lotSize", "marketLot", "minBidQuantity")) or 0) or None,
         "open_date":    open_d,
         "close_date":   close_d,
@@ -230,14 +255,21 @@ def upsert(rows: list[dict], dry_run: bool):
         cur = conn.cursor()
         for r in rows:
             company = r["company_name"]
-            cur.execute("SELECT id FROM ipo_intelligence WHERE company_name = %s LIMIT 1", (company,))
+            # Match on NORMALIZED name so 'Alpine Texworld Limited' updates the
+            # existing 'Alpine Texworld Ltd.' row instead of inserting a duplicate.
+            key = norm_company(company)
+            cur.execute(
+                "SELECT id, company_name FROM ipo_intelligence "
+                "WHERE regexp_replace(lower(regexp_replace(company_name,'&',' and ',  'g')),"
+                "'[^a-z0-9]|limited|ltd|private|pvt|india','','g') = %s LIMIT 1",
+                (key,))
             hit = cur.fetchone()
             fields = {k: v for k, v in r.items() if k != "company_name"}
             fields["updated_at"] = datetime.now(timezone.utc)
             if hit:
                 sets = ", ".join(f"{k} = %s" for k in fields)
-                cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE company_name = %s",
-                            list(fields.values()) + [company])
+                cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE id = %s",
+                            list(fields.values()) + [hit[0]])
             else:
                 cols = ["company_name"] + list(fields.keys())
                 ph   = ", ".join(["%s"] * len(cols))
