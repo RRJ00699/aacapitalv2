@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
         total_subscription_x,
 
         -- GMP
-        gmp_percentage,
+        gmp_day_before_pct,
         gmp_momentum,
 
         -- Deal structure
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
       retail_x:      r.rii_subscription_x  ? Number(r.rii_subscription_x)  : null,
       total_x:       r.total_subscription_x? Number(r.total_subscription_x): null,
 
-      gmp_pct:       r.gmp_percentage ? Number(r.gmp_percentage) : null,
+      gmp_pct:       r.gmp_day_before_pct ? Number(r.gmp_day_before_pct) : null,
       gmp_momentum:  r.gmp_momentum,
 
       ofs_pct:       r.ofs_pct     ? Number(r.ofs_pct)     : null,
