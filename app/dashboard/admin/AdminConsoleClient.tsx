@@ -7,13 +7,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const C = {
-  bg: "#FAFAF8", surface: "#FFFFFF", border: "#E5E7EB", hover: "#F8FAFC",
-  text: "#111827", textSub: "#374151", meta: "#6B7280", dim: "#9CA3AF",
-  green: "#16A34A", greenBg: "#F0FDF4", greenBd: "#BBF7D0",
-  blue: "#2563EB", blueBg: "#EFF6FF", blueBd: "#BFDBFE",
-  amber: "#D97706", amberBg: "#FFFBEB", amberBd: "#FDE68A",
-  red: "#DC2626", redBg: "#FEF2F2", redBd: "#FECACA",
-  grayBg: "#F3F4F6",
+  bg: "var(--t-bg)", surface: "var(--t-surface)", border: "var(--t-border)", hover: "var(--t-surface2)",
+  text: "var(--t-text)", textSub: "var(--t-sub)", meta: "var(--t-meta)", dim: "var(--t-dim)",
+  green: "var(--t-green)", greenBg: "var(--t-greenBg)", greenBd: "var(--t-greenBd)",
+  blue: "var(--t-blue)", blueBg: "var(--t-blueBg)", blueBd: "var(--t-blueBd)",
+  amber: "var(--t-amber)", amberBg: "var(--t-amberBg)", amberBd: "var(--t-amberBd)",
+  red: "var(--t-red)", redBg: "var(--t-redBg)", redBd: "var(--t-redBd)",
+  grayBg: "var(--t-grayBg)",
 };
 
 // Mirrors the whitelist in _scripts/job_runner.py, with human labels.
@@ -43,8 +43,8 @@ type Run = {
 const STATUS_STYLE: Record<string, { bg: string; bd: string; fg: string; icon: string; label: string }> = {
   queued:  { bg: C.amberBg, bd: C.amberBd, fg: C.amber, icon: "⏳", label: "Queued" },
   running: { bg: C.blueBg,  bd: C.blueBd,  fg: C.blue,  icon: "🔄", label: "Running" },
-  done:    { bg: C.greenBg, bd: C.greenBd, fg: C.green, icon: "✅", label: "Done" },
-  failed:  { bg: C.redBg,   bd: C.redBd,   fg: C.red,   icon: "❌", label: "Failed" },
+  done:    { bg: C.greenBg, bd: C.greenBd, fg: C.green, icon: "✓", label: "Done" },
+  failed:  { bg: C.redBg,   bd: C.redBd,   fg: C.red,   icon: "✕", label: "Failed" },
 };
 
 function ago(iso: string | null): string {
@@ -149,7 +149,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⚙️ Settings</a>
           <a href="/dashboard/access" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
+          <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
         </div>
         <button onClick={load} style={{
           fontSize: 12, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`,
@@ -256,7 +256,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
                     </div>
                   )}
                   <pre style={{
-                    margin: 0, fontSize: 11.5, lineHeight: 1.5, color: C.textSub, background: "#0B1020",
+                    margin: 0, fontSize: 11.5, lineHeight: 1.5, fontFamily: "var(--f-mono)", color: "#94A3B8", background: "#0B1020",
                     borderRadius: 8, padding: "10px 12px", overflowX: "auto", maxHeight: 320,
                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                   }}>
