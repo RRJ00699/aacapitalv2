@@ -30,6 +30,7 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
   { key: "rhp_auto",        label: "RHP auto (new IPOs)",   desc: "SEBI download → Sonnet extract (mainboard, $1 cap) → ipo_rhp_intel → purge PDF after anchor lock-in", heavy: true },
+    { key: "ipomatrix",       label: "IPOMatrix enrich",     desc: "Fill anchors/structure for new IPOs from IPOMatrix JSON (needs fresh cookie)", heavy: false },
   { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
 ];
 
