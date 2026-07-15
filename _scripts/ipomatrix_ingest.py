@@ -152,9 +152,13 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--limit",type=int,default=0);ap.add_argument("--apply",action="store_true")
     ap.add_argument("--id",type=int);ap.add_argument("--raw",action="store_true")
+    ap.add_argument("--only-null",action="store_true",help="only IPOs missing anchor/structure (nightly mode)")
     a=ap.parse_args()
     jwt=load_jwt()
-    if not jwt: sys.exit("No JWT — set IPOMATRIX_COOKIE in .env.local")
+    if not jwt:
+        print("IPOMatrix JWT missing/stale — SKIPPING enrichment (set IPOMATRIX_COOKIE in .env.local). "
+              "New IPOs keep Chittorgarh data; anchors fill when the cookie is refreshed.")
+        sys.exit(0)   # clean exit — nightly continues
 
     if a.id and a.raw:
         js=post(jwt,a.id); fields=extract(js)
@@ -171,8 +175,9 @@ def main():
             cur.execute(f'ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS "{col}" {typ}')
         conn.commit()
 
-    cur.execute("""SELECT id, UPPER(COALESCE(NULLIF(nse_symbol,''),symbol)), company_name, UPPER(COALESCE(isin,''))
-                   FROM ipo_intelligence WHERE listing_date IS NOT NULL
+    null_filter = " AND (anchor_count IS NULL OR ofs_pct IS NULL OR fresh_issue_cr IS NULL)" if a.only_null else ""
+    cur.execute(f"""SELECT id, UPPER(COALESCE(NULLIF(nse_symbol,''),symbol)), company_name, UPPER(COALESCE(isin,''))
+                   FROM ipo_intelligence WHERE listing_date IS NOT NULL{null_filter}
                    ORDER BY listing_date DESC""")
     todo=cur.fetchall()
     def norm(s): return re.sub(r'[^a-z0-9]','',(s or '').lower())
