@@ -83,7 +83,9 @@ def norm_name(s):
     s = (s or "").lower()
     s = re.sub(r"\b(limited|ltd\.?|ipo|india|the)\b", " ", s)
     s = re.sub(r"[^a-z0-9 ]", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    # NSE series-code artifacts at the tail ("kusumgar lt" == "kusumgar")
+    return re.sub(r"\s+(lt|o|ct)$", "", s).strip()
 
 def symbol_prefix_ok(symbol, company):
     if not symbol or not company:
@@ -108,6 +110,9 @@ def map_row(row):
     company = clean_str(row.get("Company") or pick(row, r"company|issuer"))
     if company:
         company = re.sub(r"\s*IPO$", "", company, flags=re.I).strip()
+        # strip trailing NSE series-code artifacts (" LT"/" O"/" CT") that created
+        # twin rows (Kusumgar 2026-07-15: "Ltd. LT" variant split the data)
+        company = re.sub(r"\s+(LT|O|CT)$", "", company).strip()
     return {
         "company_name":  company,
         # tilde ISO keys are authoritative (probe-verified); display keys fallback
