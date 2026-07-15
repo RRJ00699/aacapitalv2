@@ -11,6 +11,7 @@ type Journey = {
   series?: Array<{ date: string; close: number; high: number; low: number }>
 }
 
+const MONO = { fontFamily: "var(--f-mono)", fontVariantNumeric: "tabular-nums" } as const
 const C = {
   bg: "var(--t-bg)", card: "var(--t-surface)", bd: "var(--t-border)", text: "var(--t-text)",
   meta: "var(--t-meta)", green: "var(--t-green)", greenBg: "var(--t-greenBg)", greenBd: "var(--t-greenBd)",
@@ -54,7 +55,13 @@ function JourneyInner() {
   if (!sym) return <Shell><p style={{ color: C.meta }}>No IPO selected. Open a journey from an IPO card.</p></Shell>
   if (loading) return <Shell><p style={{ color: C.meta }}>Loading {sym}…</p></Shell>
   if (!d || !d.ok) return <Shell><p style={{ color: C.red }}>Couldn&apos;t load {sym}.</p></Shell>
-  if (!d.hasData) return <Shell><h2 style={{ color: C.text }}>{sym}</h2><p style={{ color: C.meta }}>{d.note}</p></Shell>
+  if (!d.hasData) return <Shell>
+    <h2 style={{ fontFamily: "var(--f-display)", color: C.text, margin: 0, fontSize: 20 }}>{sym}</h2>
+    <div style={{ marginTop: 12, border: `1px dashed ${C.bd}`, borderRadius: 12, padding: "16px 14px" }}>
+      <div style={{ color: C.meta, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Awaiting candles</div>
+      <div style={{ color: C.meta, fontSize: 12.5, marginTop: 6, lineHeight: 1.5 }}>{d.note || "The hold starts at listing — this fills on day one."}</div>
+    </div>
+  </Shell>
 
   const exit = d.decision === "EXIT"
   const decCol = exit ? C.red : C.green
@@ -74,12 +81,14 @@ function JourneyInner() {
     <Shell>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h2 style={{ color: C.text, margin: 0, fontSize: 20 }}>{sym}</h2>
+          <h2 style={{ fontFamily: "var(--f-display)", color: C.text, margin: 0, fontSize: 20, letterSpacing: -0.3 }}>{sym}</h2>
           <div style={{ color: C.meta, fontSize: 12.5, marginTop: 2 }}>Day {d.daysHeld} of 30 · the hold</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ color: exit ? C.red : C.green, fontSize: 24, fontWeight: 800 }}>₹{d.live}</div>
-          <div style={{ color: C.meta, fontSize: 11 }}>{d.gainNow! >= 0 ? "+" : ""}{d.gainNow}% vs open · {d.liveSource}</div>
+          <div style={{ ...MONO, color: exit ? C.red : C.green, fontSize: 26, fontWeight: 800, transition: "color .3s var(--ease)" }}>₹{d.live}</div>
+          <div style={{ ...MONO, color: C.meta, fontSize: 11, display: "flex", alignItems: "center", gap: 5, justifyContent: "flex-end" }}>
+            {d.gainNow! >= 0 ? "+" : ""}{d.gainNow}% vs open · {d.liveSource === "close" ? "close" : <><span className="livedot" style={{ width: 5, height: 5 }} />live</>}
+          </div>
         </div>
       </div>
 
@@ -89,12 +98,12 @@ function JourneyInner() {
           {/* floor + trail reference lines */}
           <line x1={pad} y1={y(d.floorLevel!)} x2={W - pad} y2={y(d.floorLevel!)} stroke={C.gold} strokeWidth="1" strokeDasharray="3,3" opacity="0.6" />
           <line x1={pad} y1={y(d.trailLevel!)} x2={W - pad} y2={y(d.trailLevel!)} stroke={C.red} strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />
-          <path d={line} fill="none" stroke={C.green} strokeWidth="2.5" />
+          <path d={line} fill="none" stroke={exit ? C.red : C.green} strokeWidth="2.5" style={{ transition: "stroke .3s var(--ease)" }} />
           {/* entry / peak / now dots */}
           <circle cx={x(0)} cy={y(d.entry!)} r="4" fill={C.green} />
           <circle cx={x(s.length - 1)} cy={y(d.live!)} r="5" fill="#FFFFFF" stroke={C.bg} strokeWidth="2" />
         </svg>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.meta, marginTop: 2 }}>
+        <div style={{ ...MONO, display: "flex", justifyContent: "space-between", fontSize: 10, color: C.meta, marginTop: 2 }}>
           <span>open ₹{d.entry}</span>
           <span style={{ color: C.gold }}>floor ₹{d.floorLevel}</span>
           <span style={{ color: C.gold }}>peak ₹{d.peak}</span>
@@ -104,7 +113,7 @@ function JourneyInner() {
       {/* decision cockpit */}
       <div style={{ padding: 14, background: decBg, border: `1px solid ${decBd}`, borderRadius: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ background: decCol, color: C.bg, fontSize: 13, fontWeight: 800, padding: "4px 13px", borderRadius: 7 }}>{d.decision}</span>
+          <span style={{ fontFamily: "var(--f-display)", background: decCol, color: "#fff", fontSize: 13, fontWeight: 700, padding: "5px 14px", borderRadius: 8, letterSpacing: 0.5, transition: "background .25s var(--ease)" }}>{exit ? "EXIT NOW" : d.decision}</span>
           <span style={{ color: decCol, fontSize: 12.5 }}>{d.armed ? "floor armed" : "not yet armed"}</span>
         </div>
         <div style={{ color: C.text, fontSize: 13, marginTop: 10, lineHeight: 1.5 }}>{d.reason}</div>
@@ -124,7 +133,7 @@ function JourneyInner() {
           <span>Listing</span><span>Anchor lock-in →</span>
         </div>
         <div style={{ height: 6, background: C.bd, borderRadius: 3, position: "relative" }}>
-          <div style={{ position: "absolute", left: 0, top: 0, height: 6, width: `${Math.min(100, (d.daysHeld! / 30) * 100)}%`, background: C.green, borderRadius: 3 }} />
+          <div style={{ position: "absolute", left: 0, top: 0, height: 6, width: `${Math.min(100, (d.daysHeld! / 30) * 100)}%`, background: C.green, borderRadius: 3, transition: "width .6s var(--ease)" }} />
         </div>
         <div style={{ color: C.meta, fontSize: 10.5, marginTop: 5 }}>Day {d.daysHeld} · {d.lockinDaysLeft} days to first unlock</div>
       </div>
@@ -138,14 +147,14 @@ function JourneyInner() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return <div style={{ minHeight: "100vh", background: C.bg, padding: 16 }}>
-    <div style={{ maxWidth: 440, margin: "0 auto", background: C.card, border: `1px solid ${C.bd}`, borderRadius: 16, padding: 18 }}>{children}</div>
+    <div style={{ maxWidth: 440, margin: "0 auto", background: C.card, border: `1px solid ${C.bd}`, borderRadius: 16, padding: "18px clamp(14px, 4vw, 18px)" }}>{children}</div>
   </div>
 }
 
 function Tile({ label, val, col }: { label: string; val: string; col: string }) {
   return <div style={{ background: "var(--t-bg)", border: `1px solid ${C.bd}`, borderRadius: 9, padding: "10px 12px" }}>
     <div style={{ color: C.meta, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-    <div style={{ color: col, fontSize: 16, fontWeight: 700, marginTop: 3 }}>{val}</div>
+    <div style={{ fontFamily: "var(--f-mono)", fontVariantNumeric: "tabular-nums", color: col, fontSize: 16, fontWeight: 700, marginTop: 3 }}>{val}</div>
   </div>
 }
 
