@@ -3,7 +3,7 @@
 rhp_auto.py — FUTURE-IPO RHP automation (separate cron, mainboard-only, $1 cap).
 Chains the four proven steps for NEW IPOs only:
 
-  1. DOWNLOAD  new SEBI RHP filings   (download_sebi_rhps_playwright.py, resumable
+  1. DOWNLOAD  new SEBI RHP filings   (fetch_new_rhps.py, resumable
                manifest => only new filings are fetched)
   2. EXTRACT   via Sonnet, mainboard-only + $1 cap
                (rhp_sonnet.py --year-min 2016 filters to ipo_intelligence =
