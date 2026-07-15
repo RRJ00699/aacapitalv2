@@ -72,6 +72,9 @@ def main():
     step("scrape IPO calendar + details", ["scrape_chittorgarh.py","--write-db"])
     # anchor/subscription depth (non-hard: token/CF hiccup shouldn't kill the run)
     step("anchor + subscription enrich",  ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
+    # IPOMatrix: gold-standard JSON for new/incomplete IPOs (anchors/structure).
+    # --only-null = just IPOs missing data; skips cleanly if the JWT cookie is stale.
+    step("IPOMatrix enrich (new IPOs)",   ["ipomatrix_ingest.py","--only-null","--apply"])
     step("refresh GMP",                   ["ipo/refresh_gmp.py"])
     step("delivery pct (NSE bhavcopy)",    ["fetch_delivery_bhavcopy.py","--backfill-days","3"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
