@@ -175,6 +175,56 @@ Progression of the research:
 
 ---
 
+## 6B. LISTING-DAY LIVE DECISION ENGINE (pre-open buy-at-open scoring)
+
+The live trading surface for listing day. Scores each listing IPO against the
+Quick-Profit Playbook in real time, so the buy/skip call lands before the NSE
+bid cutoff. Endpoint: `GET /api/ipo/live-preopen` → array of listing-window IPOs
+(listing_date within -7 days .. +1 day), each scored independently so multiple
+same-day listings are handled (15 such days in our history, some x3).
+
+**Timeline (IST, NSE new-listing pre-open):**
+- 09:30 — static rules resolve (known pre-listing, no live ticks)
+- 09:30 → 10:15 — live rules firm as the open prints; re-evaluate every minute after 10:00
+- ~10:08 — full rule-score + confidence should be settled
+- 10:14 — decision deadline (2-min grace before NSE's ~10:16 bid cutoff; bid must be above discovery price or rejected)
+- 10:25–10:28 — NSE declares price band
+- 10:29–11:00 — cumulative volume (liquidity confirmation)
+
+**Static rules (scored 09:30, two-card green/red-tick display):**
+- 30+ anchors — `anchor_count >= 30` (77% win; 50+ = 79%, stronger). Shows count.
+- Low band + fresh — `issue_price < 300` AND `ofs_pct < 30` (82–90% win).
+- Mega issue — `issue_size_cr > 2000` (92% win when it also opens positive).
+
+**Live rules (firm as the open prints):**
+- Opening positive — open >= issue_price; euphoric `open >= +50%` = AVOID (pop priced in).
+- The Stack — mega AND opening-positive AND 30+ anchors (85% win, near-zero floor — the cleanest setup).
+- Margin of safety — see below.
+
+**Margin of safety (MoS) — the buy-at-open quality check:**
+Fair-anchor waterfall (best available first):
+1. Modeled fair value (EPS × peer P/E × quality × structure) — when eps_post + peer P/E exist.
+2. GMP-implied fair — `issue_price × (1 + gmp_day_before_pct/100)` — the market's pre-listing read. Used when modeled FV is unavailable, and the UI shows a side note flagging that it is GMP-derived, not modeled.
+3. Issue-price floor — when no premium data at all.
+
+`MoS% = (fair_anchor / listing_open − 1) × 100` · cushion₹ = fair_anchor − listing_open.
+PASS if `MoS% >= +5%` AND RHP verdict is not "reject". Green when positive (margin exists), red when negative (paying above fair). GMP shown alongside as cross-check.
+Worked examples: fair ₹150 / open ₹120 → +25% (₹30) green; fair ₹120 / open ₹130 → −7.7% (−₹10) red.
+
+**AVOID flags (any true = red):** `issue_size_cr < 500`, `issue_price > 600`, `ofs_pct > 50`, `ipo_pe > 70`. The high-OFS + high-PE combo (`ofs_pct > 50` AND `ipo_pe > 70`) is a harder reject (backtested).
+
+**RHP gate:** `rhp_verdict = reject` is a hard kill regardless of any signal (confidence → 0).
+
+**Confidence:** win-rate-weighted blend of the passed rules (e.g. The Stack passing → ~85), penalised for AVOID flags. Ties confidence to backtested win rates, so "85% confidence" means "this setup won 85% in testing."
+
+**Pre-open book lean (when broker depth is live):** Kite `/quote` depth → buy vs sell quantity → `book_lean_pct` (positive = buy-heavy = positive-listing lean). Degrades to null off-hours; the money-critical DB rules never depend on it.
+
+**Thresholds (owner-confirmed, locked):** MoS pass ≥ +5% · PE-rich > 70 · OFS-heavy > 50% · mega > 2000cr · small < 500cr · euphoric ≥ +50% · deadline 10:14 IST.
+
+**Known limit:** `eps_post` is currently null for upcoming IPOs, so modeled FV is null and MoS uses the GMP-implied anchor (labeled as such). Populating eps_post for true modeled FV is a separate, non-blocking backend workstream.
+
+---
+
 ## 7. LOCKED vs OPEN
 
 **LOCKED (never change without a new leakage-free backtest):**
