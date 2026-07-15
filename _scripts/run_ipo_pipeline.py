@@ -58,7 +58,11 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--weekly",action="store_true"); a=ap.parse_args()
     log(f"=== IPO PIPELINE START {datetime.datetime.now():%Y-%m-%d %H:%M} ===")
     self_update()
-    if not preflight(): sys.exit(1)
+    kite_ok = preflight()   # was: if not preflight(): sys.exit(1)
+    if not kite_ok:
+        log("⚠️ Kite token stale — SKIPPING Kite-only steps (candles/OHLC/journey). "
+            "All non-Kite work (scrape, GMP, SBI, RHP, score, consolidated) still runs. "
+            "Refresh token to restore price/candle steps.")
 
     ok=True
     # order matters: SCRAPE new IPOs/GMP → regime → candles → listing_open → consolidated → levels → gate
@@ -77,10 +81,10 @@ def main():
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("anchor-deal conviction match",   ["match_anchor_deals.py","--apply"])
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
-    ok&=step("candles: in-window daily sync",  ["sync_inwindow_candles.py"])
-    step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"])
-    ok&=step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"])
-    ok&=step("derive listing_open",         ["fill_listing_open_from_candles.py"])
+    ok &= (step("candles: in-window daily sync",  ["sync_inwindow_candles.py"]) if kite_ok else True)
+    (step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"]) if kite_ok else None)
+    ok &= (step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"]) if kite_ok else True)
+    ok &= (step("derive listing_open",         ["fill_listing_open_from_candles.py"]) if kite_ok else True)
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
