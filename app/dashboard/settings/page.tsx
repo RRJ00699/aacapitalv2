@@ -2,7 +2,7 @@
 // app/dashboard/settings/page.tsx — set service secrets from the phone.
 import AppShell from "@/components/app-shell/AppShell";
 import { useEffect, useState } from "react";
-const C={bg:"#FAFAF8",s:"#FFF",bd:"#E5E7EB",tx:"#111827",mt:"#6B7280",gr:"#16A34A",grB:"#F0FDF4",grD:"#BBF7D0"};
+const C={bg:"var(--t-bg)",s:"var(--t-surface)",bd:"var(--t-border)",tx:"var(--t-text)",mt:"var(--t-meta)",gr:"var(--t-green)",grB:"var(--t-greenBg)",grD:"var(--t-greenBd)"};
 const FIELDS=[["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["ntfy_topic","ntfy topic (push notifications)"]];
 function Settings(){
   const [state,setState]=useState<Record<string,string>>({});
@@ -13,12 +13,12 @@ function Settings(){
   const save=(k:string)=>fetch("/api/admin/secrets",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({key:k,value:vals[k]||""})})
     .then(r=>r.ok?(setMsg(k+" saved ✓"),setVals(v=>({...v,[k]:""})),load()):setMsg("save failed"));
-  return(<div style={{padding:"18px 20px",background:C.bg,minHeight:"100vh",maxWidth:640,margin:"auto",
-    color:C.tx,font:'14px/1.5 -apple-system,"Segoe UI",Inter,sans-serif'}}>
+  return(<div style={{padding:"18px clamp(14px,4vw,20px)",background:C.bg,minHeight:"100vh",maxWidth:640,margin:"auto",
+    color:C.tx,font:'14px/1.5 var(--f-body)'}}>
       <a href="/dashboard/admin" style={{display:"inline-block",fontSize:13,fontWeight:600,
-        color:"#2563EB",textDecoration:"none",background:"#EFF6FF",border:"1px solid #BFDBFE",
+        color:"var(--t-blue)",textDecoration:"none",background:"var(--t-blueBg)",border:"1px solid var(--t-blueBd)",
         borderRadius:8,padding:"5px 10px",marginBottom:12}}>← Admin</a>
-    <h1 style={{fontSize:19,fontWeight:800,margin:"0 0 4px"}}>⚙️ Service secrets</h1>
+    <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3,fontSize:19,fontWeight:800,margin:"0 0 4px"}}>Service secrets</h1>
     <p style={{fontSize:12.5,color:C.mt,margin:"0 0 16px"}}>Stored in platform_config (same vault as the Kite token). Scripts &amp; auth read them automatically — no SSH, no Vercel.</p>
     {msg&&<div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:600,marginBottom:12}}>{msg}</div>}
     {FIELDS.map(([k,label])=>(
@@ -29,7 +29,7 @@ function Settings(){
           <input type={k.includes("password")?"password":"text"} value={vals[k]||""}
             onChange={e=>setVals(v=>({...v,[k]:e.target.value}))}
             placeholder="new value" style={{flex:1,border:`1px solid ${C.bd}`,borderRadius:8,
-            padding:"9px 11px",fontSize:13}}/>
+            padding:"9px 11px",fontSize:13,fontFamily:"var(--f-mono)"}}/>
           <button onClick={()=>save(k)} disabled={!(vals[k]||"").trim()}
             style={{border:`1px solid ${C.grD}`,background:C.grB,color:C.gr,borderRadius:8,
             padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
