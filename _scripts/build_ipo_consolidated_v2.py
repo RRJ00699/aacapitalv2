@@ -273,10 +273,15 @@ def main():
     # Any i./d./s. ref absent from the live schema is swapped for NULL, loudly.
     import re
     live = {}
+    table_exists = {}
     for alias, tbl in (("i", "ipo_intelligence"), ("d", "ipo_issue_details"),
                        ("s", "ipo_subscription_history")):
         cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (tbl,))
-        live[alias] = {r[0] for r in cur.fetchall()}
+        cols = {r[0] for r in cur.fetchall()}
+        live[alias] = cols
+        table_exists[alias] = len(cols) > 0   # no columns → table doesn't exist
+        if not table_exists[alias]:
+            print(f"  ⚠️ optional table '{tbl}' not present — its columns will be NULLed and its JOIN skipped")
     missing = set()
     def heal(expr):
         def sub(m):
@@ -289,14 +294,21 @@ def main():
         print(f"  ⚠️ {len(missing)} source col(s) not in live schema, NULLed in build: {sorted(missing)}")
 
     select_sql = ",\n      ".join(f"{expr} AS {col}" for col, expr in healed)
+    # Only JOIN optional tables that actually exist (missing table = skip JOIN,
+    # its columns were already NULLed by heal()). Prevents UndefinedTable crash.
+    joins = []
+    if table_exists.get("d"):
+        joins.append(f"LEFT JOIN ipo_issue_details        d ON UPPER(d.nse_symbol) = {SYM}")
+    if table_exists.get("s"):
+        joins.append(f"LEFT JOIN ipo_subscription_history s ON UPPER(s.nse_symbol) = {SYM}")
+    join_sql = "\n      ".join(joins)
     build = f"""
       DROP TABLE IF EXISTS ipo_consolidated;
       CREATE TABLE ipo_consolidated AS
       SELECT
       {select_sql}
       FROM ipo_intelligence i
-      LEFT JOIN ipo_issue_details        d ON UPPER(d.nse_symbol) = {SYM}
-      LEFT JOIN ipo_subscription_history s ON UPPER(s.nse_symbol) = {SYM};
+      {join_sql};
     """
     cur.execute(build)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ipocons_nse ON ipo_consolidated(nse_symbol)")
