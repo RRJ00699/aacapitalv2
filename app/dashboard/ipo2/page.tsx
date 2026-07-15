@@ -349,6 +349,38 @@ function HoldStrip({ sym }: { sym: string }) {
         {j.offPeak != null && <span style={{ ...num, fontSize: 11, color: C.meta }}>{Number(j.offPeak).toFixed(1)}% off peak</span>}
       </div>
       {j.reason ? <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6, lineHeight: 1.45 }}>{String(j.reason)}</div> : null}
+      {(() => {
+        // Listing-day: the exit engine's chart, auto-expanded — no tap to see the story.
+        const ser = (j.series as Array<{date: string; close: number; high: number; low: number}> | undefined) || [];
+        if (ser.length < 2) return null;
+        const entry = Number(j.entry), peak = Number(j.peak), lo = Number(j.low);
+        const fl = Number(j.floorLevel), tr = Number(j.trailLevel);
+        const prices = ser.flatMap(p => [p.high, p.low]).concat([entry, peak, lo, fl, tr].filter(v => !isNaN(v)));
+        const mn = Math.min(...prices), mx = Math.max(...prices), rng = mx - mn || 1;
+        const W = 340, H = 96, pad = 6;
+        const X = (i: number) => pad + (i / Math.max(1, ser.length - 1)) * (W - 2 * pad);
+        const Y = (v: number) => H - pad - ((v - mn) / rng) * (H - 2 * pad);
+        const line = ser.map((p, i) => `${i === 0 ? "M" : "L"}${X(i).toFixed(1)},${Y(p.close).toFixed(1)}`).join(" ");
+        return (
+          <div style={{ marginTop: 9 }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block" }}>
+              {!isNaN(fl) && <line x1={pad} y1={Y(fl)} x2={W - pad} y2={Y(fl)} stroke={C.gold} strokeWidth="1" strokeDasharray="3,3" opacity="0.65" />}
+              {!isNaN(tr) && <line x1={pad} y1={Y(tr)} x2={W - pad} y2={Y(tr)} stroke={C.red} strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />}
+              <path d={line} fill="none" stroke={exit ? C.red : C.green} strokeWidth="2"
+                style={{ transition: "stroke .3s var(--ease)" }} />
+              {!isNaN(entry) && <circle cx={X(0)} cy={Y(entry)} r="3.5" fill={C.green} />}
+              <circle cx={X(ser.length - 1)} cy={Y(ser[ser.length - 1].close)} r="4.5"
+                fill={C.surface} stroke={exit ? C.red : C.green} strokeWidth="2" />
+            </svg>
+            <div style={{ ...num, display: "flex", justifyContent: "space-between", fontSize: 9.5, color: C.meta, marginTop: 2 }}>
+              <span>entry ₹{String(j.entry ?? "—")}</span>
+              <span style={{ color: C.gold }}>· · floor</span>
+              <span style={{ color: C.red }}>· · trail</span>
+              <span>peak ₹{String(j.peak ?? "—")}</span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
