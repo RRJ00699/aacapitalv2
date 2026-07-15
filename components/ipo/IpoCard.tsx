@@ -13,7 +13,8 @@ import React, { useState } from "react";
    All --t-* vars → light/dark/PWA identical. Bindings: route.ts payload only.
    ──────────────────────────────────────────────────────────────────────── */
 
-const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+const MONO = "var(--f-mono)";
+const DISPLAY = "var(--f-display)";
 const C = {
   bg: "var(--t-bg)", surface: "var(--t-surface)", surface2: "var(--t-surface2)",
   border: "var(--t-border)", line: "var(--t-line)", text: "var(--t-text)",
@@ -61,7 +62,8 @@ function ScoreDial({ score, conf }: { score: number | null; conf: number | null 
         <circle cx="36" cy="36" r={r} fill="none" stroke={C.grayBg} strokeWidth="5" />
         {score != null && (
           <circle cx="36" cy="36" r={r} fill="none" stroke={col} strokeWidth="5"
-            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} />
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off}
+            style={{ transition: "stroke-dashoffset .6s var(--ease), stroke .3s var(--ease)" }} />
         )}
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -175,7 +177,9 @@ function EdgeGrid({ edges }: { edges: Edge[] }): React.ReactElement | null {
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
       {edges.map((e, i) => (
-        <div key={i} style={{ flex: "1 1 88px", minWidth: 88, background: C.bg, border: `1px solid ${e.state === "pass" ? C.greenBd : e.state === "warn" ? C.redBd : C.border}`, borderRadius: 10, padding: "8px 10px" }}>
+        <div key={i} style={{ flex: "1 1 88px", minWidth: 88, background: e.state === "na" ? "transparent" : C.bg,
+          border: e.state === "na" ? `1px dashed ${C.border}` : `1px solid ${e.state === "pass" ? C.greenBd : e.state === "warn" ? C.redBd : C.border}`,
+          borderRadius: 10, padding: "8px 10px", transition: "border-color .25s var(--ease)" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: 0.4, textTransform: "uppercase", fontWeight: 600 }}>{e.label}</div>
           <div style={{ ...num, fontSize: 15, fontWeight: 800, color: edgeColor(e.state), marginTop: 3, whiteSpace: "nowrap" }}>{e.value}</div>
           {e.sub && <div style={{ fontSize: 10, color: C.meta, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.sub}</div>}
@@ -282,19 +286,19 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const bandHigh = N(c.band_high);
   const edges: Edge[] = [
     { label: "Anchors", value: anc != null ? String(anc) : "—",
-      sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "no data",
+      sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
     { label: "OFS mix", value: ofsPct != null ? `${ofsPct}%` : "—",
-      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "promoter cash-out" : "mixed") : "no data",
+      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "promoter cash-out" : "mixed") : "awaiting",
       state: ofsPct == null ? "na" : ofsPct < 30 ? "pass" : ofsPct > 60 ? "warn" : "neutral" },
     { label: "PE vs peer", value: peRatio != null ? `${peRatio.toFixed(2)}×` : ipoPe != null ? `${ipoPe.toFixed(0)}` : "—",
-      sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "needs peer P/E" : "no data",
+      sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
       state: peRatio == null ? "na" : peRatio < 0.6 ? "pass" : "neutral" },
     { label: "QIB", value: qib != null ? `${qib}×` : "—",
-      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "no data",
+      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
       state: qib == null ? "na" : qib >= 5 && qib <= 25 ? "pass" : "neutral" },
     { label: "Band", value: bandHigh != null ? `₹${bandHigh}` : "—",
-      sub: bandHigh != null ? (bandHigh < 300 ? "under ₹300 · wins" : "premium band") : "no data",
+      sub: bandHigh != null ? (bandHigh < 300 ? "under ₹300 · wins" : "premium band") : "awaiting",
       state: bandHigh == null ? "na" : bandHigh < 300 ? "pass" : "neutral" },
   ];
 
@@ -303,13 +307,13 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
       background: C.surface,
       border: `1px solid ${isTrade ? C.greenBd : C.border}`,
       borderLeft: `4px solid ${vs.col}`,
-      borderRadius: 16, padding: "20px 22px", marginBottom: 14,
+      borderRadius: 16, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 14,
       boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
     }}>
       {/* ROW 1: hero */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 23, fontWeight: 800, color: C.text, lineHeight: 1.12, letterSpacing: -0.4 }}>
+          <div style={{ fontFamily: DISPLAY, fontSize: "clamp(19px, 5.2vw, 23px)", fontWeight: 800, color: C.text, lineHeight: 1.12, letterSpacing: -0.4 }}>
             {String(c.company_name || "")}
           </div>
           <div style={{ fontSize: 12, color: C.meta, marginTop: 5 }}>
@@ -320,7 +324,7 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 7, background: vs.bg, color: vs.col,
               border: `1px solid ${vs.bd}`, fontSize: 15, fontWeight: 800, padding: "6px 15px",
-              borderRadius: 10, letterSpacing: 0.3,
+              borderRadius: 10, letterSpacing: 0.3, transition: "background .25s var(--ease), color .25s var(--ease)",
             }}>
               {verdict === "TRADE" ? "✓" : verdict === "AVOID" ? "✕" : "◆"} {vs.label}
             </span>
@@ -346,7 +350,11 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
       <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
         {fv != null
           ? <Metric label="Fair Value" value={`₹${fv}`} sub={mos != null ? `${mos > 0 ? "+" : ""}${mos}% MoS` : undefined} color={fvColor} emphasis />
-          : <Metric label="Fair Value" value="n/a" sub={fvNote || "inputs pending"} color={C.dim} />}
+          : <div style={{ flex: "1 1 96px", minWidth: 0, border: `1px dashed ${C.border}`, borderRadius: 11, padding: "10px 13px" }}>
+              <div style={{ fontSize: 10, color: C.meta, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 600 }}>Fair Value</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, marginTop: 5 }}>awaiting</div>
+              <div style={{ fontSize: 10.5, color: C.dim, marginTop: 1, lineHeight: 1.35 }}>{fvNote || "fills at listing"}</div>
+            </div>}
         <Metric label="IPO Price" value={c.issue_price != null ? `₹${c.issue_price}` : "—"} />
         <Metric label="Size" value={c.issue_size_cr != null ? `₹${Number(c.issue_size_cr).toLocaleString()}cr` : "—"} />
       </div>
@@ -392,10 +400,10 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         <>
           <button onClick={() => onJourney?.(sym)} style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%",
-            background: C.gold, color: C.bg, fontSize: 14, fontWeight: 800, padding: "12px 16px",
+            background: C.gold, color: C.bg, fontFamily: DISPLAY, fontSize: 14, fontWeight: 700, padding: "13px 16px",
             borderRadius: 11, border: "none", cursor: "pointer", marginTop: 16, letterSpacing: 0.2,
           }}>
-            ⟶ Track the hold — live exit engine
+            Track the hold — live exit engine →
           </button>
           <div style={{ ...num, fontSize: 10.5, color: C.dim, textAlign: "center", marginTop: 6 }}>
             lock8/trail12 · arm +8% · floor +3% · trail −12%
@@ -426,7 +434,7 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         return (
           <div style={{ marginTop: 10, padding: "14px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
             {c.rhp_gate ? <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
-              🔍 RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div> : null}
+              RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div> : null}
             {c.rhp_one_line ? <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55, marginBottom: trustSummary || risks.length ? 10 : 0 }}>{String(c.rhp_one_line)}</div> : null}
             {trustSummary && <p style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.6, marginBottom: 10 }}>{trustSummary}</p>}
             {(raised.length > 0 || clear > 0) && <>
@@ -445,7 +453,7 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
               <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 5px" }}>Due-diligence to verify</div>
               <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>{ddNote}</div></>}
             {c.ai_summary ? <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 11, display: "flex", gap: 7 }}>
-              <span>🤖</span><span>{String(c.ai_summary)}</span></div> : null}
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.meta, letterSpacing: 0.4, flexShrink: 0, marginTop: 1 }}>AI</span><span>{String(c.ai_summary)}</span></div> : null}
             <div style={{ marginTop: 11, fontSize: 10, color: C.dim }}>Source: Red Herring Prospectus · extracted by Claude · research signal, not a buy call</div>
           </div>
         );
