@@ -49,6 +49,9 @@ def load_jwt():
     # 3) direct env var
     return os.environ.get("IPOMATRIX_JWT")
 
+class CookieExpired(Exception):
+    """Raised when IPOMatrix rejects the JWT (401/403) — the cookie needs refreshing in admin."""
+
 def post(jwt,ipo_id,timeout=30):
     body=json.dumps({"id":int(ipo_id)}).encode()
     hdr={"content-type":"application/json","accept":"application/json, text/plain, */*",
@@ -56,10 +59,20 @@ def post(jwt,ipo_id,timeout=30):
          "user-agent":UA,"x-access-token":jwt}
     try:
         from curl_cffi import requests as creq
-        return creq.post(API,data=body,headers=hdr,impersonate="chrome",timeout=timeout).json()
+        r=creq.post(API,data=body,headers=hdr,impersonate="chrome",timeout=timeout)
+        if r.status_code in (401,403):
+            raise CookieExpired(f"IPOMatrix returned {r.status_code} — the cookie is EXPIRED. "
+                                "Refresh 'ipomatrix_cookie' in admin (Settings/Secrets) and re-run.")
+        return r.json()
     except ImportError:
-        import urllib.request as u
-        return json.loads(u.urlopen(u.Request(API,data=body,headers=hdr,method="POST"),timeout=timeout).read().decode("utf-8","replace"))
+        import urllib.request as u, urllib.error as ue
+        try:
+            return json.loads(u.urlopen(u.Request(API,data=body,headers=hdr,method="POST"),timeout=timeout).read().decode("utf-8","replace"))
+        except ue.HTTPError as e:
+            if e.code in (401,403):
+                raise CookieExpired(f"IPOMatrix returned {e.code} — the cookie is EXPIRED. "
+                                    "Refresh 'ipomatrix_cookie' in admin (Settings/Secrets) and re-run.")
+            raise
 
 def num(v):
     """'1,281.10' or '11961618350.29' -> float; cr-amounts left as-is (raw is rupees)."""
@@ -213,6 +226,9 @@ def main():
         if not cid: continue
         fetched+=1
         try: js=post(jwt,cid)
+        except CookieExpired as e:
+            print(f"\n⛔ {e}\n   Stopping — no point retrying every IPO with a dead cookie.")
+            break
         except Exception as e: print(f"  {s or cnm}: {str(e)[:40]}"); continue
         fields=extract(js)
         if not fields: print(f"  {s or cnm}: empty"); continue
