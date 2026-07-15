@@ -209,7 +209,8 @@ export async function GET() {
   const lo = c.gmp_min_pct == null ? null : Number(c.gmp_min_pct);
   let band: string | null = null, hint: string | null = null;
   if (db != null) {
-    if (db > 20)      { band = "STRONG"; hint = ">20% GMP: +50.9% avg, 100% win (n=14)"; }
+    // +54.5% recomputed 2026-07-15 by owner on clean data (n=14, 14/14 positive at open)
+    if (db > 20)      { band = "STRONG"; hint = ">20% GMP: +54.5% avg, 100% win (n=14)"; }
     else if (db >= 10){ band = "GOOD";   hint = "10-20% GMP: +28.2% avg, 89% win"; }
     else if (db >= 0) { band = "WEAK";   hint = "0-10% GMP: +4.2% avg, 57% win"; }
     else              { band = "NEGATIVE"; hint = "negative GMP: discount signal"; }
