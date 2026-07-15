@@ -1,6 +1,5 @@
 "use client";
 import React, { useState } from "react";
-
 /* ────────────────────────────────────────────────────────────────────────
    IpoCard v2 — every locked edge on the card. Extends v1's language
    (dial · pill · pills · gold CTA), adds the previously-unrendered signal:
@@ -12,7 +11,6 @@ import React, { useState } from "react";
    • RHP expand — + governance flag chips when present in full_json
    All --t-* vars → light/dark/PWA identical. Bindings: route.ts payload only.
    ──────────────────────────────────────────────────────────────────────── */
-
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const C = {
   bg: "var(--t-bg)", surface: "var(--t-surface)", surface2: "var(--t-surface2)",
@@ -27,9 +25,7 @@ const C = {
 const num: React.CSSProperties = { fontFamily: MONO, fontVariantNumeric: "tabular-nums" };
 const D = (v: unknown) => String(v ?? "").slice(0, 10);
 const N = (v: unknown) => (v == null ? null : Number(v));
-
 type Row = Record<string, unknown>;
-
 function verdictStyle(v: string | null): { col: string; bg: string; bd: string; label: string } {
   switch (v) {
     case "TRADE": return { col: C.green, bg: C.greenBg, bd: C.greenBd, label: "TRADE" };
@@ -38,19 +34,16 @@ function verdictStyle(v: string | null): { col: string; bg: string; bd: string; 
     case "WATCH": default: return { col: C.gold, bg: C.amberBg, bd: C.amberBd, label: v || "WATCH" };
   }
 }
-
 function items(s: unknown): string[] {
   if (!s) return [];
   return String(s).split(/[|;]|(?:^|\n)\s*[•✓✕⚠●]\s*/).map((x) => x.trim().replace(/^[•✓✕⚠●]\s*/, "")).filter(Boolean);
 }
-
 function scoreColor(score: number | null): string {
   if (score == null) return C.dim;
   if (score >= 65) return C.green;
   if (score >= 40) return C.amber;
   return C.red;
 }
-
 function ScoreDial({ score, conf }: { score: number | null; conf: number | null }) {
   const col = scoreColor(score);
   const pct = score != null ? Math.max(0, Math.min(100, score)) : 0;
@@ -73,7 +66,6 @@ function ScoreDial({ score, conf }: { score: number | null; conf: number | null 
     </div>
   );
 }
-
 function Pill({ kind, text }: { kind: "pass" | "warn" | "neutral"; text: string }) {
   const map = {
     pass: { bg: C.greenBg, fg: C.green, bd: C.greenBd, mark: "✓" },
@@ -90,7 +82,6 @@ function Pill({ kind, text }: { kind: "pass" | "warn" | "neutral"; text: string 
     </span>
   );
 }
-
 function Metric({ label, value, sub, color, emphasis }: { label: string; value: string; sub?: string; color?: string; emphasis?: boolean }) {
   return (
     <div style={{
@@ -106,7 +97,6 @@ function Metric({ label, value, sub, color, emphasis }: { label: string; value: 
     </div>
   );
 }
-
 /* ── Setup line — the playbook engine finally on screen ─────────────────── */
 function setupStyle(setup: string | null): { col: string; bg: string; mark: string; name: string } {
   switch (setup) {
@@ -117,7 +107,6 @@ function setupStyle(setup: string | null): { col: string; bg: string; mark: stri
     default:          return { col: C.sub,   bg: C.grayBg,  mark: "•",  name: "WATCH" };
   }
 }
-
 /* ── GMP strip — day-before is THE predictor (r=+0.74) ──────────────────── */
 function gmpBandStyle(band: string | null): { col: string; bg: string; bd: string } {
   switch (band) {
@@ -128,11 +117,9 @@ function gmpBandStyle(band: string | null): { col: string; bg: string; bd: strin
     default:         return { col: C.sub,   bg: C.grayBg,  bd: C.border };
   }
 }
-
 function GmpStrip({ db, hi, lo, band, hint }: { db: number | null; hi: number | null; lo: number | null; band: string | null; hint: string | null }) {
   if (db == null && hi == null && lo == null) return null;
   const bs = gmpBandStyle(band);
-  // range bar: lo→hi with a marker at day-before
   const min = Math.min(lo ?? db ?? 0, 0);
   const max = Math.max(hi ?? db ?? 0, 1);
   const span = max - min || 1;
@@ -164,7 +151,6 @@ function GmpStrip({ db, hi, lo, band, hint }: { db: number | null; hi: number | 
     </div>
   );
 }
-
 /* ── Edge grid — locked thresholds from the spec (§5) ───────────────────── */
 type Edge = { label: string; value: string; sub?: string; state: "pass" | "warn" | "neutral" | "na" };
 function edgeColor(state: Edge["state"]): string {
@@ -184,7 +170,6 @@ function EdgeGrid({ edges }: { edges: Edge[] }): React.ReactElement | null {
     </div>
   );
 }
-
 /* ── RHP governance flag chips (rendered only when present in full_json) ── */
 const RHP_FLAGS: { key: string; label: string }[] = [
   { key: "auditor_qualified", label: "Auditor qualified" },
@@ -198,23 +183,31 @@ const RHP_FLAGS: { key: string; label: string }[] = [
   { key: "working_capital_flag", label: "Working capital" },
   { key: "contingent_liabilities_material", label: "Contingent liabilities" },
   { key: "promoter_pledge_flag", label: "Promoter pledge" },
+  { key: "debt_trend", label: "Debt rising" },
 ];
 function rhpFlagChips(fj: Record<string, unknown> | null): { raised: string[]; clear: number } {
   if (!fj) return { raised: [], clear: 0 };
-  // flags may live at the top level or under a `flags` object — check both
-  const src = (typeof fj.flags === "object" && fj.flags !== null ? fj.flags : fj) as Record<string, unknown>;
+  const src = (typeof fj.db_fields === "object" && fj.db_fields !== null ? fj.db_fields
+    : typeof fj.flags === "object" && fj.flags !== null ? fj.flags : fj) as Record<string, unknown>;
+  const STR_RAISED: Record<string, string> = {
+    numbers_integrity_flag: "watch", cash_conversion_flag: "weak",
+    working_capital_flag: "watch", debt_trend: "rising",
+  };
   const raised: string[] = []; let clear = 0;
   for (const f of RHP_FLAGS) {
-    if (src[f.key] === true) raised.push(f.label);
-    else if (src[f.key] === false) clear++;
+    const v = src[f.key];
+    const strBad = STR_RAISED[f.key];
+    if (strBad !== undefined) {
+      if (v === strBad) raised.push(f.label);
+      else if (v != null) clear++;
+    } else if (v === true) raised.push(f.label);
+    else if (v === false) clear++;
   }
   return { raised, clear };
 }
-
 export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: string) => void }) {
   const [showRules, setShowRules] = useState(false);
   const [showRhp, setShowRhp] = useState(false);
-
   const score = (c.vscore ?? c.ipo_score) as number | null;
   const conf = N(c.vconf);
   const verdict = (c.verdict as string) ?? null;
@@ -222,7 +215,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const isTrade = verdict === "TRADE";
   const sym = c.sym ? String(c.sym) : "";
   const listed = !!c.listing_date && (c.state === "INWINDOW" || c.state === "POST");
-
   const passes = [...items(c.why_trade), ...items(c.why_passes)].map((t) => ({ kind: "pass" as const, text: t }));
   const warns = [...items(c.why_avoid), ...items(c.red_flags)].map((t) => ({ kind: "warn" as const, text: t }));
   const neutrals = items(c.why_caution).map((t) => ({ kind: "neutral" as const, text: t }));
@@ -235,30 +227,22 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   });
   const shown = showRules ? allPills : allPills.slice(0, 3);
   const moreCount = allPills.length - 3;
-
   const fv = N(c.fair_value);
   const mos = N(c.fair_mos);
   const fvVerdict = c.fair_verdict as string | null;
   const fvColor = fvVerdict === "undervalued" ? C.green : fvVerdict === "rich" ? C.red : C.text;
   const fvNote = c.fair_note ? String(c.fair_note) : null;
-
   const street = c.street_consensus ? String(c.street_consensus) : null;
   const brokers = N(c.street_brokers);
   const rhpGate = c.rhp_gate ? String(c.rhp_gate) : null;
-
-  // Setup (playbook engine — route.ts computes, v2 renders)
   const setup = c.playbook_setup ? String(c.playbook_setup) : null;
   const setupLine = c.playbook_verdict ? String(c.playbook_verdict) : null;
   const ss = setupStyle(setup);
-
-  // GMP (derived fields only — gmp_day_before_pct/max/min upstream)
   const gmpDb = N(c.gmp_day_before);
   const gmpHi = N(c.gmp_high);
   const gmpLo = N(c.gmp_low);
   const gmpBand = c.gmp_band ? String(c.gmp_band) : null;
   const gmpHint = c.gmp_hint ? String(c.gmp_hint) : null;
-
-  // Edge grid — locked thresholds (spec §5)
   const anc = N(c.anchor_count);
   const ofsCr = N(c.ofs_cr), freshCr = N(c.fresh_issue_cr);
   const ofsPct = ofsCr != null && freshCr != null && (ofsCr + freshCr) > 0
@@ -284,7 +268,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
       sub: bandHigh != null ? (bandHigh < 300 ? "under ₹300 · wins" : "premium band") : "no data",
       state: bandHigh == null ? "na" : bandHigh < 300 ? "pass" : "neutral" },
   ];
-
   return (
     <div style={{
       background: C.surface,
@@ -293,7 +276,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
       borderRadius: 16, padding: "20px 22px", marginBottom: 14,
       boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
     }}>
-      {/* ROW 1: hero */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 23, fontWeight: 800, color: C.text, lineHeight: 1.12, letterSpacing: -0.4 }}>
@@ -317,8 +299,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         </div>
         <ScoreDial score={score} conf={conf} />
       </div>
-
-      {/* ROW 2: SETUP — the playbook engine's call */}
       {setupLine && (
         <div style={{
           display: "flex", alignItems: "flex-start", gap: 9, marginTop: 14,
@@ -328,8 +308,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
           <span style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.45 }}>{setupLine}</span>
         </div>
       )}
-
-      {/* ROW 3: metrics — FV never fakes a number */}
       <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
         {fv != null
           ? <Metric label="Fair Value" value={`₹${fv}`} sub={mos != null ? `${mos > 0 ? "+" : ""}${mos}% MoS` : undefined} color={fvColor} emphasis />
@@ -337,14 +315,8 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         <Metric label="IPO Price" value={c.issue_price != null ? `₹${c.issue_price}` : "—"} />
         <Metric label="Size" value={c.issue_size_cr != null ? `₹${Number(c.issue_size_cr).toLocaleString()}cr` : "—"} />
       </div>
-
-      {/* ROW 4: GMP predictor strip */}
       <GmpStrip db={gmpDb} hi={gmpHi} lo={gmpLo} band={gmpBand} hint={gmpHint} />
-
-      {/* ROW 5: edge grid — the locked factors */}
       <EdgeGrid edges={edges} />
-
-      {/* ROW 6: House Rules */}
       {allPills.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: C.meta, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 9 }}>
@@ -361,8 +333,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
           </div>
         </div>
       )}
-
-      {/* ROW 7: footer — Street vs AACapital vs RHP */}
       {(street || verdict || rhpGate) && (
         <div style={{ display: "flex", gap: 22, padding: "13px 0 3px", marginTop: 16, borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
           {street && <div><div style={{ fontSize: 9.5, color: C.meta, letterSpacing: 0.4, textTransform: "uppercase" }}>Street</div>
@@ -373,8 +343,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
             <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginTop: 2 }}>{rhpGate}</div></div>}
         </div>
       )}
-
-      {/* ROW 8: journey CTA — the live exit engine */}
       {listed && sym && (
         <>
           <button onClick={() => onJourney?.(sym)} style={{
@@ -389,8 +357,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
           </div>
         </>
       )}
-
-      {/* RHP toggle */}
       {Boolean(c.rhp_one_line || c.rhp_full || c.ai_summary) && (
         <button onClick={() => setShowRhp((v) => !v)} style={{
           background: "transparent", border: "none", color: C.meta,
@@ -399,7 +365,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
           {showRhp ? "▲ Hide details" : "▼ RHP details · risks · governance flags · AI read"}
         </button>
       )}
-
       {showRhp && (() => {
         const fj = typeof c.rhp_full === "string"
           ? (() => { try { return JSON.parse(String(c.rhp_full)); } catch { return null; } })()
