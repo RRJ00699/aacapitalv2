@@ -35,6 +35,11 @@ def preflight():
 
 def step(name, args, hard=False):
     log(f"── {name} ──")
+    # skip cleanly if the script file is missing (don't error the whole nightly)
+    script = args[0] if args else ""
+    if script.endswith(".py") and not os.path.exists(os.path.join(HERE, script)):
+        log(f"   ⏭  {script} not in repo — skipping (not a failure)")
+        return True
     r=subprocess.run([sys.executable]+args, cwd=HERE, capture_output=True, text=True)
     out=(r.stdout or "").strip().splitlines()
     for l in out[-6:]: log("   "+l)          # tail of each step's output
