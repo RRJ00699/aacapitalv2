@@ -4,7 +4,7 @@
 // Self-contained: no imports from the 3 legacy shells. Polls every 20s while a
 // live capture exists. Ships at /dashboard/ipo2 for side-by-side verification;
 // cutover to /dashboard/ipo is a separate one-line commit after approval.
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
@@ -349,6 +349,93 @@ function HoldStrip({ sym }: { sym: string }) {
         {j.offPeak != null && <span style={{ ...num, fontSize: 11, color: C.meta }}>{Number(j.offPeak).toFixed(1)}% off peak</span>}
       </div>
       {j.reason ? <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6, lineHeight: 1.45 }}>{String(j.reason)}</div> : null}
+      {(() => {
+        // Listing-day: the exit engine's chart, auto-expanded — no tap to see the story.
+        const ser = (j.series as Array<{date: string; close: number; high: number; low: number}> | undefined) || [];
+        if (ser.length < 2) return null;
+        const entry = Number(j.entry), peak = Number(j.peak), lo = Number(j.low);
+        const fl = Number(j.floorLevel), tr = Number(j.trailLevel);
+        const prices = ser.flatMap(p => [p.high, p.low]).concat([entry, peak, lo, fl, tr].filter(v => !isNaN(v)));
+        const mn = Math.min(...prices), mx = Math.max(...prices), rng = mx - mn || 1;
+        const W = 340, H = 96, pad = 6;
+        const X = (i: number) => pad + (i / Math.max(1, ser.length - 1)) * (W - 2 * pad);
+        const Y = (v: number) => H - pad - ((v - mn) / rng) * (H - 2 * pad);
+        const line = ser.map((p, i) => `${i === 0 ? "M" : "L"}${X(i).toFixed(1)},${Y(p.close).toFixed(1)}`).join(" ");
+        return (
+          <div style={{ marginTop: 9 }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block" }}>
+              {!isNaN(fl) && <line x1={pad} y1={Y(fl)} x2={W - pad} y2={Y(fl)} stroke={C.gold} strokeWidth="1" strokeDasharray="3,3" opacity="0.65" />}
+              {!isNaN(tr) && <line x1={pad} y1={Y(tr)} x2={W - pad} y2={Y(tr)} stroke={C.red} strokeWidth="1" strokeDasharray="3,3" opacity="0.5" />}
+              <path d={line} fill="none" stroke={exit ? C.red : C.green} strokeWidth="2"
+                style={{ transition: "stroke .3s var(--ease)" }} />
+              {!isNaN(entry) && <circle cx={X(0)} cy={Y(entry)} r="3.5" fill={C.green} />}
+              <circle cx={X(ser.length - 1)} cy={Y(ser[ser.length - 1].close)} r="4.5"
+                fill={C.surface} stroke={exit ? C.red : C.green} strokeWidth="2" />
+            </svg>
+            <div style={{ ...num, display: "flex", justifyContent: "space-between", fontSize: 9.5, color: C.meta, marginTop: 2 }}>
+              <span>entry ₹{String(j.entry ?? "—")}</span>
+              <span style={{ color: C.gold }}>· · floor</span>
+              <span style={{ color: C.red }}>· · trail</span>
+              <span>peak ₹{String(j.peak ?? "—")}</span>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function LiveDecisionPanel() {
+  // Countdown to the 10:14 IST decision deadline (2-min grace off 10:16 — Rakesh 2026-07-16).
+  // Pure client time — no API. The layered tiles below are DESIGNED AWAITING states shaped
+  // to the confirmed backend contract (rules_static/rules_live/pre-open book/score/volume);
+  // they bind when the endpoint ships. Zero invented bindings today.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const ist = new Date(now + 5.5 * 3600000);
+  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const deadline = 10 * 60 + 14; // 10:14 IST
+  const secsLeft = (deadline - mins) * 60 - ist.getUTCSeconds();
+  const pre = mins < 9 * 60 + 15, past = secsLeft <= 0;
+  const mm = Math.floor(Math.max(0, secsLeft) / 60), ss = Math.max(0, secsLeft) % 60;
+  const hot = !pre && !past && secsLeft < 15 * 60;
+  const await2 = (note: string) => (
+    <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 4 }}>awaiting<span style={{ fontWeight: 400 }}> · {note}</span></div>);
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
+      {/* HERO: the deadline */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>Decision deadline 10:14 IST</span>
+        <span style={{ ...num, fontSize: 30, fontWeight: 800, lineHeight: 1,
+          color: past ? C.dim : hot ? C.red : C.text, transition: "color .3s var(--ease)" }}>
+          {pre ? "pre-open" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
+        </span>
+        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>rule score lands ~10:08</span>}
+        {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
+      </div>
+      {/* LAYER 1 · static rules @ 9:30 */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Static rules · 9:30</div>
+          {await2("4 playbook rules + RHP gate → X/5 pass")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Live rules · firm by 10:08</div>
+          {await2("open positive · +15% · >50%-pop avoid")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
+          {await2("discovery ₹ · buy/sell qty · lean %")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Score · by 10:08</div>
+          {await2("rules passed + confidence 0–100")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
+          {await2("cumulative volume window")}
+        </div>
+      </div>
     </div>
   );
 }
@@ -410,7 +497,7 @@ function Calculator() {
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
       <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>Share sizer — how many shares for your capital</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
-        On listing day (9:45–10:15) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
+        On listing day (9:45–10:14 decision window) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
         <div style={{flex:1,minWidth:160}}><label style={lbl}>Your capital (₹)</label>
           <input style={inp} value={cap} onChange={e=>setCap(e.target.value)} inputMode="numeric"/></div>
@@ -480,6 +567,15 @@ function IpoCommand() {
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
   const [vFilter, setVFilter] = useState("ALL");
+  const autoLive = useRef(false);
+  useEffect(() => {
+    if (autoLive.current || !d) return;
+    const n = new Date(); const day = n.getUTCDay();
+    const m = n.getUTCHours() * 60 + n.getUTCMinutes();
+    const mkt = day !== 0 && day !== 6 && m >= 225 && m <= 600;
+    if (mkt && (d.live||[]).length > 0) setView("live");
+    autoLive.current = true;
+  }, [d]);
   const loadData = useCallback(() => {
     fetch("/api/ipo-command").then(r=>r.json())
       .then(j => j.error ? setErr(j.error) : (setErr(null), setD(j)))
@@ -492,8 +588,14 @@ function IpoCommand() {
 
   const cards = d?.cards || [];
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
+  // Live screen window: any IPO listed within the last 7 days (payload fields only)
+  const windowCards = cards.filter(c => {
+    if (!c.listing_date || !c.sym) return false;
+    const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+    return days >= 0 && days <= 7;
+  });
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["command","Command"],["calc","Calculator"],["pb","Playbook"],
+  const pills: [string,string][] = [["live","Live"],["command","Command"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
 
   return (
@@ -539,18 +641,32 @@ function IpoCommand() {
           <span key={k} onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
             border:`1px solid ${view===k?C.amberBd:C.border}`,background:view===k?C.amberBg:C.surface,
             color:view===k?C.gold:C.meta,borderRadius:20,padding:"7px 14px",fontSize:12.5,fontWeight:view===k?700:500,
-            transition:"all .2s var(--ease)"}}>{l}</span>))}
+            transition:"all .2s var(--ease)"}}>{k==="live" && liveSyms.length>0 ? <><span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>{l}</> : l}</span>))}
       </div>
       {err && <div style={{...card,borderColor:C.redBd,color:C.red,fontSize:13}}>API error: {err}</div>}
 
-      {/* COMMAND */}
-      {view==="command" && <>
+      {/* LIVE — the trading surface: live panel + exit engine side-by-side */}
+      {view==="live" && <>
         <div style={{fontSize:12,color:C.meta,margin:"0 2px 8px"}}>
-          {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "no live capture"} ·
-          next listing {next ? `${next.company_name} ${D(next.listing_date)}` : "—"} ·
-          launcher 09:10 · self-check 09:25 &amp; 13:00
+          {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "feed idle"} ·
+          {windowCards.length} in the 7-day window · launcher 09:10 IST
         </div>
-        {liveSyms.map(sym => {
+        {windowCards.length>0 && <LiveDecisionPanel/>}
+        {windowCards.length===0 && <div style={card}>
+          <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:"16px 14px"}}>
+            <div style={{fontSize:11,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>No IPO in the live window</div>
+            <div style={{fontSize:12.5,color:C.meta,marginTop:6,lineHeight:1.5}}>
+              This screen holds every IPO for 7 days after listing. Next listing: {next ? `${next.company_name} · ${D(next.listing_date)}` : "—"}.</div>
+          </div>
+        </div>}
+        {windowCards.map((wc) => {
+          const sym = String(wc.sym);
+          const isLive = liveSyms.includes(sym);
+          return (
+          <div key={sym} className="live-split">
+            <div className="lp">
+              {isLive ? (
+                <>{(() => {
           const ticks = (d!.live).filter(t=>t.symbol===sym);
           const last = ticks[ticks.length-1] || {};
           const lv = (d!.levels).find(l=>l.symbol===sym) || {};
@@ -595,7 +711,6 @@ function IpoCommand() {
                         <div style={{fontSize:10,color:C.meta,textTransform:"uppercase"}}>{t[0] as string}</div>
                         <div style={{...num,fontSize:15,fontWeight:800,color:t[2] as string}}>{String(t[1]??"—")}</div></div>))}
                   </div>
-                  <HoldStrip sym={sym}/>
                 </div>
                 <div style={{flex:1,minWidth:290}}>
                   <div style={{fontSize:10.5,color:C.meta,fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Order flow · blocks (≥3× median clip)</div>
@@ -610,7 +725,35 @@ function IpoCommand() {
                 </div>
               </div>
             </div>);
+                  return null; })()}</>
+              ) : (
+                <div style={card}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                    <b style={{fontFamily:"var(--f-display)",fontSize:16,letterSpacing:-0.2}}>{String(wc.company_name||sym)}</b>
+                    <span style={{...num,fontSize:11,color:C.meta}}>listed {D(wc.listing_date)}</span>
+                  </div>
+                  <div style={{border:`1px dashed ${C.border}`,borderRadius:11,padding:"12px 13px",marginTop:10}}>
+                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Feed idle</div>
+                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Market closed or capture not running — the exit engine on the right tracks daily closes meanwhile.</div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+            <div className="rp">
+              <HoldStrip sym={sym}/>
+            </div>
+          </div>);
         })}
+      </>}
+
+      {/* COMMAND */}
+      {view==="command" && <>
+        <div style={{fontSize:12,color:C.meta,margin:"0 2px 8px"}}>
+          {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "no live capture"} ·
+          next listing {next ? `${next.company_name} ${D(next.listing_date)}` : "—"} ·
+          launcher 09:10 · self-check 09:25 &amp; 13:00
+        </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"2px 0 10px"}}>
           {["ALL","TRADE","WATCH","CAUTION","AVOID"].map(k=>(
             <span key={k} onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
