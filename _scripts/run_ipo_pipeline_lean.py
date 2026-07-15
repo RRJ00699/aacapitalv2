@@ -96,6 +96,12 @@ def main():
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
     step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
 
+    # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──
+    # rhp_auto self-gates to the remaining daily budget (reads rhp_run_log), so
+    # running it in BOTH daily lean runs never exceeds $3/day combined. A Sonnet
+    # or SEBI hiccup here must not kill the data pipeline → non-hard.
+    step("RHP forensic (Sonnet, $3/day cap)", ["rhp_auto.py", "--apply"])
+
     # ── COMPUTE (single pass — no duplicate block) ──
     step("ipo score v0 (derived)",          ["ipo_score.py"])
     step("d10 outcome precompute",          ["compute_d10.py"])
