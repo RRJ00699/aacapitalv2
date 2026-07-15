@@ -128,7 +128,9 @@ def get_symbols():
         return [args.symbol.upper()]
     conn = get_connection()
     cur  = conn.cursor()
-    cur.execute("SELECT symbol FROM company_master WHERE symbol IS NOT NULL ORDER BY symbol")
+    # company_master never existed on Neon (legacy local->Neon tool built it); derive the
+    # universe from price_candles directly, mirroring sync_inwindow_candles (2026-07-15)
+    cur.execute("SELECT DISTINCT symbol FROM price_candles WHERE symbol IS NOT NULL ORDER BY symbol")
     symbols = [r[0] for r in cur.fetchall()]
     cur.close()
     conn.close()
