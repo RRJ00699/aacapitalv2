@@ -14,7 +14,7 @@ import Link from "next/link";
 // IPO Power House — nav trimmed to the IPO engine. Today kept beside it.
 // but their routes still exist — restore a line here to bring one back.
 const TABS = [
-  { v: "ipo",           l: "IPO",           href: "/ipo",            e: "⚡" },
+  { v: "ipo",           l: "IPO",           href: "/ipo" },
   // Today removed from nav — Domestic + Global markets now live on the IPO page.
   // { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
 ];
@@ -50,30 +50,30 @@ export default function AppNav({
 
   return (
     <div style={{ background: "var(--t-header)", borderBottom: "1px solid var(--t-border)", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <img src="/aa-logo-emblem-transparent.png" alt="AA Capital" style={{ width: 52, height: 52, objectFit: "contain" }} />
+          <img src="/aa-logo-emblem-transparent.png" alt="AA Capital" style={{ width: 44, height: 44, objectFit: "contain", flexShrink: 0 }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.14, marginLeft: 3 }}>
           <div style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, color: "var(--t-headerText)", letterSpacing: "-0.3px" }}>AACapital</div>
-          <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: "var(--t-gold)", letterSpacing: "1.6px", fontWeight: 600 }}>WHERE MARKETS MAKE SENSE.</div>
+          <div className="nav-tagline" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--t-gold)", letterSpacing: "1.4px", fontWeight: 600 }}>WHERE MARKETS MAKE SENSE.</div>
         </div>
       </div>
       <div style={{ flex: 1 }} />
-      <div style={{ width: 300, marginRight: 6, position: "relative", zIndex: 99999 }}>
+      <div style={{ flex: "0 1 300px", minWidth: 110, marginRight: 6, position: "relative", zIndex: 99999 }}>
         <IpoSearch onSelect={onSearchSelect} placeholder="Search IPO..." />
       </div>
-      {TABS.map(({ v, l, href, e }) => {
+      {TABS.map(({ v, l, href }) => {
         const active = current === v;
         return (
           <Link key={v} href={href} prefetch={false} style={tabStyle(active)}>
-            <span style={{ fontSize: 13 }}>{e}</span>{l}
+            {l}
           </Link>
         );
       })}
       {isAdmin && (
         <Link href="/dashboard/admin" prefetch={false} style={tabStyle(current === "admin")}>
-          <span style={{ fontSize: 13 }}>🛠</span>Admin
+          Admin
         </Link>
       )}
       {refreshTime && <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--t-dim)" }}>↻{refreshTime}</div>}
