@@ -476,6 +476,7 @@ function IpoCommand() {
   const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[];track?:R[];leaderboard?:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
+  const [vFilter, setVFilter] = useState("ALL");
   const loadData = useCallback(() => {
     fetch("/api/ipo-command").then(r=>r.json())
       .then(j => j.error ? setErr(j.error) : (setErr(null), setD(j)))
@@ -606,10 +607,21 @@ function IpoCommand() {
               </div>
             </div>);
         })}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"2px 0 10px"}}>
+          {["ALL","TRADE","WATCH","CAUTION","AVOID"].map(k=>(
+            <span key={k} onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
+              padding:"4px 12px",borderRadius:999,letterSpacing:.3,
+              border:`1px solid ${vFilter===k?C.blueBd:C.border}`,
+              background:vFilter===k?C.blueBg:C.surface,color:vFilter===k?C.blue:C.meta}}>
+              {k==="ALL"?"All":k}</span>))}
+        </div>
         {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>{
           if (liveSyms.includes(String(c.sym))) return null;
+          if (vFilter!=="ALL" && String(c.verdict||"")!==vFilter) return null;
           return <IpoCard key={i} c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}/>;
         })}
+        {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveSyms.includes(String(c.sym))).length===0 &&
+          <div style={card}><span style={{fontSize:13,color:C.meta}}>No {vFilter} verdicts in the current window.</span></div>}
       </>}
 
       {/* PLAYBOOK */}
@@ -770,6 +782,16 @@ function IpoCommand() {
       {/* POST-LISTING AUDIT */}
       {view==="post" && <div style={{...card,overflowX:"auto"}}>
         <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
+        {(()=>{ const graded=(d?.post||[]).map(r=>{ const v=r.verdict as string|null, o=N(r.d10_best_pct);
+            if(v==null||o==null) return null; if(v==="TRADE") return o>0; if(v==="AVOID") return o<=0; return null; })
+            .filter((x):x is boolean=>x!=null);
+          const hits=graded.filter(Boolean).length;
+          if(!graded.length) return null;
+          return <div style={{display:"inline-flex",gap:8,alignItems:"baseline",marginLeft:12,fontSize:12.5}}>
+            <span style={{...num,fontWeight:800,color:hits/graded.length>=0.5?C.green:C.red}}>
+              {hits}/{graded.length} calls hit ({Math.round(100*hits/graded.length)}%)</span>
+            <span style={{color:C.dim,fontSize:11}}>TRADE→popped · AVOID→flopped · last {(d?.post||[]).length} listings</span>
+          </div>; })()}
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Verdict</th>
             <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th><th style={th}>Call</th><th style={th}>Journey</th></tr></thead>
@@ -801,9 +823,9 @@ function IpoCommand() {
             <tr key={i}><td style={{...td,fontWeight:600,color:C.text}}>{String(r.lead||"")}</td>
               <td style={{...td,...num}}>{String(r.n)}</td>
               <td style={{...td,...num}}>{r.pop_rate!=null?`${r.pop_rate}%`:"—"}</td>
-              <td style={{...td,...num}}>{r.med_gap!=null?`${Number(r.med_gap).toFixed(1)}%`:"—"}</td>
+              <td style={{...td,...num,fontWeight:700,color:r.med_gap==null?C.sub:Number(r.med_gap)>0?C.green:Number(r.med_gap)<0?C.red:C.sub}}>{r.med_gap!=null?`${Number(r.med_gap).toFixed(1)}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700}}>{r.d10_win!=null?`${r.d10_win}%`:"pending"}</td>
-              <td style={{...td,...num}}>{r.d10_med!=null?`${Number(r.d10_med).toFixed(1)}%`:"pending"}</td></tr>))}</tbody>
+              <td style={{...td,...num,color:r.d10_med==null?C.sub:Number(r.d10_med)>0?C.green:Number(r.d10_med)<0?C.red:C.sub}}>{r.d10_med!=null?`${Number(r.d10_med).toFixed(1)}%`:"pending"}</td></tr>))}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Lead = first-named manager · cells need n≥8 · "pending" fills after tonight's d10 precompute.</div>
       </div>}
