@@ -41,22 +41,22 @@ export default function AppNav({
   const tabStyle = (active: boolean) => ({
     display: "flex" as const, alignItems: "center" as const, gap: 5,
     padding: "5px 11px", borderRadius: 7, border: "none",
-    background: active ? "rgba(240,180,50,0.14)" : "transparent",
-    color: active ? "#F0B432" : "#AEBBD0",
+    background: active ? "var(--t-amberBg)" : "transparent",
+    color: active ? "var(--t-gold)" : "var(--t-meta)",
     fontFamily: "'IBM Plex Mono',monospace", fontSize: 11,
     fontWeight: active ? 600 : 400, textDecoration: "none",
     cursor: "pointer", transition: "all .12s", whiteSpace: "nowrap" as const,
   });
 
   return (
-    <div style={{ background: "#0B1628", borderBottom: "1px solid #14233D", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
+    <div style={{ background: "var(--t-header)", borderBottom: "1px solid var(--t-border)", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ background: "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <img src="/aa-logo-emblem-transparent.png" alt="AA Capital" style={{ width: 52, height: 52, objectFit: "contain" }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.14, marginLeft: 3 }}>
-          <div style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, color: "#FFFFFF", letterSpacing: "-0.3px" }}>AACapital</div>
-          <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: "#F0B432", letterSpacing: "1.6px", fontWeight: 600 }}>WHERE MARKETS MAKE SENSE.</div>
+          <div style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, color: "var(--t-headerText)", letterSpacing: "-0.3px" }}>AACapital</div>
+          <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: "var(--t-gold)", letterSpacing: "1.6px", fontWeight: 600 }}>WHERE MARKETS MAKE SENSE.</div>
         </div>
       </div>
       <div style={{ flex: 1 }} />
@@ -76,7 +76,7 @@ export default function AppNav({
           <span style={{ fontSize: 13 }}>🛠</span>Admin
         </Link>
       )}
-      {refreshTime && <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "#374151" }}>↻{refreshTime}</div>}
+      {refreshTime && <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--t-dim)" }}>↻{refreshTime}</div>}
     </div>
   );
 }
