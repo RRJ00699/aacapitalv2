@@ -51,8 +51,8 @@ export default function AppNav({
   return (
     <div style={{ background: "var(--t-header)", borderBottom: "1px solid var(--t-border)", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ background: "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <img src="/aa-logo-emblem-transparent.png" alt="AA Capital" style={{ width: 52, height: 52, objectFit: "contain" }} />
+        <div style={{ background: "#0B1628", borderRadius: 12, padding: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src="/aa-logo-emblem-transparent.png" alt="AA Capital" style={{ width: 46, height: 46, objectFit: "contain" }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.14, marginLeft: 3 }}>
           <div style={{ fontFamily: "'Sora',sans-serif", fontWeight: 800, fontSize: 20, color: "var(--t-headerText)", letterSpacing: "-0.3px" }}>AACapital</div>
