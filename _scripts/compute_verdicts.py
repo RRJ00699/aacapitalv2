@@ -27,6 +27,12 @@ SOFT_FLAGS = ["related_party_concern", "ofs_heavy", "promoter_pledge_flag",
               "customer_concentration_high", "contingent_liabilities_material"]
 
 def fnum(v):
+    # tolerate poison values like '--0.0000' (double-sign) that leak from
+    # upstream scrapers — strip a leading redundant sign before converting.
+    if isinstance(v, str):
+        v = v.strip()
+        if v.startswith("--"): v = v[1:]      # '--0.00' -> '-0.00'
+        if v in ("", "-", "--", "n/a", "NA", "null"): return None
     try: return float(v)
     except (TypeError, ValueError): return None
 
@@ -39,7 +45,7 @@ def decide(r):
     pe   = fnum(r.get("ipo_pe")); ppe = fnum(r.get("peer_median_pe"))
     qib  = fnum(r.get("final_qib"))
     ofs  = fnum(r.get("ofs_pct"))
-    anc  = r.get("anchor_count")
+    anc  = fnum(r.get("anchor_count"))
     rhp_verdict = (r.get("rhp_verdict") or "").lower()
     rhp_gate = (r.get("rhp_gate") or "").lower()
     req_dd = r.get("requires_further_dd")
@@ -62,7 +68,7 @@ def decide(r):
     if size is not None and size >= 2000: passes.append(f"mega issue Rs.{size:,.0f}cr (82% win)")
     elif size is not None and size >= 500: passes.append(f"size Rs.{size:,.0f}cr — liquid enough")
     if qib is not None and qib >= 10: passes.append(f"strong QIB demand ({qib:.0f}x)")
-    if anc and int(anc) > 30: passes.append("anchors >30 (77% win)")
+    if anc is not None and anc > 30: passes.append("anchors >30 (77% win)")
     if ofs is not None and ofs < 30: passes.append("fresh-heavy <30% OFS (82% win)")
     if not hard and not soft and rhp_verdict: passes.append("RHP forensic clean")
 
