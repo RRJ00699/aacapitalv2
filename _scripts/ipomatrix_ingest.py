@@ -16,14 +16,37 @@ import psycopg2
 API="https://alphanodejs.chittorgarh.com/api/media-ipo/analysis"
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0 Safari/537.36"
 
+def _jwt_from_cookie(raw):
+    """Extract the accessToken JWT from a raw IPOMatrix cookie string."""
+    if not raw: return None
+    dec=urllib.parse.unquote(raw.strip().strip('"').strip("'"))
+    m=re.search(r'"accessToken"\s*:\s*"([^"]+)"',dec)
+    return m.group(1) if m else None
+
 def load_jwt():
+    # 1) platform_config (admin-settable from phone, same pattern as kite_access_token).
+    #    Accept either a stored raw cookie (ipomatrix_cookie) or a pre-extracted JWT.
+    db=os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+    if db:
+        try:
+            import psycopg2
+            c=psycopg2.connect(db); cur=c.cursor()
+            cur.execute("SELECT key,value FROM platform_config "
+                        "WHERE key IN ('ipomatrix_cookie','ipomatrix_jwt')")
+            vals={k:v for k,v in cur.fetchall()}
+            cur.close(); c.close()
+            jwt=_jwt_from_cookie(vals.get("ipomatrix_cookie")) or vals.get("ipomatrix_jwt")
+            if jwt: return jwt
+        except Exception as e:
+            print(f"  (platform_config JWT lookup skipped: {e})")
+    # 2) .env file fallback (legacy / local dev)
     for envf in (".env.local",".env"):
         if os.path.exists(envf):
             for line in open(envf,encoding="utf-8"):
                 if line.strip().startswith("IPOMATRIX_COOKIE="):
-                    dec=urllib.parse.unquote(line.split("=",1)[1].strip().strip('"').strip("'"))
-                    m=re.search(r'"accessToken"\s*:\s*"([^"]+)"',dec)
-                    if m: return m.group(1)
+                    jwt=_jwt_from_cookie(line.split("=",1)[1])
+                    if jwt: return jwt
+    # 3) direct env var
     return os.environ.get("IPOMATRIX_JWT")
 
 def post(jwt,ipo_id,timeout=30):
