@@ -28,6 +28,7 @@ JOBS = {
     "levels":          ["_scripts/ipo_daily_levels.py", "--from-db", "--write-db"],
     "universe_candles": ["_scripts/kite-sync-candles.py", "--days", "5"],
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
+    "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
     "sync":            ["_scripts/git_sync.py"],
 }
 
