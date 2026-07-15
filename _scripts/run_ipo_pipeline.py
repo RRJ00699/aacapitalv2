@@ -125,8 +125,7 @@ def main():
     # --- RHP forensic pipeline (governance/legal/concentration moat) ---
     step("download RHPs (new/recent only)", ["download_rhps.py","--csv","ipo_full_columns.csv","--output","rhps","--days-back","45","--days-ahead","120"])
     step("extract + store RHPs (skip already-done)", ["rhp_batch.py","--dir","rhps"])
-    # --- street consensus + accuracy leaderboard ---
-    step("accuracy leaderboard (street vs ours)", ["compute_leaderboard.py","--apply"])
+    # (accuracy leaderboard RETIRED 2026-07-15 — script/table removed)
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
     step("backup critical tables",           ["backup_critical_tables.py"])
