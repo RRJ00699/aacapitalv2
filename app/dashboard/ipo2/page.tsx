@@ -473,7 +473,7 @@ function Calculator() {
 }
 
 function IpoCommand() {
-  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[];track?:R[];leaderboard?:R[]}|null>(null);
+  const [d, setD] = useState<{cards:R[];live:R[];levels:R[];blocks:R[];post:R[];brlm:R[];dl:R[];track?:R[]}|null>(null);
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
   const [vFilter, setVFilter] = useState("ALL");
@@ -628,39 +628,6 @@ function IpoCommand() {
       {view==="calc" && <Calculator/>}
 
       {view==="pb" && <>
-        {d?.leaderboard && d.leaderboard.length>0 && (()=>{
-          const street = d.leaderboard!.filter(r=>String(r.source).startsWith("Street"));
-          const ours = d.leaderboard!.filter(r=>String(r.source).startsWith("AACapital"));
-          const Panel = ({title, rows, measure}:{title:string;rows:R[];measure:string})=>(
-            <div style={{...card, marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:14,marginBottom:2}}>{title}</div>
-              <div style={{fontSize:11.5,color:C.dim,marginBottom:10}}>scored on {measure}</div>
-              {rows.map((r,i)=>{
-                const avg = r.avg_outcome!=null?Number(r.avg_outcome):null;
-                const hit = r.hit_rate!=null?Number(r.hit_rate):null;
-                const n = Number(r.n||0);
-                const label = String(r.source).replace(/^(Street|AACapital): /,"");
-                return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:i?`1px solid ${C.border}`:"none"}}>
-                  <div style={{flex:"0 0 130px",fontWeight:700,fontSize:13}}>{label}</div>
-                  <div style={{flex:1,fontSize:13}}>
-                    <span style={{color:avg!=null&&avg>0?C.green:C.red,fontWeight:800}}>{avg!=null?`${avg>0?"+":""}${avg}%`:"—"}</span>
-                    <span style={{color:C.dim}}> avg · {hit!=null?`${hit}%`:"—"} positive</span>
-                  </div>
-                  <div style={{flex:"0 0 auto",fontSize:11.5,color:C.dim}}>n={n}{n<10?" ⚠":""}</div>
-                </div>;
-              })}
-            </div>
-          );
-          return <div style={{marginBottom:14}}>
-            <b style={{fontSize:16}}>📊 Track record — two different games</b>
-            <p style={{fontSize:12.5,color:C.sub,margin:"4px 0 12px"}}>
-              The street rates whether to <b>apply</b> at the IPO price (judged on listing gain). We rate whether to <b>buy at open</b> (judged on the 20-day return from open). Different entries, different measures — not a head-to-head.
-            </p>
-            {street.length>0 && <Panel title="Street consensus — the 'apply' call" rows={street} measure="listing gain (issue→listing)"/>}
-            {ours.length>0 && <Panel title="AACapital verdict — the 'buy-open' call" rows={ours} measure="20-day return from listing open"/>}
-            <p style={{fontSize:11,color:C.dim,marginTop:-2}}>Small samples (n&lt;10 ⚠) are directional only. Buy-open edges are modest by design — the pop is largely priced in at open.</p>
-          </div>;
-        })()}
         <div style={{...card, background:C.amberBg, border:`1.5px solid ${C.amberBd}`}}>
           <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
