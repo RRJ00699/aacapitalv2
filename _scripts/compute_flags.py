@@ -62,13 +62,25 @@ def main():
             company_name text PRIMARY KEY, red_flags text[], green_checks text[],
             red_count int, green_count int, computed_at timestamptz DEFAULT now())""")
         conn.commit()
-    cur.execute("""
-        SELECT i.company_name, i.issue_size_cr, i.ofs_pct, i.ipo_pe,
-               i.peer_median_pe, i.final_qib, i.debt_equity,
-               ri.verdict AS rhp_verdict, ri.auditor_qualified, ri.sebi_action,
-               ri.criminal_litigation, ri.promoter_pledge_flag, ri.related_party_concern,
-               ri.customer_concentration_high, ri.contingent_liabilities_material,
-               ri.numbers_integrity_flag
+    # Introspect real columns first — missing ones resolve to NULL (no crash).
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_intelligence'")
+    ii = {r["column_name"] for r in cur.fetchall()}
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_rhp_intel'")
+    ri = {r["column_name"] for r in cur.fetchall()}
+    def ic(name):
+        return f"i.{name} AS {name}" if name in ii else f"NULL AS {name}"
+    def rc(name, alias=None):
+        a = alias or name
+        return f"ri.{name} AS {a}" if name in ri else f"NULL AS {a}"
+    cols = ["i.company_name",
+            ic("issue_size_cr"), ic("ofs_pct"), ic("ipo_pe"), ic("peer_median_pe"),
+            ic("final_qib"), ic("debt_equity"),
+            rc("verdict", "rhp_verdict"), rc("auditor_qualified"), rc("sebi_action"),
+            rc("criminal_litigation"), rc("promoter_pledge_flag"), rc("related_party_concern"),
+            rc("customer_concentration_high"), rc("contingent_liabilities_material"),
+            rc("numbers_integrity_flag")]
+    cur.execute(f"""
+        SELECT {", ".join(cols)}
         FROM ipo_intelligence i
         LEFT JOIN ipo_rhp_intel ri ON ri.company_name = i.company_name
         WHERE i.company_name IS NOT NULL

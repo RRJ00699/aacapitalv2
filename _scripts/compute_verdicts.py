@@ -124,19 +124,34 @@ def main():
             confidence text, sub_scores jsonb, computed_at timestamptz DEFAULT now())""")
         conn.commit()
 
-    # bull regime = latest market_regimes says bull (best-effort; None if unknown)
-    cur.execute("""
-        SELECT i.company_name, i.score_band, i.ipo_score, i.issue_size_cr,
-               i.listing_gap_pct, i.listing_date, i.ipo_pe, i.peer_median_pe,
-               i.final_qib, i.ofs_pct, i.anchor_count,
-               (i.listing_date IS NOT NULL AND i.listing_date <= CURRENT_DATE) AS is_listed,
-               ri.verdict AS rhp_verdict, ri.quality_gate AS rhp_gate,
-               ri.requires_further_dd, ri.auditor_qualified, ri.sebi_action,
-               ri.criminal_litigation, ri.related_party_concern, ri.ofs_heavy,
-               ri.promoter_pledge_flag, ri.customer_concentration_high,
-               ri.contingent_liabilities_material,
-               (SELECT regime ILIKE '%bull%' OR regime ILIKE '%normal%'
-                  FROM market_regimes m ORDER BY evaluation_date DESC LIMIT 1) AS regime_bull
+    # Introspect real columns first — never hardcode a name that might not exist
+    # (the gmp_percentage lesson). Missing columns resolve to NULL, no crash.
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_intelligence'")
+    ii = {r["column_name"] for r in cur.fetchall()}
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_rhp_intel'")
+    ri = {r["column_name"] for r in cur.fetchall()}
+    cur.execute("SELECT to_regclass('market_regimes') IS NOT NULL AS ok")
+    has_regimes = bool(cur.fetchone()["ok"])
+    def ic(name):  # ipo_intelligence column or NULL
+        return f"i.{name} AS {name}" if name in ii else f"NULL AS {name}"
+    def rc(name, alias=None):  # ipo_rhp_intel column or NULL
+        a = alias or name
+        return f"ri.{name} AS {a}" if name in ri else f"NULL AS {a}"
+    cols = ["i.company_name",
+            ic("score_band"), ic("ipo_score"), ic("issue_size_cr"), ic("listing_gap_pct"),
+            ic("listing_date"), ic("ipo_pe"), ic("peer_median_pe"), ic("final_qib"),
+            ic("ofs_pct"), ic("anchor_count"),
+            "(i.listing_date IS NOT NULL AND i.listing_date <= CURRENT_DATE) AS is_listed",
+            rc("verdict", "rhp_verdict"), rc("quality_gate", "rhp_gate"),
+            rc("requires_further_dd"), rc("auditor_qualified"), rc("sebi_action"),
+            rc("criminal_litigation"), rc("related_party_concern"), rc("ofs_heavy"),
+            rc("promoter_pledge_flag"), rc("customer_concentration_high"),
+            rc("contingent_liabilities_material")]
+    regime_sql = ("(SELECT regime ILIKE '%bull%' OR regime ILIKE '%normal%' "
+                  "FROM market_regimes m ORDER BY evaluation_date DESC LIMIT 1)"
+                  ) if has_regimes else "NULL"
+    cur.execute(f"""
+        SELECT {", ".join(cols)}, {regime_sql} AS regime_bull
         FROM ipo_intelligence i
         LEFT JOIN ipo_rhp_intel ri ON ri.company_name = i.company_name
         WHERE i.company_name IS NOT NULL
