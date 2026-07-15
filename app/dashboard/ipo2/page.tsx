@@ -385,6 +385,35 @@ function HoldStrip({ sym }: { sym: string }) {
   );
 }
 
+type LiveRule = { name: string; passed: boolean | null; win_rate: number | null };
+function RuleCard({ title, when, rules }: { title: string; when: string; rules: LiveRule[] | null }) {
+  const ghost: LiveRule[] = Array.from({ length: 4 }, () => ({ name: "", passed: null, win_rate: null }));
+  const rows = rules ?? ghost;
+  return (
+    <div style={{ flex: "1 1 240px", minWidth: 230, border: rules ? `1px solid ${C.border}` : `1px dashed ${C.border}`,
+      borderRadius: 11, padding: "10px 12px", background: rules ? C.bg : "transparent" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 700 }}>{title}</span>
+        <span style={{ fontSize: 9.5, color: C.dim }}>{when}</span>
+      </div>
+      <div style={{ marginTop: 7 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0",
+            borderTop: i ? `1px solid ${C.line}` : "none" }}>
+            {r.passed == null
+              ? <span className={rules ? undefined : "shimmer"} style={{ width: 12, textAlign: "center", color: C.dim, fontWeight: 800, fontSize: 11 }}>·</span>
+              : <span style={{ width: 12, textAlign: "center", fontWeight: 800, fontSize: 11.5, color: r.passed ? C.green : C.red }}>{r.passed ? "✓" : "✕"}</span>}
+            {r.name
+              ? <span style={{ flex: 1, fontSize: 11.5, color: C.sub, lineHeight: 1.3 }}>{r.name}</span>
+              : <span className="shimmer" style={{ flex: 1, height: 8, background: C.grayBg, borderRadius: 4 }} />}
+            <span style={{ ...num, fontSize: 10.5, fontWeight: 600, color: r.win_rate != null ? C.meta : C.dim }}>
+              {r.win_rate != null ? `${r.win_rate}%` : "—"}</span>
+          </div>))}
+      </div>
+    </div>
+  );
+}
+
 function LiveDecisionPanel() {
   // Countdown to the 10:14 IST decision deadline (2-min grace off 10:16 — Rakesh 2026-07-16).
   // Pure client time — no API. The layered tiles below are DESIGNED AWAITING states shaped
@@ -410,26 +439,23 @@ function LiveDecisionPanel() {
           color: past ? C.dim : hot ? C.red : C.text, transition: "color .3s var(--ease)" }}>
           {pre ? "pre-open" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
         </span>
-        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>rule score lands ~10:08</span>}
+        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>evals 9:30 · 9:45 · 10:00 · then every minute to 10:14 — score by ~10:08</span>}
         {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
+        <span style={{ marginLeft: "auto", textAlign: "right" }}>
+          <span style={{ display: "block", fontSize: 9, color: C.meta, letterSpacing: .5, textTransform: "uppercase", fontWeight: 700 }}>Confidence</span>
+          <span style={{ ...num, fontSize: 24, fontWeight: 800, color: C.dim, lineHeight: 1 }}>—</span>
+          <span style={{ display: "block", fontSize: 9, color: C.dim }}>win-rate-weighted · awaiting</span>
+        </span>
       </div>
-      {/* LAYER 1 · static rules @ 9:30 */}
+      {/* two-layer rule cards: static @9:30, live firming to 10:08 — bind rules_static/rules_live */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
-          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Static rules · 9:30</div>
-          {await2("4 playbook rules + RHP gate → X/5 pass")}
-        </div>
-        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
-          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Live rules · firm by 10:08</div>
-          {await2("open positive · +15% · >50%-pop avoid")}
-        </div>
+        <RuleCard title="Static rules" when="scored 9:30" rules={null} />
+        <RuleCard title="Live rules" when="firms to 10:08" rules={null} />
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
           {await2("discovery ₹ · buy/sell qty · lean %")}
-        </div>
-        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
-          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Score · by 10:08</div>
-          {await2("rules passed + confidence 0–100")}
         </div>
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
@@ -567,6 +593,7 @@ function IpoCommand() {
   const [err, setErr] = useState<string|null>(null);
   const [view, setView] = useState("command");
   const [vFilter, setVFilter] = useState("ALL");
+  const [liveSel, setLiveSel] = useState<string | null>(null);
   const autoLive = useRef(false);
   useEffect(() => {
     if (autoLive.current || !d) return;
@@ -651,7 +678,20 @@ function IpoCommand() {
           {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "feed idle"} ·
           {windowCards.length} in the 7-day window · launcher 09:10 IST
         </div>
-        {windowCards.length>0 && <LiveDecisionPanel/>}
+        {windowCards.length>1 && (
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"0 0 10px"}}>
+            {windowCards.map(w => { const ws = String(w.sym);
+              const sel = (liveSel ?? String(windowCards[0].sym)) === ws;
+              return (
+              <span key={ws} onClick={()=>setLiveSel(ws)} style={{cursor:"pointer",userSelect:"none",
+                fontFamily:"var(--f-display)",fontSize:12,fontWeight:sel?700:500,padding:"6px 13px",borderRadius:10,
+                border:`1px solid ${sel?C.amberBd:C.border}`,background:sel?C.amberBg:C.surface,
+                color:sel?C.gold:C.meta,transition:"all .2s var(--ease)"}}>
+                {liveSyms.includes(ws) && <span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>}
+                {String(w.company_name||ws).split(" ").slice(0,2).join(" ")}
+              </span>);})}
+          </div>
+        )}
         {windowCards.length===0 && <div style={card}>
           <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:"16px 14px"}}>
             <div style={{fontSize:11,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>No IPO in the live window</div>
@@ -659,11 +699,13 @@ function IpoCommand() {
               This screen holds every IPO for 7 days after listing. Next listing: {next ? `${next.company_name} · ${D(next.listing_date)}` : "—"}.</div>
           </div>
         </div>}
-        {windowCards.map((wc) => {
+        {windowCards.filter(w => String(w.sym) === (liveSel ?? String(windowCards[0]?.sym))).map((wc) => {
           const sym = String(wc.sym);
           const isLive = liveSyms.includes(sym);
           return (
-          <div key={sym} className="live-split">
+          <div key={sym}>
+          <LiveDecisionPanel/>
+          <div className="live-split">
             <div className="lp">
               {isLive ? (
                 <>{(() => {
@@ -743,6 +785,7 @@ function IpoCommand() {
             <div className="rp">
               <HoldStrip sym={sym}/>
             </div>
+          </div>
           </div>);
         })}
       </>}
