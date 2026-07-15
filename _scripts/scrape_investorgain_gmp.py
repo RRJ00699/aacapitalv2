@@ -22,7 +22,14 @@ def scrape():
     for r in rows:
         if len(r)<3 or not r[0] or r[0].lower().startswith("ipo"): continue
         name=re.sub(r"\s+(BSE SME|NSE SME|IPO).*$","",r[0]).strip()
-        gmp=next((re.sub(r"[^\d.-]","",c) for c in r if "₹" in c or re.search(r"\d",c)), "")
+        def _clean_gmp(c):
+            c = c.replace(",", "").replace("--", "-")   # Indian commas + double-sign poison
+            m = re.search(r"-?\d+(?:\.\d+)?", c)      # first signed number token
+            if not m: return ""
+            x = m.group(0)
+            try: float(x); return x
+            except ValueError: return ""
+        gmp=next((_clean_gmp(c) for c in r if "₹" in c or re.search(r"\d", c)), "")
         est=next((c for c in r if "%" in c), "")
         out.append({"company":name,"raw":" | ".join(r),"gmp":gmp,"est_listing":est})
     return out
