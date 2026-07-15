@@ -27,10 +27,24 @@
     --t-bg:#0F172A; --t-surface:#1B2432; --t-surface2:#232F40; --t-border:#334155; --t-line:#2A3852; --t-text:#F8FAFC; --t-sub:#CBD5E1; --t-meta:#94A3B8; --t-dim:#64748B; --t-green:#22C55E; --t-greenBg:#14331F; --t-greenBd:#1E6337; --t-blue:#60A5FA; --t-blueBg:#152A44; --t-blueBd:#2C4E7A; --t-amber:#FBBF24; --t-amberBg:#2E2718; --t-amberBd:#5E4C28; --t-red:#F87171; --t-redBg:#3B1717; --t-redBd:#6B2E2E; --t-grayBg:#1C2637; --t-gold:#D4AF37; --t-header:#111827; --t-headerText:#F8FAFC;
   }
 }
+/* ── type roles + motion (design-system pass 2026-07-15) ── */
+:root {
+  --f-display: 'Sora', -apple-system, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --f-body: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.2,.7,.3,1);
+}
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  font-family: var(--f-body);
   color: var(--t-text); background: var(--t-bg); -webkit-font-smoothing: antialiased;
   transition: background 0.2s ease, color 0.2s ease;
+}
+@keyframes pulseDot { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+.livedot { width: 7px; height: 7px; border-radius: 50%; background: var(--t-green);
+  display: inline-block; animation: pulseDot 1.6s var(--ease) infinite; }
+@media (max-width: 520px) { .nav-tagline { display: none } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important }
 }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-thumb { background: var(--t-border); border-radius: 2px; }
