@@ -385,6 +385,61 @@ function HoldStrip({ sym }: { sym: string }) {
   );
 }
 
+function LiveDecisionPanel() {
+  // Countdown to the 10:14 IST decision deadline (2-min grace off 10:16 — Rakesh 2026-07-16).
+  // Pure client time — no API. The layered tiles below are DESIGNED AWAITING states shaped
+  // to the confirmed backend contract (rules_static/rules_live/pre-open book/score/volume);
+  // they bind when the endpoint ships. Zero invented bindings today.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const ist = new Date(now + 5.5 * 3600000);
+  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const deadline = 10 * 60 + 14; // 10:14 IST
+  const secsLeft = (deadline - mins) * 60 - ist.getUTCSeconds();
+  const pre = mins < 9 * 60 + 15, past = secsLeft <= 0;
+  const mm = Math.floor(Math.max(0, secsLeft) / 60), ss = Math.max(0, secsLeft) % 60;
+  const hot = !pre && !past && secsLeft < 15 * 60;
+  const await2 = (note: string) => (
+    <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 4 }}>awaiting<span style={{ fontWeight: 400 }}> · {note}</span></div>);
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
+      {/* HERO: the deadline */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>Decision deadline 10:14 IST</span>
+        <span style={{ ...num, fontSize: 30, fontWeight: 800, lineHeight: 1,
+          color: past ? C.dim : hot ? C.red : C.text, transition: "color .3s var(--ease)" }}>
+          {pre ? "pre-open" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
+        </span>
+        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>rule score lands ~10:08</span>}
+        {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
+      </div>
+      {/* LAYER 1 · static rules @ 9:30 */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Static rules · 9:30</div>
+          {await2("4 playbook rules + RHP gate → X/5 pass")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Live rules · firm by 10:08</div>
+          {await2("open positive · +15% · >50%-pop avoid")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
+          {await2("discovery ₹ · buy/sell qty · lean %")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Score · by 10:08</div>
+          {await2("rules passed + confidence 0–100")}
+        </div>
+        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
+          {await2("cumulative volume window")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:16, padding:"16px 18px", marginBottom:14,
   boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 12px 32px -10px rgba(28,36,58,.28), 0 3px 10px -3px rgba(28,36,58,.16)" };
@@ -442,7 +497,7 @@ function Calculator() {
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
       <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>Share sizer — how many shares for your capital</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
-        On listing day (9:45–10:15) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
+        On listing day (9:45–10:14 decision window) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
         <div style={{flex:1,minWidth:160}}><label style={lbl}>Your capital (₹)</label>
           <input style={inp} value={cap} onChange={e=>setCap(e.target.value)} inputMode="numeric"/></div>
@@ -596,6 +651,7 @@ function IpoCommand() {
           {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "feed idle"} ·
           {windowCards.length} in the 7-day window · launcher 09:10 IST
         </div>
+        {windowCards.length>0 && <LiveDecisionPanel/>}
         {windowCards.length===0 && <div style={card}>
           <div style={{border:`1px dashed ${C.border}`,borderRadius:12,padding:"16px 14px"}}>
             <div style={{fontSize:11,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>No IPO in the live window</div>
@@ -682,15 +738,7 @@ function IpoCommand() {
                   </div>
                 </div>
               )}
-              {/* live-metrics placeholders — backend wiring lands next, then these bind */}
-              <div style={{display:"flex",gap:7,flexWrap:"wrap",margin:"0 0 14px"}}>
-                {[["VWAP","awaiting backend"],["Pre-open","volume · bids — awaiting backend"],["Rule score","rules passed + confidence · 10:08 IST"]].map(([l,n2],i)=>(
-                  <div key={i} style={{flex:"1 1 100px",minWidth:100,border:`1px dashed ${C.border}`,borderRadius:10,padding:"8px 10px"}}>
-                    <div style={{fontSize:9.5,color:C.meta,letterSpacing:.4,textTransform:"uppercase",fontWeight:600}}>{l}</div>
-                    <div style={{fontSize:11.5,fontWeight:600,color:C.dim,marginTop:4}}>awaiting</div>
-                    <div style={{fontSize:9.5,color:C.dim,marginTop:1,lineHeight:1.3}}>{n2}</div>
-                  </div>))}
-              </div>
+
             </div>
             <div className="rp">
               <HoldStrip sym={sym}/>
