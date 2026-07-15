@@ -121,10 +121,11 @@ def main():
     # REMOVED: OBIR floor/ceiling compute (no value, burned CU-hrs) — 2026-07-10
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner", ["compute_flags.py","--apply"])
-    step("post-listing momentum (distribution detect)", ["distribution_detect.py","--apply"])
+    # (distribution detector RETIRED 2026-07-15 — clean backtest n=368: fires 10%,
+    #  +0.8pt win / zero median vs trail-12; complexity without edge)
     # --- RHP forensic pipeline (governance/legal/concentration moat) ---
-    step("download RHPs (new/recent only)", ["download_rhps.py","--csv","ipo_full_columns.csv","--output","rhps","--days-back","45","--days-ahead","120"])
-    step("extract + store RHPs (skip already-done)", ["rhp_batch.py","--dir","rhps"])
+    # (download_rhps/rhp_batch RETIRED 2026-07-15 — superseded by rhp_auto.py on its
+    #  own cron: fetch_new_rhps -> rhp_sonnet ($1 cap) -> rhp_sonnet_store -> purge)
     # (accuracy leaderboard RETIRED 2026-07-15 — script/table removed)
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
