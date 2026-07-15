@@ -258,7 +258,6 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
                   <pre style={{
                     margin: 0, fontSize: 11.5, lineHeight: 1.5, fontFamily: "var(--f-mono)", color: "#94A3B8", background: "#0B1020",
                     borderRadius: 8, padding: "10px 12px", overflowX: "auto", maxHeight: 320,
-                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                   }}>
                     <code style={{ color: "#C7D2FE" }}>{r.log_tail || "(no output captured)"}</code>
                   </pre>
