@@ -67,7 +67,8 @@ export async function GET() {
              bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score,
              ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high,
              c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,
-             c.profit_cagr_3y, c.debt_equity, c.ofs_pct, c.structure_type, c.return_listing_open
+             c.profit_cagr_3y, c.debt_equity, c.ofs_pct, c.structure_type, c.return_listing_open,
+             c.gmp_day_before_pct, c.gmp_max_pct, c.gmp_min_pct, c.gmp_percentage
       FROM ipo_consolidated c
       LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
       LEFT JOIN ipo_flags f ON f.company_name = c.company_name
@@ -206,7 +207,23 @@ export async function GET() {
     } catch (e) { console.error("leaderboard:", e); leaderboard = []; }
 
     // ── Fair Value (Rakesh's 3-step model): base PE × quality ±15% × structure ±10% ──
-    function fairValue(c: Record<string, unknown>) {
+    function gmpSignal(c: Record<string, unknown>) {
+  // GMP day-before is the predictive reading (r=+0.74): >20% strong, 10-20% good, 0-10% weak.
+  // gmp_percentage (broad) is noise (r=-0.05) — shown for context only, not the signal.
+  const db = c.gmp_day_before_pct == null ? null : Number(c.gmp_day_before_pct);
+  const hi = c.gmp_max_pct == null ? null : Number(c.gmp_max_pct);
+  const lo = c.gmp_min_pct == null ? null : Number(c.gmp_min_pct);
+  let band: string | null = null, hint: string | null = null;
+  if (db != null) {
+    if (db > 20)      { band = "STRONG"; hint = ">20% GMP: +50.9% avg, 100% win (n=14)"; }
+    else if (db >= 10){ band = "GOOD";   hint = "10-20% GMP: +28.2% avg, 89% win"; }
+    else if (db >= 0) { band = "WEAK";   hint = "0-10% GMP: +4.2% avg, 57% win"; }
+    else              { band = "NEGATIVE"; hint = "negative GMP: discount signal"; }
+  }
+  return { gmp_day_before: db, gmp_high: hi, gmp_low: lo, gmp_band: band, gmp_hint: hint };
+}
+
+function fairValue(c: Record<string, unknown>) {
       const price = Number(c.issue_price) || 0;
       // Prefer post-issue EPS; fall back to deriving it from ipo_pe (eps = price / P/E)
       // so fair value lights up on the ~392 IPOs that have ipo_pe even when eps_post is null.
@@ -301,7 +318,7 @@ export async function GET() {
       else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : `No buy-at-open rules met — watch only.`;
 
       return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
-               playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c) };
+               playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c), ...gmpSignal(c) };
     });
 
     const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
