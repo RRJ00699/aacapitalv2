@@ -310,12 +310,30 @@ def main():
     def on_error(ws, code, reason):
         log.warning(f"error: {code} {reason}")
 
-    kws = KiteTicker(API_KEY, access_token)
+    def on_reconnect(ws, attempts_count):
+        # Fired automatically between reconnection attempts. Kite resubscribes
+        # via on_connect once the socket is back, so we just log progress.
+        log.warning(f"reconnecting… attempt {attempts_count}")
+
+    def on_noreconnect(ws):
+        # All auto-reconnect attempts exhausted. Log loudly so the cron/monitor
+        # can surface it; the next day's launcher will start a fresh session.
+        log.error("KiteTicker gave up reconnecting — all attempts exhausted")
+
+    # Survive intraday socket drops: KiteTicker auto-reconnects (exponential
+    # backoff) when reconnect=True. It defaults on, but we set it explicitly and
+    # wire the reconnect callbacks so drops are visible in logs instead of silent.
+    kws = KiteTicker(
+        API_KEY, access_token,
+        reconnect=True, reconnect_max_tries=50, reconnect_max_delay=60,
+    )
     kws.on_ticks = on_ticks
     kws.on_connect = on_connect
     kws.on_close = on_close
     kws.on_error = on_error
-    log.info("connecting to KiteTicker… (Ctrl-C to stop)")
+    kws.on_reconnect = on_reconnect
+    kws.on_noreconnect = on_noreconnect
+    log.info("connecting to KiteTicker… (auto-reconnect on; Ctrl-C to stop)")
     kws.connect(threaded=False)
 
 
