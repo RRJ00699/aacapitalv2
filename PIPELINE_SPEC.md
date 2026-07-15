@@ -36,19 +36,26 @@ on the gaps Sonnet flags, and makes the final call on listing day against house 
 Rule: strong-key joins only (ISIN > exact normalized name, never fuzzy);
 fill-empty-only (COALESCE) enrichment; one owning source per column.
 
-## 3. Document handling (RHP + SBI) — download, extract, verdict
-- **Download to VM:** the auto job downloads both the **RHP** and the **SBI note**
-  PDFs to the VM, and stores a **link** for each (for IPOs from SBI Funds onward;
-  earlier RHPs already sit in local storage).
-- **Sonnet extraction — both docs:** Claude Sonnet reads **both** the RHP and the
-  SBI document and produces a combined forensic verdict (clean / watch / reject)
-  plus the governance flags, material risks, and the gaps the owner should research.
-  (`rhp_sonnet.py` extended to accept the SBI doc alongside the RHP;
-  `rhp_sonnet_store.py` persists the combined result.)
-- **Cost cap:** Sonnet extraction is capped at **$3 per run**.
-- **Failure handling:** if two or more IPOs need extraction and one fails because
+## 3. Document handling — RHP (Sonnet) + SBI (scrape/parse)
+- **RHP → Sonnet (forensic verdict):** Claude Sonnet reads the **RHP only** and
+  produces the forensic verdict (clean / watch / reject) plus governance flags,
+  material risks, and the gaps the owner should research. Sonnet is single-purpose
+  here — RHP forensic, nothing else. (`rhp_sonnet.py` → `rhp_sonnet_store.py`.)
+- **SBI → existing scrape + parse (structured data):** the SBI research note is
+  handled by the existing download + parse jobs (`download_sbi_notes.py`,
+  `parse_sbi_notes.py`), which extract the structured fields (rating, peer table,
+  valuation) into `ipo_research_notes`. SBI is NOT sent to Sonnet.
+- **Cost cap:** Sonnet RHP extraction is capped at **$3 per run**.
+- **Failure handling:** if two or more RHPs need extraction and one fails because
   the cost cap / rate limit is hit, that IPO is **logged as pending and picked up
   on the next run** — never silently dropped. The log records IPO, reason, timestamp.
+- **Download to VM:** the auto job downloads the RHP (and, for IPOs from SBI Funds
+  onward, the SBI note) PDFs to the VM and stores a link for each; earlier RHPs
+  already sit in local storage.
+
+> Note: an earlier draft proposed sending both RHP and SBI to Sonnet (and a Haiku
+> pass for broker docs). That is **not** the design — Sonnet stays RHP-only; SBI is
+> structured scrape/parse. Broker-doc LLM extraction is out of scope for now.
 
 ## 4. Command-center computation (once inputs land)
 As soon as the required inputs exist, the command center computes and keeps updating:
@@ -79,9 +86,9 @@ sit blank once its source has published.
   reason to `job_runs` for the admin screen; a failed doc-extraction re-queues.
 
 ## 7. Known state / gaps (honest, at time of writing)
-- `fetch_nse_ipos.py` exists but is **not currently a pipeline step** — needs wiring
-  as the discovery trigger.
-- Sonnet currently reads the RHP; **adding the SBI doc to the same extraction** is new work.
+- `fetch_nse_ipos.py` (`_scripts/ipo/`) is now wired as the FIRST pipeline step
+  (NSE discovery trigger) — upserts new IPOs into ipo_intelligence, dedup-safe.
+- Sonnet reads the RHP only (by design). SBI is structured scrape/parse — no LLM.
 - `eps_post` is null for current upcoming IPOs → modeled fair value is null → the live
   engine uses the GMP-implied anchor until Screener financials populate EPS.
 - The current "data not flowing" symptom (anchors/GMP blank on upcoming IPOs) is a
