@@ -74,6 +74,10 @@ def main():
     # scrape steps are non-hard (a source hiccup shouldn't kill the data refresh). Adjust script
     # names to your scrapers; missing ones just warn and skip.
     # no --year: scrape_chittorgarh.py defaults to the CURRENT year (never goes stale)
+    # NSE discovery trigger: seed new IPOs from the live NSE feed into ipo_intelligence
+    # FIRST, so a freshly-announced IPO enters our world before enrichment runs.
+    # Upserts by company_name (dedup-safe, RULE 1); non-hard so an NSE hiccup won't kill the run.
+    step("NSE discovery (new IPOs)",        ["ipo/fetch_nse_ipos.py"])
     step("scrape IPO calendar + details", ["scrape_chittorgarh.py","--write-db"])
     # anchor/subscription depth (non-hard: token/CF hiccup shouldn't kill the run)
     step("anchor + subscription enrich",  ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
