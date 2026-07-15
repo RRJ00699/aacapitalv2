@@ -88,18 +88,18 @@ def main():
     step("reconcile listing dates",     ["reconcile_listing_dates.py","--apply"])
     step("close-in-range strength",     ["close_in_range.py","--apply"])
     step("master computables backfill",   ["backfill_master_computables.py","--apply"])
-    step("sector cleanup",                ["fix_sectors.py","--apply"])
-    step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
-    step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
+    # [DEAD-TABLE, removed] step("sector cleanup",                ["fix_sectors.py","--apply"])
+    # [DEAD-TABLE, removed] step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
+    # [DEAD-TABLE, removed] step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("convergence snapshot (history)", ["snapshot_convergence.py"])
     step("d10 outcome precompute",        ["compute_d10.py"])
     step("master computables backfill",   ["backfill_master_computables.py","--apply"])
-    step("sector cleanup",                ["fix_sectors.py","--apply"])
-    step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
-    step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
+    # [DEAD-TABLE, removed] step("sector cleanup",                ["fix_sectors.py","--apply"])
+    # [DEAD-TABLE, removed] step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])
+    # [DEAD-TABLE, removed] step("quality flags (Laser pattern)", ["compute_quality_flags.py","--apply"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("convergence ranking (Today)",   ["compute_convergence_ranking.py"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
