@@ -11,10 +11,27 @@ import argparse, os, re, sys, datetime
 URL="https://www.investorgain.com/report/live-ipo-gmp/331/"
 
 def scrape():
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     with sync_playwright() as p:
         b=p.chromium.launch(headless=True); pg=b.new_page()
-        pg.goto(URL, wait_until="networkidle", timeout=60000); pg.wait_for_timeout(3000)
+        # domcontentloaded is robust: networkidle waits for ALL network to go quiet,
+        # which ad/analytics-heavy pages like investorgain rarely do -> 60s timeout.
+        # Instead: load the DOM, then explicitly wait for the data table to appear.
+        last_err=None
+        for attempt in range(2):
+            try:
+                pg.goto(URL, wait_until="domcontentloaded", timeout=45000)
+                pg.wait_for_selector("table tr", timeout=20000)  # the data is here
+                pg.wait_for_timeout(1500)                        # let rows settle
+                last_err=None
+                break
+            except PWTimeout as e:
+                last_err=e
+                pg.wait_for_timeout(2000)                        # brief backoff, retry once
+        if last_err:
+            b.close()
+            raise SystemExit("GMP scrape: investorgain unreachable/slow (2 attempts) — "
+                             "context-only data, skipping this run.")
         rows=pg.eval_on_selector_all("table tr", """els => els.map(r =>
             Array.from(r.querySelectorAll('th,td')).map(c => c.innerText.trim()))""")
         b.close()
