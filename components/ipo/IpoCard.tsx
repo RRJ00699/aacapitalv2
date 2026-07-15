@@ -233,15 +233,37 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         </button>
       )}
 
-      {showRhp && (
-        <div style={{ marginTop: 10, padding: "13px 15px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-          {c.rhp_gate && <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 7 }}>
-            🔍 RHP TRUST · {String(c.rhp_gate)}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}</div>}
-          {c.rhp_one_line && <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55 }}>{String(c.rhp_one_line)}</div>}
-          {c.ai_summary && <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 10, display: "flex", gap: 7 }}>
-            <span>🤖</span><span>{String(c.ai_summary)}</span></div>}
-        </div>
-      )}
+      {showRhp && (() => {
+        // full_json (rhp_full) carries the complete RHP intel — parse + render it all,
+        // so the full text is available on-app without any DB query.
+        const fj = typeof c.rhp_full === "string"
+          ? (() => { try { return JSON.parse(String(c.rhp_full)); } catch { return null; } })()
+          : (c.rhp_full as Record<string, unknown> | null);
+        const risks = fj && Array.isArray((fj as Record<string, unknown>).top_3_material_risks)
+          ? ((fj as Record<string, unknown>).top_3_material_risks as string[]) : [];
+        const ddNote = fj && (fj as Record<string, unknown>).aacapital_decision
+          ? ((fj as Record<string, Record<string, unknown>>).aacapital_decision?.dd_note as string) : null;
+        const trustSummary = fj ? ((fj as Record<string, unknown>).trust_summary as string) : null;
+        return (
+          <div style={{ marginTop: 10, padding: "14px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
+            {c.rhp_gate && <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
+              🔍 RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div>}
+            {c.rhp_one_line && <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55, marginBottom: trustSummary || risks.length ? 10 : 0 }}>{String(c.rhp_one_line)}</div>}
+            {trustSummary && <p style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.6, marginBottom: 10 }}>{trustSummary}</p>}
+            {risks.length > 0 && <>
+              <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "10px 0 6px" }}>Top material risks</div>
+              {risks.map((r, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>
+                <span style={{ color: C.amber, fontWeight: 700 }}>{i + 1}.</span><span>{r}</span></div>)}
+            </>}
+            {ddNote && <>
+              <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 5px" }}>Due-diligence to verify</div>
+              <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>{ddNote}</div></>}
+            {c.ai_summary && <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 11, display: "flex", gap: 7 }}>
+              <span>🤖</span><span>{String(c.ai_summary)}</span></div>}
+            <div style={{ marginTop: 11, fontSize: 10, color: C.dim }}>Source: Red Herring Prospectus · extracted by Claude · research signal, not a buy call</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
