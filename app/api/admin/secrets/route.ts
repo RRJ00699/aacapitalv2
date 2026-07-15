@@ -6,7 +6,7 @@ import { getAdminEmail } from "@/lib/admin";
 import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
-const KEYS = ["screener_username", "screener_password", "screener_cookie", "ntfy_topic"];
+const KEYS = ["screener_username", "screener_password", "screener_cookie", "ntfy_topic", "ipomatrix_cookie"];
 
 export async function GET() {
   const gate = await requireUser(); if (gate) return gate;
