@@ -2,13 +2,15 @@
 import React, { useState } from "react";
 
 /* ────────────────────────────────────────────────────────────────────────
-   IpoCard — premium institutional IPO card. Built to *exceed*:
-   • Score 40px with a conviction ring · Decision as a bold color pill
-   • Emphasized metric row (Fair Value colored, MoS prominent)
-   • "AACapital House Rules" pills (ticks, max 3 + "+N more")
-   • Compact 3-verdict footer · unmissable gold journey CTA (the unburied gold)
-   • RHP + AI collapsed behind a tap
-   Same --t-* theme vars → light + dark both crisp. Bindings preserved 1:1.
+   IpoCard v2 — every locked edge on the card. Extends v1's language
+   (dial · pill · pills · gold CTA), adds the previously-unrendered signal:
+   • SETUP line — the tested playbook engine (STACK/CORE/core-lite/avoid)
+   • GMP strip — day-before % (the r=+0.74 predictor) + hi–lo range + band
+   • EDGE grid — anchors · OFS mix · PE vs peer · QIB · band, colored by
+     the locked thresholds from IPO_BUSINESS_REQUIREMENTS.md §5
+   • FV empty-state — shows fair_note reason, never a fake number
+   • RHP expand — + governance flag chips when present in full_json
+   All --t-* vars → light/dark/PWA identical. Bindings: route.ts payload only.
    ──────────────────────────────────────────────────────────────────────── */
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -92,7 +94,7 @@ function Pill({ kind, text }: { kind: "pass" | "warn" | "neutral"; text: string 
 function Metric({ label, value, sub, color, emphasis }: { label: string; value: string; sub?: string; color?: string; emphasis?: boolean }) {
   return (
     <div style={{
-      flex: 1, minWidth: 0, background: C.bg,
+      flex: "1 1 96px", minWidth: 0, background: C.bg,
       border: `1px solid ${emphasis ? C.gold : C.border}`,
       borderRadius: 11, padding: "10px 13px",
     }}>
@@ -100,9 +102,113 @@ function Metric({ label, value, sub, color, emphasis }: { label: string; value: 
       <div style={{ ...num, fontSize: 20, fontWeight: 800, color: color || C.text, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.1 }}>
         {value}
       </div>
-      {sub && <div style={{ ...num, fontSize: 12, fontWeight: 600, color: color || C.meta, marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ ...num, fontSize: 12, fontWeight: 600, color: color || C.meta, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
     </div>
   );
+}
+
+/* ── Setup line — the playbook engine finally on screen ─────────────────── */
+function setupStyle(setup: string | null): { col: string; bg: string; mark: string; name: string } {
+  switch (setup) {
+    case "stack":     return { col: C.gold,  bg: C.amberBg, mark: "◆◆", name: "STACK" };
+    case "core":      return { col: C.green, bg: C.greenBg, mark: "◆",  name: "CORE" };
+    case "core-lite": return { col: C.green, bg: C.greenBg, mark: "◇",  name: "CORE-LITE" };
+    case "avoid":     return { col: C.red,   bg: C.redBg,   mark: "✕",  name: "SKIP" };
+    default:          return { col: C.sub,   bg: C.grayBg,  mark: "•",  name: "WATCH" };
+  }
+}
+
+/* ── GMP strip — day-before is THE predictor (r=+0.74) ──────────────────── */
+function gmpBandStyle(band: string | null): { col: string; bg: string; bd: string } {
+  switch (band) {
+    case "STRONG":   return { col: C.green, bg: C.greenBg, bd: C.greenBd };
+    case "GOOD":     return { col: C.green, bg: C.greenBg, bd: C.greenBd };
+    case "WEAK":     return { col: C.amber, bg: C.amberBg, bd: C.amberBd };
+    case "NEGATIVE": return { col: C.red,   bg: C.redBg,   bd: C.redBd };
+    default:         return { col: C.sub,   bg: C.grayBg,  bd: C.border };
+  }
+}
+
+function GmpStrip({ db, hi, lo, band, hint }: { db: number | null; hi: number | null; lo: number | null; band: string | null; hint: string | null }) {
+  if (db == null && hi == null && lo == null) return null;
+  const bs = gmpBandStyle(band);
+  // range bar: lo→hi with a marker at day-before
+  const min = Math.min(lo ?? db ?? 0, 0);
+  const max = Math.max(hi ?? db ?? 0, 1);
+  const span = max - min || 1;
+  const pos = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
+  return (
+    <div style={{ marginTop: 14, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11, padding: "11px 13px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 10, color: C.meta, letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 600 }}>GMP day-before</div>
+        {db != null && <span style={{ ...num, fontSize: 20, fontWeight: 800, color: bs.col }}>{db > 0 ? "+" : ""}{db}%</span>}
+        {band && <span style={{ background: bs.bg, color: bs.col, border: `1px solid ${bs.bd}`, fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 999, letterSpacing: 0.4 }}>{band}</span>}
+      </div>
+      {(hi != null || lo != null) && (
+        <div style={{ marginTop: 9 }}>
+          <div style={{ position: "relative", height: 6, background: C.grayBg, borderRadius: 3 }}>
+            {lo != null && hi != null && (
+              <div style={{ position: "absolute", left: `${pos(lo)}%`, width: `${Math.max(2, pos(hi) - pos(lo))}%`, top: 0, bottom: 0, background: bs.bg, border: `1px solid ${bs.bd}`, borderRadius: 3 }} />
+            )}
+            {db != null && (
+              <div style={{ position: "absolute", left: `calc(${pos(db)}% - 4px)`, top: -3, width: 8, height: 12, background: bs.col, borderRadius: 2 }} />
+            )}
+          </div>
+          <div style={{ ...num, display: "flex", justifyContent: "space-between", fontSize: 10.5, color: C.meta, marginTop: 4 }}>
+            <span>low {lo != null ? `${lo}%` : "—"}</span>
+            <span>high {hi != null ? `${hi}%` : "—"}</span>
+          </div>
+        </div>
+      )}
+      {hint && <div style={{ fontSize: 11.5, color: C.meta, marginTop: 7 }}>{hint}</div>}
+    </div>
+  );
+}
+
+/* ── Edge grid — locked thresholds from the spec (§5) ───────────────────── */
+type Edge = { label: string; value: string; sub?: string; state: "pass" | "warn" | "neutral" | "na" };
+function edgeColor(state: Edge["state"]): string {
+  return state === "pass" ? C.green : state === "warn" ? C.red : state === "na" ? C.dim : C.text;
+}
+function EdgeGrid({ edges }: { edges: Edge[] }): React.ReactElement | null {
+  if (!edges.length) return null;
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+      {edges.map((e, i) => (
+        <div key={i} style={{ flex: "1 1 88px", minWidth: 88, background: C.bg, border: `1px solid ${e.state === "pass" ? C.greenBd : e.state === "warn" ? C.redBd : C.border}`, borderRadius: 10, padding: "8px 10px" }}>
+          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: 0.4, textTransform: "uppercase", fontWeight: 600 }}>{e.label}</div>
+          <div style={{ ...num, fontSize: 15, fontWeight: 800, color: edgeColor(e.state), marginTop: 3, whiteSpace: "nowrap" }}>{e.value}</div>
+          {e.sub && <div style={{ fontSize: 10, color: C.meta, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── RHP governance flag chips (rendered only when present in full_json) ── */
+const RHP_FLAGS: { key: string; label: string }[] = [
+  { key: "auditor_qualified", label: "Auditor qualified" },
+  { key: "sebi_action", label: "SEBI action" },
+  { key: "criminal_litigation", label: "Criminal litigation" },
+  { key: "related_party_concern", label: "Related-party concern" },
+  { key: "ofs_heavy", label: "OFS-heavy exit" },
+  { key: "customer_concentration_high", label: "Customer concentration" },
+  { key: "numbers_integrity_flag", label: "Numbers integrity" },
+  { key: "cash_conversion_flag", label: "Cash conversion" },
+  { key: "working_capital_flag", label: "Working capital" },
+  { key: "contingent_liabilities_material", label: "Contingent liabilities" },
+  { key: "promoter_pledge_flag", label: "Promoter pledge" },
+];
+function rhpFlagChips(fj: Record<string, unknown> | null): { raised: string[]; clear: number } {
+  if (!fj) return { raised: [], clear: 0 };
+  // flags may live at the top level or under a `flags` object — check both
+  const src = (typeof fj.flags === "object" && fj.flags !== null ? fj.flags : fj) as Record<string, unknown>;
+  const raised: string[] = []; let clear = 0;
+  for (const f of RHP_FLAGS) {
+    if (src[f.key] === true) raised.push(f.label);
+    else if (src[f.key] === false) clear++;
+  }
+  return { raised, clear };
 }
 
 export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: string) => void }) {
@@ -121,7 +227,6 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const warns = [...items(c.why_avoid), ...items(c.red_flags)].map((t) => ({ kind: "warn" as const, text: t }));
   const neutrals = items(c.why_caution).map((t) => ({ kind: "neutral" as const, text: t }));
   const rawPills: { kind: "pass" | "warn" | "neutral"; text: string }[] = [...passes, ...warns, ...neutrals];
-  // dedupe near-identical signals (e.g. size warning appearing in both why_avoid + red_flags)
   const seen = new Set<string>();
   const allPills = rawPills.filter((p) => {
     const key = p.text.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24);
@@ -135,10 +240,50 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const mos = N(c.fair_mos);
   const fvVerdict = c.fair_verdict as string | null;
   const fvColor = fvVerdict === "undervalued" ? C.green : fvVerdict === "rich" ? C.red : C.text;
+  const fvNote = c.fair_note ? String(c.fair_note) : null;
 
   const street = c.street_consensus ? String(c.street_consensus) : null;
   const brokers = N(c.street_brokers);
   const rhpGate = c.rhp_gate ? String(c.rhp_gate) : null;
+
+  // Setup (playbook engine — route.ts computes, v2 renders)
+  const setup = c.playbook_setup ? String(c.playbook_setup) : null;
+  const setupLine = c.playbook_verdict ? String(c.playbook_verdict) : null;
+  const ss = setupStyle(setup);
+
+  // GMP (derived fields only — gmp_day_before_pct/max/min upstream)
+  const gmpDb = N(c.gmp_day_before);
+  const gmpHi = N(c.gmp_high);
+  const gmpLo = N(c.gmp_low);
+  const gmpBand = c.gmp_band ? String(c.gmp_band) : null;
+  const gmpHint = c.gmp_hint ? String(c.gmp_hint) : null;
+
+  // Edge grid — locked thresholds (spec §5)
+  const anc = N(c.anchor_count);
+  const ofsCr = N(c.ofs_cr), freshCr = N(c.fresh_issue_cr);
+  const ofsPct = ofsCr != null && freshCr != null && (ofsCr + freshCr) > 0
+    ? Math.round((100 * ofsCr) / (ofsCr + freshCr)) : N(c.ofs_pct);
+  const ipoPe = N(c.ipo_pe), peerPe = N(c.peer_median_pe);
+  const peRatio = ipoPe != null && peerPe != null && peerPe > 0 ? ipoPe / peerPe : null;
+  const qib = N(c.final_qib);
+  const bandHigh = N(c.band_high);
+  const edges: Edge[] = [
+    { label: "Anchors", value: anc != null ? String(anc) : "—",
+      sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "no data",
+      state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
+    { label: "OFS mix", value: ofsPct != null ? `${ofsPct}%` : "—",
+      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "promoter cash-out" : "mixed") : "no data",
+      state: ofsPct == null ? "na" : ofsPct < 30 ? "pass" : ofsPct > 60 ? "warn" : "neutral" },
+    { label: "PE vs peer", value: peRatio != null ? `${peRatio.toFixed(2)}×` : ipoPe != null ? `${ipoPe.toFixed(0)}` : "—",
+      sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "needs peer P/E" : "no data",
+      state: peRatio == null ? "na" : peRatio < 0.6 ? "pass" : "neutral" },
+    { label: "QIB", value: qib != null ? `${qib}×` : "—",
+      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "no data",
+      state: qib == null ? "na" : qib >= 5 && qib <= 25 ? "pass" : "neutral" },
+    { label: "Band", value: bandHigh != null ? `₹${bandHigh}` : "—",
+      sub: bandHigh != null ? (bandHigh < 300 ? "under ₹300 · wins" : "premium band") : "no data",
+      state: bandHigh == null ? "na" : bandHigh < 300 ? "pass" : "neutral" },
+  ];
 
   return (
     <div style={{
@@ -156,7 +301,7 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
           </div>
           <div style={{ fontSize: 12, color: C.meta, marginTop: 5 }}>
             {c.state ? String(c.state) : ""}{c.listing_date ? ` · lists ${D(c.listing_date)}` : ""}
-            {c.quality_promoter === true && <span style={{ color: C.gold, fontWeight: 600 }}> · ★ Quality promoter</span>}
+            {c.quality_promoter === true ? <span style={{ color: C.gold, fontWeight: 600 }}> · ★ Quality promoter</span> : null}
           </div>
           <div style={{ marginTop: 12 }}>
             <span style={{
@@ -173,18 +318,35 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         <ScoreDial score={score} conf={conf} />
       </div>
 
-      {/* ROW 2: metrics */}
-      <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+      {/* ROW 2: SETUP — the playbook engine's call */}
+      {setupLine && (
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 9, marginTop: 14,
+          background: ss.bg, border: `1px solid ${C.line}`, borderRadius: 11, padding: "10px 13px",
+        }}>
+          <span style={{ color: ss.col, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{ss.mark} {ss.name}</span>
+          <span style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.45 }}>{setupLine}</span>
+        </div>
+      )}
+
+      {/* ROW 3: metrics — FV never fakes a number */}
+      <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
         {fv != null
           ? <Metric label="Fair Value" value={`₹${fv}`} sub={mos != null ? `${mos > 0 ? "+" : ""}${mos}% MoS` : undefined} color={fvColor} emphasis />
-          : <Metric label="Fair Value" value="—" color={C.dim} />}
+          : <Metric label="Fair Value" value="n/a" sub={fvNote || "inputs pending"} color={C.dim} />}
         <Metric label="IPO Price" value={c.issue_price != null ? `₹${c.issue_price}` : "—"} />
         <Metric label="Size" value={c.issue_size_cr != null ? `₹${Number(c.issue_size_cr).toLocaleString()}cr` : "—"} />
       </div>
 
-      {/* ROW 3: House Rules */}
+      {/* ROW 4: GMP predictor strip */}
+      <GmpStrip db={gmpDb} hi={gmpHi} lo={gmpLo} band={gmpBand} hint={gmpHint} />
+
+      {/* ROW 5: edge grid — the locked factors */}
+      <EdgeGrid edges={edges} />
+
+      {/* ROW 6: House Rules */}
       {allPills.length > 0 && (
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: C.meta, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 9 }}>
             AACapital House Rules
           </div>
@@ -200,7 +362,7 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         </div>
       )}
 
-      {/* ROW 4: footer */}
+      {/* ROW 7: footer — Street vs AACapital vs RHP */}
       {(street || verdict || rhpGate) && (
         <div style={{ display: "flex", gap: 22, padding: "13px 0 3px", marginTop: 16, borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
           {street && <div><div style={{ fontSize: 9.5, color: C.meta, letterSpacing: 0.4, textTransform: "uppercase" }}>Street</div>
@@ -212,30 +374,33 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         </div>
       )}
 
-      {/* ROW 5: journey CTA */}
+      {/* ROW 8: journey CTA — the live exit engine */}
       {listed && sym && (
-        <button onClick={() => onJourney?.(sym)} style={{
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%",
-          background: C.gold, color: C.bg, fontSize: 14, fontWeight: 800, padding: "12px 16px",
-          borderRadius: 11, border: "none", cursor: "pointer", marginTop: 16, letterSpacing: 0.2,
-        }}>
-          ⟶ Track the hold — live exit engine
-        </button>
+        <>
+          <button onClick={() => onJourney?.(sym)} style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%",
+            background: C.gold, color: C.bg, fontSize: 14, fontWeight: 800, padding: "12px 16px",
+            borderRadius: 11, border: "none", cursor: "pointer", marginTop: 16, letterSpacing: 0.2,
+          }}>
+            ⟶ Track the hold — live exit engine
+          </button>
+          <div style={{ ...num, fontSize: 10.5, color: C.dim, textAlign: "center", marginTop: 6 }}>
+            lock8/trail12 · arm +8% · floor +3% · trail −12%
+          </div>
+        </>
       )}
 
       {/* RHP toggle */}
-      {(c.rhp_one_line || c.rhp_full || c.ai_summary) && (
+      {Boolean(c.rhp_one_line || c.rhp_full || c.ai_summary) && (
         <button onClick={() => setShowRhp((v) => !v)} style={{
           background: "transparent", border: "none", color: C.meta,
           fontSize: 12, fontWeight: 600, padding: "10px 0 0", cursor: "pointer", display: "block",
         }}>
-          {showRhp ? "▲ Hide details" : "▼ RHP details · risks · AI read"}
+          {showRhp ? "▲ Hide details" : "▼ RHP details · risks · governance flags · AI read"}
         </button>
       )}
 
       {showRhp && (() => {
-        // full_json (rhp_full) carries the complete RHP intel — parse + render it all,
-        // so the full text is available on-app without any DB query.
         const fj = typeof c.rhp_full === "string"
           ? (() => { try { return JSON.parse(String(c.rhp_full)); } catch { return null; } })()
           : (c.rhp_full as Record<string, unknown> | null);
@@ -244,12 +409,20 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
         const ddNote = fj && (fj as Record<string, unknown>).aacapital_decision
           ? ((fj as Record<string, Record<string, unknown>>).aacapital_decision?.dd_note as string) : null;
         const trustSummary = fj ? ((fj as Record<string, unknown>).trust_summary as string) : null;
+        const { raised, clear } = rhpFlagChips(fj);
         return (
           <div style={{ marginTop: 10, padding: "14px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
-            {c.rhp_gate && <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
-              🔍 RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div>}
-            {c.rhp_one_line && <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55, marginBottom: trustSummary || risks.length ? 10 : 0 }}>{String(c.rhp_one_line)}</div>}
+            {c.rhp_gate ? <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
+              🔍 RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div> : null}
+            {c.rhp_one_line ? <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55, marginBottom: trustSummary || risks.length ? 10 : 0 }}>{String(c.rhp_one_line)}</div> : null}
             {trustSummary && <p style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.6, marginBottom: 10 }}>{trustSummary}</p>}
+            {(raised.length > 0 || clear > 0) && <>
+              <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "10px 0 6px" }}>Governance flags</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
+                {raised.map((r, i) => <span key={i} style={{ background: C.redBg, color: C.red, border: `1px solid ${C.redBd}`, fontSize: 11, fontWeight: 600, padding: "4px 9px", borderRadius: 999 }}>⚑ {r}</span>)}
+                {clear > 0 && <span style={{ background: C.greenBg, color: C.green, border: `1px solid ${C.greenBd}`, fontSize: 11, fontWeight: 600, padding: "4px 9px", borderRadius: 999 }}>✓ {clear} checks clear</span>}
+              </div>
+            </>}
             {risks.length > 0 && <>
               <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "10px 0 6px" }}>Top material risks</div>
               {risks.map((r, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>
@@ -258,8 +431,8 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
             {ddNote && <>
               <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 5px" }}>Due-diligence to verify</div>
               <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>{ddNote}</div></>}
-            {c.ai_summary && <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 11, display: "flex", gap: 7 }}>
-              <span>🤖</span><span>{String(c.ai_summary)}</span></div>}
+            {c.ai_summary ? <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 11, display: "flex", gap: 7 }}>
+              <span>🤖</span><span>{String(c.ai_summary)}</span></div> : null}
             <div style={{ marginTop: 11, fontSize: 10, color: C.dim }}>Source: Red Herring Prospectus · extracted by Claude · research signal, not a buy call</div>
           </div>
         );
