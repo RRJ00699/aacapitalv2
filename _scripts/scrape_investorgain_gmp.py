@@ -21,6 +21,8 @@ def scrape():
     out=[]
     for r in rows:
         if len(r)<3 or not r[0] or r[0].lower().startswith("ipo"): continue
+        # header/sort rows scraped as data ("NAME \u25b2 \u25bc" reached ipo_gmp 07-15)
+        if re.match(r"\s*name\b", r[0], re.I) or "\u25b2" in r[0] or "\u25bc" in r[0]: continue
         name=re.sub(r"\s+(BSE SME|NSE SME|IPO).*$","",r[0]).strip()
         # extract ONE valid signed decimal — never char-strip (char-stripping turned
         # "-- (-0.00%)" into the '--0.0000' poison that crashed the 07-15 nightly,
