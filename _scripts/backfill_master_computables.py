@@ -16,6 +16,15 @@ From ipo_gmp (company,date,gmp — matched by name):
 """
 import os, re, sys, argparse
 
+def sfloat(v):
+    """Poison-tolerant float: handles '--0.0000', '', '-', 'n/a' from scrapers."""
+    if isinstance(v, str):
+        v = v.strip()
+        if v.startswith("--"): v = v[1:]
+        if v in ("", "-", "--", "n/a", "NA", "null", "None"): return None
+    try: return float(v)
+    except (TypeError, ValueError): return None
+
 def norm(name):
     s = (name or "").lower()
     s = re.sub(r"\b(ltd|limited|pvt|private)\b\.?", " ", s)
@@ -93,7 +102,8 @@ def main():
     gmps = {}
     cur.execute("SELECT company, date, gmp FROM ipo_gmp WHERE gmp IS NOT NULL")
     for co, dt, g in cur.fetchall():
-        gmps.setdefault(norm(co), {})[dt] = float(g)
+        gv = sfloat(g)
+        if gv is not None: gmps.setdefault(norm(co), {})[dt] = gv
     cur.execute("""SELECT id, company_name, listing_date, issue_price FROM ipo_intelligence
                    WHERE listing_date IS NOT NULL AND issue_price > 0""")
     import datetime as dtmod
@@ -107,7 +117,9 @@ def main():
             for off in (0, 1, -1):
                 d0 = ld - dtmod.timedelta(days=nd) + dtmod.timedelta(days=off)
                 if d0 in hist:
-                    vals[lbl] = round(hist[d0] / float(ip) * 100, 2); break
+                    ipv = sfloat(ip)
+            if ipv: vals[lbl] = round(hist[d0] / ipv * 100, 2)
+            break
         if vals and a.apply:
             sets = ", ".join(f"{k}=COALESCE({k},%s)" for k in vals)
             cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE id=%s",
