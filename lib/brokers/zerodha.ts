@@ -173,6 +173,32 @@ export class ZerodhaProvider implements BrokerProvider {
     return result
   }
 
+  // Pre-open / live order book depth for a single instrument.
+  // Kite's /quote already returns a `depth` block (buy[]/sell[]) plus
+  // total_buy_quantity / total_sell_quantity — getQuote just strips it.
+  // Used by the listing-day pre-open book-lean signal. Returns null-safe
+  // shape so callers can degrade gracefully when the book isn't available.
+  async getDepth(symbol: string, exchange = "NSE"): Promise<{
+    lastPrice: number; open: number;
+    totalBuyQty: number; totalSellQty: number;
+    buy: Array<{ price: number; quantity: number }>;
+    sell: Array<{ price: number; quantity: number }>;
+  } | null> {
+    const key = `${exchange}:${symbol}`;
+    const data = await kite(`/quote?i=${encodeURIComponent(key)}`);
+    const q = data?.[key];
+    if (!q) return null;
+    const depth = q.depth ?? {};
+    return {
+      lastPrice: q.last_price ?? 0,
+      open: q.ohlc?.open ?? 0,
+      totalBuyQty: q.total_buy_quantity ?? q.buy_quantity ?? 0,
+      totalSellQty: q.total_sell_quantity ?? q.sell_quantity ?? 0,
+      buy: (depth.buy ?? []).map((b: any) => ({ price: b.price ?? 0, quantity: b.quantity ?? 0 })),
+      sell: (depth.sell ?? []).map((s: any) => ({ price: s.price ?? 0, quantity: s.quantity ?? 0 })),
+    };
+  }
+
   async getHistoricalData(
     symbol: string, exchange: string,
     from: string, to: string, interval = "day"
