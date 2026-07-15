@@ -22,14 +22,14 @@ def scrape():
     for r in rows:
         if len(r)<3 or not r[0] or r[0].lower().startswith("ipo"): continue
         name=re.sub(r"\s+(BSE SME|NSE SME|IPO).*$","",r[0]).strip()
-        def _clean_gmp(c):
-            c = c.replace(",", "").replace("--", "-")   # Indian commas + double-sign poison
-            m = re.search(r"-?\d+(?:\.\d+)?", c)      # first signed number token
-            if not m: return ""
-            x = m.group(0)
-            try: float(x); return x
-            except ValueError: return ""
-        gmp=next((_clean_gmp(c) for c in r if "₹" in c or re.search(r"\d", c)), "")
+        # extract ONE valid signed decimal — never char-strip (char-stripping turned
+        # "-- (-0.00%)" into the '--0.0000' poison that crashed the 07-15 nightly,
+        # and would concatenate "₹85 (44.74%)" into "8544.74")
+        def _first_num(c):
+            m=re.search(r"-?\d+(?:\.\d+)?", c.replace(",",""))
+            return m.group(0) if m else ""
+        gmp=next((_first_num(c) for c in r if "₹" in c and _first_num(c)), "") \
+            or next((_first_num(c) for c in r if _first_num(c)), "")
         est=next((c for c in r if "%" in c), "")
         out.append({"company":name,"raw":" | ".join(r),"gmp":gmp,"est_listing":est})
     return out
