@@ -301,6 +301,55 @@ function GmpLine({ c }: { c: Record<string, unknown> }) {
   );
 }
 
+function HoldStrip({ sym }: { sym: string }) {
+  const [j, setJ] = useState<R | null>(null);
+  const load = useCallback(() => {
+    fetch(`/api/ipo/journey?sym=${sym}`).then(r => r.json())
+      .then(x => { if (x && x.ok && x.hasData !== false) setJ(x); })
+      .catch(() => { /* strip is best-effort; the journey page is the fallback */ });
+  }, [sym]);
+  useEffect(() => {
+    load();
+    // Poll only during IST market hours (Mon–Fri 9:15–15:30 IST = 3:45–10:00 UTC),
+    // same Neon-cost gate as /dashboard/journey.
+    const inMkt = () => { const n = new Date(); const d = n.getUTCDay();
+      if (d === 0 || d === 6) return false;
+      const m = n.getUTCHours() * 60 + n.getUTCMinutes(); return m >= 225 && m <= 600; };
+    const t = setInterval(() => { if (inMkt()) load(); }, 60000);
+    return () => clearInterval(t);
+  }, [load]);
+  if (!j) return null;
+  const exit = j.decision === "EXIT";
+  const armed = j.armed === true;
+  const col = exit ? C.red : armed ? C.green : C.amber;
+  const bg  = exit ? C.redBg : armed ? C.greenBg : C.amberBg;
+  const bd  = exit ? C.redBd : armed ? C.greenBd : C.amberBd;
+  const gain = j.gainNow == null ? null : Number(j.gainNow);
+  const lvl = (lab: string, v: unknown) => (
+    <span style={{ fontSize: 11, color: C.meta }}>{lab} <b style={{ ...num, color: C.text }}>₹{String(v ?? "—")}</b></span>
+  );
+  return (
+    <div style={{ marginTop: 10, border: `1px solid ${bd}`, borderRadius: 10, background: bg, padding: "9px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .4, color: col,
+          border: `1px solid ${bd}`, background: C.surface, borderRadius: 6, padding: "2px 9px" }}>
+          {exit ? "⛔ EXIT" : "HOLD"}</span>
+        {gain != null && <span style={{ ...num, fontSize: 17, fontWeight: 800, color: gain >= 0 ? C.green : C.red }}>
+          {gain >= 0 ? "+" : ""}{gain}%</span>}
+        <span style={{ fontSize: 11, fontWeight: 700, color: armed ? C.green : C.meta }}>
+          {armed ? "⚡ floor armed" : "not armed — arms at +8%"}</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim }}>
+          lock8/trail12 · {String(j.liveSource || "close")} · day {String(j.daysHeld ?? "—")}</span>
+      </div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6 }}>
+        {lvl("entry", j.entry)}{lvl("floor", j.floorLevel)}{lvl("trail", j.trailLevel)}{lvl("peak", j.peak)}
+        {j.offPeak != null && <span style={{ ...num, fontSize: 11, color: C.meta }}>{Number(j.offPeak).toFixed(1)}% off peak</span>}
+      </div>
+      {j.reason ? <div style={{ fontSize: 11.5, color: C.sub, marginTop: 6, lineHeight: 1.45 }}>{String(j.reason)}</div> : null}
+    </div>
+  );
+}
+
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:16, padding:"16px 18px", marginBottom:14,
   boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 12px 32px -10px rgba(28,36,58,.28), 0 3px 10px -3px rgba(28,36,58,.16)" };
@@ -541,6 +590,7 @@ function IpoCommand() {
                         <div style={{fontSize:10,color:C.meta,textTransform:"uppercase"}}>{t[0] as string}</div>
                         <div style={{...num,fontSize:15,fontWeight:800,color:t[2] as string}}>{String(t[1]??"—")}</div></div>))}
                   </div>
+                  <HoldStrip sym={sym}/>
                 </div>
                 <div style={{flex:1,minWidth:290}}>
                   <div style={{fontSize:10.5,color:C.meta,fontWeight:700,textTransform:"uppercase",marginBottom:6}}>Order flow · blocks (≥3× median clip)</div>
