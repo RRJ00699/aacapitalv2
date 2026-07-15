@@ -385,9 +385,9 @@ function HoldStrip({ sym }: { sym: string }) {
   );
 }
 
-type LiveRule = { name: string; passed: boolean | null; win_rate: number | null };
+type LiveRule = { name: string; passed: boolean | null; win: number | null; detail?: string };
 function RuleCard({ title, when, rules }: { title: string; when: string; rules: LiveRule[] | null }) {
-  const ghost: LiveRule[] = Array.from({ length: 4 }, () => ({ name: "", passed: null, win_rate: null }));
+  const ghost: LiveRule[] = Array.from({ length: 4 }, () => ({ name: "", passed: null, win: null }));
   const rows = rules ?? ghost;
   return (
     <div style={{ flex: "1 1 240px", minWidth: 230, border: rules ? `1px solid ${C.border}` : `1px dashed ${C.border}`,
@@ -404,20 +404,23 @@ function RuleCard({ title, when, rules }: { title: string; when: string; rules: 
               ? <span className={rules ? undefined : "shimmer"} style={{ width: 12, textAlign: "center", color: C.dim, fontWeight: 800, fontSize: 11 }}>·</span>
               : <span style={{ width: 12, textAlign: "center", fontWeight: 800, fontSize: 11.5, color: r.passed ? C.green : C.red }}>{r.passed ? "✓" : "✕"}</span>}
             {r.name
-              ? <span style={{ flex: 1, fontSize: 11.5, color: C.sub, lineHeight: 1.3 }}>{r.name}</span>
+              ? <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 11.5, color: C.sub, lineHeight: 1.3, display: "block" }}>{r.name}</span>
+                  {r.detail ? <span style={{ fontSize: 9.5, color: C.dim, display: "block", lineHeight: 1.3 }}>{r.detail}</span> : null}
+                </span>
               : <span className="shimmer" style={{ flex: 1, height: 8, background: C.grayBg, borderRadius: 4 }} />}
-            <span style={{ ...num, fontSize: 10.5, fontWeight: 600, color: r.win_rate != null ? C.meta : C.dim }}>
-              {r.win_rate != null ? `${r.win_rate}%` : "—"}</span>
+            <span style={{ ...num, fontSize: 10.5, fontWeight: 600, color: r.win != null ? C.meta : C.dim }}>
+              {r.win != null ? `${r.win}%` : "—"}</span>
           </div>))}
       </div>
     </div>
   );
 }
 
-type MosData = { mos_pct: number; mos_cushion_rupees: number; fair_anchor: number;
-  anchor_source: "modeled" | "market-implied-GMP" | "issue-price-floor"; gmp_ref: number | null; open_ref?: number | null };
+type MosData = { pct: number; cushion_rupees: number; fair_anchor: number;
+  anchor_source: string; gmp_ref: number | null; note?: string | null; open_ref?: number | null };
 function MosTile({ d: m }: { d: MosData | null }) {
-  const good = m != null && m.mos_pct >= 5, bad = m != null && m.mos_pct < 0;
+  const good = m != null && m.pct >= 5, bad = m != null && m.pct < 0;
   const col = m == null ? C.dim : good ? C.green : bad ? C.red : C.amber;
   return (
     <div style={{ flex: "1 1 240px", minWidth: 230, border: m ? `1px solid ${C.border}` : `1px dashed ${C.border}`,
@@ -434,19 +437,40 @@ function MosTile({ d: m }: { d: MosData | null }) {
       ) : (
         <>
           <div style={{ marginTop: 6, fontSize: 12, color: C.sub, lineHeight: 1.45 }}>
-            Fair <b style={{ ...num }}>₹{m.fair_anchor}</b>{m.open_ref != null && <> vs open <b style={{ ...num }}>₹{m.open_ref}</b></>} →{" "}
-            <b style={{ ...num, color: col }}>{m.mos_pct > 0 ? "+" : ""}{m.mos_pct}%</b>{" "}
-            <span style={{ ...num, color: col }}>({m.mos_cushion_rupees > 0 ? "+" : ""}₹{m.mos_cushion_rupees} cushion)</span>{" "}
+            Fair <b style={{ ...num }}>₹{m.fair_anchor}</b>{m.open_ref != null ? <> vs open <b style={{ ...num }}>₹{m.open_ref}</b></> : null} →{" "}
+            <b style={{ ...num, color: col }}>{m.pct > 0 ? "+" : ""}{m.pct}%</b>{" "}
+            <span style={{ ...num, color: col }}>({m.cushion_rupees > 0 ? "+" : ""}₹{m.cushion_rupees} cushion)</span>{" "}
             <span style={{ color: col, fontWeight: 800 }}>●</span>
           </div>
-          {m.gmp_ref != null && <div style={{ ...num, fontSize: 10, color: C.meta, marginTop: 4 }}>GMP cross-check: {m.gmp_ref > 0 ? "+" : ""}{m.gmp_ref}%</div>}
+          {m.gmp_ref != null ? <div style={{ ...num, fontSize: 10, color: C.meta, marginTop: 4 }}>GMP cross-check: {m.gmp_ref > 0 ? "+" : ""}{m.gmp_ref}%</div> : null}
+          {m.anchor_source === "market-implied-GMP" && m.note ? <div style={{ fontSize: 10, color: C.amber, marginTop: 4, lineHeight: 1.4 }}>{m.note}</div> : null}
         </>
       )}
     </div>
   );
 }
 
-function LiveDecisionPanel() {
+function useLivePreopen(enabled: boolean) {
+  const [listings, setListings] = useState<R[] | null>(null);
+  const load = useCallback(() => {
+    fetch("/api/ipo/live-preopen").then(r => r.json())
+      .then(j => { if (j && j.ok && Array.isArray(j.listings)) setListings(j.listings); })
+      .catch(() => { /* endpoint absent/failing → tiles stay awaiting */ });
+  }, []);
+  useEffect(() => {
+    if (!enabled) return;
+    load();
+    // eval window: refresh through pre-open + decision window (8:55–10:20 IST = 3:25–4:50 UTC)
+    const inWin = () => { const n = new Date(); const d = n.getUTCDay();
+      if (d === 0 || d === 6) return false;
+      const m = n.getUTCHours() * 60 + n.getUTCMinutes(); return m >= 205 && m <= 290; };
+    const t = setInterval(() => { if (inWin()) load(); }, 60000);
+    return () => clearInterval(t);
+  }, [enabled, load]);
+  return listings;
+}
+
+function LiveDecisionPanel({ L }: { L: R | null }) {
   // Countdown to the 10:14 IST decision deadline (2-min grace off 10:16 — Rakesh 2026-07-16).
   // Pure client time — no API. The layered tiles below are DESIGNED AWAITING states shaped
   // to the confirmed backend contract (rules_static/rules_live/pre-open book/score/volume);
@@ -455,7 +479,8 @@ function LiveDecisionPanel() {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const ist = new Date(now + 5.5 * 3600000);
   const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  const deadline = 10 * 60 + 14; // 10:14 IST
+  const dl = L && typeof L.deadline_ist === "string" ? String(L.deadline_ist).split(":") : null;
+  const deadline = dl && dl.length === 2 ? Number(dl[0]) * 60 + Number(dl[1]) : 10 * 60 + 14; // 10:14 IST
   const secsLeft = (deadline - mins) * 60 - ist.getUTCSeconds();
   const pre = mins < 9 * 60 + 15, past = secsLeft <= 0;
   const mm = Math.floor(Math.max(0, secsLeft) / 60), ss = Math.max(0, secsLeft) % 60;
@@ -475,26 +500,45 @@ function LiveDecisionPanel() {
         {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
         <span style={{ marginLeft: "auto", textAlign: "right" }}>
           <span style={{ display: "block", fontSize: 9, color: C.meta, letterSpacing: .5, textTransform: "uppercase", fontWeight: 700 }}>Confidence</span>
-          <span style={{ ...num, fontSize: 24, fontWeight: 800, color: C.dim, lineHeight: 1 }}>—</span>
-          <span style={{ display: "block", fontSize: 9, color: C.dim }}>win-rate-weighted · awaiting</span>
+          <span style={{ ...num, fontSize: 24, fontWeight: 800, lineHeight: 1, transition: "color .3s var(--ease)",
+            color: L?.confidence == null ? C.dim : Number(L.confidence) >= 65 ? C.green : Number(L.confidence) >= 40 ? C.amber : C.red }}>
+            {L?.confidence != null ? String(L.confidence) : "—"}</span>
+          <span style={{ ...num, display: "block", fontSize: 9, color: C.meta }}>
+            {L?.rules_passed != null ? `${L.rules_passed}/${L.rules_total} rules pass` : "win-rate-weighted · awaiting"}</span>
         </span>
       </div>
       {/* two-layer rule cards: static @9:30, live firming to 10:08 — bind rules_static/rules_live */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <RuleCard title="Static rules" when="scored 9:30" rules={null} />
-        <RuleCard title="Live rules" when="firms to 10:08" rules={null} />
-        <MosTile d={null} />
+        <RuleCard title="Static rules" when="scored 9:30" rules={(L?.rules_static as LiveRule[] | undefined) ?? null} />
+        <RuleCard title="Live rules" when="firms to 10:08" rules={(L?.rules_live as LiveRule[] | undefined) ?? null} />
+        <MosTile d={L?.mos ? { ...(L.mos as MosData), open_ref: (L.book as {discoveryPrice?: number | null} | null)?.discoveryPrice ?? null } : null} />
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
-          <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
-          {await2("discovery ₹ · buy/sell qty · lean %")}
-        </div>
+        {(() => {
+          const bk = L?.book as {discoveryPrice: number | null; buyQty: number; sellQty: number; leanPct: number | null} | null;
+          if (!bk) return (
+            <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+              <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
+              {await2("depth flows during pre-open/market hours")}
+            </div>);
+          const lean = bk.leanPct;
+          const lc = lean == null ? C.dim : lean > 0 ? C.green : lean < 0 ? C.red : C.meta;
+          return (
+            <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px solid ${C.border}`, background: C.bg, borderRadius: 10, padding: "9px 11px" }}>
+              <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Pre-open book</div>
+              <div style={{ ...num, fontSize: 14, fontWeight: 800, marginTop: 4 }}>
+                {bk.discoveryPrice != null ? `₹${bk.discoveryPrice}` : "—"}
+                {lean != null && <span style={{ color: lc, marginLeft: 7, fontSize: 12 }}>{lean > 0 ? "+" : ""}{lean}% lean</span>}
+              </div>
+              <div style={{ ...num, fontSize: 9.5, color: C.meta, marginTop: 2 }}>buy {Number(bk.buyQty).toLocaleString()} · sell {Number(bk.sellQty).toLocaleString()}</div>
+            </div>);
+        })()}
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
-          {await2("cumulative volume window")}
+          {await2("cumulative volume — endpoint pending")}
         </div>
       </div>
+      {L?.last_eval_ist ? <div style={{ ...num, fontSize: 9, color: C.dim, marginTop: 8, textAlign: "right" }}>last eval {String(L.last_eval_ist)} IST</div> : null}
     </div>
   );
 }
@@ -627,6 +671,7 @@ function IpoCommand() {
   const [view, setView] = useState("command");
   const [vFilter, setVFilter] = useState("ALL");
   const [liveSel, setLiveSel] = useState<string | null>(null);
+  const preopen = useLivePreopen(view === "live");
   const autoLive = useRef(false);
   useEffect(() => {
     if (autoLive.current || !d) return;
@@ -737,7 +782,7 @@ function IpoCommand() {
           const isLive = liveSyms.includes(sym);
           return (
           <div key={sym}>
-          <LiveDecisionPanel/>
+          <LiveDecisionPanel L={(preopen || []).find(l => String(l.sym) === sym) ?? null}/>
           <div className="live-split">
             <div className="lp">
               {isLive ? (
