@@ -16,7 +16,7 @@ const C = { bg:"var(--t-bg)", surface:"var(--t-surface)", surface2:"var(--t-surf
   blue:"var(--t-blue)", blueBg:"var(--t-blueBg)", blueBd:"var(--t-blueBd)",
   amber:"var(--t-amber)", amberBg:"var(--t-amberBg)", amberBd:"var(--t-amberBd)",
   red:"var(--t-red)", redBg:"var(--t-redBg)", redBd:"var(--t-redBd)", grayBg:"var(--t-grayBg)", gold:"var(--t-gold)" };
-const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const MONO = "var(--f-mono)";
 
 function ThemeToggle() {
   const { mode, isDark, setMode } = useThemeControls();
@@ -356,7 +356,7 @@ function HoldStrip({ sym }: { sym: string }) {
 const card: React.CSSProperties = { background:C.surface, border:`1px solid ${C.border}`,
   borderRadius:16, padding:"16px 18px", marginBottom:14,
   boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 12px 32px -10px rgba(28,36,58,.28), 0 3px 10px -3px rgba(28,36,58,.16)" };
-const th: React.CSSProperties = { textAlign:"left", fontSize:10.5, color:C.meta,
+const th: React.CSSProperties = { fontFamily:"var(--f-mono)", textAlign:"left", fontSize:10.5, color:C.meta,
   textTransform:"uppercase", letterSpacing:.5, padding:"7px 8px", borderBottom:`1px solid ${C.border}` };
 const td: React.CSSProperties = { fontSize:13, color:C.sub, padding:"7px 8px",
   borderBottom:`1px solid ${C.border}` };
@@ -408,7 +408,7 @@ function Calculator() {
   const pnl = pct!=null&&sh>0 ? (sp-bp)*sh : null;
   return <>
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
-      <b style={{fontSize:16}}>Share sizer — how many shares for your capital</b>
+      <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>Share sizer — how many shares for your capital</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
         On listing day (9:45–10:15) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
@@ -429,7 +429,7 @@ function Calculator() {
     </div>
 
     <div style={{...card,borderTop:`3px solid ${C.green}`}}>
-      <b style={{fontSize:16}}>Return calculator — your gain or loss</b>
+      <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>Return calculator — your gain or loss</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>Enter your buy price and the current/sell price. Optionally add shares for the ₹ amount.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
         <div style={{flex:1,minWidth:130}}><label style={lbl}>Buy price (₹)</label>
@@ -449,7 +449,7 @@ function Calculator() {
     </div>
 
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
-      <b style={{fontSize:16}}>Target ladder — price at each % gain</b>
+      <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>Target ladder — price at each % gain</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
         Enter your buy price and a step %. See the price at each gain level — set your targets fast.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
@@ -561,7 +561,7 @@ function IpoCommand() {
             <div key={sym} style={{...card,borderColor:C.greenBd,borderWidth:2}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                  <b style={{fontSize:16}}>{sym} · {String(meta.company_name||"")}</b>
+                  <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>{sym} · {String(meta.company_name||"")}</b>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,color:C.green,fontWeight:700,fontSize:11,letterSpacing:.5}}><span className="livedot"/>LIVE</span>
                   <Chip b={meta.score_band as string}/>
                   <span style={{fontSize:12,color:C.meta}}>{String(meta.score_evidence||"")}</span>
@@ -633,7 +633,7 @@ function IpoCommand() {
 
       {view==="pb" && <>
         <div style={{...card, background:C.amberBg, border:`1.5px solid ${C.amberBd}`}}>
-          <b style={{fontSize:16}}>The House Rules — the whole strategy in 3 lines</b>
+          <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
             Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
           </div>
@@ -660,7 +660,7 @@ function IpoCommand() {
         </div>
 
         <div style={card}>
-          <b style={{fontSize:15}}>The two strategies — validated</b>
+          <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:15}}>The two strategies — validated</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:12}}>
             Two layers: a <b>quality gate</b> (before listing) and a <b>tradeable signal</b> (buy-at-open).
             Tradeable signal tested <b>2026-07-13</b> on 585 clean IPOs (2016+); quality gate = RHP forensic read of 448 prospectuses.
@@ -688,7 +688,7 @@ function IpoCommand() {
           </div>
         </div>
 
-        <div style={card}><b style={{fontSize:14}}>The playbook — what to do, by setup.</b>
+        <div style={card}><b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:14}}>The playbook — what to do, by setup.</b>
           <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Entry: buy at listing open only when the setup qualifies.
             Exit: best close ≤10 sessions · hard invalidation on a close below the floor.</div></div>
         {PLAYS.map((p,i)=>(
@@ -752,7 +752,7 @@ function IpoCommand() {
 
       {/* POST-LISTING AUDIT */}
       {view==="post" && <div style={{...card,overflowX:"auto"}}>
-        <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
+        <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:14}}>Score vs reality — the standing audit</b>
         {(()=>{ const graded=(d?.post||[]).map(r=>{ const v=r.verdict as string|null, o=N(r.d10_best_pct);
             if(v==null||o==null) return null; if(v==="TRADE") return o>0; if(v==="AVOID") return o<=0; return null; })
             .filter((x):x is boolean=>x!=null);
@@ -773,7 +773,7 @@ function IpoCommand() {
               <td style={td}>{String(r.gap_bucket||"—")}</td>
               <td style={{...td,...num}}>{r.listing_gap_pct!=null?`${Number(r.listing_gap_pct).toFixed(1)}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:N(r.d10_best_pct)==null?C.dim:(N(r.d10_best_pct)!>0?C.green:C.red)}}>
-                {r.d10_best_pct!=null?`${Number(r.d10_best_pct).toFixed(1)}%`:"pending"}</td>
+                {r.d10_best_pct!=null?`${Number(r.d10_best_pct).toFixed(1)}%`:<span style={{color:C.dim,fontSize:11}}>awaiting d10</span>}</td>
               <td style={td}>{(()=>{ const v=r.verdict as string|null, o=N(r.d10_best_pct);
                 if(v==null||o==null) return <span style={{color:C.dim}}>—</span>;
                 const bullish=v==="TRADE", hit=bullish?o>0:(v==="AVOID"?o<=0:null);
@@ -786,7 +786,7 @@ function IpoCommand() {
 
       {/* BRLM */}
       {view==="brlm" && <div style={{...card,overflowX:"auto"}}>
-        <b style={{fontSize:14}}>Book managers — empirical, from our own outcomes</b>
+        <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:14}}>Book managers — empirical, from our own outcomes</b>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Lead manager</th><th style={th}>IPOs</th><th style={th}>Pop rate</th>
             <th style={th}>Med gap</th><th style={th}>10s win</th><th style={th}>10s median</th></tr></thead>
@@ -795,8 +795,8 @@ function IpoCommand() {
               <td style={{...td,...num}}>{String(r.n)}</td>
               <td style={{...td,...num}}>{r.pop_rate!=null?`${r.pop_rate}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:r.med_gap==null?C.sub:Number(r.med_gap)>0?C.green:Number(r.med_gap)<0?C.red:C.sub}}>{r.med_gap!=null?`${Number(r.med_gap).toFixed(1)}%`:"—"}</td>
-              <td style={{...td,...num,fontWeight:700}}>{r.d10_win!=null?`${r.d10_win}%`:"pending"}</td>
-              <td style={{...td,...num,color:r.d10_med==null?C.sub:Number(r.d10_med)>0?C.green:Number(r.d10_med)<0?C.red:C.sub}}>{r.d10_med!=null?`${Number(r.d10_med).toFixed(1)}%`:"pending"}</td></tr>))}</tbody>
+              <td style={{...td,...num,fontWeight:700}}>{r.d10_win!=null?`${r.d10_win}%`:<span style={{color:C.dim,fontSize:11}}>awaiting d10</span>}</td>
+              <td style={{...td,...num,color:r.d10_med==null?C.sub:Number(r.d10_med)>0?C.green:Number(r.d10_med)<0?C.red:C.sub}}>{r.d10_med!=null?`${Number(r.d10_med).toFixed(1)}%`:<span style={{color:C.dim,fontSize:11}}>awaiting d10</span>}</td></tr>))}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Lead = first-named manager · cells need n≥8 · "pending" fills after tonight's d10 precompute.</div>
       </div>}
