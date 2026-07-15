@@ -203,7 +203,7 @@ function FairValueCard({ c }: { c: Record<string, unknown> }) {
         <span style={{ fontSize:20, fontWeight:800, color:col }}>₹{fv.toLocaleString()}</span>
         {mos != null && <span style={{ fontSize:13, fontWeight:700, color:col }}>{mos>=0?"+":""}{mos}% MoS</span>}
       </div>
-      {c.fair_note && <div style={{ fontSize:10.5, color:C.dim, marginTop:6 }}>{String(c.fair_note)}</div>}
+      {c.fair_note ? <div style={{ fontSize:10.5, color:C.dim, marginTop:6 }}>{String(c.fair_note)}</div> : null}
     </div>
   );
 }
@@ -275,6 +275,28 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
           <div style={{fontSize:11.5,color:C.sub}}>{fj.aacapital_decision.dd_note}</div></>}
         <div style={{marginTop:9,fontSize:10.5,color:C.dim}}>Source: Red Herring Prospectus · extracted by Claude Sonnet · research signal, not a buy call</div>
       </div>}
+    </div>
+  );
+}
+
+function GmpLine({ c }: { c: Record<string, unknown> }) {
+  const db = c.gmp_day_before == null ? null : Number(c.gmp_day_before);
+  const hi = c.gmp_high == null ? null : Number(c.gmp_high);
+  const lo = c.gmp_low == null ? null : Number(c.gmp_low);
+  const band = c.gmp_band ? String(c.gmp_band) : null;
+  const hint = c.gmp_hint ? String(c.gmp_hint) : null;
+  if (db == null && hi == null && lo == null) return null;
+  const col = band === "STRONG" || band === "GOOD" ? C.green : band === "NEGATIVE" ? C.red : C.amber;
+  const bg  = band === "STRONG" || band === "GOOD" ? C.greenBg : band === "NEGATIVE" ? C.redBg : C.amberBg;
+  const bd  = band === "STRONG" || band === "GOOD" ? C.greenBd : band === "NEGATIVE" ? C.redBd : C.amberBd;
+  return (
+    <div style={{ marginTop:9, padding:"8px 12px", background:bg, border:`1px solid ${bd}`, borderRadius:10,
+      display:"flex", alignItems:"baseline", gap:10, flexWrap:"wrap" }}>
+      <span style={{ fontSize:11, fontWeight:700, color:C.meta, textTransform:"uppercase", letterSpacing:.4 }}>GMP</span>
+      {db != null && <span style={{ ...num, fontSize:16, fontWeight:800, color:col }}>{db > 0 ? "+" : ""}{db}% day-before</span>}
+      {band && <span style={{ fontSize:10.5, fontWeight:800, color:col, letterSpacing:.4 }}>{band}</span>}
+      {(lo != null || hi != null) && <span style={{ ...num, fontSize:11.5, color:C.meta }}>range {lo ?? "—"}% … {hi ?? "—"}%</span>}
+      {hint && <span style={{ fontSize:11, color:C.meta }}>{hint}</span>}
     </div>
   );
 }
@@ -444,18 +466,18 @@ function IpoCommand() {
             <div style={{fontWeight:800,fontSize:14}}>Every IPO gets a grade before it lists</div>
             <div style={{fontSize:12,color:C.meta}}>based on how 370 IPOs behaved over the last 15 years</div>
           </div>
-          {[["STRONG grade","9 of 10 worked","typical gain +9.4%",C.green],
-            ["FAVORABLE","7.6 of 10 worked","typical +8.7%",C.blue],
-            ["average IPO","7.2 of 10 worked","typical +5.9%",C.text],
-            ["AVOID grade","a coin flip","typical +0.8% — skip these",C.red]].map((s,i)=>(
+          {[["STRONG grade","8.1 of 10 worked","n=43",C.green],
+            ["FAVORABLE","7.9 of 10 worked","n=92",C.blue],
+            ["NEUTRAL","7.3 of 10 worked","n=145",C.text],
+            ["AVOID grade","6 of 10 — skip","n=93",C.red]].map((s,i)=>(
             <div key={i} title="worked = made money buying at the listing open and selling at the best close within 10 trading days">
               <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.4}}>{s[0]}</div>
               <div style={{fontSize:17,fontWeight:800,color:s[3] as string}}>{s[1]}</div>
               <div style={{fontSize:12,color:C.meta}}>{s[2]}</div></div>))}
         </div>
         <div style={{fontSize:11.5,color:C.dim,marginTop:8}}>
-          “Worked” = best close within 10 sessions beat the open (a CEILING, not an executable exit — see Playbook for real exit rules: MID sell-D1-close = 65%/+3.3).
-          Grades: STRONG 89.5% (n=38) · FAVORABLE 76.0% (n=96) · baseline 72% (n=370) · AVOID 51.2% (n=84) · validated 2026-07-05.
+          “Worked” = best close within 10 sessions beat the open (a CEILING, not an executable exit — see Playbook for real exit rules).
+          Bands verified monotonic on clean data (spec §2A): AVOID 60% → NEUTRAL 73% → FAVORABLE 79% → STRONG 81% · baseline 72%/+5.9 (n=370).
         </div>
       </div>
 
@@ -502,7 +524,7 @@ function IpoCommand() {
                 <span style={{fontSize:12,color:C.meta}}>gap {lv.gap_pct!=null?`${lv.gap_pct}% ${lv.gap_bucket||""}`:"—"} · verdict: {String(lv.verdict||"—")}</span>
               </div>
               <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10}}>
-                <div style={{flex:2,minWidth:420}}>
+                <div style={{flex:2,minWidth:300}}>
                   <div style={{display:"flex",gap:16,alignItems:"baseline",flexWrap:"wrap"}}>
                     <span style={{...num,fontSize:28,fontWeight:800}}>{ltp!=null?`₹${ltp}`:"—"}</span>
                     {ltp!=null&&open!=null&&open>0&&<span style={{...num,fontWeight:700,
@@ -665,7 +687,13 @@ function IpoCommand() {
                 <div style={{height:7,borderRadius:4,background:C.grayBg,flex:1,position:"relative",overflow:"hidden"}}>
                   <div style={{position:"absolute",inset:0,width:`${Math.min(100,Number(v))}%`,background:C.green,borderRadius:4}}/></div>
                 <span style={{...num,fontWeight:700}}>{Number(v).toFixed(1)}×</span></div>))}
+            <GmpLine c={c}/>
+            <FairValueCard c={c}/>
+            <WeakOpenFlag c={c}/>
             <Reasons trade={c.why_trade as string} caution={c.why_caution as string} avoid={c.why_avoid as string}/>
+            <StreetConsensus consensus={c.street_consensus as string} brokers={N(c.street_brokers)} verdict={c.verdict as string}/>
+            <TrustReport gate={c.rhp_gate as string} oneLine={c.rhp_one_line as string} mos={c.rhp_mos as string}
+              full={c.rhp_full} confidence={c.rhp_confidence as string} company={String(c.company_name||"")}/>
             <div style={{fontSize:12,color:C.dim,marginTop:8}}>Figures = last nightly sync · live intraday capture is the next data build. QIBs bid late — a low day-1 is normal.</div>
           </div>))}
         {cards.filter(c=>c.state==="OPEN").length===0&&<div style={card}><span style={{fontSize:13,color:C.meta}}>No IPO is open for bidding right now.</span></div>}
@@ -674,11 +702,15 @@ function IpoCommand() {
       {/* UPCOMING */}
       {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
+          <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>GMP d-1</th><th style={th}>Anchors</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
           <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(c.listing_date)}</td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(c.company_name||"")}{c.quality_promoter===true?" ★":""}</td>
               <td style={{...td,...num}}>{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}cr`:"—"}</td>
+              <td style={{...td,...num,fontWeight:700,color:c.gmp_day_before==null?C.dim:Number(c.gmp_day_before)>20?C.green:Number(c.gmp_day_before)>=0?C.text:C.red}}>
+                {c.gmp_day_before!=null?`${Number(c.gmp_day_before)>0?"+":""}${c.gmp_day_before}%`:"—"}</td>
+              <td style={{...td,...num,color:c.anchor_count!=null&&Number(c.anchor_count)>30?C.green:C.sub,fontWeight:c.anchor_count!=null&&Number(c.anchor_count)>30?700:400}}>
+                {c.anchor_count!=null?String(c.anchor_count):"—"}</td>
               <td style={td}>{c.verdict!=null?<Verdict v={c.verdict as string}/>:<Chip b={c.score_band as string}/>}</td>
               <td style={{...td,fontSize:12,color:C.meta}}>{String(c.why_trade||c.why_caution||c.why_avoid||c.score_evidence||"—").split(" ; ")[0]}</td></tr>))}</tbody>
         </table>
@@ -690,7 +722,7 @@ function IpoCommand() {
         <b style={{fontSize:14}}>Score vs reality — the standing audit</b>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse",marginTop:8}}>
           <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Verdict</th>
-            <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th><th style={th}>Journey</th></tr></thead>
+            <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th><th style={th}>Call</th><th style={th}>Journey</th></tr></thead>
           <tbody>{(d?.post||[]).map((r,i)=>(
             <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}</td>
@@ -699,6 +731,11 @@ function IpoCommand() {
               <td style={{...td,...num}}>{r.listing_gap_pct!=null?`${Number(r.listing_gap_pct).toFixed(1)}%`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:N(r.d10_best_pct)==null?C.dim:(N(r.d10_best_pct)!>0?C.green:C.red)}}>
                 {r.d10_best_pct!=null?`${Number(r.d10_best_pct).toFixed(1)}%`:"pending"}</td>
+              <td style={td}>{(()=>{ const v=r.verdict as string|null, o=N(r.d10_best_pct);
+                if(v==null||o==null) return <span style={{color:C.dim}}>—</span>;
+                const bullish=v==="TRADE", hit=bullish?o>0:(v==="AVOID"?o<=0:null);
+                if(hit==null) return <span style={{color:C.dim,fontSize:11}}>n/a</span>;
+                return <span style={{...num,fontWeight:800,color:hit?C.green:C.red}}>{hit?"✓ hit":"✗ miss"}</span>; })()}</td>
               <td style={td}>{r.sym?<a href={`/dashboard/journey?sym=${r.sym}`} style={{color:C.blue,fontWeight:600,textDecoration:"none"}}>hold →</a>:"—"}</td></tr>))}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Misses feed the quarterly re-weight. 10-session outcomes precompute nightly.</div>
