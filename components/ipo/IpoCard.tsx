@@ -39,7 +39,7 @@ function verdictStyle(v: string | null): { col: string; bg: string; bd: string; 
 
 function items(s: unknown): string[] {
   if (!s) return [];
-  return String(s).split(/[|]/).map((x) => x.trim()).filter(Boolean);
+  return String(s).split(/[|;]|(?:^|\n)\s*[•✓✕⚠●]\s*/).map((x) => x.trim().replace(/^[•✓✕⚠●]\s*/, "")).filter(Boolean);
 }
 
 function scoreColor(score: number | null): string {
@@ -120,7 +120,14 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const passes = [...items(c.why_trade), ...items(c.why_passes)].map((t) => ({ kind: "pass" as const, text: t }));
   const warns = [...items(c.why_avoid), ...items(c.red_flags)].map((t) => ({ kind: "warn" as const, text: t }));
   const neutrals = items(c.why_caution).map((t) => ({ kind: "neutral" as const, text: t }));
-  const allPills: { kind: "pass" | "warn" | "neutral"; text: string }[] = [...passes, ...warns, ...neutrals];
+  const rawPills: { kind: "pass" | "warn" | "neutral"; text: string }[] = [...passes, ...warns, ...neutrals];
+  // dedupe near-identical signals (e.g. size warning appearing in both why_avoid + red_flags)
+  const seen = new Set<string>();
+  const allPills = rawPills.filter((p) => {
+    const key = p.text.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24);
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
   const shown = showRules ? allPills : allPills.slice(0, 3);
   const moreCount = allPills.length - 3;
 
