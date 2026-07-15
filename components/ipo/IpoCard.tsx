@@ -42,7 +42,14 @@ function verdictStyle(v: string | null): { col: string; bg: string; bd: string; 
 
 function items(s: unknown): string[] {
   if (!s) return [];
-  return String(s).split(/[|;]|(?:^|\n)\s*[•✓✕⚠●]\s*/).map((x) => x.trim().replace(/^[•✓✕⚠●]\s*/, "")).filter(Boolean);
+  const str = String(s).trim();
+  // Postgres array literal leaking through ({"a","b"} or {a,b}) — parse, don't print
+  if (/^\{.*\}$/.test(str)) {
+    const inner = str.slice(1, -1);
+    const parts = inner.match(/"([^"]*)"|[^,]+/g) || [];
+    return parts.map((p) => p.replace(/^"|"$/g, "").trim()).filter(Boolean);
+  }
+  return str.split(/[|;]|(?:^|\n)\s*[•✓✕⚠●]\s*/).map((x) => x.trim().replace(/^[•✓✕⚠●]\s*/, "")).filter(Boolean);
 }
 
 function scoreColor(score: number | null): string {
@@ -68,7 +75,7 @@ function ScoreDial({ score, conf }: { score: number | null; conf: number | null 
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
         <span style={{ ...num, fontSize: 26, fontWeight: 800, color: col, lineHeight: 1 }}>
-          {score != null ? score : "—"}
+          {score != null ? Math.round(Number(score)) : "—"}
         </span>
         {conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>}
       </div>
