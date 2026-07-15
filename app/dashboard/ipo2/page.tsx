@@ -76,7 +76,7 @@ function Verdict({ v }: { v?: string | null }) {
     TRADE:[C.green,C.greenBg,C.greenBd], CAUTION:[C.amber,C.amberBg,C.amberBd],
     WATCH:[C.blue,C.blueBg,C.blueBd], AVOID:[C.red,C.redBg,C.redBd] };
   const [c,bg,bd] = m[v || ""] || m.CAUTION;
-  const icon = v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":v==="WATCH"?"👁 ":"⚠ ";
+  const icon = v==="TRADE"?"✓ ":v==="AVOID"?"✕ ":v==="WATCH"?"◆ ":"! ";
   return <span style={{color:c,background:bg,border:`1px solid ${bd}`,borderRadius:8,
     padding:"4px 11px",fontSize:11,fontWeight:800,letterSpacing:.4,textTransform:"uppercase"}}>
     {icon}{v || "CAUTION"}</span>;
@@ -156,15 +156,15 @@ function Flags({ red, green, redCount, greenCount, verdict }: { red?:string|null
     : null;
   return <div style={{marginTop:9}}>
     <div onClick={()=>setOpen(!open)} style={{display:"inline-flex",gap:10,alignItems:"center",cursor:"pointer",userSelect:"none",fontSize:12.5,fontWeight:700}}>
-      {rc>0 && <span style={{color:C.red}}>🚩 {rc} red flag{rc>1?"s":""}</span>}
+      {rc>0 && <span style={{color:C.red}}>⚑ {rc} red flag{rc>1?"s":""}</span>}
       {gc>0 && <span style={{color:C.green}}>✓ {gc} pass{gc>1?"es":""}</span>}
       <span style={{color:C.dim,fontWeight:600,fontSize:11}}>{open?"▲ hide":"▼ details"}</span>
     </div>
     {riskLine && verdict!=="AVOID" && <div style={{marginTop:6,fontSize:12,color:rc>=4?C.red:C.amber,background:rc>=4?C.redBg:C.amberBg,border:`1px solid ${rc>=4?C.redBd:C.amberBd}`,borderRadius:8,padding:"7px 11px",display:"flex",gap:7}}>
-      <span>⚠️</span><span>{riskLine}</span></div>}
+      <span style={{fontWeight:800}}>!</span><span>{riskLine}</span></div>}
     {open && <div style={{marginTop:7}}>
       {reds.map((t,i)=><div key={"r"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
-        <span style={{color:C.red,flexShrink:0}}>🚩</span><span style={{color:C.sub}}>{t}</span></div>)}
+        <span style={{color:C.red,flexShrink:0}}>⚑</span><span style={{color:C.sub}}>{t}</span></div>)}
       {greens.map((t,i)=><div key={"g"+i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,margin:"3px 0"}}>
         <span style={{color:C.green,flexShrink:0}}>✓</span><span style={{color:C.sub}}>{t}</span></div>)}
     </div>}
@@ -254,7 +254,7 @@ function TrustReport({ gate, oneLine, mos, full, confidence, company }:
            onClick={()=>setOpen(!open)}>
         <span style={{fontSize:10,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",
           color:col,border:`1px solid ${bd}`,borderRadius:5,padding:"2px 7px",background:C.surface}}>
-          🔍 RHP Trust · {(gate||"watch").toUpperCase()}</span>
+          RHP Trust · {(gate||"watch").toUpperCase()}</span>
         {mos && <span style={{fontSize:11,color:col,fontWeight:600}}>margin of safety: {mos}</span>}
         {confidence && <span style={{fontSize:10.5,color:C.meta}}>· confidence {confidence}</span>}
         <span style={{marginLeft:"auto",fontSize:11,color:col}}>{open?"▲ hide":"▼ details"}</span>
@@ -331,15 +331,18 @@ function HoldStrip({ sym }: { sym: string }) {
   return (
     <div style={{ marginTop: 10, border: `1px solid ${bd}`, borderRadius: 10, background: bg, padding: "9px 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .4, color: col,
-          border: `1px solid ${bd}`, background: C.surface, borderRadius: 6, padding: "2px 9px" }}>
-          {exit ? "⛔ EXIT" : "HOLD"}</span>
-        {gain != null && <span style={{ ...num, fontSize: 17, fontWeight: 800, color: gain >= 0 ? C.green : C.red }}>
+        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: .5, fontFamily: "var(--f-display)",
+          color: exit ? "#fff" : col, border: `1px solid ${exit ? C.red : bd}`,
+          background: exit ? C.red : C.surface, borderRadius: 6, padding: "3px 10px",
+          transition: "all .25s var(--ease)" }}>
+          {exit ? "EXIT NOW" : "HOLD"}</span>
+        {gain != null && <span style={{ ...num, fontSize: 17, fontWeight: 800, color: gain >= 0 ? C.green : C.red,
+          transition: "color .3s var(--ease)" }}>
           {gain >= 0 ? "+" : ""}{gain}%</span>}
         <span style={{ fontSize: 11, fontWeight: 700, color: armed ? C.green : C.meta }}>
-          {armed ? "⚡ floor armed" : "not armed — arms at +8%"}</span>
+          {armed ? "floor armed" : "arms at +8%"}</span>
         <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim }}>
-          lock8/trail12 · {String(j.liveSource || "close")} · day {String(j.daysHeld ?? "—")}</span>
+          lock8/trail12 · {j.liveSource === "close" ? "close" : <><span className="livedot" style={{width:5,height:5,marginRight:3,verticalAlign:"middle"}}/>live</>} · day {String(j.daysHeld ?? "—")}</span>
       </div>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6 }}>
         {lvl("entry", j.entry)}{lvl("floor", j.floorLevel)}{lvl("trail", j.trailLevel)}{lvl("peak", j.peak)}
@@ -405,7 +408,7 @@ function Calculator() {
   const pnl = pct!=null&&sh>0 ? (sp-bp)*sh : null;
   return <>
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
-      <b style={{fontSize:16}}>🧮 Share sizer — how many shares for your capital</b>
+      <b style={{fontSize:16}}>Share sizer — how many shares for your capital</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
         On listing day (9:45–10:15) the price moves as discovery happens. Enter your capital and the prices NSE is showing — see how many shares you can buy at each.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
@@ -426,7 +429,7 @@ function Calculator() {
     </div>
 
     <div style={{...card,borderTop:`3px solid ${C.green}`}}>
-      <b style={{fontSize:16}}>📈 Return calculator — your gain or loss</b>
+      <b style={{fontSize:16}}>Return calculator — your gain or loss</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>Enter your buy price and the current/sell price. Optionally add shares for the ₹ amount.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
         <div style={{flex:1,minWidth:130}}><label style={lbl}>Buy price (₹)</label>
@@ -446,7 +449,7 @@ function Calculator() {
     </div>
 
     <div style={{...card,borderTop:`3px solid ${C.blue}`}}>
-      <b style={{fontSize:16}}>🪜 Target ladder — price at each % gain</b>
+      <b style={{fontSize:16}}>Target ladder — price at each % gain</b>
       <div style={{fontSize:12.5,color:C.meta,marginTop:2,marginBottom:14}}>
         Enter your buy price and a step %. See the price at each gain level — set your targets fast.</div>
       <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:16}}>
@@ -490,8 +493,8 @@ function IpoCommand() {
   const cards = d?.cards || [];
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["command","⚡ Command Center"],["calc","🧮 Calculator"],["pb","🎯 Quick Profit Playbook"],
-    ["open","📋 Open Now"],["upcoming","📅 Upcoming"],["post","📈 Post-Listing"],["brlm","🏆 BRLM"]];
+  const pills: [string,string][] = [["command","Command"],["calc","Calculator"],["pb","Playbook"],
+    ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
 
   return (
     <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
@@ -503,7 +506,7 @@ function IpoCommand() {
       `}</style>
       <div style={{minWidth:0}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
-        <div><h1 style={{fontSize:20,fontWeight:800,margin:0}}>⚡ IPO Command Center</h1>
+        <div><h1 style={{fontFamily:"var(--f-display)",fontSize:20,fontWeight:800,margin:0,letterSpacing:-0.3}}>IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
             {d ? ` refreshed ${new Date().toLocaleTimeString()}` : " loading…"}</div></div>
         <ThemeToggle/>
@@ -534,15 +537,16 @@ function IpoCommand() {
       <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>
         {pills.map(([k,l])=>(
           <span key={k} onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
-            border:`1px solid ${view===k?C.blueBd:C.border}`,background:view===k?C.blueBg:C.surface,
-            color:view===k?C.blue:C.sub,borderRadius:20,padding:"7px 15px",fontSize:13,fontWeight:600}}>{l}</span>))}
+            border:`1px solid ${view===k?C.amberBd:C.border}`,background:view===k?C.amberBg:C.surface,
+            color:view===k?C.gold:C.meta,borderRadius:20,padding:"7px 14px",fontSize:12.5,fontWeight:view===k?700:500,
+            transition:"all .2s var(--ease)"}}>{l}</span>))}
       </div>
       {err && <div style={{...card,borderColor:C.redBd,color:C.red,fontSize:13}}>API error: {err}</div>}
 
       {/* COMMAND */}
       {view==="command" && <>
         <div style={{fontSize:12,color:C.meta,margin:"0 2px 8px"}}>
-          {liveSyms.length ? `🔴 ${liveSyms.length} live capture` : "no live capture"} ·
+          {liveSyms.length ? <><span className="livedot" style={{marginRight:5,verticalAlign:"middle"}}/>{liveSyms.length} live capture</> : "no live capture"} ·
           next listing {next ? `${next.company_name} ${D(next.listing_date)}` : "—"} ·
           launcher 09:10 · self-check 09:25 &amp; 13:00
         </div>
@@ -558,7 +562,7 @@ function IpoCommand() {
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                   <b style={{fontSize:16}}>{sym} · {String(meta.company_name||"")}</b>
-                  <span style={{color:C.green,fontWeight:700,fontSize:12}}>● LIVE</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,color:C.green,fontWeight:700,fontSize:11,letterSpacing:.5}}><span className="livedot"/>LIVE</span>
                   <Chip b={meta.score_band as string}/>
                   <span style={{fontSize:12,color:C.meta}}>{String(meta.score_evidence||"")}</span>
                 </div>
@@ -629,7 +633,7 @@ function IpoCommand() {
 
       {view==="pb" && <>
         <div style={{...card, background:C.amberBg, border:`1.5px solid ${C.amberBd}`}}>
-          <b style={{fontSize:16}}>🏠 The House Rules — the whole strategy in 3 lines</b>
+          <b style={{fontSize:16}}>The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
             Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
           </div>
