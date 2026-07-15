@@ -198,13 +198,7 @@ export async function GET() {
     // TRACK RECORD — computed in its own endpoint to keep this fast
     const track: Record<string, unknown>[] = [];
 
-    // ACCURACY LEADERBOARD — street (listing gain) vs ours (buy-open), separate games
-    let leaderboard: Record<string, unknown>[] = [];
-    try {
-      leaderboard = await sql`SELECT source, call_type, n, avg_outcome, hit_rate, outcome_measure
-        FROM ipo_accuracy_leaderboard ORDER BY
-        CASE WHEN source LIKE 'Street%' THEN 0 ELSE 1 END, avg_outcome DESC NULLS LAST`;
-    } catch (e) { console.error("leaderboard:", e); leaderboard = []; }
+    // (accuracy leaderboard RETIRED 2026-07-15 — table dropped, pipeline step removed)
 
     // ── Fair Value (Rakesh's 3-step model): base PE × quality ±15% × structure ±10% ──
     function gmpSignal(c: Record<string, unknown>) {
@@ -321,7 +315,7 @@ function fairValue(c: Record<string, unknown>) {
                playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c), ...gmpSignal(c) };
     });
 
-    const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track, leaderboard,
+    const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
     if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
     return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
