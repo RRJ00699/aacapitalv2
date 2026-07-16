@@ -59,7 +59,7 @@ function scoreColor(score: number | null): string {
   return C.red;
 }
 
-function ScoreDial({ score, conf }: { score: number | null; conf: number | null }) {
+function ScoreDial({ score, conf, sub }: { score: number | null; conf: number | null; sub?: string }) {
   const col = scoreColor(score);
   const pct = score != null ? Math.max(0, Math.min(100, score)) : 0;
   const r = 30, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
@@ -80,6 +80,7 @@ function ScoreDial({ score, conf }: { score: number | null; conf: number | null 
         {score != null
           ? (conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
           : <span style={{ fontSize: 7.5, color: C.dim, marginTop: 1, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>}
+        {sub && score != null && <span style={{ fontSize: 7, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.1 }}>{sub}</span>}
       </div>
     </div>
   );
@@ -244,7 +245,13 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   // vscore = verdict engine 0-100. ipo_score is a RAW additive factor score
   // (±few points) — leaking it into a 0-100 dial rendered "-1"/"-2" (2026-07-16).
   // Pre-scoring IPOs now get an honest awaiting dial instead.
-  const score = c.vscore as number | null;
+  // vscore (0-100, verdict engine) once listed; BEFORE listing, the dial now
+  // shows the pre-list QUALITY score (computed from RHP forensics + promoter +
+  // structure + valuation + fundamentals — docs/QUALITY_SCORE_SPEC.md, v1
+  // weights pending calibration). "scores at listing" only when neither exists.
+  const q = c.quality_score as number | null;
+  const score = (c.vscore ?? q) as number | null;
+  const isQuality = c.vscore == null && q != null;
   const conf = N(c.vconf);
   const verdict = (c.verdict as string) ?? null;
   const vs = verdictStyle(verdict);
@@ -296,7 +303,25 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const peRatio = ipoPe != null && peerPe != null && peerPe > 0 ? ipoPe / peerPe : null;
   const qib = N(c.final_qib);
   const bandHigh = N(c.band_high);
+  const bandLow = N(c.band_low);
+  // Lifecycle label from open/close/listing dates (Rakesh's Day-1/Day-2 tile)
+  const lifecycle = (() => {
+    const day = (x: unknown) => { const d = new Date(String(x)); return isNaN(+d) ? null : d; };
+    const od = day(c.open_date), cd = day(c.close_date), ld = day(c.listing_date);
+    const now = new Date(); const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dd = (a: Date, b: Date) => Math.round((+a - +b) / 86400000);
+    if (od && t0 < od) return { v: `opens in ${dd(od, t0)}d`, s: `subscription ${String(c.open_date).slice(5,10)} → ${String(c.close_date ?? "").slice(5,10)}`, st: "na" as const };
+    if (od && cd && t0 >= od && t0 <= cd) {
+      const n = dd(t0, od) + 1, last = dd(cd, t0) === 0;
+      return { v: last ? `Day ${n} — closes today` : `Day ${n} of ${dd(cd, od) + 1}`, s: last ? "book closes 5pm" : `closes ${String(c.close_date).slice(5,10)}`, st: last ? "warn" as const : "pass" as const };
+    }
+    if (cd && ld && t0 > cd && t0 < ld) return { v: `lists in ${dd(ld, t0)}d`, s: "allotment window", st: "neutral" as const };
+    if (ld && dd(t0, ld) === 0) return { v: "LISTING TODAY", s: "decision window 9:00–9:58", st: "warn" as const };
+    if (ld && t0 > ld) return { v: `listed ${dd(t0, ld)}d ago`, s: String(c.listing_date).slice(0, 10), st: "na" as const };
+    return null;
+  })();
   const edges: Edge[] = [
+    ...(lifecycle ? [{ label: "Timeline", value: lifecycle.v, sub: lifecycle.s, state: lifecycle.st } as Edge] : []),
     { label: "Anchors", value: anc != null ? String(anc) : "—",
       sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
@@ -309,9 +334,13 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
     { label: "QIB", value: qib != null ? `${qib}×` : "—",
       sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
       state: qib == null ? "na" : qib >= 5 && qib <= 25 ? "pass" : "neutral" },
-    { label: "Band", value: bandHigh != null ? `₹${bandHigh}` : "—",
-      sub: bandHigh != null ? (bandHigh < 300 ? "under ₹300 · wins" : "premium band") : "awaiting",
-      state: bandHigh == null ? "na" : bandHigh < 300 ? "pass" : "neutral" },
+    // Band tile: a bare ₹high just repeated the IPO PRICE tile (Rakesh's
+    // redundancy call, 2026-07-16). Show the low–high RANGE when we have it;
+    // when we don't, the tile is pure duplication — drop it.
+    ...(bandHigh != null && bandLow != null && bandLow < bandHigh ? [{
+      label: "Band", value: `₹${bandLow}–${bandHigh}`,
+      sub: bandHigh < 300 ? "under ₹300 · wins" : "premium band",
+      state: (bandHigh < 300 ? "pass" : "neutral") } as Edge] : []),
   ];
 
   return (
@@ -350,7 +379,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
             {isTrade && <span style={{ fontSize: 12, color: C.meta, marginLeft: 10 }}>buy at open · trail −5%</span>}
           </div>
         </div>
-        <ScoreDial score={score} conf={conf} />
+        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : undefined} />
       </div>
 
       {/* ROW 2: SETUP — the playbook engine's call */}
@@ -438,6 +467,13 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           {showRhp ? "▲ Hide details" : "▼ RHP details · risks · governance flags · AI read"}
         </button>
       )}
+      {c.chittorgarh_slug ? (
+        <a href={`https://www.chittorgarh.com/ipo/${String(c.chittorgarh_slug)}/`}
+          target="_blank" rel="noopener noreferrer"
+          style={{ display: "inline-block", marginTop: 8, fontSize: 11, fontWeight: 700,
+            color: C.gold, textDecoration: "none" }}>
+          IPO docs & RHP ⎘</a>
+      ) : null}
 
       {showRhp && (() => {
         const fj = typeof c.rhp_full === "string"
@@ -452,7 +488,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
         return (
           <div style={{ marginTop: 10, padding: "14px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
             {c.rhp_gate ? <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
-              RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}</div> : null}
+              RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}{c.rhp_url ? <a href={String(c.rhp_url)} target="_blank" rel="noreferrer" style={{ marginLeft: 8, fontSize: 10.5, color: C.gold, fontWeight: 700, textDecoration: "none" }}>RHP ↗</a> : null}</div> : null}
             {c.rhp_one_line ? <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.55, marginBottom: trustSummary || risks.length ? 10 : 0 }}>{String(c.rhp_one_line)}</div> : null}
             {trustSummary && <p style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.6, marginBottom: 10 }}>{trustSummary}</p>}
             {(raised.length > 0 || clear > 0) && <>
