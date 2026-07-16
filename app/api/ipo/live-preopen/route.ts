@@ -94,6 +94,28 @@ function scoreStatic(c: Record<string, unknown>) {
     detail: size == null ? "size pending" : `₹${Math.round(size)}cr${isMega ? " (mega ✓)" : ""}`,
   });
 
+  // Rule 5 — 50+ anchors (a distinct, stronger static signal than the 30+ gate:
+  // 79% vs 77%). Surfaced as its own rule so the 5-static denominator is fixed
+  // and stable, not a moving target that shifts as fields populate.
+  rules.push({
+    name: "50+ anchors (strongest)",
+    passed: anchors == null ? null : has50,
+    win: 79,
+    detail: anchors == null ? "anchor count pending"
+          : has50 ? `${anchors} anchors (50+ ✓)` : `${anchors} anchors (below 50)`,
+  });
+
+  // Rule 6 — not-expensive P/E (static, known pre-listing). P/E ≤ 70 passes;
+  // above is the AVOID-flag territory. Backtest: cheap-vs-peer carries edge,
+  // rich P/E decays. Makes the static set 5 rules total.
+  rules.push({
+    name: "Reasonable P/E (≤70)",
+    passed: ipoPe == null ? null : ipoPe <= PE_RICH,
+    win: WIN.low_fresh,
+    detail: ipoPe == null ? "P/E pending"
+          : ipoPe <= PE_RICH ? `P/E ${ipoPe} (≤70 ✓)` : `P/E ${ipoPe} (>70 — rich)`,
+  });
+
   // ── AVOID flags (any true = red) ──
   const avoid: string[] = [];
   if (size != null && size < 500) avoid.push(`small issue ₹${Math.round(size)}cr (<500)`);
@@ -277,7 +299,8 @@ export async function GET() {
         open_pct: lv.openPct,
         book,                                   // null when depth unavailable
         rules_passed: passedCount,
-        rules_total: allScored.length,
+        rules_total: staticRules.length + liveRules.length,  // FIXED denominator (all rules)
+        rules_scored: allScored.length,                       // how many have data yet
         confidence: conf,
         deadline_ist: "09:58",
         last_eval_ist: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
