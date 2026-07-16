@@ -156,7 +156,7 @@ def resolve_ids(jwt):
         except ImportError:
             return json.loads(u.urlopen(u.Request(LIST,data=data,headers=hdr,method="POST"),timeout=35).read().decode("utf-8","replace"))
     def norm(x):
-        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private)\b', '', (x or '').lower())
+        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private|ipo)\b', '', (x or '').lower())
         return re.sub(r'[^a-z0-9]', '', t)
     sym,name,isin={},{},{}
     for yr in range(2010,2027):
@@ -219,7 +219,7 @@ def main():
                    ORDER BY listing_date DESC""")
     todo=cur.fetchall()
     def norm(s):
-        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private)\b', '', (s or '').lower())
+        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private|ipo)\b', '', (s or '').lower())
         return re.sub(r'[^a-z0-9]', '', t)
     print(f"IPOs: {len(todo)} | resolving ids via IPOMatrix list API...")
     sym,name,isin=resolve_ids(jwt)
