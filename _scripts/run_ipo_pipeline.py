@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ═══════════════ TOMBSTONE (2026-07-16) ═══════════════
+# RETIRED: superseded by run_ipo_pipeline_lean.py (34 steps, no frozen-table
+# writes). This script was found still wired in the VM crontab on 2026-07-16
+# — hence this guard. Kept temporarily as a rollback path; delete after lean
+# has a clean month. To run anyway: AAC_LEGACY=1 python run_ipo_pipeline.py
+import os as _os, sys as _sys
+if _os.environ.get("AAC_LEGACY") != "1":
+    _sys.exit("RETIRED: use run_ipo_pipeline_lean.py (set AAC_LEGACY=1 to force the old pipeline)")
+# ═══════════════════════════════════════════════════════
 """
 run_ipo_pipeline.py — ONE command that runs the whole IPO dashboard data workflow, in order.
 Idempotent (every step is golden-rule / skip-existing), safe to run daily.
