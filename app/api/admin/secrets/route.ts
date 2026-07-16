@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
 const KEYS = ["screener_username", "screener_password", "screener_cookie", "ntfy_topic", "ipomatrix_cookie",
-  "zerodha_totp_secret", "kite_api_key", "kite_api_secret"];
+  "zerodha_totp_secret", "kite_api_key", "kite_api_secret", "kite_user_id", "kite_password"];
 
 // Decode a JWT's exp claim (IPOMatrix cookie is/contains a JWT) — display only.
 function jwtExpiry(v: string): string | null {
