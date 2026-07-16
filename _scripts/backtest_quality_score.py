@@ -50,13 +50,17 @@ def factors(r):
 
 def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
+    # Every column below verified against live schema (2026-07-16 column dump +
+    # ipo-command route): quality_promoter lives on ipo_verdicts (v.), NOT
+    # intelligence — the first run of this script crashed guessing otherwise.
     cur.execute("""
-      SELECT ri.full_json, i.quality_promoter, i.promoter_pledge_pct,
+      SELECT ri.full_json, v.quality_promoter, i.promoter_pledge_pct,
              i.ofs_cr, i.fresh_issue_cr, i.ipo_pe, i.peer_median_pe,
              i.roe, i.revenue_cagr_3y, i.debt_equity, i.sbi_rating, i.brlm_names,
              i.return_listing_open, i.d10_best_pct
       FROM ipo_intelligence i
       LEFT JOIN ipo_rhp_intel ri ON ri.company_name = i.company_name
+      LEFT JOIN ipo_verdicts v  ON v.company_name  = i.company_name
       WHERE i.return_listing_open IS NOT NULL""")
     rows = cur.fetchall(); conn.close()
     print(f"historical IPOs with outcomes: {len(rows)}")

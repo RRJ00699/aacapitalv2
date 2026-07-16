@@ -278,6 +278,20 @@ export async function GET() {
               // lean: +100 = all buy (positive listing lean), -100 = all sell
               leanPct: tot > 0 ? Math.round(((d.totalBuyQty - d.totalSellQty) / tot) * 1000) / 10 : null,
             };
+            // Persist every poll's book snapshot — Zerodha has NO historical
+            // depth API, so the only way to ever backtest pre-open lean patterns
+            // (Rakesh 2026-07-16) is to capture it ourselves from today forward.
+            // Best-effort: a failure here never touches the response.
+            try {
+              await sql`CREATE TABLE IF NOT EXISTS ipo_preopen_book (
+                id SERIAL PRIMARY KEY, symbol TEXT, discovery_price NUMERIC,
+                buy_qty BIGINT, sell_qty BIGINT, lean_pct NUMERIC,
+                captured_at TIMESTAMPTZ DEFAULT NOW())`;
+              await sql`INSERT INTO ipo_preopen_book
+                (symbol, discovery_price, buy_qty, sell_qty, lean_pct)
+                VALUES (${sym}, ${book.discoveryPrice}, ${book.buyQty},
+                        ${book.sellQty}, ${book.leanPct})`;
+            } catch { /* capture is best-effort */ }
           }
         } catch { book = null; }
       }
