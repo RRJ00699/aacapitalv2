@@ -174,9 +174,26 @@ def save_to_db(access_token: str):
         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
     """, [datetime.now().isoformat()])
 
+    # ── BRIDGE: the Cloudflare worker (lib/brokers/zerodha.ts getToken) reads
+    # kite_session, NOT platform_config. Missing this bridge left the worker
+    # bookless on the 2026-07-16 listing morning (last web login was June 13).
+    # Upsert the same fresh token there so both stores refresh together.
+    cur.execute("""
+        UPDATE kite_session
+           SET access_token = %s, created_at = NOW(),
+               expires_at = NOW() + interval '20 hours'
+         WHERE user_id = 'owner'
+    """, (access_token,))
+    if cur.rowcount == 0:
+        cur.execute("""
+            INSERT INTO kite_session (access_token, user_id, created_at, expires_at)
+            VALUES (%s, 'owner', NOW(), NOW() + interval '20 hours')
+        """, (access_token,))
+    log.info("Token bridged to kite_session (worker store)")
+
     conn.commit()
     conn.close()
-    log.info(f"Token saved to Neon platform_config")
+    log.info(f"Token saved to Neon platform_config + kite_session")
 
 
 def get_token_from_db() -> str:
