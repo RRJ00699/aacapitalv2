@@ -3,12 +3,13 @@
 import AppShell from "@/components/app-shell/AppShell";
 import { useEffect, useState } from "react";
 const C={bg:"var(--t-bg)",s:"var(--t-surface)",bd:"var(--t-border)",tx:"var(--t-text)",mt:"var(--t-meta)",gr:"var(--t-green)",grB:"var(--t-greenBg)",grD:"var(--t-greenBd)"};
-const FIELDS=[["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["ntfy_topic","ntfy topic (push notifications)"]];
+const FIELDS=[["ipomatrix_cookie","IPOMatrix cookie / JWT (x-access-token — ~30d expiry, status shows the date)"],["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["zerodha_totp_secret","Zerodha TOTP secret (for the 08:45 auto-login — from Kite 2FA setup)"],["kite_api_key","Kite Connect API key"],["kite_api_secret","Kite Connect API secret"],["ntfy_topic","ntfy topic (push notifications)"]];
 function Settings(){
   const [state,setState]=useState<Record<string,string>>({});
   const [vals,setVals]=useState<Record<string,string>>({});
   const [msg,setMsg]=useState("");
-  const load=()=>fetch("/api/admin/secrets").then(r=>r.json()).then(j=>setState(j.state||{}));
+  const [kite,setKite]=useState("");
+  const load=()=>fetch("/api/admin/secrets").then(r=>r.json()).then(j=>{setState(j.state||{});setKite(j.kite||"");});
   useEffect(()=>{load();},[]);
   const save=(k:string)=>fetch("/api/admin/secrets",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({key:k,value:vals[k]||""})})
@@ -20,6 +21,7 @@ function Settings(){
         borderRadius:8,padding:"5px 10px",marginBottom:12}}>← Admin</a>
     <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3,fontSize:19,fontWeight:800,margin:"0 0 4px"}}>Service secrets</h1>
     <p style={{fontSize:12.5,color:C.mt,margin:"0 0 16px"}}>Stored in platform_config (same vault as the Kite token). Scripts &amp; auth read them automatically — no SSH, no Vercel.</p>
+    {kite&&<div style={{background:kite.startsWith("LIVE")?C.grB:"var(--t-redBg)",border:`1px solid ${kite.startsWith("LIVE")?C.grD:"var(--t-redBd)"}`,color:kite.startsWith("LIVE")?C.gr:"var(--t-red)",borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:600,marginBottom:12}}>Kite worker session: {kite}</div>}
     {msg&&<div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:600,marginBottom:12}}>{msg}</div>}
     {FIELDS.map(([k,label])=>(
       <div key={k} style={{background:C.s,border:`1px solid ${C.bd}`,borderRadius:12,padding:14,marginBottom:12}}>
