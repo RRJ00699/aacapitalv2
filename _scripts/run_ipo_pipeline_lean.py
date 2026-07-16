@@ -79,6 +79,7 @@ def main():
     step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
     step("IPOMatrix enrich (new IPOs)",     ["ipomatrix_ingest.py","--only-null","--apply"])
     step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
+    step("EPS backfill (caution-marked)",   ["backfill_eps_post.py","--apply"])
     step("refresh GMP",                     ["ipo/refresh_gmp.py"])
     step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])
     step("anchor-deal conviction match",    ["match_anchor_deals.py"])
