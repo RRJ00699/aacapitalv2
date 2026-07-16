@@ -237,7 +237,7 @@ function rhpFlagChips(fj: Record<string, unknown> | null): { raised: string[]; c
   return { raised, clear };
 }
 
-export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: string) => void }) {
+export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: (sym: string) => void; onLive?: () => void }) {
   const [showRules, setShowRules] = useState(false);
   const [showRhp, setShowRhp] = useState(false);
 
@@ -332,6 +332,12 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
             {c.state ? String(c.state) : ""}{c.listing_date ? ` · lists ${D(c.listing_date)}` : ""}
             {c.quality_promoter === true ? <span style={{ color: C.gold, fontWeight: 600 }}> · ★ Quality promoter</span> : null}
           </div>
+          {onLive && (
+            <span onClick={onLive} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
+              fontSize: 10.5, fontWeight: 700, color: C.green, background: C.greenBg,
+              border: `1px solid ${C.greenBd}`, borderRadius: 999, padding: "2px 9px", marginTop: 6 }}>
+              <span className="livedot" style={{ width: 5, height: 5 }} />LIVE — trade it →</span>
+          )}
           <div style={{ marginTop: 12 }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 7, background: vs.bg, color: vs.col,
