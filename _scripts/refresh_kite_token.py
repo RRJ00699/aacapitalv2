@@ -34,6 +34,31 @@ PASSWORD     = os.environ.get("KITE_PASSWORD",      "")
 TOTP_SECRET  = os.environ.get("KITE_TOTP_SECRET",  "")
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
 
+def _db_overrides():
+    """platform_config beats .env when set — lets Rakesh rotate Zerodha creds
+    from Settings on his phone (Build plan #4) without SSH. Keys:
+    kite_api_key / kite_api_secret / kite_user_id / kite_password /
+    kite_totp_secret. Failure here falls back silently to env values."""
+    global API_KEY, API_SECRET, USER_ID, PASSWORD, TOTP_SECRET
+    try:
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL); cur = conn.cursor()
+        cur.execute("""SELECT key, value FROM platform_config
+                       WHERE key IN ('kite_api_key','kite_api_secret',
+                                     'kite_user_id','kite_password',
+                                     'kite_totp_secret','zerodha_totp_secret')
+                         AND COALESCE(value,'') <> ''""")
+        m = dict(cur.fetchall()); conn.close()
+        API_KEY     = m.get("kite_api_key", API_KEY)
+        API_SECRET  = m.get("kite_api_secret", API_SECRET)
+        USER_ID     = m.get("kite_user_id", USER_ID)
+        PASSWORD    = m.get("kite_password", PASSWORD)
+        TOTP_SECRET = m.get("zerodha_totp_secret") or m.get("kite_totp_secret") or TOTP_SECRET
+    except Exception:
+        pass
+
+_db_overrides()
+
 
 def get_request_token() -> str:
     """Complete Kite login flow using TOTP — no browser needed."""

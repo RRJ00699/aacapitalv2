@@ -48,6 +48,20 @@ def step(name, args, hard=False):
     for l in (r.stdout or "").strip().splitlines()[-6:]: log("   "+l)
     if r.returncode!=0:
         log(f"   ⚠️ {name} exited {r.returncode}"+(" (HARD FAIL — stopping)" if hard else ""))
+        try:
+            # Failure sink -> pipeline_failures (Settings page shows these so
+            # Rakesh can spot dead credentials/cookies without SSH).
+            import psycopg2 as _pg
+            _c = _pg.connect(os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL",""))
+            _u = _c.cursor()
+            _u.execute("""CREATE TABLE IF NOT EXISTS pipeline_failures (
+                id SERIAL PRIMARY KEY, step TEXT, script TEXT,
+                stderr_tail TEXT, failed_at TIMESTAMPTZ DEFAULT NOW())""")
+            _u.execute("INSERT INTO pipeline_failures (step, script, stderr_tail) VALUES (%s,%s,%s)",
+                       (name, script, (r.stderr or r.stdout or "")[-500:]))
+            _c.commit(); _c.close()
+        except Exception:
+            pass
         if r.stderr: log("   "+r.stderr.strip().splitlines()[-1])
         return False
     log(f"   ✓ {name} done"); return True
@@ -78,6 +92,8 @@ def main():
     step("scrape IPO calendar + details",   ["scrape_chittorgarh.py","--write-db"])
     step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
     step("IPOMatrix enrich (new IPOs)",     ["ipomatrix_ingest.py","--only-null","--apply"])
+    step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
+    step("EPS backfill (caution-marked)",   ["backfill_eps_post.py","--apply"])
     step("refresh GMP",                     ["ipo/refresh_gmp.py"])
     step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])
     step("anchor-deal conviction match",    ["match_anchor_deals.py"])
