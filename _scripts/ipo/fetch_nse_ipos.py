@@ -76,14 +76,13 @@ _NULLISH = {"", "-", "—", "n/a", "na", "nan", "none", "null", "tbd", "--"}
 
 # ── coercion helpers ──────────────────────────────────────────────────────────
 def norm_company(name):
-    """Canonical key for matching so 'Alpine Texworld Limited' == 'Alpine Texworld
-    Ltd.' == 'Alpine Texworld & Co'. Strips the corporate suffix, punctuation, and
-    the '&'/'and' variance, then lowercases. Prevents duplicate IPO rows."""
-    s = (name or "").lower()
-    s = s.replace("&", " and ")
-    for suf in (" limited", " ltd", " private", " pvt", " (india)", " india"):
-        s = s.replace(suf, " ")
-    return "".join(ch for ch in s if ch.isalnum())
+    """Delegates to the ONE shared canonicalizer (_scripts/lib/canon.py).
+    Previously a fifth divergent copy (kept 'and'; canon strips it) — the exact
+    drift class behind the 2026-07-16 incident."""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))))
+    from lib.canon import canon
+    return canon(name)
 
 
 def clean_str(v):

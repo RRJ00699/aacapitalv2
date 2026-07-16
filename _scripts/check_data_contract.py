@@ -58,10 +58,28 @@ def colset(cur, table):
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (table,))
     return {r[0] for r in cur.fetchall()}
 
+def check_twin_census(cur):
+    """GUARDRAIL B: fail loud if canonical-name twins exist in ipo_intelligence.
+    Backstop for guardrail A (the unique index) — catches twins if the index is
+    ever dropped, and any pre-index rows. Born from the 2026-07-16 incident."""
+    cur.execute(r"""SELECT regexp_replace(lower(company_name),
+                     '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g') AS canon,
+                     COUNT(*), array_agg(company_name)
+                    FROM ipo_intelligence GROUP BY 1 HAVING COUNT(*) > 1""")
+    twins = cur.fetchall()
+    if twins:
+        print(f"\n❌ TWIN CENSUS: {len(twins)} duplicate canonical name(s) in ipo_intelligence:")
+        for canon, n, names in twins:
+            print(f"   {canon}: {n} rows {names}")
+        print("   Merge them (dedup_merge pattern) — dupes split verdicts from data.")
+    return len(twins)
+
+
 def main():
     rows = list(csv.DictReader(open(CONTRACT, encoding="utf-8")))
     conn = psycopg2.connect(DB); conn.autocommit = True
     cur = conn.cursor()
+    twin_count = check_twin_census(cur)
 
     # cache columns per table so we can detect schema breaks (vanished columns)
     tbl_cols = {}
@@ -141,6 +159,9 @@ def main():
         print("\n❌ FAIL — a LIVE field regressed or its column vanished. Fix before shipping.")
         sys.exit(1)
     print("\n✅ PASS — no LIVE field regressed.")
+    if twin_count:
+        print("❌ FAIL — twin census (see above).")
+        sys.exit(1)
     sys.exit(0)
 
 if __name__ == "__main__":

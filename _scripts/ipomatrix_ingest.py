@@ -8,6 +8,9 @@ Adds 5 missing columns first (idempotent). JWT read from IPOMATRIX_COOKIE in .en
   python _scripts/ipomatrix_ingest.py --limit 5         # dry-run 5
   python _scripts/ipomatrix_ingest.py --apply           # full write (COALESCE — won't overwrite)
 """
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__))))
+from lib.canon import canon as _canon
 import os,sys,io,re,json,time,argparse,urllib.parse
 try: sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding="utf-8",errors="replace")
 except Exception: pass
@@ -155,9 +158,7 @@ def resolve_ids(jwt):
             return creq.post(LIST,data=data,headers=hdr,impersonate="chrome",timeout=35).json()
         except ImportError:
             return json.loads(u.urlopen(u.Request(LIST,data=data,headers=hdr,method="POST"),timeout=35).read().decode("utf-8","replace"))
-    def norm(x):
-        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private|ipo)\b', '', (x or '').lower())
-        return re.sub(r'[^a-z0-9]', '', t)
+    norm = _canon  # shared canonicalizer (_scripts/lib/canon.py)
     sym,name,isin={},{},{}
     for yr in range(2010,2027):
         pg=1
@@ -218,9 +219,7 @@ def main():
                    FROM ipo_intelligence WHERE listing_date IS NOT NULL{null_filter}
                    ORDER BY listing_date DESC""")
     todo=cur.fetchall()
-    def norm(s):
-        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private|ipo)\b', '', (s or '').lower())
-        return re.sub(r'[^a-z0-9]', '', t)
+    norm = _canon  # shared canonicalizer (_scripts/lib/canon.py)
     print(f"IPOs: {len(todo)} | resolving ids via IPOMatrix list API...")
     sym,name,isin=resolve_ids(jwt)
 
