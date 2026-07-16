@@ -301,6 +301,45 @@ function GmpLine({ c }: { c: Record<string, unknown> }) {
   );
 }
 
+function await2(txt: string) {
+  return (
+    <div style={{ fontSize: 12 }}>
+      <b style={{ color: C.dim, fontWeight: 600 }}>awaiting</b>
+      <span style={{ color: C.dim }}> · {txt}</span>
+    </div>
+  );
+}
+
+function VolumeConfirm({ sym }: { sym: string }) {
+  // Wired to /api/ipo/cum-volume (#171). Polls only when the 10:29–11:00 IST
+  // window is near/past; before that the tile keeps the honest awaiting text.
+  const [v, setV] = useState<R | null>(null);
+  useEffect(() => {
+    if (!sym) return;
+    const load = () => {
+      const n = new Date(); const m = n.getUTCHours() * 60 + n.getUTCMinutes();
+      if (m < 295) return;            // before ~10:25 IST — nothing to confirm yet
+      fetch(`/api/ipo/cum-volume?symbol=${encodeURIComponent(sym)}`)
+        .then(r => r.json()).then(x => { if (x && x.ok) setV(x); }).catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [sym]);
+  if (!v) return await2("cumulative volume · confirms from 10:29");
+  if (v.status !== "confirmed" || v.cum_volume == null)
+    return await2(String(v.note ?? "in window — accumulating ticks"));
+  const cum = Number(v.cum_volume);
+  const disp = cum >= 1e7 ? `${(cum / 1e7).toFixed(2)} Cr` : cum >= 1e5 ? `${(cum / 1e5).toFixed(1)} L` : cum.toLocaleString();
+  return (
+    <div style={{ fontSize: 12.5 }}>
+      <b style={{ ...num, fontSize: 15 }}>{disp}</b> shares
+      <span style={{ color: C.green, fontWeight: 700, marginLeft: 6 }}>✓ confirmed</span>
+      <div style={{ fontSize: 10, color: C.meta, marginTop: 2 }}>10:29–11:00 window · {String(v.tick_count)} ticks</div>
+    </div>
+  );
+}
+
 function HoldStrip({ sym }: { sym: string }) {
   const [j, setJ] = useState<R | null>(null);
   const load = useCallback(() => {
@@ -429,7 +468,7 @@ function RuleCard({ title, when, rules }: { title: string; when: string; rules: 
 
 type MosData = { pct: number; cushion_rupees: number; fair_anchor: number;
   anchor_source: string; gmp_ref: number | null; note?: string | null; open_ref?: number | null };
-function MosTile({ d: m }: { d: MosData | null }) {
+function MosTile({ d: m, live }: { d: MosData | null; live?: number | null }) {
   const good = m != null && m.pct >= 5, bad = m != null && m.pct < 0;
   const col = m == null ? C.dim : good ? C.green : bad ? C.red : C.amber;
   return (
@@ -451,8 +490,8 @@ function MosTile({ d: m }: { d: MosData | null }) {
             Fair <b style={{ ...num }}>₹{m.fair_anchor}</b>{m.open_ref != null ? <> vs open <b style={{ ...num }}>₹{m.open_ref}</b></> : null} →{" "}
             <b style={{ ...num, color: col }}>{m.pct > 0 ? "+" : ""}{m.pct}%</b>{" "}
             <span style={{ ...num, color: col }}>({m.cushion_rupees > 0 ? "+" : ""}₹{m.cushion_rupees} cushion)</span>
-            {L?.live_price != null && m.fair_anchor != null && (() => {
-              const lp = Number(L.live_price), fa = Number(m.fair_anchor);
+            {live != null && m.fair_anchor != null && (() => {
+              const lp = Number(live), fa = Number(m.fair_anchor);
               const nowPct = Math.round((lp / fa - 1) * 1000) / 10;
               return <span> · now <span style={{ ...num }}>₹{lp}</span>{" "}
                 <b style={{ color: nowPct >= 0 ? C.green : C.red }}>{nowPct >= 0 ? "+" : ""}{nowPct}%</b></span>;
@@ -550,7 +589,7 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         <RuleCard title="Static rules" when="scored 9:30" rules={(L?.rules_static as LiveRule[] | undefined) ?? null} />
         <RuleCard title="Live rules" when="firms to 10:08" rules={(L?.rules_live as LiveRule[] | undefined) ?? null} />
-        <MosTile d={L?.mos ? { ...(L.mos as MosData), open_ref: (L.book as {discoveryPrice?: number | null} | null)?.discoveryPrice ?? null } : null} />
+        <MosTile live={L?.live_price != null ? Number(L.live_price) : null} d={L?.mos ? { ...(L.mos as MosData), open_ref: (L.book as {discoveryPrice?: number | null} | null)?.discoveryPrice ?? null } : null} />
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         {(() => {
@@ -584,7 +623,7 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
         })()}
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
-          {await2("cumulative volume — endpoint pending")}
+          <VolumeConfirm sym={String(L?.sym ?? "")} />
         </div>
       </div>
       {(() => {
