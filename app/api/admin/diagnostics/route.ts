@@ -23,7 +23,7 @@ export async function GET(req: Request) {
       case "rhp_status":
         rows = await sql`SELECT i.company_name,
             (ri.company_name IS NOT NULL) AS has_rhp,
-            ri.full_json->'aacapital_decision'->>'verdict' AS verdict
+            COALESCE(ri.full_json->>'verdict', ri.full_json->'aacapital_decision'->>'verdict') AS verdict
           FROM ipo_intelligence i
           LEFT JOIN ipo_rhp_intel ri ON regexp_replace(lower(ri.company_name), ${CANON}, '', 'g')
                                       = regexp_replace(lower(i.company_name),  ${CANON}, '', 'g')
