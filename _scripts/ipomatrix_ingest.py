@@ -216,7 +216,9 @@ def main():
                    FROM ipo_intelligence WHERE listing_date IS NOT NULL{null_filter}
                    ORDER BY listing_date DESC""")
     todo=cur.fetchall()
-    def norm(s): return re.sub(r'[^a-z0-9]','',(s or '').lower())
+    def norm(s):
+        t = re.sub(r'\b(ltd\.?|limited|pvt\.?|private)\b', '', (s or '').lower())
+        return re.sub(r'[^a-z0-9]', '', t)
     print(f"IPOs: {len(todo)} | resolving ids via IPOMatrix list API...")
     sym,name,isin=resolve_ids(jwt)
 

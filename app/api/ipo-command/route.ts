@@ -78,7 +78,7 @@ export async function GET() {
         = regexp_replace(lower(regexp_replace(c.company_name, '\s*&\s*', ' and ', 'g')), '[^a-z0-9]', '', 'g')
         OR regexp_replace(lower(ri.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
         = regexp_replace(lower(c.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
-      LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'[^a-z0-9]','','g')
+      LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')
       WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
          OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY
