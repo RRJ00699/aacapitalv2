@@ -47,7 +47,10 @@ function scoreStatic(c: Record<string, unknown>) {
   const ofs = num(c.ofs_pct);
   const price = num(c.issue_price);
   const ipoPe = num(c.ipo_pe);
-  const rhpGate = String(c.rhp_gate ?? c.rhp_verdict ?? "").toLowerCase();
+  // rhp gate comes from ipo_rhp_intel.full_json (aacapital_decision.verdict) —
+  // NOT a consolidated column; selecting rhp_verdict/rhp_gate there 500'd this
+  // route on 2026-07-16 (second phantom after fair_value).
+  const rhpGate = String(c.rhp_gate ?? "").toLowerCase();
 
   const isMega = size != null && size > 2000;
   const has30 = anchors != null && anchors >= 30;
@@ -189,7 +192,10 @@ export async function GET() {
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
-             rhp_verdict, rhp_gate
+             (SELECT ri.full_json->'aacapital_decision'->>'verdict' FROM ipo_rhp_intel ri
+              WHERE regexp_replace(lower(ri.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                  = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+              LIMIT 1) AS rhp_gate
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
