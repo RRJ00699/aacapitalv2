@@ -192,6 +192,8 @@ def main():
     ap.add_argument("--limit",type=int,default=0);ap.add_argument("--apply",action="store_true")
     ap.add_argument("--id",type=int);ap.add_argument("--raw",action="store_true")
     ap.add_argument("--only-null",action="store_true",help="only IPOs missing anchor/structure (nightly mode)")
+    ap.add_argument("--upcoming", action="store_true",
+        help="re-pull IPOs listing today or later (IPOMatrix drip-feeds: details -> band -> anchors over days; fill-once misses updates). New non-null values WIN for these rows.")
     a=ap.parse_args()
     jwt=load_jwt()
     if not jwt:
@@ -220,6 +222,11 @@ def main():
     # every night forever, since this job can never fill it. Filter on the fields
     # IPOMatrix actually provides.
     null_filter = " AND (anchor_count IS NULL OR fresh_issue_cr IS NULL OR ofs_cr IS NULL)" if a.only_null else ""
+    if a.upcoming:
+        # Drip-feed window: rows listing today or later (or undated) always re-pull,
+        # regardless of what's already filled — IPOMatrix keeps adding fields.
+        null_filter = (" AND ((listing_date IS NULL OR listing_date >= CURRENT_DATE)"
+                       " OR (anchor_count IS NULL OR fresh_issue_cr IS NULL OR ofs_cr IS NULL))")
     cur.execute(f"""SELECT id, UPPER(COALESCE(NULLIF(nse_symbol,''),symbol)), company_name, UPPER(COALESCE(isin,''))
                    FROM ipo_intelligence WHERE listing_date IS NOT NULL{null_filter}
                    ORDER BY listing_date DESC""")
@@ -242,7 +249,14 @@ def main():
         if not fields: print(f"  {s or cnm}: empty"); continue
         print(f"  {(s or cnm)[:18]:18} {len(fields):2} fields  anchors={fields.get('anchor_count','-')}")
         if a.apply and fields:
-            sets=", ".join(f'"{k}"=COALESCE("{k}",%s)' for k in fields)
+            if a.upcoming:
+                # Pre-listing window: NEW value wins when non-null (drip-feed truth);
+                # existing kept only when IPOMatrix sends nothing. Rakesh-approved
+                # exception (2026-07-16) to the default fill-empty rule — anchors
+                # grow, bands firm; stale values must not stick until listing.
+                sets=", ".join(f'"{k}"=COALESCE(%s,"{k}")' for k in fields)
+            else:
+                sets=", ".join(f'"{k}"=COALESCE("{k}",%s)' for k in fields)
             cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE id=%s",list(fields.values())+[pid])
             conn.commit()
         filled+=1; time.sleep(0.4)

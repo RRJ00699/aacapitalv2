@@ -78,6 +78,7 @@ def main():
     step("scrape IPO calendar + details",   ["scrape_chittorgarh.py","--write-db"])
     step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
     step("IPOMatrix enrich (new IPOs)",     ["ipomatrix_ingest.py","--only-null","--apply"])
+    step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
     step("refresh GMP",                     ["ipo/refresh_gmp.py"])
     step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])
     step("anchor-deal conviction match",    ["match_anchor_deals.py"])
