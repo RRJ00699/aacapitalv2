@@ -13,6 +13,7 @@
 // unavailable the book-lean degrades to null, everything else still scores.
 
 import { NextResponse } from "next/server";
+import { fairValue } from "@/lib/fair-value";
 import { neon } from "@neondatabase/serverless";
 import { getBroker } from "@/lib/brokers";
 
@@ -107,12 +108,11 @@ function marginOfSafety(c: Record<string, unknown>) {
   const price = num(c.issue_price);
   const open = num(c.listing_open);
   const gmpPct = num(c.gmp_day_before_pct);
-  // fair_value is COMPUTED in /api/ipo-command (fairValue()), not a DB column —
-  // selecting it crashed this route on 2026-07-16. Null here → MoS anchors on
-  // market-implied-GMP / issue-price-floor, its designed fallback (today's IPOs
-  // are GMP-anchored regardless since eps_post is null). TODO backend: persist
-  // modeled FV or share the function when the eps_post fix lands.
-  const fv = null as number | null;
+  // fv from the ONE shared implementation (lib/fair-value.ts) — same number the
+  // command-center card shows. Null (missing EPS/peer P/E) → MoS falls to its
+  // designed GMP-implied / issue-price-floor chain below, with anchor_source
+  // labeling which tier fired. Unified 2026-07-16 after the ₹368-vs-₹419 split.
+  const fv = fairValue(c as Record<string, unknown>).fair_value;
 
   let anchor: number | null = null;
   let source = "unavailable";
@@ -192,6 +192,7 @@ export async function GET() {
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
+             eps_post, roe, revenue_cagr_3y, debt_equity,
              (SELECT ri.full_json->'aacapital_decision'->>'verdict' FROM ipo_rhp_intel ri
               WHERE regexp_replace(lower(ri.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
                   = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
