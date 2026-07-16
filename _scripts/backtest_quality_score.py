@@ -11,9 +11,18 @@ import psycopg2
 TIER1 = ("kotak","icici","axis","jm financial","citigroup","morgan stanley",
          "goldman","jefferies","bofa","nomura","motilal")
 
+def fnum(v):
+    """psycopg2 returns NUMERIC as Decimal — coerce every numeric input once,
+    at the boundary (mixing Decimal and float crashed the first 407-row run)."""
+    if v is None: return None
+    try: return float(v)
+    except (TypeError, ValueError): return None
+
 def factors(r):
     (rhp, qp, pledge, ofs_cr, fresh_cr, ipo_pe, peer_pe,
      roe, cagr, de, sbi, brlm) = r
+    pledge, ofs_cr, fresh_cr = fnum(pledge), fnum(ofs_cr), fnum(fresh_cr)
+    ipo_pe, peer_pe, roe, cagr, de = fnum(ipo_pe), fnum(peer_pe), fnum(roe), fnum(cagr), fnum(de)
     f, pts = {}, 0.0
     g = lit = integ = rel = conc = None
     if rhp:
@@ -27,15 +36,15 @@ def factors(r):
     f["related_ok"] = None if rel is None else (4 if rel in (False,"none",None) else 0)
     f["concentration_ok"] = None if conc is None else (5 if conc is False else 0)
     f["promoter_quality"] = None if qp is None else (10 if qp else 0)
-    f["pledge_low"] = None if pledge is None else (5 if float(pledge) < 5 else 0)
+    f["pledge_low"] = None if pledge is None else (5 if pledge < 5 else 0)
     tot = (ofs_cr or 0) + (fresh_cr or 0)
-    ofs_pct = (float(ofs_cr) / tot * 100) if tot else None
+    ofs_pct = (ofs_cr / tot * 100) if (tot and ofs_cr is not None) else None
     f["structure"] = None if ofs_pct is None else (10 if ofs_pct < 20 else 5 if ofs_pct <= 60 else 0)
-    ratio = (float(ipo_pe) / float(peer_pe)) if (ipo_pe and peer_pe and float(peer_pe) > 0) else None
+    ratio = (ipo_pe / peer_pe) if (ipo_pe and peer_pe and peer_pe > 0) else None
     f["valuation"] = None if ratio is None else (10 if ratio < 0.8 else 6 if ratio <= 1.2 else 3 if ratio <= 1.5 else 0)
-    f["roe"] = None if roe is None else (5 if float(roe) >= 18 else 0)
-    f["cagr"] = None if cagr is None else (4 if float(cagr) >= 20 else 0)
-    f["de"] = None if de is None else (3 if float(de) <= 0.5 else 0)
+    f["roe"] = None if roe is None else (5 if roe >= 18 else 0)
+    f["cagr"] = None if cagr is None else (4 if cagr >= 20 else 0)
+    f["de"] = None if de is None else (3 if de <= 0.5 else 0)
     f["sbi"] = None if not sbi else (5 if "subscribe" in str(sbi).lower() else 0)
     f["brlm_t1"] = None if not brlm else (3 if any(t in str(brlm).lower() for t in TIER1) else 0)
     have_w = sum(w for k, w in
@@ -67,7 +76,8 @@ def main():
     factab, bands = {}, {}
     for r in rows:
         f, score, conf = factors(r[:12])
-        ret_open, d10 = float(r[12]), (float(r[13]) if r[13] is not None else None)
+        ret_open, d10 = fnum(r[12]), fnum(r[13])
+        if ret_open is None: continue
         win = ret_open > 0
         for k, v in f.items():
             if v is None: continue
