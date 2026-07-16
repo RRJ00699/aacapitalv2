@@ -304,7 +304,23 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const qib = N(c.final_qib);
   const bandHigh = N(c.band_high);
   const bandLow = N(c.band_low);
+  const lifecycle = (() => {
+    const day = (x: unknown) => { const d = new Date(String(x)); return isNaN(+d) ? null : d; };
+    const od = day(c.open_date), cd = day(c.close_date), ld = day(c.listing_date);
+    const now = new Date(); const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dd = (a: Date, b: Date) => Math.round((+a - +b) / 86400000);
+    if (od && t0 < od) return { v: `opens in ${dd(od, t0)}d`, s: `subscription ${String(c.open_date).slice(5,10)} → ${String(c.close_date ?? "").slice(5,10)}`, st: "na" as const };
+    if (od && cd && t0 >= od && t0 <= cd) {
+      const n = dd(t0, od) + 1, last = dd(cd, t0) === 0;
+      return { v: last ? `Day ${n} — closes today` : `Day ${n} of ${dd(cd, od) + 1}`, s: last ? "book closes 5pm" : `closes ${String(c.close_date).slice(5,10)}`, st: last ? "warn" as const : "pass" as const };
+    }
+    if (cd && ld && t0 > cd && t0 < ld) return { v: `lists in ${dd(ld, t0)}d`, s: "allotment window", st: "neutral" as const };
+    if (ld && dd(t0, ld) === 0) return { v: "LISTING TODAY", s: "decision window 9:00–9:58", st: "warn" as const };
+    if (ld && t0 > ld) return { v: `listed ${dd(t0, ld)}d ago`, s: String(c.listing_date).slice(0, 10), st: "na" as const };
+    return null;
+  })();
   const edges: Edge[] = [
+    ...(lifecycle ? [{ label: "Timeline", value: lifecycle.v, sub: lifecycle.s, state: lifecycle.st } as Edge] : []),
     { label: "Anchors", value: anc != null ? String(anc) : "—",
       sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
@@ -450,6 +466,13 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           {showRhp ? "▲ Hide details" : "▼ RHP details · risks · governance flags · AI read"}
         </button>
       )}
+      {c.chittorgarh_slug ? (
+        <a href={`https://www.chittorgarh.com/ipo/${String(c.chittorgarh_slug)}/`}
+          target="_blank" rel="noopener noreferrer"
+          style={{ display: "inline-block", marginTop: 8, fontSize: 11, fontWeight: 700,
+            color: C.gold, textDecoration: "none" }}>
+          IPO docs & RHP ⎘</a>
+      ) : null}
 
       {showRhp && (() => {
         const fj = typeof c.rhp_full === "string"
