@@ -77,7 +77,9 @@ function ScoreDial({ score, conf }: { score: number | null; conf: number | null 
         <span style={{ ...num, fontSize: 26, fontWeight: 800, color: col, lineHeight: 1 }}>
           {score != null ? Math.round(Number(score)) : "—"}
         </span>
-        {conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>}
+        {score != null
+          ? (conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
+          : <span style={{ fontSize: 7.5, color: C.dim, marginTop: 1, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>}
       </div>
     </div>
   );
@@ -239,7 +241,10 @@ export default function IpoCard({ c, onJourney }: { c: Row; onJourney?: (sym: st
   const [showRules, setShowRules] = useState(false);
   const [showRhp, setShowRhp] = useState(false);
 
-  const score = (c.vscore ?? c.ipo_score) as number | null;
+  // vscore = verdict engine 0-100. ipo_score is a RAW additive factor score
+  // (±few points) — leaking it into a 0-100 dial rendered "-1"/"-2" (2026-07-16).
+  // Pre-scoring IPOs now get an honest awaiting dial instead.
+  const score = c.vscore as number | null;
   const conf = N(c.vconf);
   const verdict = (c.verdict as string) ?? null;
   const vs = verdictStyle(verdict);
