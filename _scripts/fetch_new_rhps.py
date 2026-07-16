@@ -119,6 +119,22 @@ def _download_matched(matched):
         ctx = br.new_context(accept_downloads=True)
         pg = ctx.new_page()
         for company, title, url in matched:
+            try:
+                # The source URL was captured here and then THROWN AWAY — the
+                # cards had no RHP link (Rakesh 2026-07-16). Persist it now;
+                # the sonnet row upserts later and keeps this column.
+                # Self-contained connection: this downloader has no DB handle.
+                import os as _os, psycopg2 as _pg
+                _c = _pg.connect(_os.environ["DATABASE_URL"])
+                _u = _c.cursor()
+                _u.execute("ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS rhp_url TEXT")
+                _u.execute("""INSERT INTO ipo_rhp_intel (company_name, rhp_url)
+                    VALUES (%s, %s)
+                    ON CONFLICT (company_name) DO UPDATE SET rhp_url = EXCLUDED.rhp_url""",
+                    (company, url))
+                _c.commit(); _c.close()
+            except Exception:
+                pass
             slug = slugify(company)
             d = os.path.join(OUT_DIR, slug); os.makedirs(d, exist_ok=True)
             dest = os.path.join(d, "rhp.pdf")

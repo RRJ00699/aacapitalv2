@@ -67,6 +67,8 @@ export async function GET() {
              f.red_flags, f.green_checks, f.red_count, f.green_count,
              bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score,
              ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high,
+             ii.price_band_low AS band_low, ii.quality_score, ii.quality_conf,
+             ri.rhp_url,
              c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,
              c.profit_cagr_3y, c.debt_equity, c.ofs_pct, c.structure_type, c.return_listing_open,
              c.gmp_day_before_pct, c.gmp_max_pct, c.gmp_min_pct

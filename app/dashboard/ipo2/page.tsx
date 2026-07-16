@@ -301,6 +301,36 @@ function GmpLine({ c }: { c: Record<string, unknown> }) {
   );
 }
 
+function VolumeConfirm({ sym }: { sym: string }) {
+  // Wired to /api/ipo/cum-volume (#171). Polls only when the 10:29–11:00 IST
+  // window is near/past; before that the tile keeps the honest awaiting text.
+  const [v, setV] = useState<R | null>(null);
+  useEffect(() => {
+    if (!sym) return;
+    const load = () => {
+      const n = new Date(); const m = n.getUTCHours() * 60 + n.getUTCMinutes();
+      if (m < 295) return;            // before ~10:25 IST — nothing to confirm yet
+      fetch(`/api/ipo/cum-volume?symbol=${encodeURIComponent(sym)}`)
+        .then(r => r.json()).then(x => { if (x && x.ok) setV(x); }).catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [sym]);
+  if (!v) return await2("cumulative volume · confirms from 10:29");
+  if (v.status !== "confirmed" || v.cum_volume == null)
+    return await2(String(v.note ?? "in window — accumulating ticks"));
+  const cum = Number(v.cum_volume);
+  const disp = cum >= 1e7 ? `${(cum / 1e7).toFixed(2)} Cr` : cum >= 1e5 ? `${(cum / 1e5).toFixed(1)} L` : cum.toLocaleString();
+  return (
+    <div style={{ fontSize: 12.5 }}>
+      <b style={{ ...num, fontSize: 15 }}>{disp}</b> shares
+      <span style={{ color: C.green, fontWeight: 700, marginLeft: 6 }}>✓ confirmed</span>
+      <div style={{ fontSize: 10, color: C.meta, marginTop: 2 }}>10:29–11:00 window · {String(v.tick_count)} ticks</div>
+    </div>
+  );
+}
+
 function HoldStrip({ sym }: { sym: string }) {
   const [j, setJ] = useState<R | null>(null);
   const load = useCallback(() => {
@@ -584,7 +614,7 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
         })()}
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
           <div style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 600 }}>Volume confirm · 10:29–11:00</div>
-          {await2("cumulative volume — endpoint pending")}
+          <VolumeConfirm sym={String(L?.sym ?? "")} />
         </div>
       </div>
       {(() => {
