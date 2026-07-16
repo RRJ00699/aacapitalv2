@@ -133,6 +133,7 @@ def main():
     ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner",        ["compute_flags.py","--apply"])
+    step("Quality score (pre-list)",      ["compute_quality_score.py","--apply"])
 
     # ── JOURNAL + MAINTENANCE ──
     step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
