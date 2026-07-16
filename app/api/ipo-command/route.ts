@@ -44,6 +44,12 @@ export async function GET() {
              (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
+             (SELECT full_json FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_full,
+             (SELECT one_line  FROM ipo_research_notes n WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
+                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_one_line,
              (SELECT peer_name FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
