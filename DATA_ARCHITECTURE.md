@@ -106,3 +106,35 @@ job writes them. They receive no further updates.
   left LIVE for now to avoid breaking anything.
 - `ipo_daily_levels` vs `ipo_level_analysis`: both "levels", both read by the levels
   route. Possible overlap to rationalize later — both LIVE for now.
+
+## `ipo_subscription_history` — the ghost table (do NOT rebuild)
+
+**Status: does not exist in Neon. This is fine. Do not create it or build an
+Excel loader for it.** Verified 2026-07-16.
+
+`build_ipo_consolidated_v2.py` LEFT JOINs `ipo_subscription_history` (alias `s`)
+for 19 subscription columns. The table was never created, so those `s.*` refs heal
+to NULL and the join is skipped — **the build does not crash** (see heal() +
+`table_exists["s"]` gate). What actually happens to the columns:
+
+- **The 4 verdict-critical numbers already work** — `final_qib`, `final_nii`,
+  `final_retail`, `final_total` COALESCE to `ipo_intelligence` (`i.qib_subscription`
+  etc.), which the **IPOMatrix scrape already populates** (`subscription.summary`:
+  qib/nii/rii/total). So subscription data reaches the cards without this table.
+- **9 columns stay NULL by design** — `final_qib_ex_anchor`, `final_anchor`,
+  `final_bnii`, `final_snii`, `final_employee`, `nii/qib/retail_alloc_pct`,
+  `structure_type`. **IPOMatrix's scrape does NOT contain these** (ex-anchor splits,
+  bNII/sNII breakdown, allocation %). There is no current source, so they cannot be
+  filled without a new scraper. They are secondary display fields, not used by the
+  verdict engine.
+
+**Why the "19 cols NULLed every build" flag was overstated:** 4 work via IPOMatrix,
+6 more (dates/isin/amount) COALESCE from intelligence/issue_details, only the 9
+above are genuinely NULL — and those have no data source anywhere today.
+
+**Decision (Option A+):** leave the code as-is (touching working verdict-critical
+paths carries more risk than the marginal secondary columns are worth), and record
+this so the ghost table isn't chased again. `_scripts/ipo/load_subscription_history.py`
+exists but needs `Issue_Subscription_*.xlsx` files that aren't sourced — it is NOT
+wired into the lean pipeline and should stay that way unless a real subscription-
+detail source (with bNII/sNII/alloc %) is added later.
