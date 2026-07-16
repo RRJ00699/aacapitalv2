@@ -24,9 +24,20 @@ SKIP_TITLE_RE = re.compile(r"abridged|corrigendum|addendum|notice|advertisement"
 OUT_DIR = "rhps"
 
 def norm(s):
-    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
-    s = re.sub(r"\b(limited|ltd|rhp|drhp|prospectus|red herring|the|and|india|private|pvt)\b", "", s, flags=re.I)
-    return re.sub(r"[^a-z0-9]+", "", s.lower())
+    """Doc-word pre-strip (rhp/drhp/prospectus/red herring/the/india — SEBI
+    title furniture) + the ONE shared canonicalizer for the corporate-suffix
+    core. Keeps this matcher in lockstep with every other matcher while
+    preserving the SEBI-specific tokens the old inline copy handled.
+    NOTE (Caliber 2026-07-17): the norm was NOT why Caliber missed — this
+    script scans only SEBI's NEWEST page, and Caliber's RHP rolled off it
+    before Caliber entered our window. Manual seed path: drop the PDF into
+    rhps/ (from the card's docs link) and rhp_auto processes it next run."""
+    import re as _re, sys as _s, os as _o, unicodedata as _u
+    s = _u.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    s = _re.sub(r"\b(rhp|drhp|prospectus|red herring|the|india)\b", "", s, flags=_re.I)
+    _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    from lib.canon import canon
+    return canon(s)
 
 def slugify(name):
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()

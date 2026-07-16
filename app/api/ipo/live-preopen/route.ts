@@ -220,7 +220,7 @@ export async function GET() {
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
              eps_post, roe, revenue_cagr_3y, debt_equity,
-             (SELECT ri.full_json->'aacapital_decision'->>'verdict' FROM ipo_rhp_intel ri
+             (SELECT COALESCE(ri.full_json->>'verdict', ri.full_json->'aacapital_decision'->>'verdict') FROM ipo_rhp_intel ri
               WHERE regexp_replace(lower(ri.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
                   = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
               LIMIT 1) AS rhp_gate
