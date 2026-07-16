@@ -214,7 +214,12 @@ def main():
             cur.execute(f'ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS "{col}" {typ}')
         conn.commit()
 
-    null_filter = " AND (anchor_count IS NULL OR ofs_pct IS NULL OR fresh_issue_cr IS NULL)" if a.only_null else ""
+    # NOTE: ofs_pct is NOT included here on purpose. IPOMatrix extract() produces
+    # ofs_cr / fresh_issue_cr but never ofs_pct (that's computed downstream from
+    # ofs_cr÷total). Including ofs_pct made --only-null re-pull the same ~139 rows
+    # every night forever, since this job can never fill it. Filter on the fields
+    # IPOMatrix actually provides.
+    null_filter = " AND (anchor_count IS NULL OR fresh_issue_cr IS NULL OR ofs_cr IS NULL)" if a.only_null else ""
     cur.execute(f"""SELECT id, UPPER(COALESCE(NULLIF(nse_symbol,''),symbol)), company_name, UPPER(COALESCE(isin,''))
                    FROM ipo_intelligence WHERE listing_date IS NOT NULL{null_filter}
                    ORDER BY listing_date DESC""")
