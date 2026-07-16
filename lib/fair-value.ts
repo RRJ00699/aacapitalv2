@@ -49,6 +49,14 @@ export function fairValue(c: Record<string, unknown>) {
       sfac = Math.max(0.90, Math.min(1.10, sfac));
       const fv = base * q * sfac;
       const mos = ((fv / price) - 1) * 100;   // margin of safety vs issue price
+      // ── SANITY LEASH (2026-07-16, after LASER modeled ₹786 on a ₹214 issue) ──
+      // A single-witness modeled FV beyond ±150% of issue price is almost always
+      // a bad peer median or a distorted derived EPS, not a real 2.5x mispricing.
+      // Refusing to quote it protects the user; callers fall to GMP/floor anchors.
+      if (Math.abs(mos) > 150) {
+        return { fair_value: null, fair_mos: null, fair_verdict: null,
+          fair_note: `modeled FV ₹${Math.round(fv)} is ${mos > 0 ? "+" : ""}${Math.round(mos)}% vs issue — outside the ±150% sanity band (suspect peer P/E ${peerPE.toFixed(0)}${epsSource.includes("derived") ? " or derived EPS" : ""}); not quoted` };
+      }
       const verdict = mos >= 10 ? "undervalued" : mos <= -10 ? "rich" : "fair";
       return {
         fair_value: Math.round(fv),
