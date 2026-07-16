@@ -24,6 +24,24 @@ REPO=os.path.dirname(HERE)
 LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
 LOG=os.path.join(LOGDIR,f"pipeline_lean_{datetime.date.today()}.log")
 
+
+def _log_step(name, script, ok, err=""):
+    """StepBoard sink: EVERY step outcome -> pipeline_steps (green/red board in
+    Settings, Rakesh 2026-07-17). Best-effort — can never break the pipeline."""
+    try:
+        import psycopg2 as _pg, os as _os
+        _c = _pg.connect(_os.environ.get("DATABASE_URL") or _os.environ.get("NEON_DATABASE_URL", ""))
+        _u = _c.cursor()
+        _u.execute("""CREATE TABLE IF NOT EXISTS pipeline_steps (
+            id SERIAL PRIMARY KEY, run_date DATE DEFAULT CURRENT_DATE,
+            step TEXT, script TEXT, ok BOOLEAN,
+            error TEXT, ran_at TIMESTAMPTZ DEFAULT NOW())""")
+        _u.execute("INSERT INTO pipeline_steps (step, script, ok, error) VALUES (%s,%s,%s,%s)",
+                   (name, script, ok, (err or "")[:300]))
+        _c.commit(); _c.close()
+    except Exception:
+        pass
+
 def log(m):
     line=f"[{datetime.datetime.now():%H:%M:%S}] {m}"
     print(line)
@@ -48,6 +66,7 @@ def step(name, args, hard=False):
     for l in (r.stdout or "").strip().splitlines()[-6:]: log("   "+l)
     if r.returncode!=0:
         log(f"   ⚠️ {name} exited {r.returncode}"+(" (HARD FAIL — stopping)" if hard else ""))
+        _log_step(name, script, False, (r.stderr or r.stdout or ""))
         try:
             # Failure sink -> pipeline_failures (Settings page shows these so
             # Rakesh can spot dead credentials/cookies without SSH).
@@ -65,6 +84,7 @@ def step(name, args, hard=False):
         if r.stderr: log("   "+r.stderr.strip().splitlines()[-1])
         return False
     log(f"   ✓ {name} done"); return True
+    _log_step(name, script, True)
 
 def self_update():
     """Sync repo to origin/main so the VM always runs the latest pushed code."""
