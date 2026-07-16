@@ -450,7 +450,13 @@ function MosTile({ d: m }: { d: MosData | null }) {
           <div style={{ marginTop: 6, fontSize: 12, color: C.sub, lineHeight: 1.45 }}>
             Fair <b style={{ ...num }}>₹{m.fair_anchor}</b>{m.open_ref != null ? <> vs open <b style={{ ...num }}>₹{m.open_ref}</b></> : null} →{" "}
             <b style={{ ...num, color: col }}>{m.pct > 0 ? "+" : ""}{m.pct}%</b>{" "}
-            <span style={{ ...num, color: col }}>({m.cushion_rupees > 0 ? "+" : ""}₹{m.cushion_rupees} cushion)</span>{" "}
+            <span style={{ ...num, color: col }}>({m.cushion_rupees > 0 ? "+" : ""}₹{m.cushion_rupees} cushion)</span>
+            {L?.live_price != null && m.fair_anchor != null && (() => {
+              const lp = Number(L.live_price), fa = Number(m.fair_anchor);
+              const nowPct = Math.round((lp / fa - 1) * 1000) / 10;
+              return <span> · now <span style={{ ...num }}>₹{lp}</span>{" "}
+                <b style={{ color: nowPct >= 0 ? C.green : C.red }}>{nowPct >= 0 ? "+" : ""}{nowPct}%</b></span>;
+            })()}{" "}
             <span style={{ color: col, fontWeight: 800 }}>●</span>
           </div>
           {m.gmp_ref != null ? <div style={{ ...num, fontSize: 10, color: C.meta, marginTop: 4 }}>GMP cross-check: {m.gmp_ref > 0 ? "+" : ""}{m.gmp_ref}%</div> : null}
@@ -527,6 +533,11 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
            : "final window — trading opens 10:00"}</span>}
         {past && <span style={{ fontSize: 11, color: C.meta }}>decision closed — trading from 10:00 · reopens next listing morning</span>}
         <span style={{ marginLeft: "auto", textAlign: "right" }}>
+          {L?.live_price != null && (
+            <span style={{ ...num, display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 3 }}>
+              <span className="livedot" style={{ width: 6, height: 6 }} />₹{String(L.live_price)}</span>
+          )}
           <span style={{ display: "block", fontSize: 9, color: C.meta, letterSpacing: .5, textTransform: "uppercase", fontWeight: 700 }}>Confidence</span>
           <span style={{ ...num, fontSize: 24, fontWeight: 800, lineHeight: 1, transition: "color .3s var(--ease)",
             color: L?.confidence == null ? C.dim : Number(L.confidence) >= 65 ? C.green : Number(L.confidence) >= 40 ? C.amber : C.red }}>

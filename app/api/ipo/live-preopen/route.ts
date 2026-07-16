@@ -266,10 +266,12 @@ export async function GET() {
 
       // Pre-open book lean (live depth — degrades to null off-hours / no creds)
       let book: { discoveryPrice: number | null; buyQty: number; sellQty: number; leanPct: number | null } | null = null;
+      let livePrice: number | null = null;  // broker last_price — the ONLY live ₹ on listing day (no candles/ticks yet)
       const sym = String(c.nse_symbol || c.symbol_final || "").toUpperCase();
       if (broker && sym) {
         try {
           const d = await broker.getDepth(sym, "NSE");
+          livePrice = Number(d?.lastPrice) > 0 ? Number(d!.lastPrice) : null;
           if (d) {
             const tot = d.totalBuyQty + d.totalSellQty;
             book = {
@@ -312,6 +314,7 @@ export async function GET() {
         },
         open_pct: lv.openPct,
         book,                                   // null when depth unavailable
+        live_price: livePrice,
         rules_passed: passedCount,
         rules_total: staticRules.length + liveRules.length,  // FIXED denominator (all rules)
         rules_scored: allScored.length,                       // how many have data yet
