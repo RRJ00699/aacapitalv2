@@ -458,6 +458,59 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
       )}
 
       {/* RHP toggle */}
+      {(() => {
+        const fj0 = typeof c.rhp_full === "string"
+          ? (() => { try { return JSON.parse(String(c.rhp_full)); } catch { return null; } })()
+          : (c.rhp_full as Record<string, unknown> | null);
+        const N = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : null; };
+        const bad: string[] = [];
+        const good: string[] = [];
+        const gate = String(c.rhp_gate ?? "").toLowerCase();
+        if (gate === "reject") bad.push("RHP forensics: REJECT — the document itself argues against this issue");
+        const { raised, clear } = rhpFlagChips(fj0);
+        for (const r of raised) bad.push(r);
+        const risks = fj0 && Array.isArray((fj0 as Record<string, unknown>).top_3_material_risks)
+          ? ((fj0 as Record<string, unknown>).top_3_material_risks as string[]) : [];
+        for (const r of risks) bad.push(r);
+        const ofsC = N(c.ofs_cr), freshC = N(c.fresh_issue_cr);
+        const tot = (ofsC ?? 0) + (freshC ?? 0);
+        const ofsPct = tot > 0 ? Math.round((ofsC ?? 0) / tot * 100) : null;
+        if (ofsPct != null && ofsPct >= 60) bad.push(`${ofsPct}% OFS — mostly promoter cash-out, not growth capital`);
+        const pe = N(c.ipo_pe), ppe = N(c.peer_median_pe);
+        if (pe != null && ppe != null && ppe > 0 && pe / ppe >= 1.5) bad.push(`Priced ${(pe / ppe).toFixed(1)}× the sector median P/E (${pe.toFixed(0)} vs ${ppe.toFixed(0)})`);
+        const roe = N(c.roe), de = N(c.debt_equity), cagr = N(c.revenue_cagr_3y), pat = N(c.pat_cr);
+        if (pat != null && pat < 0) bad.push("Loss-making — negative PAT");
+        if (roe != null && roe < 10) bad.push(`Weak ROE ${roe.toFixed(1)}%`);
+        if (de != null && de > 1.5) bad.push(`Heavy leverage — D/E ${de.toFixed(1)}`);
+        if (cagr != null && cagr < 8) bad.push(`Sluggish revenue growth ${cagr.toFixed(0)}%/yr`);
+        // strengths (fill only when the negative case is thin AND gate isn't reject)
+        if (bad.length < 5 && gate !== "reject") {
+          if (ofsPct != null && ofsPct <= 20) good.push(`${100 - (ofsPct ?? 0)}% fresh issue — capital goes INTO the business`);
+          if (roe != null && roe >= 18) good.push(`Strong ROE ${roe.toFixed(1)}%`);
+          if (cagr != null && cagr >= 20) good.push(`Revenue compounding ${cagr.toFixed(0)}%/yr`);
+          if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push(`Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)`);
+          if (c.quality_promoter === true) good.push("Quality promoter track record");
+          if (clear > 0 && raised.length === 0) good.push(`${clear} governance checks clear — no auditor/SEBI/pledge flags`);
+        }
+        const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];
+        if (!items.length) return null;
+        const clean = bad.length === 0;
+        return (
+          <div style={{ marginTop: 12, padding: "13px 15px", borderRadius: 11,
+            background: clean ? C.greenBg : C.redBg, border: `1px solid ${clean ? C.greenBd : C.redBd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase",
+              color: clean ? C.green : C.red, marginBottom: 7 }}>Why should I NOT buy this IPO?</div>
+            {items.map((r, i) => {
+              const isBad = i < Math.min(bad.length, 5);
+              return <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, lineHeight: 1.5, color: C.sub }}>
+                <span style={{ fontWeight: 800, flexShrink: 0, color: isBad ? C.red : C.green }}>{isBad ? "✕" : "✓"}</span>
+                <span>{r}</span></div>;
+            })}
+            {clean && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn't find a strong reason not to. That itself is the finding.</div>}
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 6 }}>From the RHP + filings · research signal, not a buy call</div>
+          </div>
+        );
+      })()}
       {Boolean(c.rhp_one_line || c.rhp_full || c.ai_summary) && (
         <button onClick={() => setShowRhp((v) => !v)} style={{
           background: "transparent", border: "none", color: C.meta,

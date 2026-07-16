@@ -38,8 +38,8 @@ function Settings(){
         </div>
       </div>))}
     <h2 style={{fontFamily:"var(--f-display)",fontSize:16,fontWeight:800,margin:"22px 0 4px"}}>Pipeline health</h2>
-    <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Failed cron steps, last 7 days — a failing scraper usually means an expired cookie or credential above.</p>
-    <Failures/>
+    <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Latest run, step by step — red names the step; the error is one tap away in Diagnostics.</p>
+    <StepBoard/>
     <h2 style={{fontFamily:"var(--f-display)",fontSize:16,fontWeight:800,margin:"22px 0 4px"}}>Diagnostics</h2>
     <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Read-only checks — no SQL console needed.</p>
     <Diagnostics/>
@@ -79,6 +79,27 @@ function Diagnostics(){
           {res.ranAt?<div style={{fontSize:10,color:C.mt}}>ran {res.ranAt}</div>:null}</div>
       : <div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,borderRadius:10,
           padding:"10px 12px",fontSize:12.5,fontWeight:600}}>Empty — nothing to report ✓</div>)}
+  </div>);}
+
+function StepBoard(){
+  const [steps,setSteps]=useState<Array<{step:string;ok:boolean;error?:string;ran_at:string}>|null>(null);
+  useEffect(()=>{fetch("/api/admin/pipeline-steps").then(r=>r.json())
+    .then(j=>setSteps(j.steps||[])).catch(()=>setSteps([]));},[]);
+  if(steps===null)return <div style={{fontSize:12,color:C.mt}}>loading…</div>;
+  if(!steps.length)return <div style={{fontSize:12,color:C.mt}}>No step log yet — populates from the next pipeline run.</div>;
+  const fails=steps.filter(s=>!s.ok).length;
+  return (<div>
+    <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:fails?"#B42318":C.gr}}>
+      {steps.length} steps · {steps.length-fails} ✓ · {fails} ✕ · {String(steps[steps.length-1]?.ran_at).slice(0,16).replace("T"," ")}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr",gap:3}}>
+      {steps.map((s2,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 10px",
+          background:s2.ok?C.s:"#FEF3F2",border:`1px solid ${s2.ok?C.bd:"#FECDCA"}`,borderRadius:8}}>
+          <span style={{fontWeight:800,color:s2.ok?C.gr:"#B42318",flexShrink:0}}>{s2.ok?"✓":"✕"}</span>
+          <span style={{fontSize:12,flex:1}}>{s2.step}</span>
+          {!s2.ok&&s2.error?<span style={{fontFamily:"var(--f-mono)",fontSize:9.5,color:"#B42318",maxWidth:"46%",overflowWrap:"anywhere"}}>{s2.error.slice(0,90)}</span>:null}
+        </div>))}
+    </div>
   </div>);}
 
 function Failures(){
