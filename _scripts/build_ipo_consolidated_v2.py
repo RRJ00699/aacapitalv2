@@ -110,7 +110,15 @@ MAP = [
   # restored (over-deleted in e68b489 — s.* sources are live subscription data):
   ("qib_alloc_pct",           "s.qib_alloc_pct"),
   ("retail_alloc_pct",        "s.retail_alloc_pct"),
-  ("structure_type",          "s.structure_type"),
+  # structure_type: derive from the fresh/OFS split IPOMatrix already writes to
+  # ipo_intelligence, so it fills WITHOUT the (currently absent) subscription table.
+  # Fresh-heavy = capex/expansion; OFS-heavy = promoter cash-out; else mixed.
+  ("structure_type",
+   "COALESCE(s.structure_type, CASE "
+   "WHEN COALESCE(i.ofs_cr,0) + COALESCE(i.fresh_issue_cr,0) = 0 THEN NULL "
+   "WHEN COALESCE(i.ofs_cr,0) / NULLIF(COALESCE(i.ofs_cr,0)+COALESCE(i.fresh_issue_cr,0),0) >= 0.6 THEN 'OFS-heavy' "
+   "WHEN COALESCE(i.fresh_issue_cr,0) / NULLIF(COALESCE(i.ofs_cr,0)+COALESCE(i.fresh_issue_cr,0),0) >= 0.6 THEN 'Fresh-heavy' "
+   "ELSE 'Mixed' END)"),
   # ---- subscription day-by-day ----
   ("day1_qib",                "NULL::numeric"),  # pruned source col
   ("day1_nii",                "NULL::numeric"),  # pruned source col
