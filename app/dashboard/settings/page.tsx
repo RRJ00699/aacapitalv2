@@ -40,6 +40,45 @@ function Settings(){
     <h2 style={{fontFamily:"var(--f-display)",fontSize:16,fontWeight:800,margin:"22px 0 4px"}}>Pipeline health</h2>
     <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Failed cron steps, last 7 days — a failing scraper usually means an expired cookie or credential above.</p>
     <Failures/>
+    <h2 style={{fontFamily:"var(--f-display)",fontSize:16,fontWeight:800,margin:"22px 0 4px"}}>Diagnostics</h2>
+    <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Read-only checks — no SQL console needed.</p>
+    <Diagnostics/>
+  </div>);}
+
+const CHECKS: Array<[string,string]> = [
+  ["rhp_status","RHP status (upcoming/recent)"],["sbi_notes","SBI notes parsed"],
+  ["rhp_run_log","RHP run log ($ budget)"],["kite_session","Kite session"],
+  ["preopen_book","Pre-open book captures"],["eps_coverage","EPS coverage"],
+  ["twin_census","Twin census"],["pipeline_failures","Pipeline failures (7d)"]];
+
+function Diagnostics(){
+  const [sel,setSel]=useState<string|null>(null);
+  const [res,setRes]=useState<{rows:Array<Record<string,unknown>>;ranAt?:string}|null>(null);
+  const [busy,setBusy]=useState(false);
+  const run=(k:string)=>{setSel(k);setBusy(true);setRes(null);
+    fetch(`/api/admin/diagnostics?check=${k}`).then(r=>r.json())
+      .then(j=>{setRes(j.ok?j:{rows:[{error:String(j.error||"failed")}]});})
+      .catch(()=>setRes({rows:[{error:"network"}]})).finally(()=>setBusy(false));};
+  return (<div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+      {CHECKS.map(([k,label])=>(
+        <button key={k} onClick={()=>run(k)} style={{background:sel===k?"#0F172A":C.s,color:sel===k?"#fff":C.tx,
+          border:`1px solid ${C.bd}`,borderRadius:999,padding:"7px 13px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          {label}</button>))}
+    </div>
+    {busy && <div style={{fontSize:12,color:C.mt}}>running…</div>}
+    {res && (res.rows?.length
+      ? <div style={{overflowX:"auto"}}>{res.rows.map((r,i)=>(
+          <div key={i} style={{background:C.s,border:`1px solid ${C.bd}`,borderRadius:10,padding:"9px 12px",marginBottom:6}}>
+            {Object.entries(r).map(([k,v])=>(
+              <div key={k} style={{display:"flex",gap:8,fontSize:11.5,lineHeight:1.5}}>
+                <span style={{color:C.mt,minWidth:96,flexShrink:0}}>{k}</span>
+                <span style={{fontFamily:"var(--f-mono)",fontSize:11,overflowWrap:"anywhere"}}>{v==null?"—":typeof v==="object"?JSON.stringify(v):String(v)}</span>
+              </div>))}
+          </div>))}
+          {res.ranAt?<div style={{fontSize:10,color:C.mt}}>ran {res.ranAt}</div>:null}</div>
+      : <div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,borderRadius:10,
+          padding:"10px 12px",fontSize:12.5,fontWeight:600}}>Empty — nothing to report ✓</div>)}
   </div>);}
 
 function Failures(){
