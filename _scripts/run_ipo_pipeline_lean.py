@@ -131,6 +131,7 @@ def main():
     # ── SBI RESEARCH NOTES (structured scrape/parse — NOT sent to Sonnet) ──
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
     step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
+    step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
 
     # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──
     # rhp_auto self-gates to the remaining daily budget (reads rhp_run_log), so
