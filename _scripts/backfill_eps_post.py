@@ -9,7 +9,7 @@ Sources of truth, in trust order:
   1. eps_post already present            -> leave untouched (fill-empty rule)
   2. IPOMatrix implied                   -> issue_price / ipo_pe  (their own P/E,
      so price/PE is their EPS by identity)          eps_source='ipomatrix_pe'
-  3. Standard formula from fundamentals  -> pat_cr / (market_cap / issue_price)
+  3. Standard formula from fundamentals  -> pat_cr / (mcap_offer / issue_price)
      (shares = mcap/price; preferred dividends not tracked -> assumed 0 and
      SAID SO in the source tag)                      eps_source='derived_std*'
 Never overwrites a non-null eps_post. Writes eps_source beside every fill so
@@ -33,13 +33,13 @@ def main():
 
     # candidates: eps_post missing, and at least one source computable
     cur.execute("""
-        SELECT id, company_name, issue_price, ipo_pe, pat_cr, market_cap
+        SELECT id, company_name, issue_price, ipo_pe, pat_cr, mcap_offer
         FROM ipo_intelligence
         WHERE eps_post IS NULL
           AND issue_price IS NOT NULL AND issue_price > 0
           AND ( (ipo_pe IS NOT NULL AND ipo_pe > 0)
              OR (pat_cr IS NOT NULL AND pat_cr > 0
-                 AND market_cap IS NOT NULL AND market_cap > 0) )
+                 AND mcap_offer IS NOT NULL AND mcap_offer > 0) )
         ORDER BY id""")
     rows = cur.fetchall()
     print(f"candidates: {len(rows)} | mode = {'APPLY' if a.apply else 'PREVIEW'}")

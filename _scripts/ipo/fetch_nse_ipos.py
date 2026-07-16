@@ -272,7 +272,11 @@ def upsert(rows: list[dict], dry_run: bool):
             else:
                 cols = ["company_name"] + list(fields.keys())
                 ph   = ", ".join(["%s"] * len(cols))
-                cur.execute(f"INSERT INTO ipo_intelligence ({', '.join(cols)}) VALUES ({ph})",
+                # Guardrail A (canon unique index) treats an &/and/Ltd variant
+                # as the SAME company — a conflict is a skip, not a crash (it
+                # aborted the whole NSE step on 2026-07-16 for a Caliber variant).
+                cur.execute(f"INSERT INTO ipo_intelligence ({', '.join(cols)}) VALUES ({ph}) "
+                            f"ON CONFLICT (canon_company(company_name)) DO NOTHING",
                             [company] + list(fields.values()))
             n += 1
         conn.commit()

@@ -119,7 +119,7 @@ def main():
     step("RHP forensic (Sonnet, $3/day cap)", ["rhp_auto.py", "--apply"])
 
     # ── COMPUTE (single pass — no duplicate block) ──
-    step("ipo score v0 (derived)",          ["ipo_score.py"])
+    step("ipo score v0 (derived)",          ["ipo_score.py","--apply"])
     step("d10 outcome precompute",          ["compute_d10.py"])
     step("reconcile listing dates",         ["reconcile_listing_dates.py"])
     step("close-in-range strength",         ["close_in_range.py"])
