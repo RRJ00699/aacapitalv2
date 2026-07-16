@@ -336,6 +336,8 @@ function HoldStrip({ sym }: { sym: string }) {
           background: exit ? C.red : C.surface, borderRadius: 6, padding: "3px 10px",
           transition: "all .25s var(--ease)" }}>
           {exit ? "EXIT NOW" : "HOLD"}</span>
+        {j.live != null && <span style={{ ...num, fontSize: 19, fontWeight: 800, color: C.text }}>
+          ₹{String(j.live)}</span>}
         {gain != null && <span style={{ ...num, fontSize: 17, fontWeight: 800, color: gain >= 0 ? C.green : C.red,
           transition: "color .3s var(--ease)" }}>
           {gain >= 0 ? "+" : ""}{gain}%</span>}
@@ -429,10 +431,11 @@ function MosTile({ d: m }: { d: MosData | null }) {
         <span style={{ fontSize: 9.5, color: C.meta, letterSpacing: .4, textTransform: "uppercase", fontWeight: 700 }}>Margin of safety</span>
         <span style={{ fontSize: 9.5, color: C.dim }}>{m ? m.anchor_source : "anchor source"}</span>
       </div>
-      {m == null ? (
+      {m == null || m.pct == null ? (
         <>
-          <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 6 }}>awaiting</div>
-          <div style={{ fontSize: 10, color: C.dim, marginTop: 1, lineHeight: 1.4 }}>fair anchor vs open → margin % (₹ cushion) · GMP cross-check</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 6 }}>
+            {m?.fair_anchor != null ? <>Fair <span style={{ ...num, color: C.sub }}>₹{m.fair_anchor}</span> · awaiting open</> : "awaiting"}</div>
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 1, lineHeight: 1.4 }}>margin computes when the open prints</div>
         </>
       ) : (
         <>
@@ -482,7 +485,10 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
   const dl = L && typeof L.deadline_ist === "string" ? String(L.deadline_ist).split(":") : null;
   const deadline = dl && dl.length === 2 ? Number(dl[0]) * 60 + Number(dl[1]) : 10 * 60 + 14; // 10:14 IST
   const secsLeft = (deadline - mins) * 60 - ist.getUTCSeconds();
-  const pre = mins < 9 * 60 + 15, past = secsLeft <= 0;
+  // Decision window per Rakesh: 9:30 -> deadline (10:14), max ~44:00 on the
+  // clock. Before 9:30 the timer doesn't run (it previously started at 9:15
+  // and showed 55+ minutes).
+  const pre = mins < 9 * 60 + 30, past = secsLeft <= 0;
   const mm = Math.floor(Math.max(0, secsLeft) / 60), ss = Math.max(0, secsLeft) % 60;
   const hot = !pre && !past && secsLeft < 15 * 60;
   const await2 = (note: string) => (
@@ -494,7 +500,7 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
         <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>Decision deadline 10:14 IST</span>
         <span style={{ ...num, fontSize: 30, fontWeight: 800, lineHeight: 1,
           color: past ? C.dim : hot ? C.red : C.text, transition: "color .3s var(--ease)" }}>
-          {pre ? "pre-open" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
+          {pre ? "opens 9:30" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
         </span>
         {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>evals 9:30 · 9:45 · 10:00 · then every minute to 10:14 — score by ~10:08</span>}
         {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
@@ -530,7 +536,17 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
                 {bk.discoveryPrice != null ? `₹${bk.discoveryPrice}` : "—"}
                 {lean != null && <span style={{ color: lc, marginLeft: 7, fontSize: 12 }}>{lean > 0 ? "+" : ""}{lean}% lean</span>}
               </div>
-              <div style={{ ...num, fontSize: 9.5, color: C.meta, marginTop: 2 }}>buy {Number(bk.buyQty).toLocaleString()} · sell {Number(bk.sellQty).toLocaleString()}</div>
+              <div style={{ ...num, fontSize: 9.5, color: C.meta, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                buy {Number(bk.buyQty).toLocaleString()} · sell {Number(bk.sellQty).toLocaleString()}</div>
+              {(() => {
+                const b2 = Number(bk.buyQty), s2 = Number(bk.sellQty);
+                if (!(b2 > 0) || !(s2 > 0)) return null;
+                const heavy = s2 >= b2;
+                const ratio = (heavy ? s2 / b2 : b2 / s2).toFixed(1).replace(/\.0$/, "");
+                return <div style={{ fontSize: 10, fontWeight: 600, marginTop: 3,
+                  color: heavy ? C.red : C.green }}>
+                  {heavy ? `${ratio}× more sellers than buyers` : `${ratio}× more buyers than sellers`}</div>;
+              })()}
             </div>);
         })()}
         <div style={{ flex: "1 1 150px", minWidth: 140, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
@@ -538,6 +554,24 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
           {await2("cumulative volume — endpoint pending")}
         </div>
       </div>
+      {(() => {
+        const flags = (L?.avoid_flags as string[] | undefined) ?? [];
+        const gate = String(L?.rhp_gate ?? "").toLowerCase();
+        const reject = L?.rhp_reject === true;
+        if (!flags.length && !gate && !reject) return null;
+        return (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+            {reject && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: C.red,
+              border: `1px solid ${C.red}`, borderRadius: 999, padding: "3px 10px" }}>✕ RHP REJECT</span>}
+            {!reject && gate && <span style={{ fontSize: 10.5, fontWeight: 700,
+              color: gate === "watch" ? C.amber : C.sub, background: gate === "watch" ? C.amberBg : C.grayBg,
+              border: `1px solid ${gate === "watch" ? C.amberBd : C.border}`, borderRadius: 999, padding: "3px 10px" }}>
+              RHP gate · {gate}</span>}
+            {flags.map((f, i) => <span key={i} style={{ fontSize: 10.5, fontWeight: 600, color: C.red,
+              background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 999, padding: "3px 10px" }}>⚑ {String(f)}</span>)}
+          </div>
+        );
+      })()}
       {L?.last_eval_ist ? <div style={{ ...num, fontSize: 9, color: C.dim, marginTop: 8, textAlign: "right" }}>last eval {String(L.last_eval_ist)} IST</div> : null}
     </div>
   );
@@ -672,6 +706,15 @@ function IpoCommand() {
   const [vFilter, setVFilter] = useState("ALL");
   const [liveSel, setLiveSel] = useState<string | null>(null);
   const preopen = useLivePreopen(view === "live");
+  // Live <-> Command cross-links (same page; tabs are state, so link = switch + scroll)
+  const jumpToCommand = (sym: string) => {
+    setVFilter("ALL"); setView("command");
+    setTimeout(() => document.getElementById(`ipocard-${sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  };
+  const jumpToLive = (sym: string) => {
+    setLiveSel(sym); setView("live");
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 40);
+  };
   const autoLive = useRef(false);
   useEffect(() => {
     if (autoLive.current || !d) return;
@@ -782,6 +825,11 @@ function IpoCommand() {
           const isLive = liveSyms.includes(sym);
           return (
           <div key={sym}>
+          <div style={{display:"flex",justifyContent:"flex-end",margin:"0 2px 6px"}}>
+            <span onClick={()=>jumpToCommand(sym)} style={{cursor:"pointer",fontSize:11.5,fontWeight:600,
+              color:C.gold,display:"inline-flex",alignItems:"center",gap:4}}>
+              Full analysis on Command →</span>
+          </div>
           <LiveDecisionPanel L={(preopen || []).find(l => String(l.sym) === sym) ?? null}/>
           <div className="live-split">
             <div className="lp">
@@ -886,7 +934,11 @@ function IpoCommand() {
         {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>{
           if (liveSyms.includes(String(c.sym))) return null;
           if (vFilter!=="ALL" && String(c.verdict||"")!==vFilter) return null;
-          return <IpoCard key={i} c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}/>;
+          const inWin = windowCards.some(w => String(w.sym) === String(c.sym));
+          return <div key={i} id={`ipocard-${String(c.sym)}`}>
+            <IpoCard c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}
+              onLive={inWin ? () => jumpToLive(String(c.sym)) : undefined}/>
+          </div>;
         })}
         {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveSyms.includes(String(c.sym))).length===0 &&
           <div style={card}><span style={{fontSize:13,color:C.meta}}>No {vFilter} verdicts in the current window.</span></div>}
