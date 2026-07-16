@@ -118,7 +118,7 @@ def main():
                 d0 = ld - dtmod.timedelta(days=nd) + dtmod.timedelta(days=off)
                 if d0 in hist:
                     ipv = sfloat(ip)
-            if ipv: vals[lbl] = round(hist[d0] / ipv * 100, 2)
+            if ipv and d0 in hist: vals[lbl] = round(hist[d0] / ipv * 100, 2)  # skip weekend/holiday dates (KeyError 2026-07-19 = Sunday)
             break
         if vals and a.apply:
             sets = ", ".join(f"{k}=COALESCE({k},%s)" for k in vals)
