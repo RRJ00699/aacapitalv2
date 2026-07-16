@@ -104,7 +104,12 @@ function marginOfSafety(c: Record<string, unknown>) {
   const price = num(c.issue_price);
   const open = num(c.listing_open);
   const gmpPct = num(c.gmp_day_before_pct);
-  const fv = num(c.fair_value);           // usually null until eps_post is populated
+  // fair_value is COMPUTED in /api/ipo-command (fairValue()), not a DB column —
+  // selecting it crashed this route on 2026-07-16. Null here → MoS anchors on
+  // market-implied-GMP / issue-price-floor, its designed fallback (today's IPOs
+  // are GMP-anchored regardless since eps_post is null). TODO backend: persist
+  // modeled FV or share the function when the eps_post fix lands.
+  const fv = null as number | null;
 
   let anchor: number | null = null;
   let source = "unavailable";
@@ -183,7 +188,7 @@ export async function GET() {
     const rows = await sql`
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
-             peer_median_pe, listing_open, gmp_day_before_pct, fair_value,
+             peer_median_pe, listing_open, gmp_day_before_pct,
              rhp_verdict, rhp_gate
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
