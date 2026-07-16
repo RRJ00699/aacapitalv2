@@ -4,9 +4,14 @@
 // Playbook rules, with a margin-of-safety read and (when available) the
 // live pre-open order-book lean.
 //
-// Timing model (IST): static rules resolve from 09:30; live rules (open-price
-// dependent) firm as the open prints. NSE bid cutoff for new listings ~10:14
-// (2-min grace before the true ~10:16). The UI shows a countdown to 10:14.
+// Timing model — OFFICIAL NSE special pre-open for IPO/re-listed (all IST),
+// corrected 2026-07-16 after LASER (the old 10:14 model was wrong):
+//   09:00–09:45  order entry (modify/cancel allowed)
+//   09:45–09:55  matching — opening price discovery, book frozen
+//   09:55–10:00  buffer
+//   10:00        continuous trading at the discovered open
+// DECISION DEADLINE: 09:58 (2-min AACapital buffer before trading opens).
+// Static rules resolve from 09:00; discovery-dependent rules firm 09:45–09:55.
 //
 // Money-critical rules (size / anchors / OFS / PE / MoS / RHP) come from the
 // DB and never depend on the fragile live-depth call — if Kite depth is
@@ -274,7 +279,7 @@ export async function GET() {
         rules_passed: passedCount,
         rules_total: allScored.length,
         confidence: conf,
-        deadline_ist: "10:14",
+        deadline_ist: "09:58",
         last_eval_ist: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
       };
     }));

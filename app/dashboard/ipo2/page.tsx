@@ -485,25 +485,39 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
   const dl = L && typeof L.deadline_ist === "string" ? String(L.deadline_ist).split(":") : null;
   const deadline = dl && dl.length === 2 ? Number(dl[0]) * 60 + Number(dl[1]) : 10 * 60 + 14; // 10:14 IST
   const secsLeft = (deadline - mins) * 60 - ist.getUTCSeconds();
-  // Decision window per Rakesh: 9:30 -> deadline (10:14), max ~44:00 on the
-  // clock. Before 9:30 the timer doesn't run (it previously started at 9:15
-  // and showed 55+ minutes).
-  const pre = mins < 9 * 60 + 30, past = secsLeft <= 0;
-  const mm = Math.floor(Math.max(0, secsLeft) / 60), ss = Math.max(0, secsLeft) % 60;
-  const hot = !pre && !past && secsLeft < 15 * 60;
+  // OFFICIAL NSE special pre-open (IST), corrected post-LASER 2026-07-16:
+  // 9:00–9:45 order entry (we tick 43:00 to a 9:43 buffer) · 9:45–9:55
+  // discovery · 9:55–10:00 buffer · 10:00 trading. Decision by 09:58.
+  const entryEnd = 9 * 60 + 43;               // order-entry buffer (9:45 − 2min)
+  const secsEntry = (entryEnd - mins) * 60 - ist.getUTCSeconds();
+  const phase = mins < 9 * 60 ? "pre"
+    : mins < entryEnd ? "entry"
+    : mins < 9 * 60 + 45 ? "entryClosed"
+    : mins < 9 * 60 + 55 ? "discovery"
+    : secsLeft > 0 ? "final" : "past";
+  const pre = phase === "pre", past = phase === "past";
+  const showSecs = phase === "entry" ? Math.max(0, secsEntry) : Math.max(0, secsLeft);
+  const mm = Math.floor(showSecs / 60), ss = showSecs % 60;
+  const hot = phase === "final" || (phase === "entry" && secsEntry < 5 * 60);
   const await2 = (note: string) => (
     <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 4 }}>awaiting<span style={{ fontWeight: 400 }}> · {note}</span></div>);
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
       {/* HERO: the deadline */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>Decision deadline 10:14 IST</span>
+        <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>
+          {phase === "entry" ? "Order entry closes 9:43" : phase === "discovery" ? "Price discovery 9:45–9:55" : `Decision deadline ${String(L?.deadline_ist ?? "09:58")} IST`}</span>
         <span style={{ ...num, fontSize: 30, fontWeight: 800, lineHeight: 1,
           color: past ? C.dim : hot ? C.red : C.text, transition: "color .3s var(--ease)" }}>
-          {pre ? "opens 9:30" : past ? "closed" : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
+          {pre ? "opens 9:00" : past ? "closed" : phase === "entryClosed" ? "entry closed"
+            : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`}
         </span>
-        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>evals 9:30 · 9:45 · 10:00 · then every minute to 10:14 — score by ~10:08</span>}
-        {past && <span style={{ fontSize: 11, color: C.meta }}>window reopens next listing morning</span>}
+        {!pre && !past && <span style={{ fontSize: 11, color: C.meta }}>
+          {phase === "entry" ? "order entry 9:00–9:45 · discovery 9:45–9:55 · trading 10:00"
+           : phase === "discovery" ? "book frozen — open price forming · decide by 09:58"
+           : phase === "entryClosed" ? "entry closed 9:45 · discovery starts"
+           : "final window — trading opens 10:00"}</span>}
+        {past && <span style={{ fontSize: 11, color: C.meta }}>decision closed — trading from 10:00 · reopens next listing morning</span>}
         <span style={{ marginLeft: "auto", textAlign: "right" }}>
           <span style={{ display: "block", fontSize: 9, color: C.meta, letterSpacing: .5, textTransform: "uppercase", fontWeight: 700 }}>Confidence</span>
           <span style={{ ...num, fontSize: 24, fontWeight: 800, lineHeight: 1, transition: "color .3s var(--ease)",
