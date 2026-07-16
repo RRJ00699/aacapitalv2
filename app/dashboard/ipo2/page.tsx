@@ -305,7 +305,7 @@ function HoldStrip({ sym }: { sym: string }) {
   const [j, setJ] = useState<R | null>(null);
   const load = useCallback(() => {
     fetch(`/api/ipo/journey?sym=${sym}`).then(r => r.json())
-      .then(x => { if (x && x.ok && x.hasData !== false) setJ(x); })
+      .then(x => { if (x && x.ok) setJ(x); })
       .catch(() => { /* strip is best-effort; the journey page is the fallback */ });
   }, [sym]);
   useEffect(() => {
@@ -319,6 +319,14 @@ function HoldStrip({ sym }: { sym: string }) {
     return () => clearInterval(t);
   }, [load]);
   if (!j) return null;
+  if (j.hasData === false) return (
+    <div style={{ border: `1px dashed ${C.border}`, borderRadius: 10, padding: "14px 13px" }}>
+      <div style={{ fontSize: 10.5, color: C.meta, textTransform: "uppercase", letterSpacing: .5, fontWeight: 700 }}>Exit engine</div>
+      <div style={{ fontSize: 12, color: C.meta, marginTop: 6, lineHeight: 1.5 }}>
+        {j.note ? String(j.note) : "Awaiting first candles — arms after the first close syncs (17:00 IST run)."}</div>
+      <div style={{ ...num, fontSize: 10, color: C.dim, marginTop: 6 }}>lock8/trail12 · arm +8% · floor +3% · trail −12%</div>
+    </div>
+  );
   const exit = j.decision === "EXIT";
   const armed = j.armed === true;
   const col = exit ? C.red : armed ? C.green : C.amber;
