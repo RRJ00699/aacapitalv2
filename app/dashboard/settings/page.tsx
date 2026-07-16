@@ -3,7 +3,7 @@
 import AppShell from "@/components/app-shell/AppShell";
 import { useEffect, useState } from "react";
 const C={bg:"var(--t-bg)",s:"var(--t-surface)",bd:"var(--t-border)",tx:"var(--t-text)",mt:"var(--t-meta)",gr:"var(--t-green)",grB:"var(--t-greenBg)",grD:"var(--t-greenBd)"};
-const FIELDS=[["ipomatrix_cookie","IPOMatrix cookie / JWT (x-access-token — ~30d expiry, status shows the date)"],["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["zerodha_totp_secret","Zerodha TOTP secret (for the 08:45 auto-login — from Kite 2FA setup)"],["kite_api_key","Kite Connect API key"],["kite_api_secret","Kite Connect API secret"],["ntfy_topic","ntfy topic (push notifications)"]];
+const FIELDS=[["ipomatrix_cookie","IPOMatrix cookie / JWT (x-access-token — ~30d expiry, status shows the date)"],["screener_username","Screener.in email"],["screener_password","Screener.in password"],["screener_cookie","Screener.in cookie (bypasses login — paste from browser DevTools)"],["zerodha_totp_secret","Zerodha TOTP secret (for the 08:45 auto-login — from Kite 2FA setup)"],["kite_api_key","Kite Connect API key"],["kite_api_secret","Kite Connect API secret"],["kite_user_id","Zerodha user ID (auto-login)"],["kite_password","Zerodha password (auto-login)"],["ntfy_topic","ntfy topic (push notifications)"]];
 function Settings(){
   const [state,setState]=useState<Record<string,string>>({});
   const [vals,setVals]=useState<Record<string,string>>({});
@@ -37,7 +37,24 @@ function Settings(){
             padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
         </div>
       </div>))}
+    <h2 style={{fontFamily:"var(--f-display)",fontSize:16,fontWeight:800,margin:"22px 0 4px"}}>Pipeline health</h2>
+    <p style={{fontSize:12,color:C.mt,margin:"0 0 10px"}}>Failed cron steps, last 7 days — a failing scraper usually means an expired cookie or credential above.</p>
+    <Failures/>
   </div>);}
+
+function Failures(){
+  const [rows,setRows]=useState<Array<{step:string;script:string;stderr_tail:string;failed_at:string}>|null>(null);
+  useEffect(()=>{fetch("/api/admin/pipeline-failures").then(r=>r.json())
+    .then(j=>setRows(j.failures||[])).catch(()=>setRows([]));},[]);
+  if(rows===null)return <div style={{fontSize:12,color:C.mt}}>loading…</div>;
+  if(!rows.length)return <div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,
+    borderRadius:10,padding:"10px 12px",fontSize:12.5,fontWeight:600}}>No failures in the last 7 days ✓</div>;
+  return <div>{rows.map((f,i)=>(
+    <div key={i} style={{background:C.s,border:`1px solid ${C.bd}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5}}>
+        <b>{f.step}</b><span style={{color:C.mt,fontFamily:"var(--f-mono)",fontSize:10.5}}>{String(f.failed_at).slice(0,16).replace("T"," ")}</span></div>
+      <div style={{fontFamily:"var(--f-mono)",fontSize:10.5,color:C.mt,marginTop:4,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{(f.stderr_tail||"").slice(-220)}</div>
+    </div>))}</div>;}
 
 export default function SettingsRoute() {
   return (
