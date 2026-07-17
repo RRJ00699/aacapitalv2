@@ -9,6 +9,9 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "kv_namespaces": [
+    { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" }
+  ],
   "vars": {
     "ALLOWED_EMAILS": "try.rakeshreddy@gmail.com,jesravani1@gmail.com",
     "ADMIN_EMAILS": "try.rakeshreddy@gmail.com",
