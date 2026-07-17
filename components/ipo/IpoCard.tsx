@@ -59,9 +59,15 @@ function scoreColor(score: number | null): string {
   return C.red;
 }
 
-function ScoreDial({ score, conf, sub }: { score: number | null; conf: number | null; sub?: string }) {
-  const col = scoreColor(score);
-  const pct = score != null ? Math.max(0, Math.min(100, score)) : 0;
+function ScoreDial({ score, conf, sub, tally }: { score: number | null; conf: number | null; sub?: string; tally?: boolean }) {
+  // tally mode: ipo_score v0 is a backtested additive tally (-4..+6), NOT a
+  // percent — showing it on a 0-100 arc made every IPO read as 0/1/-2 garbage
+  // (Rakesh 2026-07-17). Number = signed tally; arc = position within the
+  // tally's true range (visual only).
+  const col = tally ? (score != null && score >= 2 ? C.green : score != null && score <= -1 ? C.red : C.amber) : scoreColor(score);
+  const pct = score == null ? 0
+    : tally ? Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100))
+    : Math.max(0, Math.min(100, score));
   const r = 30, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
   return (
     <div style={{ position: "relative", width: 72, height: 72, flexShrink: 0 }}>
@@ -74,8 +80,8 @@ function ScoreDial({ score, conf, sub }: { score: number | null; conf: number | 
         )}
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ ...num, fontSize: 26, fontWeight: 800, color: col, lineHeight: 1 }}>
-          {score != null ? Math.round(Number(score)) : "—"}
+        <span style={{ ...num, fontSize: tally ? 22 : 26, fontWeight: 800, color: col, lineHeight: 1 }}>
+          {score != null ? (tally && Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))) : "—"}
         </span>
         {score != null
           ? (conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
@@ -378,7 +384,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
             {isTrade && <span style={{ fontSize: 12, color: C.meta, marginLeft: 10 }}>buy at open · trail −5%</span>}
           </div>
         </div>
-        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : undefined} />
+        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} />
       </div>
 
       {/* ROW 2: SETUP — the playbook engine's call */}
