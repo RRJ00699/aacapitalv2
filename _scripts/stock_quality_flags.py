@@ -16,7 +16,7 @@ Nothing existing is altered. Run from repo root:
 import psycopg2, os, glob
 import pandas as pd
 from statistics import median
-    import csv
+import csv
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
