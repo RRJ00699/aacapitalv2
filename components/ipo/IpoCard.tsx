@@ -66,7 +66,7 @@ function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | nul
   // tally's true range (visual only).
   const col = tally ? (score != null && score >= 2 ? C.green : score != null && score <= -1 ? C.red : C.amber) : scoreColor(score);
   const pct = score == null ? 0
-    : tally ? Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100))
+    : tally ? (win != null ? Math.max(0, Math.min(100, Number(win))) : Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100)))
     : Math.max(0, Math.min(100, score));
   const r = 30, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
   return (
@@ -80,16 +80,25 @@ function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | nul
         )}
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ ...num, fontSize: tally ? 22 : 26, fontWeight: 800, color: col, lineHeight: 1 }}>
-          {score != null ? (tally && Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))) : "—"}
-        </span>
-        {score != null
-          ? (tally
-              ? (band || win != null) && <span style={{ fontSize: 8, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.25 }}>
-                  {band ? String(band) : ""}{win != null ? `${band ? " · " : ""}wins ${Math.round(Number(win))}% (hist)` : ""}</span>
-              : conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
-          : <span style={{ fontSize: 7.5, color: C.dim, marginTop: 1, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>}
-        {sub && score != null && <span style={{ fontSize: 7, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.1 }}>{sub}</span>}
+        {score == null
+          ? <span style={{ fontSize: 7.5, color: C.dim, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>
+          : tally
+            ? <>
+                {/* BIG number = backtested win% (what a user grasps); the raw
+                   tally is the small signed chip below. Fixes "0/1/-2 means
+                   nothing" — the number people see is now 60-81, not the tally. */}
+                <span style={{ ...num, fontSize: 24, fontWeight: 800, color: col, lineHeight: 1 }}>
+                  {win != null ? `${Math.round(Number(win))}%` : (band ? String(band).slice(0, 4) : "—")}</span>
+                <span style={{ fontSize: 7.5, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.15 }}>
+                  {band ? String(band).toLowerCase() : ""}{win != null ? " hist" : ""}</span>
+                <span style={{ ...num, fontSize: 8, color: C.dim, marginTop: 1 }}>
+                  tally {Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))}</span>
+              </>
+            : <>
+                <span style={{ ...num, fontSize: 26, fontWeight: 800, color: col, lineHeight: 1 }}>{Math.round(Number(score))}</span>
+                {conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>}
+                {sub && <span style={{ fontSize: 7, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.1 }}>{sub}</span>}
+              </>}
       </div>
     </div>
   );

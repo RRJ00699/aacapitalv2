@@ -90,8 +90,13 @@ export async function GET() {
         OR regexp_replace(lower(ri.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
         = regexp_replace(lower(c.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
       LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')
-      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30 OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
-         OR c.ipo_open_date >= CURRENT_DATE
+      -- BUG F (Knack missing): anchor lock-in runs ~30 sessions post-listing;
+      -- widen so a still-locked IPO shows even if its listing was >30d ago.
+      -- All comparisons on IST date (one clock).
+      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 45
+         OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+         OR c.ipo_open_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+         OR (c.listing_date IS NULL AND c.ipo_close_date IS NULL)
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;

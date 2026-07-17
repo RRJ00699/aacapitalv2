@@ -40,6 +40,20 @@ DDL = [
         id SERIAL PRIMARY KEY, symbol TEXT, discovery_price NUMERIC,
         buy_qty BIGINT, sell_qty BIGINT, lean_pct NUMERIC,
         captured_at TIMESTAMPTZ DEFAULT NOW(), source TEXT DEFAULT 'live')""",
+    # ── GUARDRAIL A: natural-key UNIQUE indexes so cleanups can't let dups
+    # return (the recurring double-Laser). One canonical row per IPO/tick. ──
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(symbol,'[^A-Za-z0-9]','','g')), recorded_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (upper(regexp_replace(symbol,'[^A-Za-z0-9]','','g')), trade_date)",
+    # ── GUARDRAIL C: data source registry (which feed is authoritative per domain) ──
+    """CREATE TABLE IF NOT EXISTS data_source_registry (
+        domain TEXT PRIMARY KEY, source TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())""",
+    "INSERT INTO data_source_registry (domain, source) VALUES ('indices','kite'),('vix','kite'),('pcr','kite'),('fii_dii','kite-or-nse'),('ipo_dates','nse-primary-chittorgarh-fallback'),('quotes','kite') ON CONFLICT (domain) DO NOTHING",
+    # ── GUARDRAIL G: RHP spend keyed by PDF content-hash (never re-pay per doc) ──
+    "ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS pdf_sha256 TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_rhp_pdf_sha ON ipo_rhp_intel (pdf_sha256) WHERE pdf_sha256 IS NOT NULL",
     # ── admin job console ──
     """CREATE TABLE IF NOT EXISTS job_runs (
         id BIGSERIAL PRIMARY KEY, job TEXT NOT NULL,

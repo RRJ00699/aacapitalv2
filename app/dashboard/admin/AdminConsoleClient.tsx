@@ -151,10 +151,8 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
           <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
         </div>
-        <button onClick={load} style={{
-          fontSize: 12, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`,
-          borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-        }}>↻ Refresh</button>
+        {/* Refresh removed (Rakesh 2026-07-17): gave no feedback and the list
+            auto-loads on mount + after each job. Pull-to-refresh covers manual. */}
       </div>
       <p style={{ fontSize: 13, color: C.meta, marginTop: 0, marginBottom: 18 }}>
         Run any pipeline job with one click. web → Neon only; the VM polls and runs it. Signed in as {adminEmail}.

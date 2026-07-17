@@ -336,7 +336,11 @@ function VolumeConfirm({ sym }: { sym: string }) {
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
   }, [sym]);
-  if (!v) return await2("cumulative volume · confirms from 10:29");
+  // BUG E: a dead upstream (tick capture) must not masquerade as patience.
+  if (!v) return await2("cumulative volume · confirms from 10:29 IST");
+  if (v.upstream_stale === true || v.capture_down === true)
+    return (<div style={{ fontSize: 12, color: "#B42318" }}>
+      <b>upstream capture down</b><span style={{ color: C.dim }}> · last tick {String(v.last_tick ?? "unknown")} · not awaiting, broken</span></div>);
   if (v.status !== "confirmed" || v.cum_volume == null)
     return await2(String(v.note ?? "in window — accumulating ticks"));
   const cum = Number(v.cum_volume);
@@ -798,12 +802,32 @@ function IpoCommand() {
   // Live <-> Command cross-links (same page; tabs are state, so link = switch + scroll)
   const jumpToCommand = (sym: string) => {
     setVFilter("ALL"); setView("command");
-    setTimeout(() => document.getElementById(`ipocard-${sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    // BUG F: double-rAF so the scroll target exists after the section renders
+    // (single setTimeout raced the mount → needed a hard refresh before).
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      document.getElementById(`ipocard-${sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
   };
   const jumpToLive = (sym: string) => {
     setLiveSel(sym); setView("live");
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 40);
   };
+  // BUG F: the global search dispatches aac:focus-ipo but NOTHING listened —
+  // clicking a result did nothing. Wire it: switch to Command + scroll to card.
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const company = String((e as CustomEvent).detail?.company || "");
+      if (!company || !d) return;
+      const hit = (d.cards || []).find(c =>
+        String(c.company_name || "").toLowerCase().includes(company.toLowerCase()) ||
+        canonSym(String(c.sym || "")) === canonSym(company));
+      if (!hit) return;
+      setVFilter("ALL"); setView("command");
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        document.getElementById(`ipocard-${hit.sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
+    };
+    window.addEventListener("aac:focus-ipo", onFocus);
+    return () => window.removeEventListener("aac:focus-ipo", onFocus);
+  }, [d]);
   const autoLive = useRef(false);
   useEffect(() => {
     if (autoLive.current || !d) return;
@@ -825,7 +849,11 @@ function IpoCommand() {
 
   const cards = d?.cards || [];
   const degraded = (d as {degraded?: string} | null)?.degraded;
-  const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
+  // BUG A fix: canonicalize before de-duping so symbol variants (LASER / LASER-EQ)
+  // collapse to ONE chip + ONE card. Root cause of the recurring double-Laser.
+  const canonSym = (x: string) => x.toUpperCase().replace(/[-_.]?(EQ|BE|BZ|NS)$/i, "").replace(/[^A-Z0-9]/g, "");
+  const liveSyms = Array.from(new Map((d?.live||[]).map(t=>[canonSym(String(t.symbol)), String(t.symbol)])).values());
+  const liveCanon = Array.from(new Set((d?.live||[]).map(t=>canonSym(String(t.symbol)))));
   // Live screen window: any IPO listed within the last 7 days (payload fields only)
   const windowCards = cards.filter(c => {
     if (!c.listing_date || !c.sym) return false;
@@ -901,7 +929,7 @@ function IpoCommand() {
                 fontFamily:"var(--f-display)",fontSize:12,fontWeight:sel?700:500,padding:"6px 13px",borderRadius:10,
                 border:`1px solid ${sel?C.amberBd:C.border}`,background:sel?C.amberBg:C.surface,
                 color:sel?C.gold:C.meta,transition:"all .2s var(--ease)"}}>
-                {liveSyms.includes(ws) && <span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>}
+                {liveCanon.includes(canonSym(ws)) && <span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>}
                 {String(w.company_name||ws).split(" ").slice(0,2).join(" ")}
               </span>);})}
           </div>
@@ -915,7 +943,7 @@ function IpoCommand() {
         </div>}
         {windowCards.filter(w => String(w.sym) === (liveSel ?? String(windowCards[0]?.sym))).map((wc) => {
           const sym = String(wc.sym);
-          const isLive = liveSyms.includes(sym);
+          const isLive = liveCanon.includes(canonSym(sym));
           return (
           <div key={sym}>
           <div style={{display:"flex",justifyContent:"flex-end",margin:"0 2px 6px"}}>
@@ -1024,8 +1052,8 @@ function IpoCommand() {
               background:vFilter===k?C.blueBg:C.surface,color:vFilter===k?C.blue:C.meta}}>
               {k==="ALL"?"All":k}</span>))}
         </div>
-        {cards.filter(c=>c.state!=="INWINDOW"||liveSyms.includes(String(c.sym))===false).map((c,i)=>{
-          if (liveSyms.includes(String(c.sym))) return null;
+        {cards.filter(c=>c.state!=="INWINDOW"||liveCanon.includes(canonSym(String(c.sym)))===false).map((c,i)=>{
+          if (liveCanon.includes(canonSym(String(c.sym)))) return null;
           if (vFilter!=="ALL" && String(c.verdict||"")!==vFilter) return null;
           const inWin = windowCards.some(w => String(w.sym) === String(c.sym));
           return <div key={i} id={`ipocard-${String(c.sym)}`}>
@@ -1033,7 +1061,7 @@ function IpoCommand() {
               onLive={inWin ? () => jumpToLive(String(c.sym)) : undefined}/></CardBoundary>
           </div>;
         })}
-        {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveSyms.includes(String(c.sym))).length===0 &&
+        {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveCanon.includes(canonSym(String(c.sym)))).length===0 &&
           <div style={card}><span style={{fontSize:13,color:C.meta}}>No {vFilter} verdicts in the current window.</span></div>}
       </>}
 
