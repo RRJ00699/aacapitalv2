@@ -5,11 +5,13 @@
 // as text instead of failing the panel (the #159 lesson, applied defensively).
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 
 const CANON = String.raw`(ltd|limited|pvt|private|ipo|and|&)|[^a-z0-9]`;
 
 export async function GET(req: Request) {
+  const gate = await requireUser(); if (gate) return gate;   // ledger #15: was UNGUARDED and queries kite_session
   const check = new URL(req.url).searchParams.get("check") ?? "";
   const sql = neon(process.env.DATABASE_URL!);
   try {

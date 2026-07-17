@@ -1,9 +1,11 @@
 // app/api/admin/pipeline-steps/route.ts — latest run's step board (green/red).
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const gate = await requireUser(); if (gate) return gate;   // ledger #15: was unguarded
   try {
     const sql = neon(process.env.DATABASE_URL!);
     const rows = await sql`
