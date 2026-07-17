@@ -227,8 +227,14 @@ def main():
             for nm,ld in _cur.fetchall(): datemap[_norm(nm)]=ld
             _c.close()
             def keyf(p):
-                base=os.path.basename(os.path.dirname(p)) or os.path.splitext(os.path.basename(p))[0]
-                return datemap.get(_norm(base.replace("-"," ")))
+                # Per-company subfolder is the convention, but a PDF dropped
+                # FLAT into the scan root must fall back to its FILENAME —
+                # previously dirname yielded the root ("rhps"), matched no
+                # company, and the file silently vanished from the run
+                # (Caliber manual seed, 2026-07-17).
+                d=os.path.basename(os.path.dirname(p))
+                base=d if d and os.path.abspath(os.path.dirname(p))!=os.path.abspath(a.dir) else os.path.splitext(os.path.basename(p))[0]
+                return datemap.get(_norm(base.replace("-"," ").replace("_"," ")))
             # keep only those with a listing_date >= year-min, sort desc
             dated=[(keyf(p),p) for p in pdfs]
             dated=[(d,p) for d,p in dated if d is not None and d.year>=a.year_min]
