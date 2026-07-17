@@ -9,6 +9,20 @@ Cron: * * * * * cd $AAC && set -a && . ./.env && set +a && venv/bin/python _scri
 """
 import os, sys, subprocess, datetime, traceback
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(HERE)
+
+# ── Neon-cost throttle (Rakesh 2026-07-17: endpoint never slept; this poller
+# was the ~6 CU-h/day idle bill). Cron stays * * * * * for 1-minute pickup in
+# the ACTIVE window; outside it we exit BEFORE any DB import/connect except on
+# :00/:10/:20/:30/:40/:50 — 10-min gaps let the 5-min autosuspend actually fire.
+# ACTIVE: Mon-Sat 07:00-23:30 IST (admin hours + full market day).
+def _throttled():
+    now_ist = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    active = now_ist.weekday() < 6 and (7 <= now_ist.hour < 23 or (now_ist.hour == 23 and now_ist.minute <= 30))
+    return (not active) and now_ist.minute % 10 != 0
+
+if _throttled():
+    sys.exit(0)   # off-hours off-cycle: zero DB contact, Neon keeps sleeping
+
 import psycopg2
 
 DB = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
