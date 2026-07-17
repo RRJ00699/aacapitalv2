@@ -110,6 +110,7 @@ def main():
     # before enrichment. Dedup-safe (upsert by company_name, RULE 1). Non-hard.
     step("schema sync (single owner of DDL)", ["schema_sync.py"])
     step("write-constraint guard (A)",      ["check_write_constraints.py"])
+    step("lineage registry (P2)",          ["lineage_registry.py"])
     step("NSE discovery (new IPOs)",        ["ipo/fetch_nse_ipos.py"])
     step("scrape IPO calendar + details",   ["scrape_chittorgarh.py","--write-db"])
     step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
@@ -170,6 +171,7 @@ def main():
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
     step("value-sanity report",             ["check_value_sanity.py"])
     step("date sanity gate (D)",           ["check_date_sanity.py"])
+    step("freshness monitor (P2)",         ["check_freshness.py"])
     step("smoke probe (live API)",         ["smoke_probe.py"])
 
     log(f"=== LEAN PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
