@@ -22,8 +22,13 @@ Behavior:
   best bid/ask (+qty from book levels), cancelled qty WHEN EXPOSED.
 - Alerts: 3 consecutive failures or all-symbols-stale -> pipeline_failures
   (Pipeline health/phone) + best-effort ntfy push when NTFY_TOPIC set.
-Run:  python _scripts/nse_preopen_capture.py --once     # verification poll
-      python _scripts/nse_preopen_capture.py            # full window (cron)
+Run (LOCAL TEST MODE — no DB, Excel + raw JSONL; Rakesh 2026-07-17: prove it
+locally first, graduate to DB or drop it later; data is for backtests):
+  pip install curl_cffi openpyxl
+  python _scripts/nse_preopen_capture.py --xlsx preopen.xlsx --once   # any time: shape check
+  python _scripts/nse_preopen_capture.py --xlsx preopen.xlsx         # listing morning window
+  (add --symbols ALPINE,SBIFM to filter; default captures ALL rows in the IPO set)
+DB mode (dormant until approved): omit --xlsx on the VM.
 """
 import argparse, datetime as dt, hashlib, json, os, random, sys, time
 import psycopg2
@@ -68,6 +73,12 @@ def fail(cur, note, alert=False):
                 headers={"Title": "AACapital alert"}), timeout=10)
         except Exception:
             pass
+
+def fail_safe(cur, note, alert=False):
+    if cur is None:
+        print(f"ALERT (local mode): {note}")
+    else:
+        fail(cur, note, alert)
 
 def prime(cffi):
     s = cffi.Session(impersonate="chrome124")
@@ -127,20 +138,42 @@ def store(cur, rec):
                     (rec["symbol"], json.dumps(rec["raw_row"])))
     return cur.rowcount
 
+def xlsx_store(path, rec, t):
+    """Excel row + raw JSONL sidecar. Append-safe; header on create."""
+    from openpyxl import Workbook, load_workbook
+    cols = ["captured_ist", "symbol", "iep", "ieq", "buy_qty", "sell_qty", "lean_pct",
+            "best_bid", "best_bid_qty", "best_ask", "best_ask_qty", "cancelled_qty", "state_hash"]
+    if os.path.exists(path):
+        wb = load_workbook(path); ws = wb.active
+    else:
+        wb = Workbook(); ws = wb.active; ws.title = "preopen"; ws.append(cols)
+    ws.append([t.strftime("%Y-%m-%d %H:%M:%S")] + [rec[c] for c in cols[1:]])
+    wb.save(path)
+    with open(os.path.splitext(path)[0] + "_raw.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"captured_ist": t.isoformat(), "symbol": rec["symbol"],
+                            "raw": rec["raw_row"]}) + "\n")
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--once", action="store_true")
+    ap.add_argument("--xlsx", help="LOCAL TEST MODE: write to this Excel file, no DB")
+    ap.add_argument("--symbols", help="comma-separated filter (xlsx mode); default = all IPO-set rows")
     a = ap.parse_args()
-    conn = db(); cur = conn.cursor()
-    want = listings_today(cur)
-    if not want:
-        print("no mainboard IPO lists today — exit."); return
-    print(f"listing-day capture for: {sorted(want)}")
+    if a.xlsx:
+        conn = cur = None
+        want = {x.strip().upper() for x in a.symbols.split(",")} if a.symbols else None
+        print(f"LOCAL XLSX MODE -> {a.xlsx} · symbols: {sorted(want) if want else 'ALL in IPO set'}")
+    else:
+        conn = db(); cur = conn.cursor()
+        want = listings_today(cur)
+        if not want:
+            print("no mainboard IPO lists today — exit."); return
+        print(f"listing-day capture for: {sorted(want)}")
     try:
         from curl_cffi import requests as cffi
     except ImportError:
-        fail(cur, "curl_cffi missing — pip install curl_cffi", alert=True); sys.exit(1)
+        fail_safe(cur, "curl_cffi missing — pip install curl_cffi", alert=True); sys.exit(1)
     s = prime(cffi)
-    consec, last_hashes, stale = 0, {}, 0
+    consec, last_hashes, stale, seen = 0, {}, 0, set()
     while True:
         t = ist_now()
         if not a.once and not in_window(t):
@@ -153,32 +186,39 @@ def main():
             payload = r.json()
             shape_err = validate_shape(payload)
             if shape_err:
-                fail(cur, f"SHAPE CHANGED: {shape_err}", alert=True); sys.exit(1)
+                fail_safe(cur, f"SHAPE CHANGED: {shape_err}", alert=True); sys.exit(1)
             recs = parse_rows(payload, want)
-            wrote = sum(store(cur, rec) for rec in recs)
-            conn.commit(); consec = 0
+            if a.xlsx:
+                wrote = 0
+                for rec in recs:
+                    if rec["state_hash"] not in seen:
+                        xlsx_store(a.xlsx, rec, t); seen.add(rec["state_hash"]); wrote += 1
+            else:
+                wrote = sum(store(cur, rec) for rec in recs)
+                conn.commit()
+            consec = 0
             hashes = {r0["symbol"]: r0["state_hash"] for r0 in recs}
             stale = stale + 1 if recs and hashes == last_hashes else 0
             last_hashes = hashes
             if stale == 8:
-                fail(cur, "book stale 8 consecutive polls during discovery — check page vs API")
+                fail_safe(cur, "book stale 8 consecutive polls during discovery — check page vs API")
             print(f"{t:%H:%M:%S} IST · {len(recs)} syms · {wrote} new states")
             if not recs:
-                fail(cur, "empty IPO pre-open set during window (symbols expected)")
+                fail_safe(cur, "empty IPO pre-open set during window (symbols expected)")
         except SystemExit:
             raise
         except Exception as e:
             consec += 1
             print(f"poll error ({consec}): {str(e)[:100]}")
             if consec == 3:
-                fail(cur, f"3 consecutive failures: {str(e)[:200]}", alert=True)
+                fail_safe(cur, f"3 consecutive failures: {str(e)[:200]}", alert=True)
             time.sleep(45)
             try: s = prime(cffi)
             except Exception: pass
         if a.once:
             break
         time.sleep(POLL_S + random.uniform(-JITTER_S, JITTER_S))
-    conn.close()
+    if conn: conn.close()
 
 if __name__ == "__main__":
     main()
