@@ -1131,8 +1131,13 @@ function IpoCommand() {
       {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>GMP d-1</th><th style={th}>Anchors</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
-          <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>(
-            <tr key={i}><td style={{...td,...num}}>{D(c.listing_date)}</td>
+          <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>{
+            const istT=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+            const od=c.open_date?String(c.open_date).slice(0,10):null;
+            const cd=c.close_date?String(c.close_date).slice(0,10):null;
+            const status=c.state==="LISTING"?"LISTS TODAY":od&&istT<od?`opens ${od.slice(5)}`:cd&&istT<=cd?`● OPEN · closes ${cd.slice(5)}`:`allotment · lists ${String(c.listing_date??"").slice(5,10)}`;
+            return (
+            <tr key={i}><td style={{...td,...num}}>{D(c.listing_date)}<div style={{fontSize:9.5,color:status.startsWith("●")?C.green:C.meta,fontWeight:status.startsWith("●")?700:400}}>{status}</div></td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(c.company_name||"")}{c.quality_promoter===true?" ★":""}</td>
               <td style={{...td,...num}}>{c.issue_size_cr!=null?`₹${Number(c.issue_size_cr).toLocaleString()}cr`:"—"}</td>
               <td style={{...td,...num,fontWeight:700,color:c.gmp_day_before==null?C.dim:Number(c.gmp_day_before)>20?C.green:Number(c.gmp_day_before)>=0?C.text:C.red}}>
@@ -1140,7 +1145,7 @@ function IpoCommand() {
               <td style={{...td,...num,color:c.anchor_count!=null&&Number(c.anchor_count)>30?C.green:C.sub,fontWeight:c.anchor_count!=null&&Number(c.anchor_count)>30?700:400}}>
                 {c.anchor_count!=null?String(c.anchor_count):"—"}</td>
               <td style={td}>{c.verdict!=null?<Verdict v={c.verdict as string}/>:<Chip b={c.score_band as string}/>}</td>
-              <td style={{...td,fontSize:12,color:C.meta}}>{String(c.why_trade||c.why_caution||c.why_avoid||c.score_evidence||"—").split(" ; ")[0]}</td></tr>))}</tbody>
+              <td style={{...td,fontSize:12,color:C.meta}}>{String(c.why_trade||c.why_caution||c.why_avoid||c.score_evidence||"—").split(" ; ")[0]}</td></tr>);})}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Pre-listing scores use size/valuation only — the gap weight applies itself at the open.</div>
       </div>}

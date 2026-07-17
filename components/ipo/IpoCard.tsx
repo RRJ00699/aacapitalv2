@@ -313,7 +313,11 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const lifecycle = (() => {
     const day = (x: unknown) => { const d = new Date(String(x)); return isNaN(+d) ? null : d; };
     const od = day(c.open_date), cd = day(c.close_date), ld = day(c.listing_date);
-    const now = new Date(); const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Today in IST — the market's clock, never the device's (CST is a day
+    // behind IST every evening; that skew was the Caliber timeline bug).
+    const istParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const [iy, im, idd] = istParts.split("-").map(Number);
+    const t0 = new Date(iy, im - 1, idd);
     const dd = (a: Date, b: Date) => Math.round((+a - +b) / 86400000);
     if (od && t0 < od) return { v: `opens in ${dd(od, t0)}d`, s: `subscription ${String(c.open_date).slice(5,10)} → ${String(c.close_date ?? "").slice(5,10)}`, st: "na" as const };
     if (od && cd && t0 >= od && t0 <= cd) {
