@@ -27,13 +27,17 @@ load_dotenv(".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger()
 
-API_KEY      = os.environ.get("KITE_API_KEY",      "br9m41pn8nvvywnl")
+API_KEY      = os.environ.get("KITE_API_KEY", "")  # env or platform_config only — no hardcoded fallback (audit 2026-07-17)
 API_SECRET   = os.environ.get("KITE_API_SECRET",   "")
 USER_ID      = os.environ.get("KITE_USER_ID",      "")
 PASSWORD     = os.environ.get("KITE_PASSWORD",      "")
 TOTP_SECRET  = os.environ.get("KITE_TOTP_SECRET",  "")
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
 
+
+def _require_key():
+    if not API_KEY:
+        sys.exit("KITE_API_KEY missing — set it in .env or Settings (platform_config kite_api_key).")
 def _db_overrides():
     """platform_config beats .env when set — lets Rakesh rotate Zerodha creds
     from Settings on his phone (Build plan #4) without SSH. Keys:
@@ -58,6 +62,7 @@ def _db_overrides():
         pass
 
 _db_overrides()
+_require_key()
 
 
 def get_request_token() -> str:
