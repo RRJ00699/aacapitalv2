@@ -34,14 +34,15 @@ def test_A2_ipo_command_second_call_zero_queries():
     assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
     assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
 
-def test_A2_market_regime_LEDGER12_no_cache_at_all():
-    """LEDGER #12 PINNED (runtime-proven): the 'Cached ~1h' comment is a
-    Cache-Control header hope only — NO KV. Both calls hit Neon with the
-    400-day price_candles scan. Flip this test when KV caching lands."""
+def test_A2_market_regime_second_call_zero_queries():
+    """Ledger #12 FIX flipped: market-regime now caches in KV (keyed per
+    threshold, 1h TTL) — second call ZERO Neon queries, x-cache HIT. Was:
+    a Cache-Control comment; every call paid the 400-day candle scan."""
     d = run_route("app/api/market-regime/route.ts", 2)
     c1, c2 = d["results"]
-    assert c1["queries"] == 2 and c2["queries"] == 2      # every call pays
-    assert c1["kv_gets"] == 0 and c2["kv_gets"] == 0      # cache never consulted
+    assert c1["queries"] == 2 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
+    assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
+    assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
 
 
 # ---------------- A1 — query-count ceilings ----------------

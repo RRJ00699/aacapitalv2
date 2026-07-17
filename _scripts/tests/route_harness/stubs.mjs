@@ -21,7 +21,7 @@ export class Pool {
 // minimal shaped rows so handlers that read [0].x don't crash
 function rowsFor(q) {
   const lower = q.toLowerCase();
-  if (lower.includes("count(*)")) return [{ above: 0, total: 0, count: 0 }];
+  if (lower.includes("count(*)")) return [{ above: 60, total: 100, count: 0 }];
   if (lower.includes("max(date)")) return [{ d: null }];
   return [];
 }
