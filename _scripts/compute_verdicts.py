@@ -75,6 +75,12 @@ def decide(r):
     # --- CAUTION (verify) ---
     if pe is not None and ppe and ppe > 0 and ppe*1.3 < pe <= ppe*2.5:
         caution.append(f"PE {pe:.0f} vs peer {ppe:.0f} — richer than peers, verify premium")
+    elif pe is not None and ppe and ppe > 0 and pe > ppe*2.5:
+        # >2.5x is compute_flags' "expensive" red-flag threshold — mirror it here so
+        # the MOST overvalued IPOs don't escape the verdict rationale (bug: the old
+        # window silently ended at 2.5x). Severity stays CAUTION to match the flag
+        # scanner; escalation to AVOID is an owner call.
+        caution.append(f"PE {pe:.0f} vs peer {ppe:.0f} — extreme premium (>{2.5:.1f}x peers, red-flagged)")
     if gap is not None and 15 <= gap <= 50:
         caution.append(f"gap +{gap:.0f}% (above sweet spot, coin-flip zone)")
     if req_dd: caution.append("RHP: requires further due diligence")

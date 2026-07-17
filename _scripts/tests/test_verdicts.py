@@ -84,10 +84,19 @@ def test_caution_rich_vs_peers():
     out = decide(_listed(ipo_pe=40, peer_median_pe=20))  # 1.3x < 40 <= 2.5x
     assert out["verdict"] == "CAUTION" and "richer than peers" in out["why_caution"]
 
-def test_pe_above_2_5x_peer_not_flagged():
-    """Pinned quirk: PE > 2.5× peer falls OUT of the caution window."""
-    out = decide(_listed(ipo_pe=60, peer_median_pe=20))
-    assert out["why_caution"] is None or "richer than peers" not in out["why_caution"]
+def test_pe_above_2_5x_peer_is_extreme_premium():
+    """Flag 2 FIX (review, MR #212): PE > 2.5× peer previously escaped the
+    caution window entirely — the most overvalued got no valuation caution.
+    Now mirrors compute_flags.py's 2.5× "expensive" red-flag threshold."""
+    out = decide(_listed(ipo_pe=60, peer_median_pe=20))   # 3.0x
+    assert "extreme premium" in out["why_caution"]
+    assert out["verdict"] == "CAUTION"
+
+def test_pe_exactly_2_5x_stays_in_verify_window():
+    """Boundary: 2.5x exactly is still 'verify premium', not extreme."""
+    out = decide(_listed(ipo_pe=50, peer_median_pe=20))
+    assert "richer than peers" in out["why_caution"]
+    assert "extreme premium" not in out["why_caution"]
 
 def test_caution_coinflip_gap():
     out = decide(_listed(listing_gap_pct=30))
