@@ -20,11 +20,19 @@ ALIAS_TABLE = {"c": "ipo_consolidated", "ii": "ipo_intelligence",
 SQL_NOISE = {"state", "and", "or", "then", "else", "end", "select", "from", "where"}
 
 def contract_from_route():
+    """Parse alias.column ONLY inside SQL template literals — v3 scanned the
+    whole file and caught TypeScript payload access (c.band_high, a SELECT
+    alias), conflating JS objects with SQL columns (its own first catch)."""
     src = open(ROUTE, encoding="utf-8").read()
+    sql_chunks = [m for m in re.findall(r"`([^`]*)`", src, re.S)
+                  if "SELECT" in m.upper() and "FROM" in m.upper()]
     found = {}
-    for alias, col in re.findall(r"\b(c|ii|v|ri|n)\.([a-z][a-z0-9_]*)\b", src):
-        if col in SQL_NOISE: continue
-        found.setdefault(ALIAS_TABLE[alias], set()).add(col)
+    for chunk in sql_chunks:
+        # drop selected-alias names so `x AS band_high` never registers band_high
+        aliases = set(re.findall(r"\bAS\s+([a-z][a-z0-9_]*)", chunk, re.I))
+        for alias, col in re.findall(r"\b(c|ii|v|ri|n)\.([a-z][a-z0-9_]*)\b", chunk):
+            if col in SQL_NOISE or col in aliases: continue
+            found.setdefault(ALIAS_TABLE[alias], set()).add(col)
     return found
 
 def main():
