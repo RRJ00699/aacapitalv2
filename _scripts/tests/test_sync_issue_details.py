@@ -13,11 +13,22 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.integration
 
+def _py(script):
+    """Run scripts under coverage when the suite is measuring (SUBPROC_COV=1),
+    so subprocess integration tests count toward the core number."""
+    import os as _os
+    if _os.environ.get("SUBPROC_COV"):
+        rc = str(pathlib.Path(__file__).resolve().parents[2] / ".coveragerc")
+        return [sys.executable, "-m", "coverage", "run", "-p", f"--rcfile={rc}", str(script)]
+    return [sys.executable, str(script)]
+
 
 def _run(uri, *args):
     env = dict(os.environ, DATABASE_URL=uri)
     env.pop("NEON_DATABASE_URL", None)
-    return subprocess.run([sys.executable, str(ROOT / "_scripts" / "sync_issue_details.py"), *args],
+    for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
+        env.pop(k)
+    return subprocess.run([*_py(ROOT / "_scripts" / "sync_issue_details.py"), *args],
                           capture_output=True, text=True, env=env, timeout=60)
 
 

@@ -121,7 +121,11 @@ def test_cap_zero_stops_before_any_api_call(tmp_path):
     (d / "Dummy Ltd.pdf").write_bytes(b"%PDF-1.4 not a real pdf")
     env = dict(os.environ, ANTHROPIC_API_KEY="sk-ant-FAKE-must-never-be-sent")
     env.pop("DATABASE_URL", None); env.pop("NEON_DATABASE_URL", None)
-    r = subprocess.run([sys.executable, str(ROOT / "_scripts" / "rhp_sonnet.py"),
+    for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
+        env.pop(k)
+    cov = ([sys.executable, "-m", "coverage", "run", "-p", f"--rcfile={ROOT}/.coveragerc", str(ROOT / "_scripts" / "rhp_sonnet.py")]
+           if os.environ.get("SUBPROC_COV") else [sys.executable, str(ROOT / "_scripts" / "rhp_sonnet.py")])
+    r = subprocess.run([*cov,
                         "--dir", str(d), "--cap", "0", "--out-dir", str(tmp_path / "out")],
                        capture_output=True, text=True, timeout=120, cwd=tmp_path, env=env)
     assert "HARD CAP" in r.stdout, r.stdout + r.stderr

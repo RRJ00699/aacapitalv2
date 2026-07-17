@@ -16,10 +16,20 @@ sys.path.insert(0, str(SCRIPTS))
 
 # ---------------- helpers ----------------
 
+def _py(script):
+    """Run scripts under coverage when the suite is measuring (SUBPROC_COV=1),
+    so subprocess integration tests count toward the core number."""
+    if os.environ.get("SUBPROC_COV"):
+        rc = str(ROOT / ".coveragerc")
+        return [sys.executable, "-m", "coverage", "run", "-p", f"--rcfile={rc}", str(script)]
+    return [sys.executable, str(script)]
+
 def _run(script, uri, *args):
     env = dict(os.environ, DATABASE_URL=uri)
     env.pop("NEON_DATABASE_URL", None)          # never let a real DB leak in
-    return subprocess.run([sys.executable, str(SCRIPTS / script), *args],
+    for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
+        env.pop(k)
+    return subprocess.run([*_py(SCRIPTS / script), *args],
                           capture_output=True, text=True, env=env, timeout=60)
 
 def _load_cdc(uri):
