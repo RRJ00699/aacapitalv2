@@ -37,11 +37,19 @@ def _flag_pending():
     except Exception:
         return None
 
-_p = _flag_pending()
-if _p is False:
-    sys.exit(0)          # no jobs queued: Neon never touched, any hour
-if _p is None and _throttled():
-    sys.exit(0)          # flag unavailable: night/weekend throttle applies
+def _should_exit_idle():
+    """A4 idle gate: True = exit NOW, before psycopg2 import / any Neon contact.
+    Flag says no jobs -> exit any hour. Flag unreachable -> night/weekend
+    throttle (only :00/:10/... minutes poll)."""
+    _p = _flag_pending()
+    if _p is False:
+        return True       # no jobs queued: Neon never touched, any hour
+    if _p is None and _throttled():
+        return True       # flag unavailable: night/weekend throttle applies
+    return False
+
+if __name__ == "__main__" and _should_exit_idle():
+    sys.exit(0)
 
 import psycopg2
 
