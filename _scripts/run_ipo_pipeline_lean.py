@@ -108,6 +108,7 @@ def main():
     # ── DISCOVERY + SOURCE-OF-TRUTH ENRICHMENT ──
     # NSE discovery trigger FIRST: a freshly-announced IPO enters ipo_intelligence
     # before enrichment. Dedup-safe (upsert by company_name, RULE 1). Non-hard.
+    step("schema sync (single owner of DDL)", ["schema_sync.py"])
     step("NSE discovery (new IPOs)",        ["ipo/fetch_nse_ipos.py"])
     step("scrape IPO calendar + details",   ["scrape_chittorgarh.py","--write-db"])
     step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
@@ -167,6 +168,7 @@ def main():
     # ── HEALTH GATE LAST ──
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
     step("value-sanity report",             ["check_value_sanity.py"])
+    step("smoke probe (live API)",         ["smoke_probe.py"])
 
     log(f"=== LEAN PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
     if ok and gate:
