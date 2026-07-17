@@ -42,8 +42,21 @@ DDL = [
         captured_at TIMESTAMPTZ DEFAULT NOW(), source TEXT DEFAULT 'live')""",
     # ── GUARDRAIL A: natural-key UNIQUE indexes so cleanups can't let dups
     # return (the recurring double-Laser). One canonical row per IPO/tick. ──
+    # self-heal: drop dup companies (keep lowest ctid) so the unique index applies
+    """DELETE FROM ipo_intelligence a USING ipo_intelligence b
+       WHERE a.ctid > b.ctid
+         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    """DELETE FROM ipo_consolidated a USING ipo_consolidated b
+       WHERE a.ctid > b.ctid
+         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    """DELETE FROM ipo_verdicts a USING ipo_verdicts b
+       WHERE a.ctid > b.ctid
+         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
     # ipo_tick_feed is TIME-SERIES (many rows per symbol) — NO unique constraint:
     # a same-second collision would drop a legitimate tick. A non-unique index
@@ -51,6 +64,8 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS ix_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), recorded_at)",
     # ipo_level_analysis is one-row-per-symbol-per-day and its writer already
     # ON CONFLICT (symbol, trade_date) DO UPDATE — so a UNIQUE key is correct here.
+    """DELETE FROM ipo_level_analysis a USING ipo_level_analysis b
+       WHERE a.ctid > b.ctid AND a.symbol = b.symbol AND a.trade_date = b.trade_date""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (symbol, trade_date)",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS state_hash TEXT",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",
@@ -59,10 +74,16 @@ DDL = [
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask NUMERIC",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask_qty BIGINT",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS cancelled_qty BIGINT",
+    """DELETE FROM ipo_preopen_book a USING ipo_preopen_book b
+       WHERE a.ctid > b.ctid AND a.state_hash = b.state_hash AND a.state_hash IS NOT NULL""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_preopen_state ON ipo_preopen_book(state_hash)",
     """CREATE TABLE IF NOT EXISTS nse_preopen_raw (
         id SERIAL PRIMARY KEY, symbol TEXT, payload JSONB,
         captured_at TIMESTAMPTZ DEFAULT NOW())""",
+    """DELETE FROM ipo_research_notes a USING ipo_research_notes b
+       WHERE a.ctid > b.ctid AND a.source = b.source
+         AND lower(regexp_replace(a.company,'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(b.company,'[^a-zA-Z0-9]','','g'))""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_notes_company_source ON ipo_research_notes (lower(regexp_replace(company,'[^a-zA-Z0-9]','','g')), source)",
     # ── GUARDRAIL C: data source registry (which feed is authoritative per domain) ──
     """CREATE TABLE IF NOT EXISTS data_source_registry (
