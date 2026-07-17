@@ -153,9 +153,10 @@ def main():
             rc("criminal_litigation"), rc("related_party_concern"), rc("ofs_heavy"),
             rc("promoter_pledge_flag"), rc("customer_concentration_high"),
             rc("contingent_liabilities_material")]
-    regime_sql = ("(SELECT regime ILIKE '%bull%' OR regime ILIKE '%normal%' "
-                  "FROM market_regimes m ORDER BY evaluation_date DESC LIMIT 1)"
-                  ) if has_regimes else "NULL"
+    # REGIME DEPRECATED (Rakesh 2026-07-17: "old regime, we don't use it now").
+    # The table also lacks a `regime` column, which crashed verdicts for 2 days
+    # (sink caught it). Always NULL — downstream already handles bull=None.
+    regime_sql = "NULL"
     cur.execute(f"""
         SELECT {", ".join(cols)}, {regime_sql} AS regime_bull
         FROM ipo_intelligence i
