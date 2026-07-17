@@ -3,9 +3,11 @@
 // the lean pipeline's failure sink; absent table = zero failures, not an error.
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const gate = await requireUser(); if (gate) return gate;   // ledger #15: was unguarded (stderr tails can carry secrets)
   try {
     const sql = neon(process.env.DATABASE_URL!);
     const rows = await sql`

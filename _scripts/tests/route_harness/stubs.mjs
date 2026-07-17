@@ -27,8 +27,18 @@ function rowsFor(q) {
 }
 
 // ---- '@/lib/api-guard' ----
-export async function requireUser() { return null; }        // authorized
-export async function requireAdmin() { return null; }
+// HARNESS_AUTH=deny simulates no session: guards return a 401 response and
+// the route must return it BEFORE any query runs.
+function _deny() {
+  return { status: 401, headers: { get: (_k) => null },
+           json: async () => ({ error: "unauthorized" }) };
+}
+export async function requireUser() {
+  return process.env.HARNESS_AUTH === "deny" ? _deny() : null;
+}
+export async function requireAdmin() {
+  return process.env.HARNESS_AUTH === "deny" ? _deny() : null;
+}
 
 // ---- '@opennextjs/cloudflare' ----
 export function getCloudflareContext() {
