@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // app/dashboard/ipo2/page.tsx — the locked redesign, wired to /api/ipo-command.
 // Self-contained: no imports from the 3 legacy shells. Polls every 20s while a
@@ -9,6 +10,15 @@ import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
+
+class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
+  constructor(p: {children: React.ReactNode}) { super(p); this.state = { err: false }; }
+  static getDerivedStateFromError() { return { err: true }; }
+  render() { return this.state.err
+    ? <div style={{border:"1px solid #FEDF89",background:"#FFFAEB",borderRadius:12,padding:14,
+        fontSize:12,color:"#B54708",marginBottom:12}}>This card failed to render — the rest of the page is unaffected.</div>
+    : this.props.children; }
+}
 
 const C = { bg:"var(--t-bg)", surface:"var(--t-surface)", surface2:"var(--t-surface2)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
   sub:"var(--t-sub)", meta:"var(--t-meta)", dim:"var(--t-dim)",
@@ -814,6 +824,7 @@ function IpoCommand() {
   // The user can pull-to-refresh or reopen the app to re-fetch.
 
   const cards = d?.cards || [];
+  const degraded = (d as {degraded?: string} | null)?.degraded;
   const liveSyms = Array.from(new Set((d?.live||[]).map(t=>String(t.symbol))));
   // Live screen window: any IPO listed within the last 7 days (payload fields only)
   const windowCards = cards.filter(c => {
@@ -829,6 +840,9 @@ function IpoCommand() {
     <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text,
       alignItems:"start"}} className="ipo-shell">
+      {degraded && <div style={{background:"#FFFAEB",border:"1px solid #FEDF89",color:"#B54708",
+        borderRadius:10,padding:"10px 14px",margin:"10px 0",fontSize:12.5,fontWeight:600}}>
+        Data engine degraded — showing what we can. <span style={{fontFamily:"var(--f-mono)",fontSize:10.5,fontWeight:400}}>{degraded}</span></div>}
       <style>{`
         .ipo-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
         @media (max-width:900px){.ipo-shell{grid-template-columns:1fr}.ipo-shell aside{order:-1}}
@@ -1015,8 +1029,8 @@ function IpoCommand() {
           if (vFilter!=="ALL" && String(c.verdict||"")!==vFilter) return null;
           const inWin = windowCards.some(w => String(w.sym) === String(c.sym));
           return <div key={i} id={`ipocard-${String(c.sym)}`}>
-            <IpoCard c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}
-              onLive={inWin ? () => jumpToLive(String(c.sym)) : undefined}/>
+            <CardBoundary><IpoCard c={c} onJourney={(sym)=>{ window.location.href=`/dashboard/journey?sym=${sym}`; }}
+              onLive={inWin ? () => jumpToLive(String(c.sym)) : undefined}/></CardBoundary>
           </div>;
         })}
         {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveSyms.includes(String(c.sym))).length===0 &&
