@@ -56,12 +56,16 @@ def main():
         fails.append(f"DB unreachable: {str(e)[:120]}")
     key = os.getenv("ADMIN_JOB_KEY", "")
     if key:
+        # Probe with the RUNNER'S exact identity, not smoke's: the 147 CU-h
+        # leak was Cloudflare 403ing the runner's UA while smoke's own UA
+        # passed — a green smoke masking a red runner. Never again: this
+        # check fails iff the runner's real request path would fail.
         try:
             req = urllib.request.Request(
                 "https://aacapitalprivatelimited.com/api/admin/job-flag",
-                headers={"X-AAC-Key": key, "User-Agent": "aac-smoke"})
+                headers={"X-AAC-Key": key, "User-Agent": "aac-runner"})
             d = json.load(urllib.request.urlopen(req, timeout=30))
-            if not d.get("ok"): fails.append("worker chain: job-flag rejected the key")
+            if not d.get("ok"): fails.append("worker chain: job-flag rejected the key (runner identity)")
         except Exception as e:
             fails.append(f"worker chain: {str(e)[:100]}")
     if fails:
