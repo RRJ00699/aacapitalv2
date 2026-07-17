@@ -45,10 +45,24 @@ DDL = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), recorded_at)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), trade_date)",
+    # ipo_tick_feed is TIME-SERIES (many rows per symbol) — NO unique constraint:
+    # a same-second collision would drop a legitimate tick. A non-unique index
+    # supports the canon lookups; writer-side ON CONFLICT is the dedup layer.
+    "CREATE INDEX IF NOT EXISTS ix_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), recorded_at)",
+    # ipo_level_analysis is one-row-per-symbol-per-day and its writer already
+    # ON CONFLICT (symbol, trade_date) DO UPDATE — so a UNIQUE key is correct here.
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (symbol, trade_date)",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS state_hash TEXT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS cancelled_qty BIGINT",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_preopen_state ON ipo_preopen_book(state_hash)",
+    """CREATE TABLE IF NOT EXISTS nse_preopen_raw (
+        id SERIAL PRIMARY KEY, symbol TEXT, payload JSONB,
+        captured_at TIMESTAMPTZ DEFAULT NOW())""",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_notes_company_source ON ipo_research_notes (lower(regexp_replace(company,'[^a-zA-Z0-9]','','g')), source)",
     # ── GUARDRAIL C: data source registry (which feed is authoritative per domain) ──
     """CREATE TABLE IF NOT EXISTS data_source_registry (
@@ -66,11 +80,28 @@ DDL = [
 ]
 
 def main():
-    conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
-    for i, ddl in enumerate(DDL, 1):
-        cur.execute(ddl)
-    conn.commit(); conn.close()
-    print(f"schema_sync: {len(DDL)} statements applied (all idempotent)")
+    # PER-STATEMENT ISOLATION (Rakesh 2026-07-17): each DDL commits on its own so
+    # ONE failure (e.g. a UNIQUE index blocked by existing dupes) can never roll
+    # back the other statements. Failures are reported, not fatal; the run exits
+    # non-zero if any failed so the StepBoard shows red, but everything that CAN
+    # apply DOES apply.
+    conn = psycopg2.connect(os.environ["DATABASE_URL"]); conn.autocommit = True
+    cur = conn.cursor()
+    ok = 0; failed = []
+    for ddl in DDL:
+        try:
+            cur.execute(ddl); ok += 1
+        except Exception as e:
+            label = " ".join(ddl.split()[:6])
+            failed.append((label, str(e).splitlines()[0][:160]))
+    conn.close()
+    print(f"schema_sync: {ok}/{len(DDL)} applied"
+          + (f" · {len(failed)} FAILED (isolated, others still applied):" if failed else " (all idempotent)"))
+    for label, err in failed:
+        print(f"  ✗ {label} … — {err}")
+    if failed:
+        # A blocked UNIQUE index almost always means real duplicates to clean.
+        import sys; sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -289,9 +289,14 @@ def main():
             if conn and (now - st["last_db"]) >= args.interval:
                 try:
                     cur = conn.cursor()
+                    # ipo_tick_feed is intentionally time-series (many rows per
+                    # symbol); schema_sync keeps a NON-unique index only. Do NOT
+                    # add a UNIQUE(symbol, recorded_at) key — high-frequency
+                    # capture can legitimately write two rows in the same second
+                    # and that constraint would silently drop live ticks.
                     cur.execute("""INSERT INTO ipo_tick_feed
-                        (symbol, ltp, vwap, vwap_dist, obir, day_volume, momentum, divergence, signal)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (symbol, ltp, vwap, vwap_dist, obir, day_volume, momentum, divergence, signal, recorded_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, clock_timestamp())""",
                         [sym, ltp, vwap, dist, obir, vol, momentum, divergence, sig])
                     conn.commit()
                     st["last_db"] = now

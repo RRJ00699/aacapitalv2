@@ -11,7 +11,9 @@ import psycopg2
 # tables writers insert into that MUST have a dedupe key
 REQUIRE_UNIQUE = [
     "ipo_intelligence", "ipo_consolidated", "ipo_verdicts", "ipo_rhp_intel",
-    "ipo_research_notes", "ipo_preopen_book", "ipo_tick_feed", "ipo_level_analysis",
+    "ipo_research_notes", "ipo_preopen_book", "ipo_level_analysis",
+    # NOTE: ipo_tick_feed is intentionally EXCLUDED — it's time-series, dedup'd
+    # at the writer via ON CONFLICT, not a table UNIQUE (would drop live ticks).
 ]
 
 def main():
