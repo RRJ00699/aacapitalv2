@@ -63,10 +63,9 @@ def test_sbi_main_debug_prints_json_first_file_only(tmp_path):
 
 @pytest.mark.db
 def test_sbi_main_write_db_fuzzy_attach_and_fill_empty(tmp_path, pg_uri):
-    """PINNED (ledger #9): symbol attach uses rapidfuzz token_sort >=88 — a
-    FUZZY name join feeding peer/sbi fills, in tension with SCHEMA RULE 2.
-    Behavior pinned exactly: close name (matches) attaches + fills empties;
-    fill is COALESCE-gated; upsert not duplicate."""
+    """Ledger #9 FIX: symbol attach is now the byte-identical schema_sync
+    _canon SQL join (imported, cannot drift) — RULE 2 strong-key, no fuzz.
+    Exact-canon match attaches + fills empties; COALESCE-gated; upserts."""
     import psycopg2
     c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
     cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
@@ -74,7 +73,7 @@ def test_sbi_main_write_db_fuzzy_attach_and_fill_empty(tmp_path, pg_uri):
             sbi_rating TEXT, peer_median_pe NUMERIC)""")
     cur.execute("""INSERT INTO ipo_intelligence VALUES
         ('Kusumgar Ltd', 'KUSUM', 'PreExisting', NULL),
-        ('Kusumgar Limited', 'KUSVAR', NULL, NULL),
+        ('Kusumgar Textiles Limited', 'KUSTEX', NULL, NULL),
         ('Totally Different Co', 'DIFF', NULL, NULL)""")
     _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
     r = _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
@@ -82,7 +81,7 @@ def test_sbi_main_write_db_fuzzy_attach_and_fill_empty(tmp_path, pg_uri):
     assert "ipo_research_notes: 1 rows" in r.stdout
     cur.execute("SELECT nse_symbol, rating FROM ipo_research_notes")
     nse, rating = cur.fetchone()
-    assert nse == "KUSUM"                                # exact-name 100 match attaches
+    assert nse == "KUSUM"                                # canon-exact attach
     assert rating == "Subscribe"
     cur.execute("SELECT sbi_rating FROM ipo_intelligence WHERE nse_symbol='KUSUM'")
     assert cur.fetchone()[0] == "PreExisting"            # COALESCE: not clobbered
@@ -93,11 +92,10 @@ def test_sbi_main_write_db_fuzzy_attach_and_fill_empty(tmp_path, pg_uri):
     c.close()
 
 @pytest.mark.db
-def test_sbi_fuzzy_misses_ltd_vs_limited(tmp_path, pg_uri):
-    """PINNED GAP (ledger #9b): 'X Ltd' vs 'X Limited' scores 85.7 — BELOW
-    the 88 threshold — so the commonest suffix variant never attaches a
-    symbol, and the peer/sbi enrichment silently skips it (the exact
-    SCHEMA failure mode the sync step was built to fix)."""
+def test_sbi_canon_attaches_ltd_vs_limited(tmp_path, pg_uri):
+    """Ledger #9 FIX flipped: 'X Ltd' note vs 'X Limited' row — the exact case
+    rapidfuzz missed (85.7 < 88) — now canon-attaches, and the enrichment
+    that used to silently skip lands."""
     import psycopg2
     c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
     cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
@@ -107,9 +105,25 @@ def test_sbi_fuzzy_misses_ltd_vs_limited(tmp_path, pg_uri):
     _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
     _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
     cur.execute("SELECT nse_symbol FROM ipo_research_notes")
-    assert cur.fetchone()[0] is None                     # did NOT attach
+    assert cur.fetchone()[0] == "KUSUM"                  # attaches now
     cur.execute("SELECT sbi_rating FROM ipo_intelligence")
-    assert cur.fetchone()[0] is None                     # enrichment skipped
+    assert cur.fetchone()[0] == "Subscribe"              # enrichment lands
+    c.close()
+
+@pytest.mark.db
+def test_sbi_canon_never_cross_matches_different_companies(tmp_path, pg_uri):
+    """RULE 2 negative case: a different company that merely shares words
+    must NOT attach (the CSM->SRS false-match class fuzzy joins invite)."""
+    import psycopg2
+    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
+    cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
+        CREATE TABLE ipo_intelligence (company_name TEXT, nse_symbol TEXT,
+            sbi_rating TEXT, peer_median_pe NUMERIC)""")
+    cur.execute("INSERT INTO ipo_intelligence VALUES ('Kusumgar Textiles Ltd','WRONG',NULL,NULL)")
+    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
+    _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
+    cur.execute("SELECT nse_symbol FROM ipo_research_notes")
+    assert cur.fetchone()[0] is None                     # no cross-match
     c.close()
 
 

@@ -92,7 +92,14 @@ def decide(r):
     if not_junk and gap is not None and 0 <= gap < 15 and bull is True:
         trade.append(f"STRATEGY 1: gap +{gap:.0f}% (sweet spot) + bull → 62% win")
     if quality and bull is True and listed:
-        trade.append("STRATEGY 2: quality promoter + bull → 71% win")
+        if not_junk:
+            trade.append("STRATEGY 2: quality promoter + bull → 71% win")
+        else:
+            # Flag 3 decision (owner, 2026-07-17): S2 gets the same not_junk
+            # guard S1 always had — a momentum pattern must never erase a risk
+            # veto (the 71% was measured across all quality+bull IPOs, not
+            # within the AVOID cohort). Signal stays visible; AVOID holds.
+            caution.append("quality + bull, but AVOID flags present — verify")
 
     # --- resolve verdict ---
     if avoid and not trade:

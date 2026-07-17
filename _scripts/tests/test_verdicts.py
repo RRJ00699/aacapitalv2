@@ -133,17 +133,23 @@ def test_strategy2_needs_listing():
     out = decide({"quality_promoter": True, "regime_bull": True})
     assert out["verdict"] == "WATCH"
 
-def test_trade_beats_avoid_when_both_fire():
-    """Pinned precedence: STRATEGY 2 can override an AVOID band."""
+def test_avoid_veto_holds_over_strategy2():
+    """Flag 3 FIX (owner decision 2026-07-17): momentum never erases a risk
+    veto. quality+bull on an AVOID row -> verdict stays AVOID, signal
+    surfaces as a caution line instead of a TRADE."""
     out = decide(_listed(score_band="AVOID", quality_promoter=True, regime_bull=True))
-    assert out["verdict"] == "TRADE"
+    assert out["verdict"] == "AVOID"
+    assert "quality + bull, but AVOID flags present" in out["why_caution"]
+    assert out["why_trade"] is None
 
-def test_junk_blocks_strategy1_but_not_strategy2():
-    """Pinned: not_junk gate applies only to STRATEGY 1."""
+def test_not_junk_gates_both_strategies():
+    """Flag 3 FIX: the not_junk guard S1 always had now gates S2 too —
+    the asymmetry WAS the bug."""
     out = decide(_listed(issue_size_cr=100, listing_gap_pct=5, regime_bull=True))
     assert out["verdict"] == "AVOID"          # S1 suppressed by junk
     out2 = decide(_listed(issue_size_cr=100, quality_promoter=True, regime_bull=True))
-    assert out2["verdict"] == "TRADE"         # S2 fires anyway
+    assert out2["verdict"] == "AVOID"         # S2 now suppressed too
+    assert "quality + bull, but AVOID flags present" in out2["why_caution"]
 
 
 # ---------- confidence + regime label ----------

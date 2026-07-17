@@ -5,7 +5,7 @@ Robust cross-company peer-comparison parse: pulls subject + peer-MEDIAN P/E (and
 where present) + peer names from the "Peer Comparison" matrix, and fills
 ipo_intelligence.peer_median_pe / peer_ps / peer_name fill-empty-only with value sanity.
 
-  pip install pdfplumber rapidfuzz psycopg2-binary --break-system-packages
+  pip install pdfplumber psycopg2-binary --break-system-packages
   python _scripts/parse_sbi_notes.py --dir data/research_notes --debug
   python _scripts/parse_sbi_notes.py --dir data/research_notes --write-db
 """
@@ -101,7 +101,7 @@ def main():
     ap.add_argument("--write-db", action="store_true"); ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
     try: import pdfplumber  # noqa
-    except ImportError: sys.exit("pip install pdfplumber rapidfuzz psycopg2-binary --break-system-packages")
+    except ImportError: sys.exit("pip install pdfplumber psycopg2-binary --break-system-packages")
     files = sorted(glob.glob(os.path.join(a.dir, "*.pdf")))
     if not files: sys.exit(f"no PDFs in {a.dir}")
     if a.debug: files = files[:1]
@@ -120,7 +120,11 @@ def main():
     if not a.write_db:
         print("\ndry-run — add --write-db to persist."); return
 
-    import psycopg2; from rapidfuzz import process, fuzz
+    import psycopg2
+    from schema_sync import _canon  # ledger #9 fix: THE canon from #210 —
+    # imported, not copied, so this join can never drift from the dedup/unique
+    # canon. Replaces the rapidfuzz>=88 fuzzy match (RULE 2 violation) which
+    # also MISSED 'Ltd' vs 'Limited' (scored 85.7).
     u = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
     if not u: sys.exit("Set DATABASE_URL")
     conn = psycopg2.connect(u); cur = conn.cursor()
@@ -130,14 +134,15 @@ def main():
         retail_pct numeric, brlms text, registrar text, note_ps numeric, peer_name text, peer_ps numeric,
         loss_making boolean, pdf_path text, parsed_at timestamptz default now(), nse_symbol text,
         PRIMARY KEY(company, source))""")
-    cur.execute("SELECT company_name, nse_symbol FROM ipo_intelligence WHERE company_name IS NOT NULL")
-    uni = cur.fetchall(); names = [c for c, _ in uni]; sym = {c: s for c, s in uni}
     for col, typ in [("sbi_rating","text"),("ofs_cr","numeric"),("fresh_cr","numeric"),("peer_ps","numeric"),("peer_name","text")]:
         cur.execute(f"ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS {col} {typ}")
     written = filled = 0
     for r in rows:
-        m = process.extractOne(r["company"], names, scorer=fuzz.token_sort_ratio)
-        nse = sym.get(m[0]) if m and m[1] >= 88 else None; r["nse_symbol"] = nse
+        cur.execute(f"""SELECT nse_symbol FROM ipo_intelligence
+                        WHERE {_canon('company_name')} = {_canon('%s')}
+                          AND company_name IS NOT NULL LIMIT 1""", (r["company"],))
+        m = cur.fetchone()
+        nse = m[0] if m else None; r["nse_symbol"] = nse
         cur.execute("""INSERT INTO ipo_research_notes
           (company,source,rating,price_low,price_high,fresh_cr,ofs_cr,issue_size_cr,qib_pct,nii_pct,
            retail_pct,brlms,registrar,note_ps,peer_name,peer_ps,loss_making,pdf_path,nse_symbol)
