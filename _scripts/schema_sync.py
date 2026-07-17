@@ -100,6 +100,25 @@ DDL = [
     # ── GUARDRAIL G: RHP spend keyed by PDF content-hash (never re-pay per doc) ──
     "ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS pdf_sha256 TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_rhp_pdf_sha ON ipo_rhp_intel (pdf_sha256) WHERE pdf_sha256 IS NOT NULL",
+    # ── PILLAR 2: DATA LINEAGE — every field's Source -> Parser -> DB provenance,
+    # plus freshness. One row per (table, column) declaring where it comes from
+    # and how stale it's allowed to be. Populated by lineage_registry.py. ──
+    """CREATE TABLE IF NOT EXISTS data_lineage (
+        table_name TEXT NOT NULL, column_name TEXT NOT NULL,
+        source TEXT NOT NULL,            -- e.g. 'nse-api', 'chittorgarh', 'kite', 'sonnet-rhp', 'derived'
+        parser TEXT,                     -- script that produces it
+        freshness_sla_hours NUMERIC,     -- null = static/reference
+        last_verified TIMESTAMPTZ,
+        PRIMARY KEY (table_name, column_name))""",
+    # per-run ingestion audit: what ran, how many rows, ok/fail, when
+    """CREATE TABLE IF NOT EXISTS ingestion_audit (
+        id BIGSERIAL PRIMARY KEY, source TEXT, script TEXT,
+        rows_written INT, rows_skipped INT, ok BOOLEAN, note TEXT,
+        started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ DEFAULT NOW())""",
+    # freshness snapshot: latest write timestamp per source-domain (health monitor reads this)
+    """CREATE TABLE IF NOT EXISTS data_freshness (
+        domain TEXT PRIMARY KEY, last_write TIMESTAMPTZ,
+        row_count BIGINT, updated_at TIMESTAMPTZ DEFAULT NOW())""",
     # ── admin job console ──
     # ── NSE pre-open capture (nse_preopen_capture.py) ──
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",

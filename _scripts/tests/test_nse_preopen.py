@@ -36,4 +36,8 @@ results.append(t("window: 09:58:00 in", cap.in_window(mk(9, 58, 0))))
 results.append(t("window: 10:00:31 out", not cap.in_window(mk(10, 0, 31))))
 n = sum(results)
 print(f"\n{n}/{len(results)} PASS")
-sys.exit(0 if n == len(results) else 1)
+assert n == len(results), f'{n}/{len(results)} offline checks passed'
+
+
+def test_nse_preopen_offline():
+    assert True  # checks executed + asserted at import
