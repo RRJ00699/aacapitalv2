@@ -45,8 +45,11 @@ DDL = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(symbol,'[^A-Za-z0-9]','','g')), recorded_at)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (upper(regexp_replace(symbol,'[^A-Za-z0-9]','','g')), trade_date)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_tick_sym_time ON ipo_tick_feed (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), recorded_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_level_sym_date ON ipo_level_analysis (upper(regexp_replace(regexp_replace(symbol,'[-_.]?(EQ|BE|BZ|NS)$','','i'),'[^A-Za-z0-9]','','g')), trade_date)",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS state_hash TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_preopen_state ON ipo_preopen_book(state_hash)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_notes_company_source ON ipo_research_notes (lower(regexp_replace(company,'[^a-zA-Z0-9]','','g')), source)",
     # ── GUARDRAIL C: data source registry (which feed is authoritative per domain) ──
     """CREATE TABLE IF NOT EXISTS data_source_registry (
         domain TEXT PRIMARY KEY, source TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())""",
