@@ -7,8 +7,6 @@
 #   CLOUDFLARE_ACCOUNT_ID (dashboard right sidebar of any zone page)
 name: Deploy
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 concurrency:
   group: deploy-production
