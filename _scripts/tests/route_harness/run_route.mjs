@@ -19,7 +19,7 @@ const stubPlugin = {
   setup(b) {
     const hijack = [
       /^@neondatabase\/serverless$/, /^@\/lib\/api-guard$/,
-      /^@opennextjs\/cloudflare$/, /^pg$/, /^postgres$/,
+      /^@opennextjs\/cloudflare$/, /^pg$/, /^postgres$/, /^next\/headers$/,
     ];
     b.onResolve({ filter: /.*/ }, (args) => {
       if (hijack.some((re) => re.test(args.path))) return { path: STUBS };
@@ -56,7 +56,9 @@ const results = [];
 for (let i = 0; i < calls; i++) {
   const H = globalThis.__H ?? (globalThis.__H = { queries: [], kv: globalThis.__H?.kv ?? new Map(), kvGets: 0, kvPuts: 0 });
   const before = H.queries.length, gBefore = H.kvGets, pBefore = H.kvPuts;
-  const req = { nextUrl: new URL("https://x.local" + "/api/" + path.basename(path.dirname(routeFile))), headers: new Map() };
+  const u = "https://x.local/api/" + path.basename(path.dirname(routeFile));
+  const req = { url: u, nextUrl: new URL(u),
+                headers: { get: (_k) => null, has: () => false } };
   let status = null, xcache = null, err = null;
   try {
     const res = await mod.GET(req);

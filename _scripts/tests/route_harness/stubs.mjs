@@ -26,6 +26,12 @@ function rowsFor(q) {
   return [];
 }
 
+// ---- 'next/headers' (routes reading cookies/headers directly) ----
+export async function cookies() {
+  return { get: (_k) => undefined, getAll: () => [], has: () => false };
+}
+export async function headers() { return new Map(); }
+
 // ---- '@/lib/api-guard' ----
 // HARNESS_AUTH=deny simulates no session: guards return a 401 response and
 // the route must return it BEFORE any query runs.

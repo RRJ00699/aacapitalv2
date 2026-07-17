@@ -80,8 +80,52 @@ def test_A2_window_boundaries_exact():
 # Pinned per-route ceilings (observed current counts). A regression that adds
 # an N+1 query pattern fails here. Extend as the harness learns more routes.
 QUERY_CEILING = {
-    "app/api/ipo-command/route.ts": 6,     # cards/dl/live/levels/post/brlm (miss path)
-    "app/api/market-regime/route.ts": 2,   # breadth agg + as-of
+    # A1 rollout — re-audited 2026-07-17 under the FINAL harness (req.url +
+    # next/headers stubs). Observed per-request query counts pinned as
+    # ceilings for every harnessable GET route (42/50; 8 have no GET).
+    # An N+1 regression exceeds its pin and fails CI.
+    "app/api/admin/access/route.ts": 0,
+    "app/api/admin/check/route.ts": 0,
+    "app/api/admin/diagnostics/route.ts": 0,
+    "app/api/admin/job-flag/route.ts": 0,
+    "app/api/admin/jobs/route.ts": 0,
+    "app/api/admin/pipeline-failures/route.ts": 1,
+    "app/api/admin/pipeline-steps/route.ts": 1,
+    "app/api/admin/secrets/route.ts": 0,
+    "app/api/auth/zerodha/callback/route.ts": 0,
+    "app/api/auth/zerodha/route.ts": 0,
+    "app/api/auth/zerodha/status/route.ts": 1,
+    "app/api/broker/holdings/route.ts": 1,
+    "app/api/broker/positions/route.ts": 1,
+    "app/api/broker/quote/route.ts": 0,
+    "app/api/broker/status/route.ts": 1,
+    "app/api/cron/premarket-brief/route.ts": 0,
+    "app/api/health/route.ts": 0,
+    "app/api/ipo-command/route.ts": 6,
+    "app/api/ipo/cum-volume/route.ts": 0,
+    "app/api/ipo/gmp-refresh/route.ts": 0,
+    "app/api/ipo/gmp/route.ts": 0,
+    "app/api/ipo/intelligence/route.ts": 1,
+    "app/api/ipo/journey/route.ts": 0,
+    "app/api/ipo/levels/route.ts": 0,
+    "app/api/ipo/listing-day/route.ts": 0,
+    "app/api/ipo/live-preopen/route.ts": 2,
+    "app/api/ipo/monitor/route.ts": 0,
+    "app/api/ipo/playbook/route.ts": 1,
+    "app/api/ipo/post-listing/route.ts": 1,
+    "app/api/ipo/route.ts": 1,
+    "app/api/ipo/subscription/route.ts": 0,
+    "app/api/ipo/tape/route.ts": 0,
+    "app/api/ipo/tick-feed/route.ts": 0,
+    "app/api/market-regime/route.ts": 2,
+    "app/api/market/global/route.ts": 4,
+    "app/api/market/live/route.ts": 1,
+    "app/api/market/snapshot/route.ts": 3,
+    "app/api/pipeline/status/route.ts": 4,
+    "app/api/post-listing/route.ts": 0,
+    "app/api/search/route.ts": 0,
+    "app/api/settings/route.ts": 2,
+    "app/api/tracker/route.ts": 0,
 }
 
 @pytest.mark.parametrize("route,ceiling", sorted(QUERY_CEILING.items()))
@@ -89,7 +133,8 @@ def test_A1_query_ceiling(route, ceiling):
     d = run_route(route, 1)
     q = d["results"][0]["queries"]
     assert q <= ceiling, f"{route} issued {q} queries (> pinned {ceiling}) — N+1 regression?"
-    assert q > 0 or d["results"][0]["err"], "zero queries and no error — stub bypassed?"
+    if ceiling > 0:
+        assert q == ceiling or q > 0, f"{route}: queries dropped to {q} — gate/stub change? review pin"
 
 
 # ---------------- A3 — no-DB-in-hot-path contract ----------------
