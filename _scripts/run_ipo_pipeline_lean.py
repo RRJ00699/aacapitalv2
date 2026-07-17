@@ -83,8 +83,9 @@ def step(name, args, hard=False):
             pass
         if r.stderr: log("   "+r.stderr.strip().splitlines()[-1])
         return False
-    log(f"   ✓ {name} done"); return True
-    _log_step(name, script, True)
+    log(f"   ✓ {name} done")
+    _log_step(name, script, True)   # ledger #10 fix: was dead code after return
+    return True
 
 def self_update():
     """Sync repo to origin/main so the VM always runs the latest pushed code."""
@@ -165,7 +166,9 @@ def main():
     step("backup critical tables",           ["backup_critical_tables.py"])
     if a.weekly:
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
-        step("data hygiene (stale purge)",   ["purge_stale_data.py","--apply"])
+        # ledger #11: purge_stale_data.py never existed in the repo — the step
+        # silently skipped every weekly run. Removed until a real stale-purge
+        # script is written and reviewed.
 
     # ── HEALTH GATE LAST ──
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)

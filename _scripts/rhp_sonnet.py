@@ -37,8 +37,14 @@ def _already_extracted(conn, sha):
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM ipo_rhp_intel WHERE pdf_sha256 = %s LIMIT 1", (sha,))
         return cur.fetchone() is not None
-    except Exception:
-        return False
+    except Exception as e:
+        # FAIL CLOSED (ledger #7): if we can't verify whether this PDF was
+        # already paid for, do NOT pay again blind — skip it loudly. A DB
+        # outage must never turn into a re-billed batch.
+        print(f"  ⚠ spend-guard: can't verify pdf hash ({str(e)[:60]}) — SKIPPING, not paying blind")
+        try: conn.rollback()
+        except Exception: pass
+        return True
 
 def build_prompt(company, sections):
     secblob = "\n\n".join(f"===== SECTION: {k} =====\n{v}" for k,v in sections.items())

@@ -66,14 +66,15 @@ def test_already_extracted_none_conn_is_false():
     assert R._already_extracted(None, "abc") is False
 
 @pytest.mark.db
-def test_already_extracted_db_error_fails_open(pg_uri):
-    """PINNED (bug-ledger candidate): a DB error returns False -> the PDF is
-    re-paid. Fail-open protects availability but spends money on outages."""
+def test_already_extracted_db_error_fails_CLOSED(pg_uri, capsys):
+    """Ledger #7 FIX: a DB error now returns True (skip) with a loud warning —
+    an outage can never re-bill the batch. Was fail-open (re-paid)."""
     import psycopg2
     conn = psycopg2.connect(pg_uri); conn.autocommit = True
     conn.cursor().execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
         CREATE TABLE ipo_rhp_intel (company_name TEXT)""")   # no pdf_sha256 col
-    assert R._already_extracted(conn, "abc") is False
+    assert R._already_extracted(conn, "abc") is True
+    assert "not paying blind" in capsys.readouterr().out
     conn.close()
 
 

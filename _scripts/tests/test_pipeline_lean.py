@@ -71,10 +71,10 @@ def test_weekly_flag_adds_purges(orch):
     ran, fail, mp, tmp = orch
     _main(mp, "--weekly")
     assert "purge_candles_after_lockin.py" in ran
-    # LEDGER #11 PINNED: purge_stale_data.py does NOT exist in the repo —
-    # the weekly stale-purge silently skips every run. Flip when fixed.
+    # Ledger #11 FIX: the dead purge_stale_data.py reference was removed —
+    # no silent skip line pollutes the weekly log anymore.
     assert "purge_stale_data.py" not in ran
-    assert "purge_stale_data.py not in repo — skipping" in (tmp / "p.log").read_text()
+    assert "purge_stale_data" not in (tmp / "p.log").read_text()
 
 def test_consolidated_failure_exits_2_with_warning(orch):
     ran, fail, mp, tmp = orch
@@ -112,11 +112,9 @@ def test_healthcheck_pinged_only_on_full_green(orch):
 
 
 @pytest.mark.db
-def test_failure_sink_writes_success_does_not_LEDGER10(orch, pg_uri):
-    """LEDGER #10 PINNED (real bug, parked): _log_step(..., True) sits AFTER
-    'return True' in step() — dead code. pipeline_steps receives ONLY
-    failures, so the Settings StepBoard can never show a green. Flip this
-    test when the fix is approved (move the call before the return)."""
+def test_stepboard_gets_greens_and_reds(orch, pg_uri):
+    """Ledger #10 FIX: _log_step(..., True) now runs BEFORE the return —
+    pipeline_steps receives every outcome, so the StepBoard shows greens."""
     import psycopg2
     ran, fail, mp, tmp = orch
     mp.setenv("DATABASE_URL", pg_uri)
@@ -125,9 +123,12 @@ def test_failure_sink_writes_success_does_not_LEDGER10(orch, pg_uri):
     fail["refresh_gmp.py"] = 1
     _main(mp)
     cur = c.cursor()
-    cur.execute("SELECT step, ok FROM pipeline_steps")
-    rows = cur.fetchall()
-    assert rows == [("refresh GMP", False)]           # ONLY the failure logged
-    cur.execute("SELECT step, stderr_tail FROM pipeline_failures")
-    assert cur.fetchone()[0] == "refresh GMP"         # failure sink works
+    cur.execute("SELECT COUNT(*) FILTER (WHERE ok), COUNT(*) FILTER (WHERE NOT ok) FROM pipeline_steps")
+    greens, reds = cur.fetchone()
+    assert reds == 1                                  # the seeded failure
+    assert greens >= 20                               # every successful step logged
+    cur.execute("SELECT ok FROM pipeline_steps WHERE step='refresh GMP'")
+    assert cur.fetchone()[0] is False
+    cur.execute("SELECT step FROM pipeline_failures")
+    assert cur.fetchone()[0] == "refresh GMP"         # failure sink unchanged
     c.close()
