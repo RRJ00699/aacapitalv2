@@ -31,7 +31,12 @@ def _flag_pending():
         import urllib.request, json as _j
         req = urllib.request.Request(
             "https://aacapitalprivatelimited.com/api/admin/job-flag",
-            headers={"X-AAC-Key": key})
+            # UA required: Cloudflare bot protection 403s the default
+            # Python-urllib UA from datacenter IPs — this exact miss kept the
+            # flag check failing -> minute-cadence DB polls -> the 147 CU-h
+            # month (diagnosed 2026-07-18; smoke_probe passed because it
+            # always sent a UA).
+            headers={"X-AAC-Key": key, "User-Agent": "aac-runner"})
         d = _j.load(urllib.request.urlopen(req, timeout=10))
         return bool(d.get("pending")) if d.get("ok") else None
     except Exception:
@@ -60,7 +65,7 @@ def _clear_flag():
         import urllib.request
         req = urllib.request.Request(
             "https://aacapitalprivatelimited.com/api/admin/job-flag",
-            headers={"X-AAC-Key": key}, method="DELETE")
+            headers={"X-AAC-Key": key, "User-Agent": "aac-runner"}, method="DELETE")
         urllib.request.urlopen(req, timeout=10)
     except Exception:
         pass
