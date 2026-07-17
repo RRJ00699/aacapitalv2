@@ -130,7 +130,9 @@ def main():
 
     # --apply
     for col, typ in [("ipo_score", "INT"), ("score_band", "TEXT"),
-                     ("score_evidence", "TEXT")]:
+                     ("score_evidence", "TEXT"),
+                     ("score_expected_win", "NUMERIC"),
+                     ("score_expected_med", "NUMERIC")]:
         cur.execute(f"ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS {col} {typ}")
     rows, _, sym, _ = load(cur)
     upd = 0
@@ -139,17 +141,26 @@ def main():
         ev = "; ".join(why) or "no scored factors"
         if pending:
             ev += f" | pending-data: {','.join(pending)}"
+        # BAND_STATS: verbatim from the approved --backtest printout,
+        # 2026-07-17 (n=390, hold=10, baseline 72%/+5.9%, bands monotonic,
+        # ACCEPTANCE PASS). Change ONLY by rerunning --backtest and pasting.
+        BAND_STATS = {"AVOID": (60.6, 1.9), "NEUTRAL": (73.7, 6.3),
+                      "FAVORABLE": (80.2, 7.4), "STRONG": (81.4, 9.2)}
+        band = band_of(s)
+        ew, em = BAND_STATS.get(band, (None, None))
         cur.execute("""UPDATE ipo_intelligence
-                       SET ipo_score=%s, score_band=%s, score_evidence=%s
+                       SET ipo_score=%s, score_band=%s, score_evidence=%s,
+                           score_expected_win=%s, score_expected_med=%s
                        WHERE UPPER(COALESCE(NULLIF(nse_symbol,''), symbol)) = %s""",
-                    (s, band_of(s), ev, (r.get(sym) or "").upper().replace(".NS", "")))
+                    (s, band, ev, ew, em, (r.get(sym) or "").upper().replace(".NS", "")))
         upd += cur.rowcount
         if cur.rowcount == 0 and r.get("company_name"):
-            cur.execute("""UPDATE ipo_intelligence SET ipo_score=%s, score_band=%s, score_evidence=%s
-                           WHERE company_name = %s""", (s, band_of(s), ev, r["company_name"]))
+            cur.execute("""UPDATE ipo_intelligence SET ipo_score=%s, score_band=%s, score_evidence=%s,
+                               score_expected_win=%s, score_expected_med=%s
+                           WHERE company_name = %s""", (s, band, ev, ew, em, r["company_name"]))
             upd += cur.rowcount
     conn.commit(); conn.close()
-    print(f"APPLIED: ipo_score/score_band/score_evidence written on {upd} rows (derived, DO UPDATE).")
+    print(f"APPLIED: ipo_score/score_band/score_evidence/score_expected_win/med written on {upd} rows (derived, DO UPDATE).")
 
 if __name__ == "__main__":
     main()
