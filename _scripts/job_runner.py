@@ -20,10 +20,43 @@ def _throttled():
     active = now_ist.weekday() < 6 and (7 <= now_ist.hour < 23 or (now_ist.hour == 23 and now_ist.minute <= 30))
     return (not active) and now_ist.minute % 10 != 0
 
-if _throttled():
-    sys.exit(0)   # off-hours off-cycle: zero DB contact, Neon keeps sleeping
+def _flag_pending():
+    """Ask the Worker's KV flag (ZERO Neon contact) whether any job is queued.
+    True/False, or None when unreachable/misconfigured (falls back to the
+    time-throttled DB poll below)."""
+    key = os.getenv("ADMIN_JOB_KEY", "")
+    if not key:
+        return None
+    try:
+        import urllib.request, json as _j
+        req = urllib.request.Request(
+            "https://aacapitalprivatelimited.com/api/admin/job-flag",
+            headers={"X-AAC-Key": key})
+        d = _j.load(urllib.request.urlopen(req, timeout=10))
+        return bool(d.get("pending")) if d.get("ok") else None
+    except Exception:
+        return None
+
+_p = _flag_pending()
+if _p is False:
+    sys.exit(0)          # no jobs queued: Neon never touched, any hour
+if _p is None and _throttled():
+    sys.exit(0)          # flag unavailable: night/weekend throttle applies
 
 import psycopg2
+
+def _clear_flag():
+    key = os.getenv("ADMIN_JOB_KEY", "")
+    if not key: return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://aacapitalprivatelimited.com/api/admin/job-flag",
+            headers={"X-AAC-Key": key}, method="DELETE")
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
 
 DB = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 

@@ -4,6 +4,7 @@
 //   POST -> enqueue a whitelisted job (inserts a job_runs row; the VM claims + runs it)
 // Already behind the login wall (proxy.ts); this adds an admin-email gate on top.
 import { NextRequest, NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { neon } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
 import { requireUser } from "@/lib/api-guard";
@@ -91,6 +92,12 @@ export async function POST(req: NextRequest) {
       INSERT INTO job_runs (job, status, requested_by)
       VALUES (${job}, 'queued', ${admin})
       RETURNING id`;
+    try {
+      // Neon-free wake flag for the VM runner (1h TTL self-heals stale flags)
+      const { env } = getCloudflareContext();
+      await (env as Record<string, { put(k: string, v: string, o?: { expirationTtl: number }): Promise<void> }>)
+        .JOB_FLAG.put("admin:jobs-pending", "1", { expirationTtl: 3600 });
+    } catch { /* flag is an optimization — queueing already succeeded */ }
     return NextResponse.json({ ok: true, id: row[0].id });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "db error";
