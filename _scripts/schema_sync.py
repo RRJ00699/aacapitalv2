@@ -13,8 +13,15 @@ import psycopg2
 # CREATE UNIQUE INDEX so they can never disagree. Strips company-suffix noise
 # (Ltd/Limited/Pvt/Private/India/and), ampersand, and non-alphanumerics (#156).
 def _canon(col):
+    # ONE canon for BOTH the dedup DELETE and the UNIQUE INDEX (byte-identical,
+    # cannot drift). Strips company-suffix noise (ltd|limited|pvt|private|and),
+    # ampersand, non-alphanumerics. Deliberately does NOT strip 'india' — that
+    # would merge 'India Cements' with 'Cements' and, since this drives a
+    # destructive DELETE, wrongly remove a real row (Rakesh's logged edge case,
+    # 2026-07-17). No uniqueness contract depends on india-stripping (app joins
+    # are fuzzy LEFT JOINs), so dropping it here is strictly safer.
     return (f"regexp_replace(lower({col}), "
-            f"'\\y(ltd|limited|pvt|private|india|and)\\y|&|[^a-z0-9]', '', 'g')")
+            f"'\\y(ltd|limited|pvt|private|and)\\y|&|[^a-z0-9]', '', 'g')")
 
 
 DDL = [
