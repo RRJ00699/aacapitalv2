@@ -480,9 +480,12 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
         if (pe != null && ppe != null && ppe > 0 && pe / ppe >= 1.5) bad.push(`Priced ${(pe / ppe).toFixed(1)}× the sector median P/E (${pe.toFixed(0)} vs ${ppe.toFixed(0)})`);
         const roe = N(c.roe), de = N(c.debt_equity), cagr = N(c.revenue_cagr_3y), pat = N(c.pat_cr);
         if (pat != null && pat < 0) bad.push("Loss-making — negative PAT");
-        if (roe != null && roe < 10) bad.push(`Weak ROE ${roe.toFixed(1)}%`);
+        // exact 0 for ROE/CAGR is almost always null-coded missing data, not a
+        // real reading (Caliber showed "ROE 0.0%" — Rakesh's screenshot) — a
+        // missing number must never manufacture a negative.
+        if (roe != null && roe !== 0 && roe < 10) bad.push(`Weak ROE ${roe.toFixed(1)}%`);
         if (de != null && de > 1.5) bad.push(`Heavy leverage — D/E ${de.toFixed(1)}`);
-        if (cagr != null && cagr < 8) bad.push(`Sluggish revenue growth ${cagr.toFixed(0)}%/yr`);
+        if (cagr != null && cagr !== 0 && cagr < 8) bad.push(`Sluggish revenue growth ${cagr.toFixed(0)}%/yr`);
         // strengths (fill only when the negative case is thin AND gate isn't reject)
         if (bad.length < 5 && gate !== "reject") {
           if (ofsPct != null && ofsPct <= 20) good.push(`${100 - (ofsPct ?? 0)}% fresh issue — capital goes INTO the business`);
