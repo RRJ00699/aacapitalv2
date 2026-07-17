@@ -9,6 +9,14 @@ Run:  venv/bin/python _scripts/schema_sync.py
 import os
 import psycopg2
 
+# GUARDRAIL A canon — identical string used by BOTH the dedup DELETE and the
+# CREATE UNIQUE INDEX so they can never disagree. Strips company-suffix noise
+# (Ltd/Limited/Pvt/Private/India/and), ampersand, and non-alphanumerics (#156).
+def _canon(col):
+    return (f"regexp_replace(lower({col}), "
+            f"'\\y(ltd|limited|pvt|private|india|and)\\y|&|[^a-z0-9]', '', 'g')")
+
+
 DDL = [
     # ── ipo_intelligence: derived/score/quality columns ──
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS eps_source TEXT",
@@ -43,21 +51,15 @@ DDL = [
     # ── GUARDRAIL A: natural-key UNIQUE indexes so cleanups can't let dups
     # return (the recurring double-Laser). One canonical row per IPO/tick. ──
     # self-heal: drop dup companies (keep lowest ctid) so the unique index applies
-    """DELETE FROM ipo_intelligence a USING ipo_intelligence b
-       WHERE a.ctid > b.ctid
-         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
-    """DELETE FROM ipo_consolidated a USING ipo_consolidated b
-       WHERE a.ctid > b.ctid
-         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
-    """DELETE FROM ipo_verdicts a USING ipo_verdicts b
-       WHERE a.ctid > b.ctid
-         AND lower(regexp_replace(a.company_name,'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(b.company_name,'[^a-zA-Z0-9]','','g'))""",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (lower(regexp_replace(company_name,'[^a-zA-Z0-9]','','g')))",
+    f"""DELETE FROM ipo_intelligence a USING ipo_intelligence b
+       WHERE a.ctid > b.ctid AND {_canon('a.company_name')} = {_canon('b.company_name')}""",
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_intel_company ON ipo_intelligence (({_canon('company_name')}))",
+    f"""DELETE FROM ipo_consolidated a USING ipo_consolidated b
+       WHERE a.ctid > b.ctid AND {_canon('a.company_name')} = {_canon('b.company_name')}""",
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_consol_company ON ipo_consolidated (({_canon('company_name')}))",
+    f"""DELETE FROM ipo_verdicts a USING ipo_verdicts b
+       WHERE a.ctid > b.ctid AND {_canon('a.company_name')} = {_canon('b.company_name')}""",
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_company ON ipo_verdicts (({_canon('company_name')}))",
     # ipo_tick_feed is TIME-SERIES (many rows per symbol) — NO unique constraint:
     # a same-second collision would drop a legitimate tick. A non-unique index
     # supports the canon lookups; writer-side ON CONFLICT is the dedup layer.
@@ -80,11 +82,10 @@ DDL = [
     """CREATE TABLE IF NOT EXISTS nse_preopen_raw (
         id SERIAL PRIMARY KEY, symbol TEXT, payload JSONB,
         captured_at TIMESTAMPTZ DEFAULT NOW())""",
-    """DELETE FROM ipo_research_notes a USING ipo_research_notes b
+    f"""DELETE FROM ipo_research_notes a USING ipo_research_notes b
        WHERE a.ctid > b.ctid AND a.source = b.source
-         AND lower(regexp_replace(a.company,'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(b.company,'[^a-zA-Z0-9]','','g'))""",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_notes_company_source ON ipo_research_notes (lower(regexp_replace(company,'[^a-zA-Z0-9]','','g')), source)",
+         AND {_canon('a.company')} = {_canon('b.company')}""",
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_notes_company_source ON ipo_research_notes (({_canon('company')}), source)",
     # ── GUARDRAIL C: data source registry (which feed is authoritative per domain) ──
     """CREATE TABLE IF NOT EXISTS data_source_registry (
         domain TEXT PRIMARY KEY, source TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())""",
