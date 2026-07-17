@@ -283,6 +283,12 @@ export async function GET() {
     if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
     return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    // DEGRADED MODE (Rakesh 2026-07-17: one error must never blank the page).
+    // A schema drift / SQL error returns an empty-but-renderable payload with
+    // the reason — the UI shows a banner and keeps whatever it can render.
+    return NextResponse.json({
+      cards: [], live: [], levels: [], blocks: [], post: [], brlm: [], dl: [], track: [],
+      degraded: String(e).slice(0, 300), generated_at: new Date().toISOString(),
+    }, { status: 200 });
   }
 }
