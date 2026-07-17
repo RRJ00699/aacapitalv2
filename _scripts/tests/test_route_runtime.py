@@ -17,9 +17,11 @@ pytestmark = [pytest.mark.integration,
                                  reason="node_modules missing — run npm ci (route runtime tier NOT covered)")]
 
 
-def run_route(route, calls=2):
+def run_route(route, calls=2, fake_ist=None):
+    env = dict(os.environ)
+    if fake_ist: env["HARNESS_FAKE_IST"] = fake_ist
     r = subprocess.run(["node", str(HARNESS), route, str(calls)],
-                       capture_output=True, text=True, timeout=120, cwd=ROOT)
+                       capture_output=True, text=True, timeout=120, cwd=ROOT, env=env)
     assert r.returncode == 0, f"harness failed for {route}: {r.stderr[:300]}"
     return json.loads(r.stdout)
 
@@ -43,6 +45,34 @@ def test_A2_market_regime_second_call_zero_queries():
     assert c1["queries"] == 2 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
     assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
     assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
+
+
+def test_A2_live_preopen_caches_outside_window():
+    """Ledger #13: 60s KV cache active OUTSIDE the decision window —
+    2nd call zero Neon queries (14:30 IST here)."""
+    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist="14:30")
+    c1, c2 = d["results"]
+    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
+    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+
+@pytest.mark.parametrize("t", ["08:55", "09:45", "09:58", "10:05"])
+def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
+    """Inside 08:55–10:05 IST (the route's CORRECTED NSE pre-open model,
+    2026-07-16 — order entry 09:00, firming 09:45–09:55, deadline 09:58)
+    the cache is never consulted and never written: every call pays the DB
+    so the decision screen can never be stale when it matters."""
+    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
+    for c in d["results"]:
+        assert c["queries"] > 0, f"{t}: served from cache inside the window"
+        assert c["kv_gets"] == 0 and c["kv_puts"] == 0
+        assert c["xcache"] == "BYPASS-DECISION-WINDOW"
+
+def test_A2_window_boundaries_exact():
+    """08:54 and 10:06 cache; 08:55 and 10:05 bypass."""
+    for t, cached in (("08:54", True), ("10:06", True), ("08:55", False), ("10:05", False)):
+        d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
+        second_hit = d["results"][1]["queries"] == 0
+        assert second_hit is cached, f"{t}: expected cached={cached}"
 
 
 # ---------------- A1 — query-count ceilings ----------------
@@ -74,9 +104,9 @@ HOT_ROUTES = [
 # caches). FROZEN allow-list — the guard's job is to stop this list GROWING.
 # Remove an entry the moment its route gains a cache; adding needs a review.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
-    "ipo/live-preopen", "ipo/intelligence", "market/global", "market/live",
+    "ipo/intelligence", "market/global", "market/live",
     "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-})
+})  # live-preopen CURED 2026-07-17 (60s TTL + decision-window bypass)
 
 
 def _route_file(name):

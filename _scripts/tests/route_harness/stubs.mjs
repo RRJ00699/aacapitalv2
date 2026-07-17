@@ -51,3 +51,14 @@ export function getCloudflareContext() {
     },
   };
 }
+
+// HARNESS_FAKE_IST=HH:MM makes Date#toLocaleTimeString return a fixed IST time,
+// so decision-window logic is deterministic under test.
+if (process.env.HARNESS_FAKE_IST) {
+  const fixed = process.env.HARNESS_FAKE_IST;
+  const orig = Date.prototype.toLocaleTimeString;
+  Date.prototype.toLocaleTimeString = function (loc, opts) {
+    if (opts && opts.timeZone === "Asia/Kolkata") return fixed;
+    return orig.call(this, loc, opts);
+  };
+}
