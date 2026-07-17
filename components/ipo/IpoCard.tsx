@@ -59,7 +59,7 @@ function scoreColor(score: number | null): string {
   return C.red;
 }
 
-function ScoreDial({ score, conf, sub, tally }: { score: number | null; conf: number | null; sub?: string; tally?: boolean }) {
+function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | null; conf: number | null; sub?: string; tally?: boolean; band?: string | null; win?: number | null }) {
   // tally mode: ipo_score v0 is a backtested additive tally (-4..+6), NOT a
   // percent — showing it on a 0-100 arc made every IPO read as 0/1/-2 garbage
   // (Rakesh 2026-07-17). Number = signed tally; arc = position within the
@@ -84,7 +84,10 @@ function ScoreDial({ score, conf, sub, tally }: { score: number | null; conf: nu
           {score != null ? (tally && Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))) : "—"}
         </span>
         {score != null
-          ? (conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
+          ? (tally
+              ? (band || win != null) && <span style={{ fontSize: 8, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.25 }}>
+                  {band ? String(band) : ""}{win != null ? `${band ? " · " : ""}${Math.round(Number(win))}% hist win` : ""}</span>
+              : conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
           : <span style={{ fontSize: 7.5, color: C.dim, marginTop: 1, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>}
         {sub && score != null && <span style={{ fontSize: 7, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.1 }}>{sub}</span>}
       </div>
@@ -388,7 +391,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
             {isTrade && <span style={{ fontSize: 12, color: C.meta, marginLeft: 10 }}>buy at open · trail −5%</span>}
           </div>
         </div>
-        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} />
+        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} win={isQuality ? null : (c.score_expected_win as number | null)} />
       </div>
 
       {/* ROW 2: SETUP — the playbook engine's call */}
