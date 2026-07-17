@@ -40,7 +40,10 @@ def _bind(q):
     int, date-ish -> date, else text '1' (valid int-in-text for numeric casts)."""
     params = []
     def sub(m):
+        after = q[m.end():m.end() + 8]
         before = q[:m.start()].rstrip().upper()
+        if after.startswith("::date"):
+            params.append(datetime.date.today()); return "%s"
         if before.endswith("ANY("):
             params.append(["X"])
         elif before.endswith(("LIMIT", "OFFSET")):
@@ -56,67 +59,7 @@ def _bind(q):
 
 # ---------- contract schema (superset: api_db tables + route tables) ----------
 
-CONTRACT_DDL = """
-DROP SCHEMA public CASCADE; CREATE SCHEMA public;
-CREATE TABLE ipo_consolidated (
-    company_name TEXT, listing_date DATE, ipo_open_date DATE, ipo_close_date DATE,
-    issue_size_cr NUMERIC, issue_price NUMERIC, ipo_score INT, score_band TEXT,
-    score_evidence TEXT, gap_bucket TEXT, listing_gap_pct NUMERIC,
-    final_qib NUMERIC, final_nii NUMERIC, final_retail NUMERIC, final_total NUMERIC,
-    brlm_names TEXT, symbol_final TEXT, nse_symbol TEXT, symbol TEXT, isin TEXT,
-    ipo_pe NUMERIC, eps_post NUMERIC, peer_median_pe NUMERIC, roe NUMERIC,
-    revenue_cagr_3y NUMERIC, profit_cagr_3y NUMERIC, debt_equity NUMERIC,
-    ofs_pct NUMERIC, structure_type TEXT, return_listing_open NUMERIC,
-    gmp_day_before_pct NUMERIC, gmp_max_pct NUMERIC, gmp_min_pct NUMERIC,
-    sector TEXT, industry TEXT, is_sme BOOLEAN, ipo_status TEXT,
-    price_band_low NUMERIC, price_band_high NUMERIC, lot_size INT,
-    india_vix NUMERIC, regime_at_listing TEXT, valuation_premium NUMERIC,
-    is_profitable BOOLEAN, tp1_exit_note TEXT, floor_price NUMERIC,
-    ceiling_price NUMERIC, floor_defenses INT, level_verdict TEXT,
-    d10_best_pct NUMERIC, updated_at TIMESTAMPTZ);
-CREATE TABLE ipo_intelligence (
-    id SERIAL PRIMARY KEY, company_name TEXT, nse_symbol TEXT, symbol TEXT,
-    isin TEXT, sector TEXT, listing_date DATE, open_date DATE, close_date DATE,
-    issue_price NUMERIC, issue_size_cr NUMERIC, ipo_pe NUMERIC,
-    peer_median_pe NUMERIC, eps_post NUMERIC, roe NUMERIC, debt_equity NUMERIC,
-    ofs_pct NUMERIC, anchor_count INT, ofs_cr NUMERIC, fresh_issue_cr NUMERIC,
-    price_band_high NUMERIC, price_band_low NUMERIC, chittorgarh_slug TEXT,
-    score_band TEXT, ipo_score INT, score_expected_win NUMERIC,
-    quality_score INT, quality_conf INT, listing_open NUMERIC,
-    listing_gap_pct NUMERIC, gmp_day_before_pct NUMERIC, sbi_rating TEXT,
-    is_sme BOOLEAN, ipo_status TEXT, updated_at TIMESTAMPTZ);
-CREATE TABLE ipo_verdicts (company_name TEXT, verdict TEXT, why_trade TEXT,
-    why_caution TEXT, why_avoid TEXT, why_passes TEXT, regime TEXT,
-    quality_promoter BOOLEAN, ai_summary TEXT, score NUMERIC, confidence NUMERIC,
-    sub_scores JSONB, computed_at TIMESTAMPTZ);
-CREATE TABLE ipo_flags (company_name TEXT, red_flags TEXT[], green_checks TEXT[],
-    red_count INT, green_count INT, computed_at TIMESTAMPTZ);
-CREATE TABLE ipo_broker_consensus (company TEXT, consensus TEXT, n_brokers INT,
-    consensus_score NUMERIC);
-CREATE TABLE ipo_rhp_intel (company_name TEXT, verdict TEXT, one_line TEXT,
-    quality_gate TEXT, margin_of_safety NUMERIC, full_json TEXT, confidence TEXT,
-    rhp_url TEXT, pdf_sha256 TEXT);
-CREATE TABLE ipo_research_notes (source TEXT, company TEXT, nse_symbol TEXT,
-    rating TEXT, full_json TEXT, one_line TEXT, peer_name TEXT, peer_ps NUMERIC,
-    note_ps NUMERIC);
-CREATE TABLE price_candles (symbol TEXT, date DATE, open NUMERIC, low NUMERIC,
-    high NUMERIC, close NUMERIC, volume BIGINT);
-CREATE TABLE ipo_tick_feed (symbol TEXT, ltp NUMERIC, vwap NUMERIC,
-    vwap_dist NUMERIC, obir NUMERIC, day_volume BIGINT, momentum TEXT,
-    divergence TEXT, signal TEXT, recorded_at TIMESTAMPTZ);
-CREATE TABLE ipo_level_analysis (symbol TEXT, trade_date DATE, issue_price NUMERIC,
-    listing_open NUMERIC, gap_pct NUMERIC, gap_bucket TEXT, floor_price NUMERIC,
-    ceiling_price NUMERIC, floor_defenses INT, poc_price NUMERIC, verdict TEXT,
-    risk_note TEXT, circuit_locked BOOLEAN, session_vwap NUMERIC);
-CREATE TABLE market_regimes (evaluation_date DATE, active_regime TEXT,
-    india_vix NUMERIC);
-CREATE TABLE ipo_gmp (company_name TEXT, gmp NUMERIC, gmp_pct NUMERIC,
-    captured_at TIMESTAMPTZ);
-CREATE TABLE pipeline_steps (id SERIAL, run_date DATE, step TEXT, script TEXT,
-    ok BOOLEAN, error TEXT, ran_at TIMESTAMPTZ);
-CREATE TABLE pipeline_failures (id SERIAL, step TEXT, script TEXT,
-    stderr_tail TEXT, failed_at TIMESTAMPTZ);
-"""
+from contract_schema import CONTRACT_DDL  # prod-truth (triage 2026-07-17)
 
 
 @pytest.fixture(scope="module")
@@ -132,47 +75,20 @@ def contract_db(pg_uri):
 # (file, block_index) -> short reason. FROZEN 2026-07-17 first audit.
 # The list may only SHRINK: declare the table/columns in CONTRACT_DDL, run,
 # prune the entry. A NEW entry appearing = a route broke the contract = CI red.
-KNOWN_GAPS = {   # FROZEN first audit 2026-07-17 — may only SHRINK
-    ("app/api/access-note/route.ts", 0): "UndefinedTable: relation \"access_requests\" does not exist",
-    ("app/api/access-note/route.ts", 1): "UndefinedTable: relation \"access_requests\" does not exist",
-    ("app/api/admin/diagnostics/route.ts", 1): "UndefinedFunction: operator does not exist: text ->> unknown",
-    ("app/api/admin/diagnostics/route.ts", 2): "UndefinedColumn: column \"pdf_path\" does not exist",
-    ("app/api/admin/diagnostics/route.ts", 4): "UndefinedTable: relation \"kite_session\" does not exist",
-    ("app/api/admin/diagnostics/route.ts", 5): "UndefinedTable: relation \"rhp_run_log\" does not exist",
-    ("app/api/admin/diagnostics/route.ts", 6): "UndefinedTable: relation \"ipo_preopen_book\" does not exist",
-    ("app/api/admin/diagnostics/route.ts", 7): "UndefinedColumn: column \"eps_source\" does not exist",
-    ("app/api/admin/secrets/route.ts", 0): "UndefinedTable: relation \"platform_config\" does not exist",
-    ("app/api/admin/secrets/route.ts", 1): "UndefinedTable: relation \"kite_session\" does not exist",
-    ("app/api/admin/secrets/route.ts", 2): "UndefinedTable: relation \"platform_config\" does not exist",
-    ("app/api/auth/zerodha/callback/route.ts", 0): "UndefinedTable: relation \"kite_session\" does not exist",
-    ("app/api/auth/zerodha/callback/route.ts", 1): "UndefinedTable: relation \"kite_session\" does not exist",
-    ("app/api/auth/zerodha/status/route.ts", 0): "UndefinedTable: relation \"kite_session\" does not exist",
-    ("app/api/ipo/cum-volume/route.ts", 0): "InvalidDatetimeFormat: invalid input syntax for type date: \"1\"",
-    ("app/api/ipo/gmp/route.ts", 1): "UndefinedColumn: column \"ipo_name\" of relation \"ipo_gmp\" does not exist",
-    ("app/api/ipo/gmp/route.ts", 3): "SyntaxError: syntax error at or near \"$\"",
-    ("app/api/ipo/intelligence/route.ts", 0): "UndefinedColumn: column \"archetype\" does not exist",
-    ("app/api/ipo/intelligence/route.ts", 1): "UndefinedColumn: column \"lqi_final\" does not exist",
-    ("app/api/ipo/levels/route.ts", 0): "UndefinedColumn: column \"day_open\" does not exist",
-    ("app/api/ipo/levels/route.ts", 1): "UndefinedTable: relation \"ipo_daily_levels\" does not exist",
-    ("app/api/ipo/listing-day/route.ts", 0): "UndefinedTable: relation \"platform_config\" does not exist",
-    ("app/api/ipo/listing-day/route.ts", 1): "UndefinedColumn: column \"qib_subscription_x\" does not exist",
-    ("app/api/ipo/live-preopen/route.ts", 0): "UndefinedColumn: column \"anchor_count\" does not exist",
-    ("app/api/ipo/playbook/route.ts", 0): "UndefinedColumn: column \"play_recommendation\" does not exist",
-    ("app/api/ipo/post-listing/route.ts", 0): "UndefinedColumn: column \"listing_day_close\" does not exist",
-    ("app/api/ipo/route.ts", 0): "UndefinedColumn: column \"listing_day_close\" does not exist",
-    ("app/api/market/live/route.ts", 0): "UndefinedTable: relation \"market_snapshot\" does not exist",
-    ("app/api/market/live/route.ts", 1): "UndefinedTable: relation \"market_snapshot\" does not exist",
-    ("app/api/market/snapshot/route.ts", 0): "UndefinedTable: relation \"market_snapshot\" does not exist",
-    ("app/api/market/snapshot/route.ts", 2): "UndefinedTable: relation \"daily_institutional_flows\" does not exist",
-    ("app/api/pipeline/status/route.ts", 1): "UndefinedTable: relation \"technical_signals\" does not exist",
-    ("app/api/pipeline/status/route.ts", 2): "UndefinedTable: relation \"management_commentary\" does not exist",
-    ("app/api/pipeline/status/route.ts", 3): "UndefinedTable: relation \"technical_signals\" does not exist",
-    ("app/api/post-listing/route.ts", 1): "UndefinedTable: relation \"delivery_data\" does not exist",
-    ("app/api/post-listing/route.ts", 2): "UndefinedColumn: column \"anchor_lock30_date\" does not exist",
-    ("app/api/search/route.ts", 0): "UndefinedTable: relation \"stock_fundamentals\" does not exist",
-    ("app/api/search/route.ts", 1): "UndefinedTable: relation \"company_master\" does not exist",
-    ("app/api/search/route.ts", 2): "UndefinedTable: relation \"technical_signals\" does not exist",
-    ("app/api/tracker/route.ts", 3): "InvalidDatetimeFormat: invalid input syntax for type timestamp with time zone: \"",
+KNOWN_GAPS = {
+    # ══ KIND 2 — PROD-VERIFIED DEAD REFS (triage 2026-07-17): these routes
+    # are broken against the live schema TODAY. Fix = edit the ROUTE (owner
+    # approval per route, preview-first). Prune on fix. ══
+    ("app/api/ipo/route.ts", 0):              "KIND2: return_day30 absent on prod ipo_consolidated",
+    ("app/api/ipo/post-listing/route.ts", 0): "KIND2: return_day30 absent on prod ipo_consolidated",
+    ("app/api/ipo/intelligence/route.ts", 0): "KIND2: return_day30 absent on prod ipo_consolidated",
+    ("app/api/ipo/levels/route.ts", 0):       "KIND2: day_open absent on prod ipo_level_analysis",
+    ("app/api/ipo/levels/route.ts", 1):       "KIND2: c.gap_pct absent on prod ipo_consolidated (has listing_gap_pct)",
+    ("app/api/ipo/playbook/route.ts", 0):     "KIND2: sub_day1_qib absent on prod ipo_consolidated (has day1_qib)",
+    ("app/api/market/snapshot/route.ts", 2):  "KIND2: table daily_institutional_flows does not exist in prod",
+    # ══ HARNESS-LIMIT — dynamic SQL fragment (raw `'${date}'::date` string
+    # built in JS), not parameterizable by extraction. Not a route bug. ══
+    ("app/api/ipo/gmp/route.ts", 3):          "HARNESS: dynamic SQL fragment interpolation",
 }
 
 
@@ -184,7 +100,16 @@ def test_B5_every_route_sql_block_runs_or_is_known_gap(contract_db):
     for f, i, q in blocks:
         q2, params = _bind(q)
         try:
-            cur.execute(q2, params or None)
+            try:
+                cur.execute(q2, params or None)
+            except Exception as e1:
+                # retry ladder: date-typed params for InvalidDatetimeFormat class
+                if "input syntax for type date" in str(e1) or "timestamp" in str(e1):
+                    import datetime as _dt
+                    cur.execute(q2, [(_dt.date.today() if isinstance(x, str) else x)
+                                     for x in params] or None)
+                else:
+                    raise
             try: cur.fetchall()
             except Exception: pass
             if (f, i) in KNOWN_GAPS:
