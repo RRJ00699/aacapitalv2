@@ -60,10 +60,12 @@ export async function GET() {
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
                      OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
              CASE
-               WHEN c.ipo_open_date <= CURRENT_DATE AND c.ipo_close_date >= CURRENT_DATE THEN 'OPEN'
-               WHEN c.listing_date = CURRENT_DATE THEN 'LISTING'
-               WHEN c.listing_date > CURRENT_DATE THEN 'UPCOMING'
-               WHEN c.listing_date >= CURRENT_DATE - 30 THEN 'INWINDOW'
+               -- IST is the ONLY market clock (UTC CURRENT_DATE put Caliber in
+               -- Open Now while a CST device said opens-in-1d; 2026-07-17).
+               WHEN c.ipo_open_date <= (now() AT TIME ZONE 'Asia/Kolkata')::date AND c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'OPEN'
+               WHEN c.listing_date = (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'LISTING'
+               WHEN c.listing_date > (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'UPCOMING'
+               WHEN c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30 THEN 'INWINDOW'
              END AS state,
              v.verdict, v.why_trade, v.why_caution, v.why_avoid, v.regime,
              v.quality_promoter, v.ai_summary, v.score AS vscore, v.confidence AS vconf,
@@ -88,7 +90,7 @@ export async function GET() {
         OR regexp_replace(lower(ri.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
         = regexp_replace(lower(c.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
       LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')
-      WHERE c.listing_date >= CURRENT_DATE - 30 OR c.ipo_close_date >= CURRENT_DATE
+      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30 OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
          OR c.ipo_open_date >= CURRENT_DATE
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
