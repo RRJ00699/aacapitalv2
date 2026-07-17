@@ -182,7 +182,11 @@ def main():
                   confidence=EXCLUDED.confidence, computed_at=now()
             """, (r["company_name"], d["verdict"], d["why_trade"], d["why_caution"],
                   d["why_avoid"], d["why_passes"], d["regime"], d["quality_promoter"],
-                  d["score"], d["confidence"]))
+                  d["score"],
+                  # band string -> numeric at the boundary (UI vconf contract;
+                  # crashed 2026-07-17: invalid input syntax for integer: "low")
+                  {"high": 90, "medium": 65, "low": 40}.get(str(d["confidence"] or "").lower(),
+                      d["confidence"] if isinstance(d["confidence"], (int, float)) else None)))
             wrote += 1
     if a.apply:
         conn.commit(); print(f"applied — {wrote} verdicts written.")
