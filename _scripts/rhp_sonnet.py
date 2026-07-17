@@ -8,6 +8,7 @@ Processes recent-first. Returns a rich, source-cited forensic summary + structur
   python rhp_sonnet.py --dir rhps --year-min 2021 --cap 20  # batch recent-first, capped
 """
 import os,sys,json,argparse,glob,urllib.request,time,io,re
+import hashlib
 try:
     sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding="utf-8",errors="replace")
     sys.stderr=io.TextIOWrapper(sys.stderr.buffer,encoding="utf-8",errors="replace")
@@ -18,6 +19,26 @@ IN_RATE=3.00/1_000_000    # $ per input token
 OUT_RATE=15.00/1_000_000  # $ per output token
 
 SYSTEM = """You are a forensic equity analyst specializing in Indian IPO Red Herring Prospectuses (RHPs). You read like a skeptical investor protecting their own capital. You extract ONLY what the text explicitly states — never infer, never assume, never fill gaps with expectation. When a fact is not clearly present, you say "not disclosed" rather than guessing. You are especially alert to the language of negation: "there have been NO reservations", "neither the Company nor its Promoters is a Wilful Defaulter", "Criminal proceedings: Nil" all mean CLEAN — never flag these as problems. You distinguish routine legal/tax matters (ordinary course of business) from genuinely material risks (criminal charges, SEBI/regulatory action, blacklisting, fraud, going-concern doubt, large contingent liabilities, promoter cases that threaten operations). You quote the specific supporting line for every claim you make."""
+
+
+def _pdf_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _already_extracted(conn, sha):
+    """GUARDRAIL G: this exact PDF (by content hash) was already extracted ->
+    skip the paid Sonnet call. Renamed/re-seeded files no longer re-burn credits."""
+    if conn is None:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM ipo_rhp_intel WHERE pdf_sha256 = %s LIMIT 1", (sha,))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
 
 def build_prompt(company, sections):
     secblob = "\n\n".join(f"===== SECTION: {k} =====\n{v}" for k,v in sections.items())

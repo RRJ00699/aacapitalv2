@@ -34,6 +34,9 @@ export default function AppShell({
       `}</style>
 
       <AppNav current={current} onSearchSelect={handleSearchSelect} refreshTime={refreshTime} />
+      <div style={{ position: "fixed", bottom: 4, right: 6, zIndex: 9, fontSize: 8.5,
+        fontFamily: "var(--f-mono)", color: "var(--t-dim,#9ca3af)", opacity: .55, pointerEvents: "none" }}>
+        build {String(process.env.NEXT_PUBLIC_BUILD_ID || "dev").slice(0, 7)}</div>
 
       {children}
 
