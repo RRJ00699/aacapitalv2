@@ -1,0 +1,8 @@
+{"_fixture_note": "SYNTHETIC, built from the documented NSE pre-open API shape (same family as fetch_nse_ipos FEEDS). Replace with a saved REAL capture after the first live listing morning; tests never hit NSE.",
+ "data": [{"metadata": {"symbol": "ALPINE", "lastPrice": 142.5, "finalQuantity": 385000,
+    "totalBuyQuantity": 981030, "totalSellQuantity": 822634},
+   "detail": {"preOpenMarket": {"IEP": 142.5,
+     "preopen": [{"price": 141.0, "buyQty": 5000, "sellQty": 0},
+                 {"price": 142.5, "buyQty": 12000, "sellQty": 9000},
+                 {"price": 144.0, "buyQty": 0, "sellQty": 7000}]}}},
+  {"metadata": {"symbol": "OTHERCO", "lastPrice": 99, "totalBuyQuantity": 1, "totalSellQuantity": 1}}]}

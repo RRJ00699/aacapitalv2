@@ -41,6 +41,18 @@ DDL = [
         buy_qty BIGINT, sell_qty BIGINT, lean_pct NUMERIC,
         captured_at TIMESTAMPTZ DEFAULT NOW(), source TEXT DEFAULT 'live')""",
     # ── admin job console ──
+    # ── NSE pre-open capture (nse_preopen_capture.py) ──
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_ask_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS cancelled_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS state_hash TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_preopen_state ON ipo_preopen_book(state_hash)",
+    """CREATE TABLE IF NOT EXISTS nse_preopen_raw (
+        id SERIAL PRIMARY KEY, symbol TEXT, payload JSONB,
+        captured_at TIMESTAMPTZ DEFAULT NOW())""",
     """CREATE TABLE IF NOT EXISTS job_runs (
         id BIGSERIAL PRIMARY KEY, job TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'queued', requested_by TEXT,
