@@ -855,11 +855,25 @@ function IpoCommand() {
   const liveSyms = Array.from(new Map((d?.live||[]).map(t=>[canonSym(String(t.symbol)), String(t.symbol)])).values());
   const liveCanon = Array.from(new Set((d?.live||[]).map(t=>canonSym(String(t.symbol)))));
   // Live screen window: any IPO listed within the last 7 days (payload fields only)
-  const windowCards = cards.filter(c => {
-    if (!c.listing_date || !c.sym) return false;
-    const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
-    return days >= 0 && days <= 7;
-  });
+  const windowCards = (() => {
+    const raw = cards.filter(c => {
+      if (!c.listing_date || !c.sym) return false;
+      const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+      return days >= 0 && days <= 7;
+    });
+    // Defensive dedupe: a junk DB twin (two Laser rows, 2026-07-18) rendered
+    // duplicate pills AND duplicate decision panels. One entry per canonical
+    // symbol — keep the most complete row (most non-null fields). The twin
+    // itself gets hunted at the data layer; the UI must survive it meanwhile.
+    const best = new Map<string, { c: (typeof raw)[number]; score: number }>();
+    for (const c of raw) {
+      const k = canonSym(String(c.sym));
+      const score = Object.values(c).filter(v => v != null).length;
+      const prev = best.get(k);
+      if (!prev || score > prev.score) best.set(k, { c, score });
+    }
+    return Array.from(best.values()).map(e => e.c);
+  })();
   const next = cards.find(c=>c.state==="UPCOMING");
   const pills: [string,string][] = [["live","Live"],["command","Command"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
