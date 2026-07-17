@@ -86,7 +86,7 @@ function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | nul
         {score != null
           ? (tally
               ? (band || win != null) && <span style={{ fontSize: 8, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.25 }}>
-                  {band ? String(band) : ""}{win != null ? `${band ? " · " : ""}${Math.round(Number(win))}% hist win` : ""}</span>
+                  {band ? String(band) : ""}{win != null ? `${band ? " · " : ""}wins ${Math.round(Number(win))}% (hist)` : ""}</span>
               : conf != null && <span style={{ fontSize: 8.5, color: C.meta, marginTop: 1 }}>{conf}%</span>)
           : <span style={{ fontSize: 7.5, color: C.dim, marginTop: 1, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>}
         {sub && score != null && <span style={{ fontSize: 7, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.1 }}>{sub}</span>}
@@ -391,7 +391,19 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
             {isTrade && <span style={{ fontSize: 12, color: C.meta, marginLeft: 10 }}>buy at open · trail −5%</span>}
           </div>
         </div>
-        <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} win={isQuality ? null : (c.score_expected_win as number | null)} />
+        <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} win={isQuality ? null : (c.score_expected_win as number | null)} />
+          {(() => {
+            const r = c.sbi_rating ? String(c.sbi_rating) : null;
+            if (!r) return null;
+            const neg = /avoid|not\s*subscribe/i.test(r), pos = !neg && /subscribe/i.test(r);
+            const [fg, bg, bd] = pos ? [C.green, C.greenBg, C.greenBd] : neg ? [C.red, C.redBg, C.redBd] : [C.amber, C.amberBg, C.amberBd];
+            return <span title="SBI Securities' own call — independent lens, never blended into our score"
+              style={{ fontSize: 9, fontWeight: 800, color: fg, background: bg, border: `1px solid ${bd}`,
+                borderRadius: 999, padding: "2px 8px", letterSpacing: .3, whiteSpace: "nowrap" }}>
+              SBI · {r.length > 14 ? (pos ? "Subscribe" : neg ? "Avoid" : r.slice(0, 12)) : r}</span>;
+          })()}
+        </span>
       </div>
 
       {/* ROW 2: SETUP — the playbook engine's call */}
