@@ -257,6 +257,13 @@ export async function GET(req?: Request) {
 
 
     // ── AACapital Playbook rules — applied to every IPO (tested 2026-07-13) ──
+    // JUNK FLOOR (IPO_BUSINESS_REQUIREMENTS.md §2, owner-locked): issue size
+    // < Rs.200cr is RULED OUT — "below this floor, don't touch". Until now the
+    // engine only LABELLED these AVOID and still rendered them alongside real
+    // candidates, which is the opposite of "filter junk, focus on good
+    // companies". They are now split out of `cards` into `filtered` with the
+    // reason attached: enforced, but nothing is hidden or lost.
+    const JUNK_FLOOR_CR = 200;
     const enrichedCards = (cards as Record<string, unknown>[]).map((c) => {
       const size  = Number(c.issue_size_cr) || 0;
       const gap   = c.listing_gap_pct == null ? null : Number(c.listing_gap_pct);
@@ -303,7 +310,20 @@ export async function GET(req?: Request) {
                playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c), ...gmpSignal(c) };
     });
 
-    const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track,
+    // split: investable vs junk-floor (size below the owner-locked floor)
+    const investable: Record<string, unknown>[] = [];
+    const filtered: Record<string, unknown>[] = [];
+    for (const c of enrichedCards as Record<string, unknown>[]) {
+      const sz = Number(c.issue_size_cr) || 0;
+      if (sz > 0 && sz < JUNK_FLOOR_CR) {
+        filtered.push({ ...c, filtered_reason: `issue size ₹${Math.round(sz)}cr < ₹${JUNK_FLOOR_CR}cr junk floor — ruled out (spec §2)` });
+      } else {
+        investable.push(c);
+      }
+    }
+
+    const payload = JSON.stringify({ cards: investable, filtered, filtered_count: filtered.length,
+      live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
     if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
     return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
