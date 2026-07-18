@@ -35,6 +35,10 @@ DDL = [
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS score_expected_win NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS score_expected_med NUMERIC",
     # ── ipo_research_notes: Haiku extraction ──
+    # ipo_research_notes had NO id column: sbi_haiku_extract selects n.id and threw
+    # "column id does not exist" on EVERY run since launch -> 0 attempts, $0 spent,
+    # 244 notes untouched (2026-07-18). SERIAL backfills existing rows.
+    "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS id SERIAL",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS full_json JSONB",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS one_line TEXT",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS ai_model TEXT",
