@@ -379,7 +379,12 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
             {String(c.company_name || "")}
           </div>
           <div style={{ fontSize: 12, color: C.meta, marginTop: 5 }}>
-            {c.state ? String(c.state) : ""}{c.listing_date ? ` · lists ${D(c.listing_date)}` : ""}
+            {/* OPEN-NOW (subscription window live). Shipped in #192, LOST in a
+                later merge of this file, restored 2026-07-18. NOT the same as the
+                "LIVE — trade it" chip, which keys off listing-day ticks. */}
+            {String(c.state ?? "").toUpperCase() === "OPEN"
+              ? <span style={{ color: C.green, fontWeight: 800 }}>● OPEN NOW</span>
+              : (c.state ? String(c.state) : "")}{c.listing_date ? ` · lists ${D(c.listing_date)}` : ""}
             {c.quality_promoter === true ? <span style={{ color: C.gold, fontWeight: 600 }}> · ★ Quality promoter</span> : null}
           </div>
           {onLive && (

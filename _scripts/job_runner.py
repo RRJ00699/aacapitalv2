@@ -146,7 +146,13 @@ def main():
     processed = 0
     while True:
         claimed = claim_one(cur); conn.commit()
-        if not claimed: break
+        if not claimed:
+            # QUEUE EMPTY -> clear the KV flag. _clear_flag() was defined but
+            # NEVER CALLED (2026-07-18): the flag read pending:true forever, so
+            # this minute-cron runner opened a Neon connection EVERY MINUTE and
+            # the scale-to-zero design was silently defeated.
+            _clear_flag()
+            break
         jid, job = claimed
         try:
             code, tail, err = run_job(job)
