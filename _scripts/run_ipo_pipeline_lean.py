@@ -136,7 +136,10 @@ def main():
     # REMOVED 2026-07-18 (dead step): "anchor-deal conviction match" wrote to
     # institutional_large_deals — a table that does not exist, and no route or
     # compute reads it. Script archived to _archive/. (match_anchor_deals.py)
-    step("market regime + VIX (today)",     ["backfill_market_regimes.py"])
+    # --apply was MISSING: the step ran in dry-run for weeks and wrote nothing,
+    # freezing market_regimes at 2026-07-03 while the spec (2C.10) requires
+    # regime + VIX as live decision inputs. Found 2026-07-18.
+    step("market regime + VIX (today)",     ["backfill_market_regimes.py", "--apply"])
 
     # ── KITE PRICE DATA (skip cleanly if token stale) ──
     if kite_ok:
