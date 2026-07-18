@@ -114,12 +114,21 @@ def main():
         vals = {}
         for lbl, nd in (("gmp_pct_t1",1),("gmp_pct_t3",3),("gmp_pct_t5",5),("gmp_pct_t7",7)):
             if lbl not in targets: continue
+            # FIX 2026-07-18: an earlier patch guarded the KeyError but left `ipv`
+            # unbound when NO offset hit `hist`, and `break` fired after the first
+            # offset regardless — so the loop never tried +1/-1, and the very next
+            # label raised UnboundLocalError. Bind per-iteration and break only on
+            # a real hit.
+            ipv = None
+            d0 = None
             for off in (0, 1, -1):
-                d0 = ld - dtmod.timedelta(days=nd) + dtmod.timedelta(days=off)
-                if d0 in hist:
+                cand = ld - dtmod.timedelta(days=nd) + dtmod.timedelta(days=off)
+                if cand in hist:
+                    d0 = cand
                     ipv = sfloat(ip)
-            if ipv and d0 in hist: vals[lbl] = round(hist[d0] / ipv * 100, 2)  # skip weekend/holiday dates (KeyError 2026-07-19 = Sunday)
-            break
+                    break                       # found a trading day — stop probing
+            if ipv and d0 is not None:
+                vals[lbl] = round(hist[d0] / ipv * 100, 2)
         if vals and a.apply:
             sets = ", ".join(f"{k}=COALESCE({k},%s)" for k in vals)
             cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE id=%s",
