@@ -132,8 +132,10 @@ def main():
     step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
     step("EPS backfill (caution-marked)",   ["backfill_eps_post.py","--apply"])
     step("refresh GMP",                     ["ipo/refresh_gmp.py"])
-    step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])
-    step("anchor-deal conviction match",    ["match_anchor_deals.py"])
+    step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])  # KEEP: app/api/post-listing reads delivery_data
+    # REMOVED 2026-07-18 (dead step): "anchor-deal conviction match" wrote to
+    # institutional_large_deals — a table that does not exist, and no route or
+    # compute reads it. Script archived to _archive/. (match_anchor_deals.py)
     step("market regime + VIX (today)",     ["backfill_market_regimes.py"])
 
     # ── KITE PRICE DATA (skip cleanly if token stale) ──
@@ -160,7 +162,9 @@ def main():
     step("ipo score v0 (derived)",          ["ipo_score.py","--apply"])
     step("d10 outcome precompute",          ["compute_d10.py"])
     step("reconcile listing dates",         ["reconcile_listing_dates.py"])
-    step("close-in-range strength",         ["close_in_range.py"])
+    # REMOVED 2026-07-18 (dead step): "close-in-range strength" — CIR is REJECTED
+    # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
+    # the CIR columns. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",     ["backfill_master_computables.py"])
     step("sector cleanup",                  ["fix_sectors.py"])
     step("peer PE (self-computed)",         ["compute_peer_pe.py"])          # fair value — KEEP
