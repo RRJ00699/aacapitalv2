@@ -5,7 +5,6 @@ ipo_score.py — Score v0: evidence-weighted buy-at-open setup score.
 Every weight traces to a SIGNAL line (n>=30, era-consistent) from factor_backtest
 runs of 2026-07-05 on n=370, baseline 72%/+5.9%, hold=10 sessions:
 
-  +2  gap MID            (84.1%/+9.4,  n=69,  eras 78/88/84)
   +2  size >2000cr       (81.8%/+9.2,  n=77,  eras 72/88/85)
   -2  size 150-500cr     (58.9%/+1.5,  n=73;  LOW x 150-500 = 50.0%/+0.4, n=40)
   +1  peer-PE <0.6x      (76.7%/+7.6,  n=30)
@@ -42,8 +41,13 @@ def band_of(s):
 def score_row(r):
     s, why = 0, []
     gb = (r.get("gap_bucket") or "").upper()
-    if gb == "MID":    s += 2; why.append("MID gap +2")
-    elif gb == "HIGH": s -= 1; why.append("HIGH gap -1")
+    # MID GAP REMOVED 2026-07-18. IPO_BUSINESS_REQUIREMENTS.md §5 lists MID gap
+    # as DEAD: the original +2 (84.1% win, n=69) was measured on POLLUTED data
+    # and COLLAPSED to a coin-flip once the data was rebuilt. Scoring it inflated
+    # the band on every MID-gap IPO — the single highest-value correctness fix in
+    # ARCHITECTURE_TARGET.md §6. HIGH gap -1 stays (still evidenced, decayed but
+    # not dead). Do not reinstate without a new leakage-free backtest.
+    if gb == "HIGH":   s -= 1; why.append("HIGH gap -1")
     sz = r.get("issue_size_cr")
     if sz is not None:
         sz = float(sz)
