@@ -90,6 +90,15 @@ JOBS = {
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
     "sync":            ["_scripts/git_sync.py"],
+    # Mobile-first ops (2026-07-18): the derived layer could only be recomputed
+    # by running the WHOLE pipeline. These let the phone re-run one stage after a
+    # fix, without a laptop. All are idempotent (UPDATE-in-place / ON CONFLICT).
+    "verdicts":        ["_scripts/compute_verdicts.py", "--apply"],
+    "score":           ["_scripts/ipo_score.py", "--apply"],
+    "quality":         ["_scripts/compute_quality_score.py", "--apply"],
+    "schema":          ["_scripts/schema_sync.py"],
+    "smoke":           ["_scripts/smoke_probe.py"],
+    "sbi_haiku":       ["_scripts/sbi_haiku_extract.py"],
 }
 
 def ensure_table(cur):

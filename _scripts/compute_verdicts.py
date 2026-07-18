@@ -169,7 +169,26 @@ def main():
     # REGIME DEPRECATED (Rakesh 2026-07-17: "old regime, we don't use it now").
     # The table also lacks a `regime` column, which crashed verdicts for 2 days
     # (sink caught it). Always NULL — downstream already handles bull=None.
-    regime_sql = "NULL"
+    # REGIME RESTORED 2026-07-18. History: the original query selected a column
+    # named `regime`, but market_regimes actually writes `active_regime` — so it
+    # crashed, and #193 "fixed" it by hardcoding NULL. That silently KILLED the
+    # TRADE verdict, because both trade strategies require `bull is True`
+    # (why_trade was 2/761 — all pre-deprecation legacy rows).
+    # Owner ruling 2026-07-18: regime IS required (spec §2C.10). The writer was
+    # also dry-running (missing --apply, fixed in the same pass), so the data is
+    # flowing again. Guarded three ways: table must exist, column must exist, and
+    # the row must be FRESH (<= 5 days) — a stale regime must read as unknown
+    # (NULL), never as a false bull.
+    cur.execute("""SELECT to_regclass('market_regimes') IS NOT NULL
+                          AND EXISTS (SELECT 1 FROM information_schema.columns
+                                      WHERE table_name='market_regimes'
+                                        AND column_name='active_regime') AS ok""")
+    _row = cur.fetchone()
+    _regime_ok = bool(_row["ok"] if isinstance(_row, dict) else _row[0])
+    regime_sql = ("""(SELECT (m.active_regime ILIKE '%bull%' OR m.active_regime ILIKE '%normal%')
+                      FROM market_regimes m
+                      WHERE m.evaluation_date >= CURRENT_DATE - 5
+                      ORDER BY m.evaluation_date DESC LIMIT 1)""") if _regime_ok else "NULL"
     cur.execute(f"""
         SELECT {", ".join(cols)}, {regime_sql} AS regime_bull
         FROM ipo_intelligence i
