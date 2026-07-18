@@ -53,3 +53,36 @@ Note found while archiving: `test_all_routes_contract.py` carried KNOWN_FAILURES
 waivers for `ipo/gmp` ("column ipo_name of relation ipo_gmp does not exist") and
 `ipo/listing-day` ("relation platform_config does not exist") — i.e. those routes
 were already BROKEN, further evidence they were dead. The stale waivers are removed.
+
+---
+# Phase 2 — Pages & Components
+
+## PAGES: no safe archive work exists (honest finding)
+
+Every page that *looks* orphaned is actually alive, repurposed, or personal:
+
+| Page | Refs | Finding |
+|---|---|---|
+| `/dashboard/journey` | 0 static | **LIVE — MUST KEEP.** Linked dynamically at `app/dashboard/ipo2/page.tsx:1074` (`onJourney` → `window.location.href`). It is one of the three core screens. A naive "0 references → archive" sweep would have deleted it. |
+| `/today` | 1 (commented-out nav) | **Repurposed by #232** into a markets page. Still fetches 4 LIVE routes (`market/global`, `market/snapshot`, `ipo/playbook`, `broker/status`). Functional, just not in nav — owner deliberately commented the nav entry. **Owner decision, not dead.** |
+| `/dashboard/tracker` | 0 | Backed by `app/api/tracker/route.ts` — "Private distraction/frustration tracker, admin-gated (only you)". A personal tool. **Owner decision.** |
+| `/dashboard/ipo` | 2 | **FROZEN rollback surface** per `UI_REQUIREMENTS §3` — never restyle, never remove. |
+
+**Conclusion: zero pages archived in Phase 2.** Manufacturing work here would have broken the Journey screen.
+
+## COMPONENTS: 11 archived (the real Phase 2 value)
+
+Unreferenced by **export name** (not just filename — a file can be imported under
+a different name). All verified 0 references across `app/` and `components/`:
+
+`Loader` · `Ring` · `IpoFeatureQuality` · `IpoSimilarList` · `IpoLiveTickPanel` ·
+`IpoLevelPanel` · `GlobalMarketsStrip` · `IpoPlaybookScreen` · `SettingsTab` ·
+`ZerodhaStatusBanner` · `SubTabs`
+
+Preserved in `_archive/components/`. Guarded by `test_no_orphan_components.py`,
+which scans export names and **found `Ring.tsx` that a filename-based scan
+missed** — the test earned its place immediately.
+
+Note: `IpoLiveTickPanel` and `IpoLevelPanel` are IPO-domain and may represent
+unfinished live-screen work. They are archived, not deleted — one `git revert`
+away if you want them wired up.
