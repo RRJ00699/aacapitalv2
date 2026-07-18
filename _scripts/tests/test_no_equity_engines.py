@@ -36,3 +36,10 @@ def test_similarity_npm_script_removed():
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert "similarity:multibagger" not in pkg.get("scripts", {}), \
         "similarity:multibagger npm-script points at an archived engine — remove it"
+
+
+def test_orphaned_equity_data_lib_archived():
+    # lib/realStockData.ts pulled stock_fundamentals/shareholding_history for the
+    # removed /api/stock workbook — orphaned equity residue.
+    assert not (ROOT / "lib" / "realStockData.ts").exists(), "lib/realStockData.ts still live — archive it"
+    assert (ROOT / "_archive" / "lib-realStockData.ts.txt").exists(), "realStockData.ts missing from _archive/"
