@@ -31,7 +31,7 @@ def _num(x):
     try: return float(x)
     except Exception: return None
 
-def simulate(candles, lock_pct, trail_pct):
+def simulate(candles, lock_pct, trail_pct, floor_pct=3.0):
     """candles: [(date, open, high, low, close)] listing-day first, chronological.
     Returns dict of per-strategy exit return fraction."""
     if not candles:
@@ -44,24 +44,36 @@ def simulate(candles, lock_pct, trail_pct):
     close_d30 = _num(candles[min(29, n - 1)][4])
     close_d90 = _num(candles[min(89, n - 1)][4])
 
-    # LOCK8/TRAIL12: walk day by day, track peak, arm floor at +lock, trail off peak
+    # LOCK/FLOOR/TRAIL — the documented rule: arm at +lock%, floor at +floor%,
+    # trail trail% off peak.
+    # TWO BUGS FIXED 2026-07-18 (first run produced median EXACTLY 0.0% every
+    # sweep — the tell):
+    #  1. SAME-BAR arm-and-exit: the old loop set peak from TODAY's high then
+    #     checked TODAY's low against it. A listing-day stock that spikes +8%
+    #     and dips intraday exited at entry on day 1 -> a pile of exactly-0.0%
+    #     results. You cannot know intraday sequence from a daily candle, so the
+    #     stop is now evaluated against PRIOR bars' peak only.
+    #  2. Floor was entry (0% locked) instead of the documented +3%.
     peak = entry
     floor_armed = False
     exit_px = None
     for i, (_, o, hi, lo, cl) in enumerate(candles):
-        hi, lo, cl = _num(hi), _num(lo), _num(cl)
+        o, hi, lo, cl = _num(o), _num(hi), _num(lo), _num(cl)
         if hi is None or lo is None:
             continue
-        peak = max(peak, hi)
-        gain = peak / entry - 1
-        if not floor_armed and gain >= lock_pct / 100:
-            floor_armed = True
+        # 1) stop check FIRST, using the peak established by PREVIOUS bars
         if floor_armed:
-            stop = max(entry * (1 + 0 / 100),           # never below entry once armed
-                       peak * (1 - trail_pct / 100))     # trail off peak
-            if lo <= stop:                                # intraday breach
-                exit_px = stop                            # filled at the stop
+            stop = max(entry * (1 + floor_pct / 100),
+                       peak * (1 - trail_pct / 100))
+            if lo <= stop:
+                # gap-down honesty: if the bar OPENED below the stop, you fill
+                # at the open, not the (better) stop price
+                exit_px = min(stop, o) if (o is not None and o < stop) else stop
                 break
+        # 2) then update peak / arm the floor with THIS bar (effective tomorrow)
+        peak = max(peak, hi)
+        if not floor_armed and (peak / entry - 1) >= lock_pct / 100:
+            floor_armed = True
     if exit_px is None:                                   # never stopped -> day-90 close
         exit_px = close_d90 or _num(candles[-1][4])
 
@@ -95,6 +107,7 @@ def main():
     start = os.environ.get("START", "2021-01-01")
     lock = float(os.environ.get("LOCK", "8"))
     trail = float(os.environ.get("TRAIL", "12"))
+    floor = float(os.environ.get("FLOOR", "3"))  # documented rule: floor at +3%
     import psycopg2
     conn = psycopg2.connect(url); cur = conn.cursor()
     # IPOs listed since START with clean candles
@@ -119,13 +132,13 @@ def main():
         c = cur.fetchall()
         if len(c) < 10:   # need at least the D10 horizon
             continue
-        res = simulate(c, lock, trail)
+        res = simulate(c, lock, trail, floor)
         if res and res.get("NAIVE_D10") is not None:
             rows.append(res); used += 1
     conn.close()
 
     print(f"\nJOURNEY EXIT BACKTEST — listings {start}..now")
-    print(f"n={used} IPOs with clean candles | rule: lock {lock:.0f}% / trail {trail:.0f}%")
+    print(f"n={used} IPOs with clean candles | rule: arm +{lock:.0f}% / floor +{floor:.0f}% / trail {trail:.0f}%")
     s = summarize(rows, ["NAIVE_D10", "NAIVE_D30", "LOCK8_TRAIL12", "BUY_HOLD_90"])
 
     # ACCEPTANCE: rule beats NAIVE_D10 on median AND downside (p10)
