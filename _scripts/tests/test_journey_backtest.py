@@ -27,3 +27,27 @@ def test_naive_horizons():
 def test_bad_entry_returns_none():
     assert bj.simulate([], 8, 12) is None
     assert bj.simulate([('d1',0,0,0,0)], 8, 12) is None
+
+
+def test_no_same_bar_arm_and_exit():
+    """REGRESSION (2026-07-18): the original sim set peak from TODAY's high then
+    checked TODAY's low against it, so a day-1 spike+dip exited at exactly entry
+    -> median exactly 0.0% across every parameter sweep. The stop must only use
+    peaks from PRIOR bars."""
+    c = [('d1', 100, 109, 95, 101), ('d2', 101, 102, 99, 100)]
+    r = bj.simulate(c, 8, 12, 3)
+    assert r["LOCK8_TRAIL12"] != 0.0, "same-bar arm-and-exit is back"
+
+def test_floor_locks_documented_three_percent():
+    """The rule is arm +8 / floor +3 / trail -12. A position that arms then
+    collapses must exit at +3%, not breakeven."""
+    c = [('d1', 100, 110, 99, 108), ('d2', 108, 109, 80, 85)]
+    r = bj.simulate(c, 8, 12, 3)
+    assert abs(r["LOCK8_TRAIL12"] - 0.03) < 0.001
+
+def test_gap_down_fills_at_open_not_stop():
+    """If the bar OPENS below the stop, the fill is the open (worse), not the
+    stop price — no flattering the rule on gaps."""
+    c = [('d1', 100, 120, 99, 118), ('d2', 90, 92, 85, 88)]
+    r = bj.simulate(c, 8, 12, 3)
+    assert r["LOCK8_TRAIL12"] < 0, "gap-down should fill at the (worse) open"
