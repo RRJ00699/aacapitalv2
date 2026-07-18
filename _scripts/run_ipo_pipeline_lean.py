@@ -25,6 +25,19 @@ LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
 LOG=os.path.join(LOGDIR,f"pipeline_lean_{datetime.date.today()}.log")
 
 
+
+def _warm_command_cache():
+    """After a clean run, trigger the command route to rebuild its KV cache with
+    the machine key. One HTTPS call while Neon is already awake; every page load
+    between pipelines then serves from KV -> zero Neon reads."""
+    import os as _os, urllib.request as _u
+    key = _os.environ.get("ADMIN_JOB_KEY")
+    base = _os.environ.get("NEXT_PUBLIC_APP_URL", "https://aacapitalprivatelimited.com")
+    if not key: return
+    req = _u.Request(f"{base}/api/ipo-command?warm=1",
+                     headers={"X-AAC-Key": key, "User-Agent": "aac-pipeline"})
+    _u.urlopen(req, timeout=45).read()
+
 def _log_step(name, script, ok, err=""):
     """StepBoard sink: EVERY step outcome -> pipeline_steps (green/red board in
     Settings, Rakesh 2026-07-17). Best-effort — can never break the pipeline."""
@@ -176,6 +189,10 @@ def main():
     step("date sanity gate (D)",           ["check_date_sanity.py"])
     step("freshness monitor (P2)",         ["check_freshness.py"])
     step("smoke probe (live API)",         ["smoke_probe.py"])
+
+    if ok and gate:
+        try: _warm_command_cache()
+        except Exception as _e: log(f"cache warm skipped: {_e}")
 
     log(f"=== LEAN PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
     if ok and gate:

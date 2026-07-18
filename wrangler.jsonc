@@ -10,7 +10,8 @@
     "binding": "ASSETS"
   },
   "kv_namespaces": [
-    { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" }
+    { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" },
+    { "binding": "CACHE", "id": "PLACEHOLDER_CACHE_NS_ID" }
   ],
   "vars": {
     "ALLOWED_EMAILS": "try.rakeshreddy@gmail.com,jesravani1@gmail.com",
