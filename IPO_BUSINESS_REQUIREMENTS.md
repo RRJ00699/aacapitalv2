@@ -17,6 +17,13 @@ listing OPEN on the right IPOs, then an informed, disciplined sell post-listing.
 The app makes INFORMED DECISIONS ONLY; the owner trades manually. Motto:
 "research signal, not a buy call."
 
+**WHY ALLOTMENT IS NOT THE GAME (owner, 2026-07-18):** apply to 50 IPOs and you
+may get allotted 2-3, and even then the lot is tiny — an oversubscribed HNI
+allotment lands you one lot, the same as sHNI. So **treat every IPO as a market
+EVENT, and derive where buying AFTER listing returned real value.** Worked
+examples where buy-at-open paid: Groww, Go Digit, Aadhar Housing, Bharti Hexacom,
+NTPC Green, Canara Robeco, Ixigo.
+
 **THE CRITICAL REFRAME (2026-07-10, data-rebuild):** every early backtest measured
 issue-price → close — a return you CANNOT capture without allotment. The REAL,
 tradeable outcome is **buy-at-listing-OPEN → exit by rule.** All rating/backtest
@@ -84,6 +91,95 @@ gate + hard exclusions ARE the junk filter. Owner's hard exclusions:
 
 ---
 
+## 2C. THE OWNER'S FACTOR MODEL (full thesis, 2026-07-18)
+
+The complete decision framework as stated by the owner. Items marked **[MODELED]**
+are in `ipo_score` / the live engine today; **[GAP]** are agreed edges the code does
+not yet compute. Do not delete a GAP row — it is a build queue, not a wish list.
+
+### 1. Issue size AND price-band width
+- Very large issues get a narrow band; sub-₹150cr also narrow. **Both end in ±5%
+  moves — avoid.** The target is an IPO with a **10-20% band and real liquidity**.
+- **[MODELED]** size >₹2000cr +2 · size ₹150-500cr −2 · junk floor <₹200cr ruled out.
+- **[GAP]** band-width % as its own factor (currently only size is scored).
+
+### 2. OFS vs Fresh issue — the classification matters more than the ratio
+- 100% OFS is NOT automatically bad. Evaluate WHY:
+  - **Growth** — Premier Energies, Waaree
+  - **Niche** — Netweb
+  - **Promoter quality** — NSDL, Bajaj Housing, HDB Financial, Brainbees, Ola
+- Fresh issue: is it **expansion** (capacity doubling)? DEE Development, KRN Heat,
+  Sai Life — these stated expansion in the RHP.
+- **[MODELED]** ofs_pct thresholds (<20 / 20-60 / >60).
+- **[GAP]** OFS *classification* (growth/niche/promoter) and *use-of-proceeds*
+  extraction from the RHP. This is the difference between "100% OFS = bad" and
+  "100% OFS by a quality promoter = fine".
+- **[GAP]** track which IPOs hit **UC/LC on listing day** — a UC/LC hit raises the
+  probability of the same next day.
+
+### 3. Valuation AND who is bringing it
+- **BRLM / registrar / book-runner reputation matters.** Notorious managers hype:
+  Hyundai (parent at ~5 P/E, IPO at ~30), LG — same pattern.
+- **[MODELED]** ipo_pe bands, peer_median_pe ratio, brlm_tier.
+- **[GAP]** the **hype detector**: IPO P/E vs the *parent/sector* P/E, flagged when
+  the multiple expansion is unjustified.
+
+### 4. Anchors and promoter identity
+- **>30 anchors = good money when buying at open.** Even an IPO that opens
+  NEGATIVE can be supported by anchors + QIB (example: CMPDI opened ~-10% and
+  still returned).
+- **Promoter quality by identity**: LIC / ICICI / SBI-class holders do not sell —
+  they hold long term. That changes the post-listing supply picture.
+- **[MODELED]** anchor_count >30 (77%) / >50 (79%), quality_promoter flag.
+- **[GAP]** promoter-identity tiering (institution-backed vs individual).
+
+### 5. Fundamentals — a risk margin, not a predictor
+- Pre-IPO fundamentals are hard to trust; use **peer comparison + ROE / P/E / P/B /
+  EPS** as a *margin of risk*, not a forecast.
+- **High valuation = lower probability of profit.** But cheap alone is not enough:
+  BPCL-type cases listed ~90% above issue price, so buying at OPEN still lost
+  5-15% on day one.
+- **[MODELED]** FV = EPS × peer P/E × quality × structure; MoS vs the open.
+
+### 6. GMP — track the arc, not the point
+- Follow GMP **from announcement through to listing** (max and min), because
+  **retail panics and sells when the IPO lists below GMP** — that panic is the
+  opportunity.
+- **[MODELED]** `gmp_day_before_pct` only (>20% = +50.9% avg, 100% win, n=14;
+  the generic `gmp_percentage` is junk, r=-0.05).
+- **[GAP]** GMP **trajectory** (max, min, slope over the window).
+
+### 7. Listing-day mechanics
+- Pre-listing open interest and selling in the IPO window is **heavily
+  manipulated by institutions** — example: Urban Company, GMP >25%, buy-at-open
+  gave +40%, then the stock tumbled to listing price within 3 days.
+- **Decision must be made before 10:15**; NSE declares the price band at ~10:25.
+- **[MODELED]** decision deadline **09:58 IST** (corrected after LASER; the old
+  10:14 model was wrong), static rules 09:30, live rules firm to ~10:08.
+
+### 8. VWAP
+- VWAP against the live tape shows how price is being pushed.
+- **[GAP]** VWAP-derived manipulation read is computed live but is not a factor in
+  the decision score.
+
+### 9. Per-IPO data points we want on EVERY IPO
+`ipo_price` · `gmp_max` · `gmp_min` · `listing_price` · `listing_day_low` ·
+`listing_day_high` · `UC/LC hit (y/n)`.
+- **[GAP]** gmp_max / gmp_min / UC-LC flag are not captured today.
+
+### 10. Market regime — the black-swan filter
+- A good IPO listing on a bad day is a different trade. Track **market regime,
+  global markets, PCR, and Nifty euphoria** — listing into euphoria vs into fear
+  changes the buy-at-open odds.
+- Counter-example that proves regime is not destiny: **Afcons (Shapoorji
+  Pallonji)** — weak market, strong promoter, still worked.
+- **[MODELED]** `market_regimes` (Nifty/VIX) exists.
+- **[GAP]** **PCR is not captured**; regime data was found **STALE (latest
+  2026-07-03)** on 2026-07-18 — a data bug, not a dead feature. **Regime is
+  REQUIRED, not retired.**
+
+---
+
 ## 3. DATA SOURCES — what each feeds (the "pull data per requirement" record)
 
 | Source | Pulled how | Feeds |
@@ -96,6 +192,25 @@ gate + hard exclusions ARE the junk filter. Owner's hard exclusions:
 | **NSE bhavcopy** | fetch | delivery % (delivery_data) |
 | **Nifty/VIX** | market feed | regime (market_regimes) |
 | **GMP (grey market)** | investorgain/chittorgarh | gmp_day_before_pct (the predictive one) |
+
+### APPROVED SOURCES — owner-locked 2026-07-18 (nothing else enters the system)
+**NSE · BSE · SEBI · Zerodha · IPOMatrix · Chittorgarh · Screener.**
+
+**Commodity data = INGEST, never rebuild.** IPOMatrix + Chittorgarh cover ~99% of
+issue details, anchors, subscription, GMP, peer P/E and financials — cleaner than
+any bespoke scraper we can maintain, and every broker gives it free. Building our
+own version of this is waste.
+
+**The moat = the only thing worth BUILDING:**
+1. **RHP governance forensics** (Sonnet on the prospectus) — auditor qualification,
+   SEBI action, related-party, numbers integrity, concentration. No free source
+   reads the prospectus.
+2. **Backtested win rates by factor** — brokers publish ratings; we publish
+   evidence ("30+ anchors = 77%, n=X, era-consistent").
+3. **Exit discipline** (lock8/trail12) — nobody tells you when to sell.
+4. **Owner's hard filters** — <₹200cr ruled out, SME excluded, band-width screen.
+
+If a feature is not in that list, it should be a vendor paste, not a pipeline.
 
 Each was built because a specific rating requirement needed it (e.g. anchors>30
 needed IPOMatrix; governance needed the RHP; peer P/E needed SBI/Chittorgarh).
@@ -173,6 +288,30 @@ Progression of the research:
   Polls /api/broker/quote every 60s, gated to IST market hours.
 - Distribution/topping detector (volume-fade + peak-drawdown) surfaces "when to sell".
 
+**MEASURED 2026-07-18 (backtest_journey_exits.py, n=297 listings 2021→now,
+intraday-low fills, no same-bar look-ahead):**
+
+| Strategy | median | p10 (downside) | p90 | win% |
+|---|---|---|---|---|
+| Sell at day 10 | +0.6% | −14.4% | +21.8% | 51.5% |
+| Sell at day 30 | +9.3% | −43.1% | +137.9% | 57.9% |
+| **lock8/trail12 (ours)** | **+3.0%** | **−25.9%** | **+69.5%** | **79.8%** |
+| Hold 90 days | +9.6% | −43.3% | +140.3% | 59.3% |
+
+**What this proves:** the rule is a **reliability product, not a return-maximiser**
+— 4 wins in 5 versus ~52-59% for any naive alternative, and the typical trade is
+green. Patient holding makes MORE money on average; our rule makes money MORE
+OFTEN with a shallower tail. That is the trade we are choosing, deliberately.
+
+**Honest limit — the copy must say this:** there is **no downside stop**. A
+position that never reaches +8% never arms, so it rides to day 90 (the −25.9%
+tail). Adding a hard stop was tested: −12% stop lifts the tail to −12% but
+**collapses win rate 79.8% → 59.9% and p90 69.5% → 25.8%** — it cuts positions
+that dip early and later run. Delaying the stop 2-5 bars recovered only ~3 points
+of win rate. **Decision: keep the no-stop rule (consistent with the earlier
+finding "tighter stop = worse", −3% stop → 36% win, the Knack problem) and make
+the Journey copy state plainly that there is no downside exit — size accordingly.**
+
 ---
 
 ## 6B. LISTING-DAY LIVE DECISION ENGINE (pre-open buy-at-open scoring)
@@ -236,11 +375,56 @@ Worked examples: fair ₹150 / open ₹120 → +25% (₹30) green; fair ₹120 /
 - Junk floor: issue size < ₹200cr ruled out
 
 **OPEN / KNOWN GAPS:**
-- Verdict (TRADE/WATCH/CAUTION/AVOID) threshold rules — writer script not in repo,
-  needs recovery/re-spec (§4). Do not invent.
+- ~~Verdict threshold rules missing~~ — **RECOVERED**: `compute_verdicts.py` runs
+  in the pipeline (758 verdicts written 2026-07-17). `regime` deprecated by owner
+  → always NULL; `confidence` maps high=90 / medium=65 / low=40.
+- **Owner factor GAPS (§2C)**: band-width %, OFS classification, use-of-proceeds,
+  BRLM hype detector, promoter-identity tier, GMP trajectory (max/min/slope),
+  UC/LC listing-day flag, PCR. These are the build queue.
+- **Decision deadline is 09:58 IST** (not the 10:14 recorded earlier in §6B —
+  corrected after LASER).
 - PENDING score factors: anchors, regime, QIB-backloading, GMP-trajectory (data thin)
 - Listed-parent hypothesis (Tata Tech / Bajaj Housing quality proxy) — proposed,
   not yet fully tested last I have record.
+
+---
+
+## 9. PROCESS RULES (owner-set 2026-07-18 — non-negotiable)
+
+**RULE 1 — Nothing ships to production without a test that proves the FEATURE
+works, not merely that the code compiles.**
+Proof of why: `sbi_haiku_extract.py` shipped, ran nightly, and processed **zero
+rows for its entire life** — 244 SBI notes with PDFs sat untouched, $0.000 spent,
+0 attempts logged. A test seeding one eligible row would have caught it on day one.
+
+**RULE 2 — Every code change ships with a test case covering it.**
+
+**RULE 3 (derived) — "Done" means the value renders on the screen.**
+Not "endpoint built", not "columns exist", not "compute written". The recurring
+bugs (cumulative-volume tile, quality-score dial) were each *correct code* declared
+done at a layer nobody was looking at. Where a feature only shows data on listing
+mornings, done means **a test that injects synthetic data and asserts the number
+appears** — because you cannot verify a listing-day feature on a Tuesday.
+
+**RULE 4 — Read this document before building.** The exit-stop question was
+re-litigated on 2026-07-18 despite §6 already recording "tighter stop = worse".
+
+---
+
+## 10. MEASURED STATE (2026-07-18 — replace, do not append, when re-measured)
+
+| Fact | Value | Implication |
+|---|---|---|
+| `ipo_intelligence` columns referenced in code | **230** | staging bloat; only **1 route** reads this table |
+| App's real read contract | `ipo_consolidated` (7 routes), `ipo_research_notes` (6), `price_candles` (3), `ipo_verdicts` (2), `ipo_tick_feed` (2) | clean the staging layer freely; do not touch this contract |
+| `price_candles` | 442 symbols / **442 are IPOs** / 23.5k rows | **no full-universe waste** — earlier assumption of 1500-symbol bloat was WRONG |
+| SBI notes | 244 total / 244 with PDF / **0 extracted**; 34 match current IPOs | Haiku blocked by a **2-day date gate**; widen to the 30-day window |
+| `market_regimes` | 2,106 rows, latest **2026-07-03** (stale) | regime is REQUIRED (see §2C.10) — this is a data bug to FIX |
+| `delivery_data` | 439k rows, written daily, **no rating rule consumes it** | drop the pipeline step |
+| `institutional_large_deals` | **table does not exist** | its pipeline step is a silent no-op — remove |
+| `quality_score` | **590 / 759 rows scored** (78%), conf 53-62% | live; coverage capped by RHP `db_fields` availability |
+| RHP extraction | content-SHA256 dedupe (GUARDRAIL G) | **no double-billing** — Caliber cost $0.103 once |
+| Legacy 1500-stock tables | **12 tables, 113 file references** | archive to local; tables stay in DB untouched |
 
 ---
 
