@@ -4,11 +4,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Activity, Globe, RefreshCw } from "lucide-react"
 
 type Regime = "HOT" | "NORMAL" | "CAUTION" | "COLD" | "FROZEN" | "BEARISH"
-type Action = "BUY" | "WATCH" | "HOLD" | "APPLY" | "SKIP" | "ACCUMULATE" | "AVOID" | "TRIM" | "RESEARCH" | "REVIEW"
 
-interface Opportunity { symbol: string; name?: string; score: number; action: Action; reasons?: string[] }
 interface IpoRow { name: string; score?: number; recommendation?: string; status?: string; openDate?: string|null; closeDate?: string|null }
-interface SectorRow { name: string; performance?: number; score?: number; signal?: string }
 interface GlobalRow { label: string; value?: string; change?: number | null }
 
 const nf  = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 })
@@ -55,17 +52,6 @@ function Card({ title, meta, icon, children }: { title:string; meta?:string; ico
   )
 }
 
-function ActionPill({ action }: { action: Action }) {
-  const a = String(action).toUpperCase()
-  const cls =
-    a === "RESEARCH"                                     ? "border-teal-300  bg-teal-50   text-teal-700"   :
-    a === "REVIEW"                                       ? "border-slate-300 bg-slate-50  text-slate-600"  :
-    a === "BUY"  || a === "APPLY" || a === "ACCUMULATE" ? "border-emerald-300 bg-emerald-50  text-emerald-700" :
-    a === "SKIP" || a === "AVOID" || a === "TRIM"        ? "border-rose-300   bg-rose-50    text-rose-700"    :
-                                                           "border-amber-300  bg-amber-50   text-amber-700"
-  return <span className={`inline-block min-w-[56px] rounded-full border px-3 py-0.5 text-center font-mono text-[10px] font-bold tracking-wider ${cls}`}>{a}</span>
-}
-
 const ipoStatusOf = (ipo:any) => {
   const now=Date.now()
   const o=ipo.open_date    ?new Date(ipo.open_date).getTime():0
@@ -90,21 +76,16 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
   const [dii,       setDii]       = useState("—")
   const [pcr,       setPcr]       = useState<{val:string;note:string}>({val:"—",note:""})
   const [globalRows,setGlobalRows]= useState<GlobalRow[]>([])
-  const [opps,      setOpps]      = useState<Opportunity[]>([])
   const [ipos,      setIpos]      = useState<IpoRow[]>([])
-  const [sectors,   setSectors]   = useState<SectorRow[]>([])
-  const [topSectors,setTopSectors]= useState<string[]>([])
   const [updatedAt, setUpdatedAt] = useState("")
   const [brokerOk,  setBrokerOk]  = useState<boolean|null>(null)
 
   const load = useCallback(async (quiet=false) => {
     quiet ? setRefreshing(true) : setLoading(true)
     try {
-      const [globalR, snapR, techR, sectorR, ipoR, brokerR] = await Promise.all([
+      const [globalR, snapR, ipoR, brokerR] = await Promise.all([
         fetch("/api/market/global",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/market/snapshot",                             {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/convergence/ranking?limit=15",                 {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-        fetch("/api/sector-rotation?view=hot",                    {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/ipo/playbook?limit=100",                      {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
         fetch("/api/broker/status",                               {cache:"no-store"}).then(r=>r.json()).catch(()=>null),
       ])
@@ -168,35 +149,6 @@ export function TodayScreen({ onStockSelect }: { simple?: boolean; onStockSelect
         // Crypto
         mkGrow("BTC-USD",  "Bitcoin",    "₿"),
       ].filter(r => r.value !== "—" || r.label.includes("NIFTY")))
-
-      // ── Top convergence ──
-      const SUPPRESS = /^(ANTELOP|ACUTAAS|BMWVENTURE)/i
-      const conv = ((techR?.data ?? []) as any[]).filter((x:any) => !SUPPRESS.test(String(x.symbol??"")))
-      setOpps(conv.slice(0,10).map((x:any) => {
-        const score  = Math.round(num(x.convergence ?? 50))
-        // convergence is a QUALITY/ATTENTION score (not backtested, partly technical) —
-        // it flags what to research, never a buy verdict.
-        const action: Action = score>=70 ? "RESEARCH" : score>=55 ? "REVIEW" : "WATCH"
-        return {
-          symbol: x.symbol,
-          name:   x.name,
-          score,
-          action,
-          reasons: [
-            `Biz ${Math.round(num(x.business))} · Earn ${Math.round(num(x.earnings))} · Tech ${Math.round(num(x.technical))}`,
-            `SmartMoney ${Math.round(num(x.smart_money))} · Sector ${Math.round(num(x.sector))}`,
-          ],
-        }
-      }))
-
-      // ── Sectors ──
-      const hot = (sectorR?.hot_sectors ?? sectorR?.sectors ?? []) as any[]
-      const sectorList = hot.slice(0,6).map((s:any) => ({
-        name: s.industry_group, performance: num(s.return_3m ?? s.return_6m),
-        score: Math.round(num(s.rotation_score)), signal: s.rotation_signal,
-      }))
-      setSectors(sectorList)
-      setTopSectors(sectorList.slice(0,3).map((s:any)=>s.name).filter(Boolean))
 
       // ── IPOs: current (OPEN) + UPCOMING only, by status (not lqi rank) ──
       const ipoAll = (ipoR?.ipos ?? ipoR?.data ?? []) as any[]
