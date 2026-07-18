@@ -129,3 +129,23 @@ computing the right number. Correctness first, then size.**
 Every phase is one `git revert`. Tables are never dropped. Archived scripts keep
 full content under `_scripts/archive/`. If anything breaks: revert, re-run
 smoke_probe, confirm the 66-column contract holds.
+
+---
+
+## 8. CLEANUP STATUS (folded in from CLEANUP_PROGRESS.md, 2026-07-18)
+
+The "IPO-only, no equity residue" sweep is essentially complete. Delivered via:
+- **#232** — dead `/api` fetches removed; orphan equity routes + hook, 53 equity/MF
+  scripts archived; 2 dead pipeline steps removed; root hygiene. (Phases A–E)
+- **#233 / #234** (parallel session) — 10 dead routes, `/today` page + today-screen,
+  11 orphan components archived.
+- **#235** — production deploy fix (lazy DB client; build no longer needs DATABASE_URL).
+- **#236** — 3 parked planning docs archived.
+- **this MR** — equity multibagger `.ts` engines + `sync-signals-to-neon.ts` archived
+  (the last `.ts` residue); `similarity:multibagger` npm-script removed.
+
+Every change moved to `_archive/` (nothing deleted); each has a fail-first guard test.
+
+**Open (owner):** reconcile the #233-vs-directive contradiction on `ipo/monitor`
+(kept by #233) vs `drhp`/`memo`/`tape` (archived by #233). **Separate lane
+(correctness chat):** ₹200cr junk-floor exclusion, fuzzy `ILIKE` write-joins.
