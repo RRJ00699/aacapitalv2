@@ -39,9 +39,22 @@ def test_empty_row_scores_zero_with_pending():
     assert s == 0 and why == []
     assert set(pending) == {"anchors", "peerPE"}
 
-def test_mid_gap_plus2():
+def test_mid_gap_scores_zero_dead_factor():
+    """MID gap is DEAD (IPO_BUSINESS_REQUIREMENTS.md §5): the original +2 was
+    measured on polluted data and collapsed to a coin-flip on clean data.
+    Scoring it inflated the band on every MID-gap IPO.
+
+    REGRESSION: this test FAILS on the pre-2026-07-18 code (which returned 2).
+    If it ever returns to +2, a dead factor is back in the score."""
     s, why, _ = score_row({"gap_bucket": "mid"})   # case-insensitive
-    assert s == 2 and "MID gap +2" in why
+    assert s == 0, f"MID gap must contribute nothing, got {s}"
+    assert not any("MID" in w for w in why), f"dead MID factor cited in why: {why}"
+
+
+def test_high_gap_still_scored():
+    """HIGH gap -1 is decayed but NOT dead — it must survive the MID removal."""
+    s, why, _ = score_row({"gap_bucket": "HIGH"})
+    assert s == -1 and "HIGH gap -1" in why
 
 def test_high_gap_minus1():
     s, why, _ = score_row({"gap_bucket": "HIGH"})
@@ -101,8 +114,32 @@ def test_anchor_count_zero_still_pending():
 # ---------- regression fixture: known composite ----------
 
 def test_composite_known_good():
-    """Mega, MID-gap, peer-cheap, low-PE row → +2+2+1 = 5 → STRONG."""
+    """Mega + peer-cheap = +2+1 = 3 → STRONG (band floor is 3).
+
+    CHANGED 2026-07-18: previously 5, because MID gap added +2. MID gap is DEAD
+    (§5). This row stays STRONG only because it sits on the band floor — a row
+    that scored exactly 3 WITH the MID weight now scores 1 and drops from STRONG
+    to FAVORABLE. That band shift is the inflation being removed."""
     r = {"gap_bucket": "MID", "issue_size_cr": 3000,
          "ipo_pe": 10, "peer_median_pe": 25, "anchor_count": 40}
     s, why, pending = score_row(r)
-    assert s == 5 and band_of(s) == "STRONG" and pending == []
+    assert s == 3 and band_of(s) == "STRONG" and pending == []
+
+
+def test_mid_removal_can_shift_band_down():
+    """The real user impact: a row that only reached STRONG because of MID gap
+    now lands in FAVORABLE. Mega(+2) + MID(+2 dead) was 4=STRONG; now 2."""
+    r = {"gap_bucket": "MID", "issue_size_cr": 3000}
+    s, _, _ = score_row(r)
+    assert s == 2 and band_of(s) == "FAVORABLE", f"got {s}/{band_of(s)}"
+
+
+def test_mid_removal_costs_exactly_two_points():
+    """Guard the size of the change: a MID row and a LOW row must now score
+    identically — the gap bucket contributes nothing unless it is HIGH."""
+    base = {"issue_size_cr": 3000, "ipo_pe": 10, "peer_median_pe": 25, "anchor_count": 40}
+    mid, _, _ = score_row({**base, "gap_bucket": "MID"})
+    low, _, _ = score_row({**base, "gap_bucket": "LOW"})
+    high, _, _ = score_row({**base, "gap_bucket": "HIGH"})
+    assert mid == low, "MID must no longer differ from LOW"
+    assert high == mid - 1, "HIGH gap -1 must still apply"

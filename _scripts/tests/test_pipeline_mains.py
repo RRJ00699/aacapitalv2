@@ -164,9 +164,13 @@ def test_score_apply_writes_locked_band_stats(pipe_db):
                           score_evidence
                    FROM ipo_intelligence WHERE nse_symbol='STRONG'""")
     s, band, ew, em, ev = cur.fetchone()
-    assert (s, band) == (5, "STRONG")
+    # 5 -> 3 after MID-gap removal 2026-07-18 (dead factor, spec §5)
+    assert (s, band) == (3, "STRONG")
     assert (float(ew), float(em)) == (81.4, 9.2)
-    assert "MID gap +2" in ev and ">2000cr +2" in ev and "peer-cheap +1" in ev
+    # MID gap removed 2026-07-18 (dead factor, spec §5) — evidence string must
+    # NOT cite it, and must still carry the two live factors.
+    assert "MID" not in ev, f"dead MID factor cited in evidence: {ev}"
+    assert ">2000cr +2" in ev and "peer-cheap +1" in ev
 
 def test_score_apply_name_fallback_when_symbol_misses(pipe_db):
     """Consolidated symbol GHOST has no intelligence symbol match -> the
