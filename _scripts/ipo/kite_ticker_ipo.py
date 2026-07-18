@@ -32,6 +32,25 @@ log = logging.getLogger("ipo-ticker")
 API_KEY = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
 
 
+
+def _kv_put_live(sym, snapshot):
+    """Push the latest snapshot to KV (zero Neon) so the listing-day live view
+    reads from cache. Best-effort, throttle-free — the WS already throttles us.
+    Requires ADMIN_JOB_KEY in env (same trusted process as DATABASE_URL)."""
+    import os as _os, json as _j, urllib.request as _u
+    key = _os.environ.get("ADMIN_JOB_KEY")
+    if not key:
+        return
+    base = _os.environ.get("NEXT_PUBLIC_APP_URL", "https://aacapitalprivatelimited.com")
+    try:
+        body = _j.dumps({"key": f"live:tick:{sym}", "payload": _j.dumps(snapshot), "ttl": 300}).encode()
+        req = _u.Request(f"{base}/api/admin/kv-put", data=body,
+                         headers={"X-AAC-Key": key, "Content-Type": "application/json",
+                                  "User-Agent": "aac-ticker"})
+        _u.urlopen(req, timeout=8)
+    except Exception:
+        pass  # KV is the fast path; a miss just falls back to Neon
+
 def db_conn():
     url = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not url:
@@ -286,14 +305,24 @@ def main():
                          + ("  ⚠ DIVERGENCE" if divergence else ""))
                 st["last_sig"] = sig
 
-            if conn and (now - st["last_db"]) >= args.interval:
+            # LIVE PATH (asset-light Step 3): push every throttled snapshot to
+            # KV so the app reads live prices from cache, never waking Neon.
+            if (now - st.get("last_kv", 0)) >= args.interval:
+                _kv_put_live(sym, {"symbol": sym, "ltp": ltp, "vwap": vwap,
+                    "vwap_dist": dist, "obir": obir, "day_volume": vol,
+                    "momentum": momentum, "divergence": divergence, "signal": sig,
+                    "at": now})
+                st["last_kv"] = now
+
+            # HISTORICAL PATH (option B): flush to Neon only every 60s, not every
+            # snapshot — the DB wakes for a 1-min archival trickle, not the whole
+            # session. Live detail already lives in KV above at full resolution.
+            NEON_FLUSH_S = 60
+            if conn and (now - st["last_db"]) >= NEON_FLUSH_S:
                 try:
                     cur = conn.cursor()
                     # ipo_tick_feed is intentionally time-series (many rows per
-                    # symbol); schema_sync keeps a NON-unique index only. Do NOT
-                    # add a UNIQUE(symbol, recorded_at) key — high-frequency
-                    # capture can legitimately write two rows in the same second
-                    # and that constraint would silently drop live ticks.
+                    # symbol); schema_sync keeps a NON-unique index only.
                     cur.execute("""INSERT INTO ipo_tick_feed
                         (symbol, ltp, vwap, vwap_dist, obir, day_volume, momentum, divergence, signal, recorded_at)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, clock_timestamp())""",

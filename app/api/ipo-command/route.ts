@@ -90,13 +90,13 @@ export async function GET() {
         OR regexp_replace(lower(ri.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
         = regexp_replace(lower(c.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
       LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')
-      -- BUG F (Knack missing): anchor lock-in runs ~30 sessions post-listing;
-      -- widen so a still-locked IPO shows even if its listing was >30d ago.
-      -- All comparisons on IST date (one clock).
-      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 45
+      -- CURRENT IPOs ONLY (Rakesh 2026-07-18: Suryoday/Mamaearth/Ventive — all
+      -- 2023-24 — leaked via the old "both dates null shows forever" clause).
+      -- Window = anchor FIRST lock-in = 30 DAYS post-listing (second lock-in is
+      -- 90d but the trade decision lives inside the 30d window). All IST.
+      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
          OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
          OR c.ipo_open_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
-         OR (c.listing_date IS NULL AND c.ipo_close_date IS NULL)
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;
@@ -112,7 +112,7 @@ export async function GET() {
         JOIN price_candles p
           ON UPPER(p.symbol) = UPPER(REGEXP_REPLACE(c.symbol_final,'\\.NS$',''))
          AND p.date >= c.listing_date
-        WHERE c.listing_date >= CURRENT_DATE - 45 AND c.symbol_final IS NOT NULL)
+        WHERE c.listing_date >= CURRENT_DATE - 30 AND c.symbol_final IS NOT NULL)
       SELECT sym,
              MIN(low)  FILTER (WHERE rn <= 5) AS floor,
              MAX(high) FILTER (WHERE rn <= 5) AS ceiling,
