@@ -169,9 +169,17 @@ def main():
     # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
     # the CIR columns. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",     ["backfill_master_computables.py"])
-    step("sector cleanup",                  ["fix_sectors.py"])
-    step("peer PE (self-computed)",         ["compute_peer_pe.py"])          # fair value — KEEP
-    step("quality flags (Laser pattern)",   ["compute_quality_flags.py"])
+    # DISABLED 2026-07-18: fix_sectors.py does not exist in the repo — this step
+    # has been failing on every run. Re-enable only when the script exists.
+    # step("sector cleanup",                  ["fix_sectors.py"])
+    # FIXED 2026-07-18: this step called compute_peer_pe.py, which does not
+    # exist anywhere in the repo — it failed EVERY night. The real script is
+    # fetch_peer_pe.py (Screener, fill-empty-only). That silent failure is why
+    # peer_median_pe sits at 58% and Fair Value reads "unavailable" on cards.
+    step("peer PE (Screener, fill-empty)", ["fetch_peer_pe.py", "--apply"])
+    # DISABLED 2026-07-18: compute_quality_flags.py does not exist in the repo — this step
+    # has been failing on every run. Re-enable only when the script exists.
+    # step("quality flags (Laser pattern)",   ["compute_quality_flags.py"])
 
     # ── BUILD + VERDICTS ──
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py"])

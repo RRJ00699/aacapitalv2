@@ -146,7 +146,8 @@ def main():
     step("backup critical tables",           ["backup_critical_tables.py"])
     if a.weekly:
         step("purge post-lock candles",     ["purge_candles_after_lockin.py","--buffer","10","--apply"])
-        step("data hygiene (stale purge)",   ["purge_stale_data.py","--apply"])
+    # DISABLED 2026-07-18: purge_stale_data.py does not exist — step failed every run.
+    # step("data hygiene (stale purge)",   ["purge_stale_data.py","--apply"])
     # health gate LAST — fails loud if anything regressed
     gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
     step("value-sanity report",             ["check_value_sanity.py"])
