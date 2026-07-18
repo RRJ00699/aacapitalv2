@@ -44,6 +44,25 @@ def main():
         conn.commit(); print(f"COMMITTED: quality_score on {n_scored}/{len(rows)} rows")
     else:
         conn.rollback(); print(f"preview: would score {n_scored}/{len(rows)} rows — rerun with --apply")
+
+    # COVERAGE-FLOOR ALARM (permanent guard, 2026-07-18): the dial died three
+    # times because coverage silently dropped. Now a drop SCREAMS. Floor scales
+    # with data: after a backfill (more rows) the floor rises via the % gate,
+    # so this passes when coverage GROWS and fails only on a real regression.
+    total = len(rows)
+    floor_pct = 0.60          # expect >=60% of rows scorable (today: 590/759 = 78%)
+    if a.apply and total > 50 and n_scored < total * floor_pct:
+        msg = (f"quality_score COVERAGE DROP: only {n_scored}/{total} "
+               f"({100*n_scored//total}%) scored, floor {int(floor_pct*100)}%. "
+               f"An upstream source (RHP db_fields / IPOMatrix fundamentals) "
+               f"likely broke — dial will thin out.")
+        try:
+            cur2 = conn.cursor()
+            cur2.execute("INSERT INTO pipeline_failures (step, script, stderr_tail) "
+                         "VALUES ('quality score coverage','compute_quality_score.py',%s)", (msg[:490],))
+            conn.commit()
+        except Exception: pass
+        print("!! " + msg)
     conn.close()
 
 if __name__ == "__main__":
