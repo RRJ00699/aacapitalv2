@@ -13,7 +13,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 // KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
 const CACHE_KEY = "ipo-command:v1";
-const CACHE_TTL_S = 600; // 10 min — Neon queried at most ~6x/hr instead of every load
+const CACHE_TTL_S = 43200; // 12h — pipeline warms it 2x/day; page loads never hit Neon between runs
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
   catch { return null; } // not on CF (local/Vercel) → no cache, query direct
@@ -22,12 +22,25 @@ async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; p
 export const dynamic = "force-dynamic";
 const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
 
-export async function GET() {
-  const gate = await requireUser();
-  if (gate) return gate;
+export async function GET(req?: Request) {
+  // Pipeline cache-warm: ?warm=1 + machine key skips the session gate AND the
+  // cache read (it exists to REBUILD the cache), falling straight to the query
+  // + KV write below. Normal loads (harness calls GET() with no req) are
+  // unaffected: isWarm is false, session gate + cache read run as before.
+  let isWarm = false;
+  if (req) {
+    try {
+      isWarm = new URL(req.url).searchParams.get("warm") === "1"
+        && req.headers.get("x-aac-key") === process.env.ADMIN_JOB_KEY;
+    } catch { isWarm = false; }
+  }
+  if (!isWarm) {
+    const gate = await requireUser();
+    if (gate) return gate;
+  }
 
   const kv = await getKV();
-  if (kv) {
+  if (kv && !isWarm) {
     try {
       const cached = await kv.get(CACHE_KEY);
       if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
