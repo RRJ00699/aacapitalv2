@@ -43,6 +43,8 @@ ARCHIVED_PAGES = [
 
 KEPT_DESPITE_NO_UI_REF = [
     "app/api/ipo/monitor/route.ts",      # "listed weak BUT strong quality" — owner: keep
+    "app/dashboard/tracker/page.tsx",    # interruption log — owner: keep, wired into Admin
+    "app/api/tracker/route.ts",          # its backend (distraction_log)
     "app/api/market-regime/route.ts",    # required per IPO_BUSINESS_REQUIREMENTS 2C.10
     "app/api/admin/job-flag/route.ts",   # VM job_runner polls this every minute
     "app/api/health/route.ts",           # DB-free liveness probe

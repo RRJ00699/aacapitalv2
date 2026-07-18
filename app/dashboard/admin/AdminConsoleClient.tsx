@@ -149,6 +149,11 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⚙️ Settings</a>
           <a href="/dashboard/access" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
+          {/* Tracker was orphaned (no nav entry, reachable only by typing the
+              URL). Owner 2026-07-18: keep it and surface it here — it is a
+              working interruption log, admin-only, and Admin is where it belongs. */}
+          <a href="/dashboard/tracker" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
+            background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⏱️ Tracker</a>
           <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
         </div>
         {/* Refresh removed (Rakesh 2026-07-17): gave no feedback and the list
