@@ -27,6 +27,8 @@ Run:  DATABASE_URL=... python _scripts/backtest_journey_exits.py
 import os, sys, statistics as st
 from datetime import date
 
+SIM_VERSION = "v4-2026-07-18 (prior-bar peak · floor +3 · gap fills · HARD stop)"
+
 def _num(x):
     try: return float(x)
     except Exception: return None
@@ -149,6 +151,7 @@ def main():
     conn.close()
 
     print(f"\nJOURNEY EXIT BACKTEST — listings {start}..now")
+    print(f"sim: {SIM_VERSION}")
     print(f"n={used} IPOs with clean candles | rule: arm +{lock:.0f}% / floor +{floor:.0f}% / trail {trail:.0f}%" + (f' / HARD STOP -{hard:.0f}%' if hard > 0 else ' / no initial stop'))
     s = summarize(rows, ["NAIVE_D10", "NAIVE_D30", "LOCK8_TRAIL12", "BUY_HOLD_90"])
 
