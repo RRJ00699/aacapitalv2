@@ -160,8 +160,6 @@ KNOWN_GAPS = {   # FROZEN first audit 2026-07-17 — may only SHRINK
     ("app/api/ipo/playbook/route.ts", 0): "UndefinedColumn: column \"play_recommendation\" does not exist",
     ("app/api/ipo/post-listing/route.ts", 0): "UndefinedColumn: column \"listing_day_close\" does not exist",
     ("app/api/ipo/route.ts", 0): "UndefinedColumn: column \"listing_day_close\" does not exist",
-    ("app/api/market/live/route.ts", 0): "UndefinedTable: relation \"market_snapshot\" does not exist",
-    ("app/api/market/live/route.ts", 1): "UndefinedTable: relation \"market_snapshot\" does not exist",
     ("app/api/market/snapshot/route.ts", 0): "UndefinedTable: relation \"market_snapshot\" does not exist",
     ("app/api/market/snapshot/route.ts", 2): "UndefinedTable: relation \"daily_institutional_flows\" does not exist",
     ("app/api/pipeline/status/route.ts", 1): "UndefinedTable: relation \"technical_signals\" does not exist",
@@ -169,9 +167,6 @@ KNOWN_GAPS = {   # FROZEN first audit 2026-07-17 — may only SHRINK
     ("app/api/pipeline/status/route.ts", 3): "UndefinedTable: relation \"technical_signals\" does not exist",
     ("app/api/post-listing/route.ts", 1): "UndefinedTable: relation \"delivery_data\" does not exist",
     ("app/api/post-listing/route.ts", 2): "UndefinedColumn: column \"anchor_lock30_date\" does not exist",
-    ("app/api/search/route.ts", 0): "UndefinedTable: relation \"stock_fundamentals\" does not exist",
-    ("app/api/search/route.ts", 1): "UndefinedTable: relation \"company_master\" does not exist",
-    ("app/api/search/route.ts", 2): "UndefinedTable: relation \"technical_signals\" does not exist",
     ("app/api/tracker/route.ts", 3): "InvalidDatetimeFormat: invalid input syntax for type timestamp with time zone: \"",
 }
 
