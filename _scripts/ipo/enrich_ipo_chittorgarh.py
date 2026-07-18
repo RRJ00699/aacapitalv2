@@ -351,11 +351,30 @@ def upsert(company, fields, apply):
         log.info(f"  (skipped, no such column: {skipped})")
     if not writable:
         conn.close(); return
-    cur.execute("SELECT id, company_name FROM ipo_intelligence WHERE company_name ILIKE %s", [f"%{company}%"])
+    # STRONG KEY FIRST (SCHEMA.md RULE 2 / owner rule: exact normalized name over
+    # fuzzy containment). The old path went straight to ILIKE '%company%', which
+    # can resolve to exactly ONE row that is the WRONG row (e.g. "%Laser%"
+    # matching a different Laser entity) and then UPDATEs it. Canon-equality is
+    # tried first; containment survives only as a last-resort fallback, still
+    # gated on a unique hit.
+    CANON = (r"regexp_replace(lower({c}), "
+             r"'\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')")
+    cur.execute(
+        f"SELECT id, company_name FROM ipo_intelligence "
+        f"WHERE {CANON.format(c='company_name')} = {CANON.format(c='%s')}",
+        [company])
     hits = cur.fetchall()
+    match_mode = "canon"
+    if not hits:
+        cur.execute("SELECT id, company_name FROM ipo_intelligence WHERE company_name ILIKE %s",
+                    [f"%{company}%"])
+        hits = cur.fetchall()
+        match_mode = "fuzzy-fallback"
     if len(hits) != 1:
-        log.info(f"  match ambiguous ({len(hits)}) — skipped.")
+        log.info(f"  match ambiguous ({len(hits)}, {match_mode}) — skipped.")
         conn.close(); return
+    if match_mode == "fuzzy-fallback":
+        log.info(f"  NOTE: matched '{company}' -> '{hits[0][1]}' by containment, not canon")
     rid = hits[0][0]
     sets = ", ".join(f"{k} = COALESCE(%s, {k})" for k in writable)
     cur.execute(f"UPDATE ipo_intelligence SET {sets} WHERE id = %s", list(writable.values()) + [rid])
