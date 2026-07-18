@@ -124,6 +124,26 @@ DDL = [
         domain TEXT PRIMARY KEY, last_write TIMESTAMPTZ,
         row_count BIGINT, updated_at TIMESTAMPTZ DEFAULT NOW())""",
     # ── admin job console ──
+    # ── trade journal ──
+    # The table EXISTS in prod but lacks the columns sync_trade_journal writes
+    # ("SCHEMA MISMATCH — trade_journal lacks ['action','broker',
+    # 'broker_order_id','entry_date',...]" on the StepBoard, 2026-07-18).
+    # CREATE TABLE IF NOT EXISTS is a NO-OP on an existing table, so each column
+    # must be added individually. broker_order_id UNIQUE makes re-syncing the
+    # same Zerodha order idempotent.
+    """CREATE TABLE IF NOT EXISTS trade_journal (
+        id BIGSERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW())""",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker_order_id TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS symbol TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exchange TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS action TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quantity NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS price NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS entry_date DATE",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_trade_journal_order ON trade_journal(broker_order_id)",
+
     # ── NSE pre-open capture (nse_preopen_capture.py) ──
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid NUMERIC",
