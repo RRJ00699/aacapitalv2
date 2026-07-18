@@ -62,7 +62,14 @@ def score_row(r):
     return s, why, pending
 
 def era_of(d):
-    return "?" if d is None else ("<=2021" if d.year <= 2021 else ("2022-24" if d.year <= 2024 else "2025+"))
+    # Era buckets widened for the 2006 IPOMatrix backfill: deep history gets its
+    # own buckets so the backtest reveals if 2006-15 behaves differently rather
+    # than hiding it all in one <=2021 lump (Rakesh 2026-07-18).
+    if d is None: return "?"
+    y = d.year
+    return ("<=2010" if y <= 2010 else "2011-15" if y <= 2015 else
+            "2016-20" if y <= 2020 else "2021" if y == 2021 else
+            "2022-24" if y <= 2024 else "2025+")
 
 def load(cur):
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_consolidated'")
@@ -117,7 +124,7 @@ def main():
             gn = len(g); w = sum(1 for _, win, _, _ in g if win) / gn * 100
             m = sorted(x for x, _, _, _ in g)[gn // 2]
             eras = []
-            for e in ("<=2021", "2022-24", "2025+"):
+            for e in ("<=2010", "2011-15", "2016-20", "2021", "2022-24", "2025+"):
                 ge = [x for x in g if x[2] == e]
                 eras.append(f"{e}:{sum(1 for _, win, _, _ in ge if win)/len(ge)*100:.0f}%({len(ge)})" if len(ge) >= 8 else f"{e}:-")
             print(f"{name:10} {f'{lo}..{hi}':12} {gn:>4} {w:>6.1f} {m:>+7.1f}  {' '.join(eras)}")

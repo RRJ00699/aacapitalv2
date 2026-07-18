@@ -51,6 +51,17 @@ def main():
             except Exception as e:
                 fails.append(f"{table}: {str(e).splitlines()[0][:140]}")
                 conn.rollback()
+        # DATA-HEALTH INVARIANT (permanent guard): the dial's columns must not
+        # silently empty. quality_score powers a UI mode; if it drops to near-
+        # zero, the pipeline FAILS here -> phone, instead of a dead dial nobody
+        # notices. Threshold is absolute-low (100) so a backfill only helps.
+        try:
+            cur.execute("SELECT count(*) FROM ipo_intelligence WHERE quality_score IS NOT NULL")
+            qs = cur.fetchone()[0]
+            if qs < 100:
+                fails.append(f"quality_score near-empty ({qs} rows) — dial dead, compute or upstream broke")
+        except Exception:
+            pass
         conn.close()
     except Exception as e:
         fails.append(f"DB unreachable: {str(e)[:120]}")
