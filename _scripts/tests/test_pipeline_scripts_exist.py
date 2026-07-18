@@ -53,5 +53,5 @@ def test_peer_pe_step_uses_the_real_script():
     """Fair Value depends on peer_median_pe. Guard the exact regression."""
     src = (SCRIPTS / "run_ipo_pipeline_lean.py").read_text(encoding="utf-8")
     live = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
-    assert "compute_peer_pe.py" not in live, "phantom compute_peer_pe.py is back"
-    assert "fetch_peer_pe.py" in live, "peer-PE step missing — Fair Value will starve"
+    assert "compute_peer_pe.py" not in live, \
+        "compute_peer_pe.py was deleted on purpose (798a010) — do not re-add"

@@ -172,11 +172,15 @@ def main():
     # DISABLED 2026-07-18: fix_sectors.py does not exist in the repo — this step
     # has been failing on every run. Re-enable only when the script exists.
     # step("sector cleanup",                  ["fix_sectors.py"])
-    # FIXED 2026-07-18: this step called compute_peer_pe.py, which does not
-    # exist anywhere in the repo — it failed EVERY night. The real script is
-    # fetch_peer_pe.py (Screener, fill-empty-only). That silent failure is why
-    # peer_median_pe sits at 58% and Fair Value reads "unavailable" on cards.
-    step("peer PE (Screener, fill-empty)", ["fetch_peer_pe.py", "--apply"])
+    # DISABLED 2026-07-18. This step called compute_peer_pe.py, which was
+    # DELETED ON PURPOSE (798a010: "dead — reads non-existent
+    # stock_fundamentals/annual_financials"). The step reference was left behind
+    # and has failed every run since.
+    # NOT repointed to fetch_peer_pe.py: that pulls from Screener, which only
+    # covers LISTED companies — it cannot fill peer P/E for an upcoming IPO, so
+    # it would not fix "Fair Value unavailable" on pre-listing cards. How peer
+    # P/E should be sourced for unlisted IPOs is an OPEN owner decision
+    # (candidates: the RHP peer table — legally mandated — or the SBI note).
     # DISABLED 2026-07-18: compute_quality_flags.py does not exist in the repo — this step
     # has been failing on every run. Re-enable only when the script exists.
     # step("quality flags (Laser pattern)",   ["compute_quality_flags.py"])
