@@ -2,10 +2,11 @@
 
 Ledger for the "IPO-only, no equity residue" cleanup lane (Phases A–E per the
 2026-07-18 handover). Correctness fixes (MID-gap, Haiku id, ₹200cr, fuzzy-joins)
-are a SEPARATE lane owned by the correctness chat — tracked at the bottom, not
+are a SEPARATE lane owned by the correctness chat — listed at the bottom, not
 counted here. Weights sum to 100 = this cleanup lane. Owner reviews at 25/50/75/100.
 
 Status: ✅ DELIVERED (gate-passed, pending merge) · 🔵 IN PROGRESS · ⚪ TODO · ⏸ HOLD.
+(This file is a full-state snapshot per MR; on sequential merge just keep the newest.)
 
 ## Cleanup lane (my scope)
 
@@ -13,7 +14,7 @@ Status: ✅ DELIVERED (gate-passed, pending merge) · 🔵 IN PROGRESS · ⚪ TO
 |-------|------|-------:|--------|--------|
 | A | Remove 4 dead `/api` fetches (today-screen, cron-monitor) | 15 | ✅ | `claude/phase1-remove-dead-fetches` |
 | B | Archive 4 orphan equity routes + orphaned hook | 20 | ✅ | `claude/phaseB-archive-orphan-routes` |
-| C | Archive ~52 equity/MF scripts (candle pipeline KEPT) | 30 | ⚪ | — |
+| C | Archive 53 equity/MF scripts (candle pipeline KEPT) | 30 | ✅ | `claude/phaseC-archive-equity-scripts` |
 | D | Remove 3 dead pipeline steps (delivery/CIR/inst-deals) | 20 | ⚪ | — |
 | E | Root hygiene (21 loose .py + stray artifacts) | 15 | ⚪ | — |
 
@@ -22,32 +23,41 @@ Status: ✅ DELIVERED (gate-passed, pending merge) · 🔵 IN PROGRESS · ⚪ TO
 | After | +w | Cumulative | Gate |
 |-------|---:|-----------:|------|
 | A | +15 | 15 / 100 | |
-| **B (this MR)** | +20 | **35 / 100** | ← crosses your **25** review gate |
-| C | +30 | 65 / 100 | ← crosses **50** |
-| D | +20 | 85 / 100 | ← crosses **75** |
-| E | +15 | 100 / 100 | ← **100** |
+| B | +20 | 35 / 100 | crossed **25** |
+| **C (this MR)** | +30 | **65 / 100** | crossed **50** |
+| D | +20 | 85 / 100 | crosses **75** |
+| E | +15 | 100 / 100 | **100** |
 
-**Now: 35 / 100 delivered (A + B).**
+**Now: 65 / 100 delivered (A + B + C).**
 
-## Phase B — what shipped (this MR)
-Archived to `_archive/` (`.ts.txt`, repo convention, one `git revert` away):
-`api/search`, `api/market/live`, `api/broker/holdings`, `api/broker/positions`,
-and the orphaned `lib/hooks/useMarketData.ts` (its only fetch was the archived
-market/live). KEPT per handover: `api/market/global`, `api/market/snapshot`,
-`api/broker/quote`, `api/broker/status`, and **`api/market-regime`** (required
-data input, spec §2C.10 — staleness is a separate feed fix, F1 below).
-Pruned the now-dangling `search` + `market/live` entries from
-`test_all_routes_contract.KNOWN_GAPS` and `test_route_runtime.HOT_ROUTES`.
-Gates: tsc 0 · full pytest 312 passed / 2 skipped.
+## Phase C — what shipped (this MR)
+Archived 53 equity/MF Python scripts to `_archive/_scripts/…` (path preserved;
+`.py` under `_archive/` is inert — not compiled, not test-collected — so no rename
+needed, one `git revert` away). Set computed deterministically: equity/MF by tables
+touched, minus the wired set (lean pipeline / job_runner / prod / workflows / VM
+cron / tests), minus the candle pipeline, minus anything imported by a kept script.
+Verified: 0 tests reference them, 0 dangling refs in lean pipeline / job_runner /
+workflows.
+- **KEPT** (candle infra — feeds Journey + IPO backtests): `kite-sync-candles.py`,
+  `reconcile_missing_candles.py`, `compute_candle_returns.py`, `sync_candles_to_neon.py`,
+  and the candle backfill/purge/reconcile-universe scripts.
+- Removed 3 now-dangling `package.json` npm-scripts (`ml:multibagger`,
+  `commentary:ingest`, `commentary:archive`) whose targets were archived.
+- Also fixed a junk filename (`_scripts/python check_cols.py` → `_archive/…/check_cols.py`).
+Gates: tsc 0 · full pytest 312 passed / 2 skipped · package.json valid.
+
+## Deferred to a follow-up (noted, not silently dropped)
+- 4 equity `.ts` engines in `_scripts/engines/` (multibagger miner/screener/
+  similarity/indicator) + the `similarity:multibagger` npm-script — `.ts`, distinct
+  from this Python archive pass. Candidate for a "Phase C-tail" PR.
 
 ## Deviations from the handover (evidence-logged)
-- Handover said the 4 routes have "0 UI references"; `api/market/live` was in
-  fact fetched by `lib/hooks/useMarketData.ts:51,62`. Verified that hook is
-  itself orphaned (imported nowhere) → archived both. No live screen affected.
+- Phase B: `api/market/live` was NOT 0-ref — `lib/hooks/useMarketData.ts:51,62`
+  fetched it; that hook is itself orphaned, so both were archived.
 
 ## Separate lanes (not counted here)
 - Correctness (other chat): MID-gap ✅ PR#230 · Haiku id ✅ PR#229 · ₹200cr ⚪ · fuzzy-joins ⚪
 - Data/feed (owner): market_regimes staleness + missing PCR
-- Decision (owner): post-listing route consolidation (2 live impls) ⏸ · 8→3 tabs ⏸
+- Decision (owner): post-listing route consolidation ⏸ · 8→3 tabs ⏸
 - CI blocker (owner): `security` job `npm audit --audit-level=high` red on `adm-zip`
-  (no upstream fix) → change to `--audit-level=critical` (agent tokens lack `workflow` scope).
+  (no upstream fix) → `--audit-level=critical` (agent tokens lack `workflow` scope).
