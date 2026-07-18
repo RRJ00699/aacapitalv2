@@ -32,6 +32,11 @@ const ALLOWED_JOBS = new Set([
   "universe_candles",              // candle sync (post-listing dashboard)
   "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)
+  // Added 2026-07-18: these existed in job_runner.py AND had console buttons,
+  // but this route rejected them with "unknown job '<name>'" — a THIRD
+  // definition of the job list that nobody kept in sync.
+  "schema", "verdicts", "score", "quality", "smoke", "sbi_haiku",
+  "ipomatrix",   // had a button + runner entry but the API rejected it too
 ]);
 
 // Same DDL job_runner.py uses, so the first enqueue works even before the VM
