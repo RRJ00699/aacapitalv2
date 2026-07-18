@@ -66,15 +66,15 @@ def test_A1_query_ceiling(route, ceiling):
 
 HOT_ROUTES = [
     "ipo-command", "ipo/live-preopen", "ipo/intelligence", "market/global",
-    "market/live", "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-]
+    "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
+]  # market/live archived 2026-07-18 (orphaned equity feed — see _archive/)
 
 # LEDGER #13: hot routes that hit Neon per-request TODAY without a KV cache
 # (audited 2026-07-17 via this test — 8 of the 9 hot routes; only ipo-command
 # caches). FROZEN allow-list — the guard's job is to stop this list GROWING.
 # Remove an entry the moment its route gains a cache; adding needs a review.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
-    "ipo/live-preopen", "ipo/intelligence", "market/global", "market/live",
+    "ipo/live-preopen", "ipo/intelligence", "market/global",
     "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
 })
 
