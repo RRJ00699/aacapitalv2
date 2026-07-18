@@ -31,7 +31,7 @@ def _num(x):
     try: return float(x)
     except Exception: return None
 
-def simulate(candles, lock_pct, trail_pct, floor_pct=3.0):
+def simulate(candles, lock_pct, trail_pct, floor_pct=3.0, hard_stop_pct=0.0):
     """candles: [(date, open, high, low, close)] listing-day first, chronological.
     Returns dict of per-strategy exit return fraction."""
     if not candles:
@@ -61,6 +61,16 @@ def simulate(candles, lock_pct, trail_pct, floor_pct=3.0):
         o, hi, lo, cl = _num(o), _num(hi), _num(lo), _num(cl)
         if hi is None or lo is None:
             continue
+        # 0) INITIAL STOP for positions that never armed (HARD=0 disables).
+        # The 2026-07-18 backtest found the rule's ONLY weakness: an IPO that
+        # never reaches +lock% has NO exit and rides to day 90, eating the full
+        # drawdown (p10 -25.9% vs naive-D10's -14.4%). This is the missing half
+        # of "the rule exits you if it breaks".
+        if not floor_armed and hard_stop_pct > 0:
+            hs = entry * (1 - hard_stop_pct / 100)
+            if lo <= hs:
+                exit_px = min(hs, o) if (o is not None and o < hs) else hs
+                break
         # 1) stop check FIRST, using the peak established by PREVIOUS bars
         if floor_armed:
             stop = max(entry * (1 + floor_pct / 100),
@@ -108,6 +118,7 @@ def main():
     lock = float(os.environ.get("LOCK", "8"))
     trail = float(os.environ.get("TRAIL", "12"))
     floor = float(os.environ.get("FLOOR", "3"))  # documented rule: floor at +3%
+    hard = float(os.environ.get("HARD", "0"))   # initial stop for un-armed positions (0=off, try 10/12/15)
     import psycopg2
     conn = psycopg2.connect(url); cur = conn.cursor()
     # IPOs listed since START with clean candles
@@ -132,13 +143,13 @@ def main():
         c = cur.fetchall()
         if len(c) < 10:   # need at least the D10 horizon
             continue
-        res = simulate(c, lock, trail, floor)
+        res = simulate(c, lock, trail, floor, hard)
         if res and res.get("NAIVE_D10") is not None:
             rows.append(res); used += 1
     conn.close()
 
     print(f"\nJOURNEY EXIT BACKTEST — listings {start}..now")
-    print(f"n={used} IPOs with clean candles | rule: arm +{lock:.0f}% / floor +{floor:.0f}% / trail {trail:.0f}%")
+    print(f"n={used} IPOs with clean candles | rule: arm +{lock:.0f}% / floor +{floor:.0f}% / trail {trail:.0f}%" + (f' / HARD STOP -{hard:.0f}%' if hard > 0 else ' / no initial stop'))
     s = summarize(rows, ["NAIVE_D10", "NAIVE_D30", "LOCK8_TRAIL12", "BUY_HOLD_90"])
 
     # ACCEPTANCE: rule beats NAIVE_D10 on median AND downside (p10)
