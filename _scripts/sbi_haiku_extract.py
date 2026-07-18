@@ -37,6 +37,23 @@ Numbers as numbers, unknown as null. peer_comparison ONLY from an explicit peer
 table/section — never invent peers. NOTE TEXT:
 """
 
+# Work query as a module constant so tests can execute it against a seeded DB.
+# WINDOW FIX 2026-07-18: was `CURRENT_DATE - 2`, which excluded every IPO that
+# listed more than 2 days ago — 6 of the 9 currently-eligible notes. Widened to
+# the same 30-day window the Command Center shows, on the IST clock.
+TODO_SQL = r"""
+    SELECT n.id, n.company, n.pdf_path
+    FROM ipo_research_notes n
+    JOIN ipo_intelligence i
+      ON regexp_replace(lower(i.company_name), '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
+       = regexp_replace(lower(n.company),      '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
+    WHERE n.source = 'SBI' AND n.pdf_path IS NOT NULL AND n.full_json IS NULL
+      AND (i.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
+           OR i.close_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+           OR i.listing_date IS NULL)
+    ORDER BY i.listing_date NULLS LAST"""
+
+
 def ensure_log(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS sbi_haiku_run_log (
         id SERIAL PRIMARY KEY, run_date DATE DEFAULT CURRENT_DATE,
@@ -56,16 +73,7 @@ def main():
 
     # NEW IPOs only: note exists w/ pdf, no extraction yet, and the IPO is
     # current/upcoming (canon join — one canonicalizer everywhere).
-    cur.execute(r"""
-        SELECT n.id, n.company, n.pdf_path
-        FROM ipo_research_notes n
-        JOIN ipo_intelligence i
-          ON regexp_replace(lower(i.company_name), '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
-           = regexp_replace(lower(n.company),      '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
-        WHERE n.source = 'SBI' AND n.pdf_path IS NOT NULL AND n.full_json IS NULL
-          AND (i.listing_date >= CURRENT_DATE - 2 OR i.close_date >= CURRENT_DATE
-               OR i.listing_date IS NULL)
-        ORDER BY i.listing_date NULLS LAST""")
+    cur.execute(TODO_SQL)
     todo = cur.fetchall()
     print(f"unextracted SBI notes (new IPOs): {len(todo)} | cap ${DAILY_CAP:.2f} | spent today ${spent_today(cur):.3f}")
     if not todo:
