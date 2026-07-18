@@ -54,7 +54,7 @@ def factors(r):
          ("sbi",5),("brlm_t1",3)] if f[k] is not None)
     pts = sum(v for v in f.values() if v is not None)
     score = round(pts / have_w * 100) if have_w else None
-    conf = round(have_w / 85 * 100)
+    conf = min(100, round(have_w / 85 * 100))  # cap: full 14-factor set exceeds 85w -> 112% (fixed 2026-07-18)
     return f, score, conf
 
 def main():
