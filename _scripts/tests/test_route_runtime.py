@@ -75,6 +75,15 @@ def test_A2_window_boundaries_exact():
         assert second_hit is cached, f"{t}: expected cached={cached}"
 
 
+def test_A2_market_snapshot_second_call_zero_queries():
+    """Ledger #13.2 (owner-approved): 300s KV cache — 2nd call zero Neon
+    queries AND zero Yahoo fetches (whole handler skipped)."""
+    d = run_route("app/api/market/snapshot/route.ts", 2)
+    c1, c2 = d["results"]
+    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
+    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+
+
 # ---------------- A1 — query-count ceilings ----------------
 
 # Pinned per-route ceilings (observed current counts). A regression that adds
@@ -120,7 +129,7 @@ QUERY_CEILING = {
     "app/api/market-regime/route.ts": 2,
     "app/api/market/global/route.ts": 4,
     "app/api/market/live/route.ts": 1,
-    "app/api/market/snapshot/route.ts": 3,
+    "app/api/market/snapshot/route.ts": 2,
     "app/api/pipeline/status/route.ts": 4,
     "app/api/post-listing/route.ts": 0,
     "app/api/search/route.ts": 0,
@@ -150,8 +159,8 @@ HOT_ROUTES = [
 # Remove an entry the moment its route gains a cache; adding needs a review.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
     "ipo/intelligence", "market/global", "market/live",
-    "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-})  # live-preopen CURED 2026-07-17 (60s TTL + decision-window bypass)
+    "ipo", "ipo/journey", "ipo/playbook",
+})  # CURED: live-preopen (60s+window bypass), market/snapshot (300s) — 2026-07-17
 
 
 def _route_file(name):

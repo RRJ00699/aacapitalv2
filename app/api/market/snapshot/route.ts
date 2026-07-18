@@ -1,17 +1,37 @@
 import { NextResponse } from "next/server"
 import { sql } from "@/lib/db"
+import { getCloudflareContext } from "@opennextjs/cloudflare"
 
 export const dynamic = "force-dynamic"
+
+// ── KV cache (ledger #13.2, owner-approved): dashboard snapshot is
+// slow-moving; 300s TTL. A hit also skips the 3 Yahoo live-price fetches.
+const CACHE_KEY = "market-snapshot:v1"
+const CACHE_TTL_S = 300
+async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null }
+  catch { return null }
+}
 
 const n = (v: any, f: any = null) => { const x = Number(v); return Number.isFinite(x) ? x : f }
 const pick = (...vals: any[]) => vals.find(v => v !== null && v !== undefined && String(v) !== "") ?? null
 const safe = async <T,>(p: Promise<T>, f: T): Promise<T> => { try { return await p } catch { return f } }
 
 export async function GET() {
+  const kv = await getKV()
+  if (kv) {
+    try {
+      const cached = await kv.get(CACHE_KEY)
+      if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } })
+    } catch { /* fall through to DB */ }
+  }
   const [snapshot, regime, flows] = await Promise.all([
     safe(sql`SELECT * FROM market_snapshot WHERE id=1 LIMIT 1`, [] as any[]),
     safe(sql`SELECT * FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`, [] as any[]),
-    safe(sql`SELECT * FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`, [] as any[]),
+    // daily_institutional_flows was never built (prod triage 2026-07-17) —
+    // graceful degrade per owner: FII/DII fields resolve null until the
+    // feature is scoped for real. Do NOT add a writer to satisfy this route.
+    Promise.resolve([] as any[]),
   ])
 
   const snap = snapshot[0] || {}
@@ -44,7 +64,7 @@ export async function GET() {
   const finalBankNifty = liveBankNifty || n(pick(snap.banknifty_price, payload.banknifty_price))
   const finalVix       = liveVix       || n(pick(snap.vix, snap.india_vix, payload.vix))
 
-  return NextResponse.json({
+  const payloadOut = JSON.stringify({
     ok: true,
     data: {
       regime: regimeName,
@@ -65,5 +85,12 @@ export async function GET() {
       dii_flow: n(pick(flow.dii_net, snap.dii_flow, payload.dii_flow)),
       last_updated: pick(snap.last_updated, reg.evaluation_date),
     }
+  })
+  if (kv) {
+    try { await kv.put(CACHE_KEY, payloadOut, { expirationTtl: CACHE_TTL_S }) }
+    catch { /* cache write failed — response still served */ }
+  }
+  return new NextResponse(payloadOut, {
+    headers: { "content-type": "application/json", "x-cache": "MISS" },
   })
 }

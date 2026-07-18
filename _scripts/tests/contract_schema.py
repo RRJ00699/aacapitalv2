@@ -481,7 +481,10 @@ CREATE TABLE ipo_level_analysis (symbol TEXT, trade_date DATE, issue_price NUMER
     listing_open NUMERIC, gap_pct NUMERIC, gap_bucket TEXT, floor_price NUMERIC,
     ceiling_price NUMERIC, floor_defenses INT, poc_price NUMERIC, verdict TEXT,
     risk_note TEXT, circuit_locked BOOLEAN, session_vwap NUMERIC,
-    day_high NUMERIC);
+    day_high NUMERIC, day_low NUMERIC, day_close NUMERIC, close_vs_vwap NUMERIC,
+    floor_volume BIGINT, ceiling_volume BIGINT, obir_open NUMERIC,
+    obir_close NUMERIC, profile_json JSONB, tick_count INT,
+    computed_at TIMESTAMPTZ);
 CREATE TABLE market_regimes (evaluation_date DATE, active_regime TEXT,
     india_vix NUMERIC);
 -- prod-confirmed tables (triage rows 1-5) --

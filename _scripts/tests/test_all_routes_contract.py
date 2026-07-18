@@ -79,13 +79,12 @@ KNOWN_GAPS = {
     # ══ KIND 2 — PROD-VERIFIED DEAD REFS (triage 2026-07-17): these routes
     # are broken against the live schema TODAY. Fix = edit the ROUTE (owner
     # approval per route, preview-first). Prune on fix. ══
-    ("app/api/ipo/route.ts", 0):              "KIND2: return_day30 absent on prod ipo_consolidated",
-    ("app/api/ipo/post-listing/route.ts", 0): "KIND2: return_day30 absent on prod ipo_consolidated",
-    ("app/api/ipo/intelligence/route.ts", 0): "KIND2: return_day30 absent on prod ipo_consolidated",
-    ("app/api/ipo/levels/route.ts", 0):       "KIND2: day_open absent on prod ipo_level_analysis",
-    ("app/api/ipo/levels/route.ts", 1):       "KIND2: c.gap_pct absent on prod ipo_consolidated (has listing_gap_pct)",
-    ("app/api/ipo/playbook/route.ts", 0):     "KIND2: sub_day1_qib absent on prod ipo_consolidated (has day1_qib)",
-    ("app/api/market/snapshot/route.ts", 2):  "KIND2: table daily_institutional_flows does not exist in prod",
+    ("app/api/ipo/playbook/route.ts", 0):     "KIND2 REDIAGNOSED: queries ipo_intelligence which has NO day1_qib "
+                                              "(consolidated-only) — needs JOIN or NULL-degrade, owner call",
+    ("app/api/ipo/route.ts", 0):              "KIND2: return_day30 — routes use it as POINT-IN-TIME latest return; "
+                                              "max_upside_30d is peak; return_cmp matches intent — owner call",
+    ("app/api/ipo/post-listing/route.ts", 0): "KIND2: return_day30 point-in-time — see ipo/route entry",
+    ("app/api/ipo/intelligence/route.ts", 0): "KIND2: return_day30 point-in-time — see ipo/route entry",
     # ══ HARNESS-LIMIT — dynamic SQL fragment (raw `'${date}'::date` string
     # built in JS), not parameterizable by extraction. Not a route bug. ══
     ("app/api/ipo/gmp/route.ts", 3):          "HARNESS: dynamic SQL fragment interpolation",
