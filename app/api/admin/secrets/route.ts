@@ -1,11 +1,18 @@
 // app/api/admin/secrets/route.ts — phone-settable secrets into platform_config.
 // Whitelisted keys only. Values never returned (masked). Admin-gated.
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
 import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
-const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+// lazy neon client — do NOT init at module scope: `next build` (deploy.yml) has no
+// DATABASE_URL, and a module-scope neon() throws during page-data collection. Same
+// runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
+let _neonSql: NeonQueryFunction<false, false> | null = null;
+const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  return _neonSql(strings, ...values);
+}) as NeonQueryFunction<false, false>;
 const KEYS = ["screener_username", "screener_password", "screener_cookie", "ntfy_topic", "ipomatrix_cookie",
   "zerodha_totp_secret", "kite_api_key", "kite_api_secret", "kite_user_id", "kite_password"];
 

@@ -1,10 +1,17 @@
 // app/api/admin/access/route.ts — pending access requests + approve/deny
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
 import { requireUser } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
-const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+// lazy neon client — do NOT init at module scope: `next build` (deploy.yml) has no
+// DATABASE_URL, and a module-scope neon() throws during page-data collection. Same
+// runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
+let _neonSql: NeonQueryFunction<false, false> | null = null;
+const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  return _neonSql(strings, ...values);
+}) as NeonQueryFunction<false, false>;
 
 async function ensure() {
   await sql`CREATE TABLE IF NOT EXISTS allowed_users (
