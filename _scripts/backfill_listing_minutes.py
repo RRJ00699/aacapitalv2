@@ -46,6 +46,7 @@ def main():
         "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS high_first_60m NUMERIC",
         "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS low_first_60m NUMERIC",
         "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS vwap_first_15m NUMERIC",
+        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS first_trade_time TIME",
     ]:
         cur.execute(stmt)
     conn.commit()
@@ -86,23 +87,38 @@ def main():
             bars = kite.historical_data(t, ld, ld, "minute")
             if not bars:
                 miss += 1; print(f"  - {sym} {ld}: no minute bars"); continue
-            first = bars[0]
-            f5, f15, f60 = bars[:5], bars[:15], bars[:60]
+            # FIRST TRADED BAR, not bars[0] (fixed 2026-07-19).
+            # IPO listings begin at 10:00 IST after the special pre-open session,
+            # but Kite returns the day from 09:15 — so bars[0:5] are EMPTY
+            # placeholder bars for any 10:00 lister. That produced open=111 with
+            # vol5m=0 on IGCL, SAMBHV, KALPATARU, SCODATUBES, PROSTARM,
+            # AEGISVOPAK: a phantom price and windows measuring silence.
+            # Anchor every window on the first bar that actually TRADED.
+            traded = [b for b in bars if (b.get("volume") or 0) > 0]
+            if not traded:
+                miss += 1; print(f"  - {sym} {ld}: no traded bars"); continue
+            i0 = bars.index(traded[0])
+            live = bars[i0:]
+            first = live[0]
+            f5, f15, f60 = live[:5], live[:15], live[:60]
             vwap15 = (sum(b["close"] * b["volume"] for b in f15) / sum(b["volume"] for b in f15)
                       if sum(b["volume"] for b in f15) else None)
             cur.execute("""UPDATE ipo_consolidated SET
                     first_print_price=%s, first_print_volume=%s,
                     vol_first_5m=%s, vol_first_15m=%s, vol_first_60m=%s,
-                    high_first_60m=%s, low_first_60m=%s, vwap_first_15m=%s
+                    high_first_60m=%s, low_first_60m=%s, vwap_first_15m=%s, first_trade_time=%s
                 WHERE UPPER(COALESCE(NULLIF(symbol_final,''), NULLIF(nse_symbol,''), symbol))=%s
                   AND listing_date=%s""",
                 (first["open"], first["volume"],
                  sum(b["volume"] for b in f5), sum(b["volume"] for b in f15),
                  sum(b["volume"] for b in f60),
                  max(b["high"] for b in f60), min(b["low"] for b in f60),
-                 round(vwap15, 2) if vwap15 else None, sym, ld))
+                 round(vwap15, 2) if vwap15 else None,
+                 first["date"].time() if hasattr(first.get("date"), "time") else None,
+                 sym, ld))
             conn.commit(); done += 1
-            print(f"  ✓ {sym} {ld}: open={first['open']} vol5m={sum(b['volume'] for b in f5)}")
+            print(f"  ✓ {sym} {ld}: first_trade={first['date'].strftime('%H:%M') if hasattr(first.get('date'),'strftime') else '?'} "
+                  f"open={first['open']} vol5m={sum(b['volume'] for b in f5)}")
         except Exception as e:
             fail += 1; print(f"  ✗ {sym}: {str(e)[:90]}")
         time.sleep(0.4)          # Kite historical API rate limit

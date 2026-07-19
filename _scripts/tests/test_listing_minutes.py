@@ -61,3 +61,24 @@ def test_missing_symbol_is_skipped_not_fatal():
     AMIRCHAND on the first run). They must be counted and skipped."""
     s = _src()
     assert "not in NSE instrument map" in s and "continue" in s
+
+
+def test_anchors_on_first_traded_bar():
+    """REGRESSION 2026-07-19: IPO listings start at 10:00 IST after the special
+    pre-open, but Kite returns the day from 09:15 — bars[0:5] are EMPTY
+    placeholders. The old code took bars[0], producing a phantom open price and
+    vol5m=0 (IGCL, SAMBHV, KALPATARU, SCODATUBES, PROSTARM, AEGISVOPAK)."""
+    s = _src()
+    assert "bars.index(traded[0])" in s, "windows are not anchored on the first traded bar"
+    assert "first = live[0]" in s, "first print still taken from the raw bar list"
+
+
+def test_records_first_trade_time():
+    """When trading actually began is itself the listing-time signal (10:00 vs
+    09:15 vs later) — capture it rather than inferring it."""
+    s = _src()
+    assert "first_trade_time" in s and "ADD COLUMN IF NOT EXISTS first_trade_time" in s
+
+
+def test_no_traded_bars_is_skipped():
+    assert "no traded bars" in _src()
