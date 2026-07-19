@@ -210,17 +210,33 @@ def main():
                  length(i.company_name) DESC
     """)
     rows = cur.fetchall()
+
+    # ADAPTIVE CONFLICT TARGET (2026-07-18). Production guards ipo_verdicts with
+    # ux_verdicts_company — a UNIQUE index on the CANON expression. Upserting
+    # ON CONFLICT (company_name) missed it, so a new name variant (e.g.
+    # "MB Switchgears Limited" when "M B Switchgears Ltd" was already stored)
+    # attempted an INSERT, violated the canon index and ABORTED the entire run:
+    # zero verdicts written. Test/dev DBs may only have a plain company_name
+    # unique, so the target is detected rather than hardcoded.
+    cur.execute("""SELECT indexdef FROM pg_indexes
+                   WHERE tablename = 'ipo_verdicts' AND indexdef ILIKE '%UNIQUE%'""")
+    _defs = " ".join((r["indexdef"] if isinstance(r, dict) else r[0]) for r in cur.fetchall())
+    CONFLICT_TARGET = (
+        "(regexp_replace(lower(company_name), "
+        "'\\y(ltd|limited|pvt|private|and)\\y|&|[^a-z0-9]', '', 'g'))"
+        if "regexp_replace" in _defs else "(company_name)")
+    print(f"  upsert conflict target: {'canon expression' if 'regexp' in CONFLICT_TARGET else 'company_name'}")
     tally, wrote = {}, 0
     for r in rows:
         d = decide(r)
         tally[d["verdict"]] = tally.get(d["verdict"], 0) + 1
         if a.apply:
-            cur.execute("""
+            cur.execute(rf"""
                 INSERT INTO ipo_verdicts
                   (company_name, verdict, why_trade, why_caution, why_avoid,
                    why_passes, regime, quality_promoter, score, confidence, computed_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
-                ON CONFLICT (company_name) DO UPDATE SET
+                ON CONFLICT {CONFLICT_TARGET} DO UPDATE SET
                   verdict=EXCLUDED.verdict, why_trade=EXCLUDED.why_trade,
                   why_caution=EXCLUDED.why_caution, why_avoid=EXCLUDED.why_avoid,
                   why_passes=EXCLUDED.why_passes, regime=EXCLUDED.regime,
