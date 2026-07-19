@@ -189,11 +189,25 @@ def main():
                       FROM market_regimes m
                       WHERE m.evaluation_date >= CURRENT_DATE - 5
                       ORDER BY m.evaluation_date DESC LIMIT 1)""") if _regime_ok else "NULL"
-    cur.execute(f"""
-        SELECT {", ".join(cols)}, {regime_sql} AS regime_bull
+    # DISTINCT ON canon key (2026-07-18): ipo_verdicts carries a CANON unique
+    # index, but this INSERT upserts ON CONFLICT (company_name) — an EXACT match.
+    # Two source rows whose names differ but canonicalise the same (e.g.
+    # "M B Switchgears Ltd" vs "MB Switchgears Limited" -> mbswitchgears) both
+    # slip past the exact-name conflict target and then violate the canon index,
+    # killing the whole run. Collapse to one row per canon key at the source and
+    # prefer the most complete record (most recent listing, then longest name).
+    cur.execute(rf"""
+        SELECT DISTINCT ON (
+            regexp_replace(lower(i.company_name),
+                '\y(ltd|limited|pvt|private|and)\y|&|[^a-z0-9]', '', 'g'))
+               {", ".join(cols)}, {regime_sql} AS regime_bull
         FROM ipo_intelligence i
         LEFT JOIN ipo_rhp_intel ri ON ri.company_name = i.company_name
         WHERE i.company_name IS NOT NULL
+        ORDER BY regexp_replace(lower(i.company_name),
+                   '\y(ltd|limited|pvt|private|and)\y|&|[^a-z0-9]', '', 'g'),
+                 i.listing_date DESC NULLS LAST,
+                 length(i.company_name) DESC
     """)
     rows = cur.fetchall()
     tally, wrote = {}, 0
