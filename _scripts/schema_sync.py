@@ -59,6 +59,17 @@ DDL = [
         id SERIAL PRIMARY KEY, symbol TEXT, discovery_price NUMERIC,
         buy_qty BIGINT, sell_qty BIGINT, lean_pct NUMERIC,
         captured_at TIMESTAMPTZ DEFAULT NOW(), source TEXT DEFAULT 'live')""",
+    # CREATE TABLE IF NOT EXISTS is a NO-OP on a pre-existing table, so an older
+    # ipo_preopen_book never gained these columns — `source` was missing entirely
+    # (2026-07-19). Same class of bug as trade_journal. Add each individually so
+    # an existing table is repaired rather than skipped.
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS symbol TEXT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS discovery_price NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS buy_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS sell_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS lean_pct NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ DEFAULT NOW()",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'live'",
     # ── GUARDRAIL A: natural-key UNIQUE indexes so cleanups can't let dups
     # return (the recurring double-Laser). One canonical row per IPO/tick. ──
     # self-heal: drop dup companies (keep lowest ctid) so the unique index applies
