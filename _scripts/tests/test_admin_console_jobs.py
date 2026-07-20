@@ -120,3 +120,33 @@ def test_cards_query_survives_missing_insights_table(pg_uri):
     cur.execute(cards_sql)                                     # the real query
     cur.fetchall()                                             # no NeonDbError-equivalent
     c.close()
+
+
+def test_expected_steps_mirror_the_lean_pipeline_exactly():
+    """The Pipeline-health board's EXPECTED list must equal the lean
+    pipeline's actual step() names — that mirror is what makes a silently
+    missing step (the peer-PE ghost) VISIBLE. Divergence fails here."""
+    import os, re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo = os.path.dirname(root)
+    lean = open(os.path.join(root, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
+    lean_steps = re.findall(r'step\("([^"]+)"', lean)
+    route = open(os.path.join(repo, "app", "api", "admin", "pipeline-steps", "route.ts"), encoding="utf-8").read()
+    ui_steps = re.findall(r'\{ step: "([^"]+)"', route)
+    assert lean_steps, "lean pipeline steps not parseable"
+    assert ui_steps == lean_steps, (
+        f"Pipeline-health EXPECTED list diverged from the lean pipeline.\n"
+        f"only in lean: {[s for s in lean_steps if s not in ui_steps]}\n"
+        f"only in UI:   {[s for s in ui_steps if s not in lean_steps]}")
+
+
+def test_dead_levels_job_gone_from_all_three_lists():
+    """ipo_daily_levels is written by nothing in the pipeline and read by
+    nothing in the app (its route was archived) — the Admin job was dead
+    weight. Gone from runner, UI catalog and API accept-list."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo = os.path.dirname(root)
+    assert '"levels"' not in open(os.path.join(root, "job_runner.py"), encoding="utf-8").read()
+    assert 'key: "levels"' not in open(os.path.join(repo, "app", "dashboard", "admin", "AdminConsoleClient.tsx"), encoding="utf-8").read()
+    assert '"levels"' not in open(os.path.join(repo, "app", "api", "admin", "jobs", "route.ts"), encoding="utf-8").read()

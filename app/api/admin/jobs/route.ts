@@ -29,7 +29,7 @@ const ALLOWED_JOBS = new Set([
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
   "sbi_download", "sbi_parse",     // SBI research notes (street view)
-  "levels",                        // IPO daily levels
+  // IPO daily levels
   "universe_candles",              // candle sync (post-listing dashboard)
   "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)
