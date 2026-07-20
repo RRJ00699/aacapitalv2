@@ -131,7 +131,7 @@ QUERY_CEILING = {
     "app/api/broker/status/route.ts": 1,
     "app/api/health/route.ts": 0,
     # levels / intelligence / pipeline-status pruned 2026-07-20: archived
-    "app/api/ipo-command/route.ts": 6,
+    "app/api/ipo-command/route.ts": 7,  # +1 2026-07-21: deploy-order self-heal DDL on rebuild (reviewed)
     "app/api/ipo/cum-volume/route.ts": 0,
     "app/api/ipo/journey/route.ts": 0,
     "app/api/ipo/live-preopen/route.ts": 2,

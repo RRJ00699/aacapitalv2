@@ -27,6 +27,18 @@ Runtime truth comes from `vm_verify.py` runs, never from code existing.
 - RHP dirs: all EMPTY + 6 SUSPECT junk slugs ⇒ target-hygiene + matcher +
   prune fixes shipped.
 
+## Incident 2026-07-21 · deploy raced the schema run (RESOLVED in code)
+
+#265 deployed a route querying `ipo_insights` while the DDL ships via
+`schema_sync.py`; the owner's pipeline attempt hit the RETIRED stub (exit 1)
+so schema never synced → screen degraded (`relation "ipo_insights" does not
+exist`). Immediate recovery: Admin → Schema sync. Permanent fix: the route
+self-heals the table on the rebuild path with DDL kept byte-equivalent to
+schema_sync by test, plus an EXECUTED reproduction test (fresh DB without
+the table → self-heal → real cards query → green). Audit gap admitted: SQL
+was validated against a schema that already contained the table; deploy-
+order is now part of the test surface.
+
 ## Post-merge expectations (next vm_verify run)
 
 §2 journal & Haiku green or self-naming stderr · §3 Sonnet rows labeled
