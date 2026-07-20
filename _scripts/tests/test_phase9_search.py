@@ -34,8 +34,13 @@ console.log(JSON.stringify(out));
 """
 
 def _run_js():
-    outjs = "/tmp/search_intent_test.cjs"
-    subprocess.run(["npx", "esbuild", "lib/search-intent.ts", "--bundle", "--platform=node",
+    import tempfile
+    outjs = os.path.join(tempfile.gettempdir(), "search_intent_test.cjs")
+    import shutil
+    npx = shutil.which("npx") or shutil.which("npx.cmd")   # Windows resolves npx.cmd
+    if not npx:
+        pytest.skip("npx not on PATH")
+    subprocess.run([npx, "esbuild", "lib/search-intent.ts", "--bundle", "--platform=node",
                     f"--outfile={outjs}", "--format=cjs"], cwd=REPO, check=True, capture_output=True)
     script = JS.replace("OUT", json.dumps(outjs))
     r = subprocess.run(["node", "-e", script], cwd=REPO, capture_output=True, text=True, timeout=60)
@@ -74,3 +79,36 @@ def test_api_supplies_research_block():
               "margin_of_safety_status", "evidence"):
         assert f in src, f"API must supply {f}"
     assert 'status: "INCOMPLETE" as const' in src, "no verdict field when research incomplete"
+
+
+def test_mos_never_computed_from_issue_price_floor():
+    """Review point 2026-07-21: anchor_source='issue-price-floor' is a LABELED
+    non-valuation placeholder — mos.pct must stay null and readiness must
+    name the missing FV inputs. EXECUTED: the real route runs in the harness
+    with a fixture where peer P/E and GMP are absent."""
+    import tempfile
+    fx_rows = {"from ipo_consolidated\n": [{
+        "company_name": "SBI Funds Management Ltd.", "nse_symbol": "SBIFUNDS",
+        "symbol_final": "SBIFUNDS", "listing_date": "2026-07-21",
+        "issue_size_cr": "11692.91", "anchor_count": 129, "ofs_pct": "100",
+        "issue_price": "574", "ipo_pe": None, "peer_median_pe": None,
+        "listing_open": None, "gmp_day_before_pct": None, "eps_post": "15.06",
+        "roe": "33.77", "revenue_cagr_3y": None, "debt_equity": None,
+        "rhp_gate": "some-concerns", "sbi_parsed": True}]}
+    fixture = os.path.join(tempfile.gettempdir(), "mos_guard_fixture.json")
+    with open(fixture, "w") as fh:
+        json.dump(fx_rows, fh)
+    env = dict(os.environ, HARNESS_CAPTURE_BODY="1", HARNESS_FIXTURE_JSON=fixture)
+    r = subprocess.run(["node", "_scripts/tests/route_harness/run_route.mjs",
+                        "app/api/ipo/live-preopen/route.ts", "1"],
+                       cwd=REPO, capture_output=True, text=True, env=env, timeout=120)
+    line = [l for l in r.stdout.splitlines() if l.startswith("{")][-1]
+    body = json.loads(json.loads(line)["results"][0]["body"])
+    listing = body["listings"][0]
+    assert listing["mos"]["anchor_source"] == "issue-price-floor"
+    assert listing["mos"]["pct"] is None, "MoS must NEVER be computed from the issue-price floor"
+    assert listing["research_ready"] is False
+    assert "fair value inputs (EPS/peer P/E)" in listing["research_missing"]
+    mos_rules = [ru for ru in (listing.get("rules_live") or []) if "safety" in str(ru.get("name", "")).lower() or "mos" in str(ru.get("name", "")).lower()]
+    for ru in mos_rules:
+        assert ru.get("passed") is not True, "an unavailable MoS rule must not report passed"

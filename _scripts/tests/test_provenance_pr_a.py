@@ -145,3 +145,15 @@ def test_store_script_persists_sha_and_fans_out():
 def test_vm_verify_flags_verdicts_without_fingerprint():
     src = _read("vm_verify.py")
     assert "pdf_sha256" in src and "legacy/stale" in src
+
+
+def test_ofs_false_flag_with_detail_is_neutral_not_negative():
+    """Review point 2026-07-21: a structured OFS fact must not auto-negative.
+    direction derives from Sonnet's ofs_heavy flag: False -> neutral even
+    with detail present; True -> negative; None -> incomplete."""
+    rows = fx.fanout({"structure": {"ofs_heavy": False,
+        "detail": "Offer is entirely a sale by an early institutional investor; promoters retain 74%."}})
+    assert len(rows) == 1 and rows[0]["direction"] == "neutral"
+    rows2 = fx.fanout({"structure": {"ofs_heavy": None,
+        "detail": "Structure details partially disclosed."}})
+    assert rows2[0]["direction"] == "incomplete"
