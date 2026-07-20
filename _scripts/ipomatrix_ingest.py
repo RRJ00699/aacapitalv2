@@ -93,6 +93,16 @@ def extract(js):
     d=js.get("data",{}) if isinstance(js,dict) else {}
     idt=d.get("issue_details",{}) or {}
     kpi=d.get("kpi",{}) or {}
+    # DISCOVERY (2026-07-21): owner reports the JSON carries a peer-PE column;
+    # this mapper reads only pe_ratio/price_to_book/roe/debt_equity from kpi.
+    # We do NOT guess field names — with --raw, dump unmapped kpi keys and any
+    # key mentioning peer/industry so the real name can be wired precisely.
+    if a.raw:
+        _mapped={"pe_ratio","price_to_book","roe","debt_equity"}
+        _un=sorted(k for k in kpi.keys() if k not in _mapped)
+        if _un: print(f"  [discovery] unmapped kpi keys: {_un}")
+        _cand=[k for k in d.keys() if "peer" in k.lower() or "industr" in k.lower()]
+        if _cand: print(f"  [discovery] peer/industry top-level keys: { {k:d[k] for k in _cand} }")
     anc=d.get("anchor",{}) or {}
     sub=(d.get("subscription",{}) or {}).get("summary",{}) or {}
     pph=d.get("pre_post_holding",{}) or {}

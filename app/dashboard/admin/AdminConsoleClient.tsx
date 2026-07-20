@@ -23,7 +23,8 @@ const C = {
 const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }[] = [
   { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → SBI → Haiku/Sonnet → score → verdicts → consolidated → gates", heavy: true },
   { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Lean pipeline plus the post-lock candle purge", heavy: true },
-  { key: "peer_pe",         label: "Fetch peer P/E",        desc: "Screener peer multiples → peer_median_pe — THE fair-value input (was silently skipped; fixed 2026-07-21)" },
+  { key: "peer_pe_notes",   label: "Peer P/E from SBI notes", desc: "Median of the Haiku-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
+  { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
   { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },

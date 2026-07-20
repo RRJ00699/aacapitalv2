@@ -83,6 +83,7 @@ JOBS = {
     # the owner hit exactly this from Admin). The lean pipeline IS production.
     "pipeline":        ["_scripts/run_ipo_pipeline_lean.py"],
     "pipeline_weekly": ["_scripts/run_ipo_pipeline_lean.py", "--weekly"],
+    "peer_pe_notes":   ["_scripts/derive_peer_pe_from_notes.py", "--apply"],
     "peer_pe":         ["_scripts/fetch_peer_pe.py", "--apply"],
     "vm_verify":       ["_scripts/vm_verify.py"],
     "token":           ["_scripts/refresh_kite_token.py"],

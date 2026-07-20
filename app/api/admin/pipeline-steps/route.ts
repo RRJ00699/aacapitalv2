@@ -34,6 +34,7 @@ export const EXPECTED_LEAN_STEPS: Array<{ step: string; weekly?: boolean }> = [
   { step: "d10 outcome precompute" },
   { step: "reconcile listing dates" },
   { step: "master computables backfill" },
+  { step: "peer PE from SBI notes (fill-empty)" },
   { step: "peer PE (fetch, fair-value input)" },
   { step: "sync issue_details -> intelligence (isin)" },
   { step: "rebuild consolidated" },

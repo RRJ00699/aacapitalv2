@@ -193,6 +193,9 @@ def main():
     # sector-cleanup / quality-flags steps REMOVED 2026-07-21: those two
     # script names never existed in this repo (skip-noise since the cutover);
     # sectors come from scrape/IPOMatrix, quality from compute_quality_score.
+    # Fair-value peer chain (2026-07-21): SBI-note peers (analyst-curated,
+    # Haiku-extracted) fill first; Screener fills whatever is still NULL.
+    step("peer PE from SBI notes (fill-empty)", ["derive_peer_pe_from_notes.py", "--apply"])
     step("peer PE (fetch, fair-value input)", ["fetch_peer_pe.py", "--apply"])   # fair value — KEEP
 
     # ── BUILD + VERDICTS ──
