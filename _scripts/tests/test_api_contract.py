@@ -68,7 +68,8 @@ def api_db(pg_uri):
         ipo_pe NUMERIC, eps_post NUMERIC, peer_median_pe NUMERIC, roe NUMERIC,
         revenue_cagr_3y NUMERIC, profit_cagr_3y NUMERIC, debt_equity NUMERIC,
         ofs_pct NUMERIC, structure_type TEXT, return_listing_open NUMERIC,
-        gmp_day_before_pct NUMERIC, gmp_max_pct NUMERIC, gmp_min_pct NUMERIC);
+        gmp_day_before_pct NUMERIC, gmp_max_pct NUMERIC, gmp_min_pct NUMERIC,
+        is_sme BOOLEAN);  -- added 2026-07-20: prod-truth (contract_schema.py:22); audit #6 filter reads it
       CREATE TABLE ipo_verdicts (
         company_name TEXT, verdict TEXT, why_trade TEXT, why_caution TEXT,
         why_avoid TEXT, regime TEXT, quality_promoter BOOLEAN, ai_summary TEXT,
