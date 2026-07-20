@@ -36,20 +36,23 @@ def test_requires_explicit_apply():
     assert "pass --apply or --dry-run" in s
 
 
-def test_owns_its_columns():
-    """schema_sync taught us: a script that writes columns must ALTER them in,
-    because CREATE TABLE IF NOT EXISTS is a no-op on an existing table."""
+def test_owns_its_own_table():
+    """CHANGED 2026-07-20: the tape used to ALTER columns onto ipo_consolidated,
+    which build_ipo_consolidated_v2.py rebuilds every run — 456 rows were wiped
+    three times in two days. It now owns ipo_listing_tape, the same pattern that
+    kept ipo_bid_details intact through every rebuild."""
     s = _src()
-    for col in ("first_print_price", "first_print_volume", "vol_first_5m",
-                "vol_first_15m", "vol_first_60m", "high_first_60m",
-                "low_first_60m", "vwap_first_15m"):
-        assert f"ADD COLUMN IF NOT EXISTS {col}" in s, f"{col} never ALTERed in"
+    assert "CREATE TABLE IF NOT EXISTS ipo_listing_tape" in s
+    assert "UPDATE ipo_consolidated SET" not in s, "still writing to the rebuilt table"
+    for col in ("first_print_price", "vol_first_5m", "vol_first_15m",
+                "vwap_first_15m", "first_trade_time"):
+        assert col in s, f"{col} missing from the tape table"
 
 
 def test_is_idempotent():
     """Re-running must not refetch what is already filled — the API is rate
     limited and this walks 512 IPOs."""
-    assert "first_print_price IS NULL" in _src()
+    assert "t.symbol IS NULL" in _src(), "reruns would refetch everything"
 
 
 def test_respects_rate_limit():
@@ -77,7 +80,7 @@ def test_records_first_trade_time():
     """When trading actually began is itself the listing-time signal (10:00 vs
     09:15 vs later) — capture it rather than inferring it."""
     s = _src()
-    assert "first_trade_time" in s and "ADD COLUMN IF NOT EXISTS first_trade_time" in s
+    assert "first_trade_time" in s, "listing-time signal not captured"
 
 
 def test_no_traded_bars_is_skipped():
