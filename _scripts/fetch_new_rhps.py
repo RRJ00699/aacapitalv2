@@ -88,29 +88,62 @@ def main():
         pg.goto(LISTING_URL, timeout=60000, wait_until="domcontentloaded")
         try: pg.wait_for_selector("table tbody tr", timeout=30000)
         except Exception: pass
-        # read ONLY the first (newest) page
-        rows = pg.locator("table tbody tr")
-        listings = []
-        for i in range(rows.count()):
-            links = rows.nth(i).locator("a[href*='/filings/public-issues/']")
-            for j in range(links.count()):
-                al = links.nth(j)
-                title = (al.inner_text() or "").strip()
-                href = al.get_attribute("href") or ""
-                if not title or not href or SKIP_TITLE_RE.search(title): continue
-                url = href if href.startswith("http") else BASE + href
-                listings.append((title, url))
-        print(f"SEBI newest page: {len(listings)} filings")
-        # match each new IPO against the page
-        for title, url in listings:
-            ntitle = norm(title)
-            hit = next((orig for k, orig in tset.items()
-                        if k and (k in ntitle or ntitle.startswith(k) or k[:8] in ntitle)), None)
-            if hit:
-                matched.append((hit, title, url))
-                print(f"  ✓ MATCH: {hit!r}  <-  SEBI '{title[:50]}'")
+        # PAGINATE (fixed 2026-07-20). This read ONLY page 1 (~21 filings), so
+        # any IPO whose RHP had rolled onto page 2+ could NEVER be found: the
+        # backlog sat at "35 IPOs without an RHP" indefinitely while the log said
+        # "no new IPOs found on SEBI's newest page yet". Now it walks pages until
+        # every pending symbol is matched, MAX_PAGES is hit, or a page repeats.
+        MAX_PAGES = int(os.environ.get("SEBI_MAX_PAGES", "12"))
+        pending = dict(tset)          # shrinks as we match
+        seen_first_title = None
+        listings_total = 0
+        for page_no in range(1, MAX_PAGES + 1):
+            rows = pg.locator("table tbody tr")
+            listings = []
+            for i in range(rows.count()):
+                links = rows.nth(i).locator("a[href*='/filings/public-issues/']")
+                for j in range(links.count()):
+                    al = links.nth(j)
+                    title = (al.inner_text() or "").strip()
+                    href = al.get_attribute("href") or ""
+                    if not title or not href or SKIP_TITLE_RE.search(title): continue
+                    url = href if href.startswith("http") else BASE + href
+                    listings.append((title, url))
+            if not listings:
+                print(f"  page {page_no}: no filings — stopping"); break
+            # a repeated first row means pagination did not actually advance
+            if seen_first_title is not None and listings[0][0] == seen_first_title:
+                print(f"  page {page_no}: same content as previous — stopping"); break
+            seen_first_title = listings[0][0]
+            listings_total += len(listings)
+            hits_here = 0
+            for title, url in listings:
+                ntitle = norm(title)
+                hit = next((orig for k, orig in pending.items()
+                            if k and (k in ntitle or ntitle.startswith(k) or k[:8] in ntitle)), None)
+                if hit:
+                    matched.append((hit, title, url))
+                    hits_here += 1
+                    print(f"  ✓ MATCH (p{page_no}): {hit!r}  <-  SEBI '{title[:46]}'")
+                    pending = {k: v for k, v in pending.items() if v != hit}
+            print(f"  page {page_no}: {len(listings)} filings, {hits_here} match(es), "
+                  f"{len(pending)} still pending")
+            if not pending:
+                print("  all pending IPOs matched — stopping"); break
+            # advance
+            try:
+                nxt = pg.locator("a[aria-label='Next'], li.next a, a:has-text('Next')").first
+                if nxt.count() == 0 or not nxt.is_enabled():
+                    print(f"  no Next control after page {page_no} — stopping"); break
+                nxt.click(timeout=10000)
+                pg.wait_for_timeout(1500)
+                try: pg.wait_for_selector("table tbody tr", timeout=15000)
+                except Exception: pass
+            except Exception as e:
+                print(f"  pagination stopped at page {page_no}: {str(e)[:60]}"); break
+        print(f"SEBI scanned: {listings_total} filings across up to {MAX_PAGES} pages")
         if not matched:
-            print("  no new IPOs found on SEBI's newest page yet.")
+            print("  no pending IPOs found on SEBI (checked multiple pages).")
         br.close()
 
     if not a.apply:
