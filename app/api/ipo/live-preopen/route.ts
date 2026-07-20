@@ -105,6 +105,30 @@ function scoreStatic(c: Record<string, unknown>) {
           : has50 ? `${anchors} anchors (50+ ✓)` : `${anchors} anchors (below 50)`,
   });
 
+  // Rule 5b — HOUSE STACK (measured 2026-07-19, n=55, D30 from listing open).
+  // 30+ anchors AND >=Rs.200cr AND OFS<30% -> 72.7% win / +17.2% median, vs a
+  // 62.2% / +12.7% baseline, and drawdown risk 23.6% vs 32.4%. Fully STATIC —
+  // every input is known before the open, so it resolves at 09:30 with the rest.
+  // It out-performed every candidate signal tested that day (RHP governance
+  // flags, executed early volume, retail price-bid ratio, mutual-fund share);
+  // layering MF on top made it WORSE at D1/D2/D3/D5 and D30, so it ships alone.
+  {
+    const stackOk = anchors != null && anchors >= 30
+                 && size != null && size >= 200
+                 && ofs != null && ofs < 30;
+    const missing: string[] = [];
+    if (!(anchors != null && anchors >= 30)) missing.push(anchors == null ? "anchors pending" : `${anchors} anchors`);
+    if (!(size != null && size >= 200))      missing.push(size == null ? "size pending" : `₹${Math.round(size)}cr`);
+    if (!(ofs != null && ofs < 30))    missing.push(ofs == null ? "OFS pending" : `OFS ${Math.round(ofs)}%`);
+    rules.push({
+      name: "The House Stack (30 anchors + ₹200cr + fresh)",
+      passed: (anchors == null || size == null || ofs == null) ? null : stackOk,
+      win: 73,
+      detail: stackOk ? "all three — 72.7% win, +17.2% med (D30, n=55)"
+                      : `missing: ${missing.join(" · ")}`,
+    });
+  }
+
   // Rule 6 — not-expensive P/E (static, known pre-listing). P/E ≤ 70 passes;
   // above is the AVOID-flag territory. Backtest: cheap-vs-peer carries edge,
   // rich P/E decays. Makes the static set 5 rules total.

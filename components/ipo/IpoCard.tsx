@@ -386,6 +386,19 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
               ? <span style={{ color: C.green, fontWeight: 800 }}>● OPEN NOW</span>
               : (c.state ? String(c.state) : "")}{c.listing_date ? ` · lists ${D(c.listing_date)}` : ""}
             {c.quality_promoter === true ? <span style={{ color: C.gold, fontWeight: 600 }}> · ★ Quality promoter</span> : null}
+            {/* HOUSE STACK — the only signal that beat baseline in the
+                2026-07-19 sweep (n=55, D30 from listing open): 30+ anchors AND
+                >=Rs.200cr AND OFS<30% -> 72.7% win vs 62.2%, +17.2% median vs
+                +12.7%, drawdown risk 23.6% vs 32.4%. RHP flags, early volume,
+                retail price-bids and MF share all failed to beat it. */}
+            {c.house_stack === true ? (
+              <span title={String(c.house_stack_stat ?? "")} style={{
+                marginLeft: 8, color: C.green, background: C.greenBg,
+                border: `1px solid ${C.greenBd}`, borderRadius: 999,
+                padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>
+                ◆ HOUSE STACK · 72.7%
+              </span>
+            ) : null}
           </div>
           {onLive && (
             <span onClick={onLive} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
@@ -483,6 +496,13 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
       {/* ROW 8: journey CTA — the live exit engine */}
       {listed && sym && (
         <>
+          {/* Journey: the stack is WHY you can sit through a dip — that cohort's
+              -20% drawdown risk is 23.6% vs 32.4% baseline. */}
+          {c.house_stack === true ? (
+            <div style={{ fontSize: 10.5, color: C.green, fontWeight: 700, marginBottom: 6 }}>
+              ◆ House Stack — historically {String(c.house_stack_stat ?? "")}; drawdown risk 23.6% vs 32.4% baseline
+            </div>
+          ) : null}
           <button onClick={() => onJourney?.(sym)} style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%",
             background: C.gold, color: C.bg, fontFamily: DISPLAY, fontSize: 14, fontWeight: 700, padding: "13px 16px",
@@ -532,6 +552,8 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           if (cagr != null && cagr >= 20) good.push(`Revenue compounding ${cagr.toFixed(0)}%/yr`);
           if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push(`Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)`);
           if (c.quality_promoter === true) good.push("Quality promoter track record");
+          if (c.house_stack === true)
+            good.push("HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue — 72.7% win, +17.2% median (D30, n=55)");
           if (clear > 0 && raised.length === 0) good.push(`${clear} governance checks clear — no auditor/SEBI/pledge flags`);
         }
         const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];

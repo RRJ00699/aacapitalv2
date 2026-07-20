@@ -282,6 +282,22 @@ export async function GET(req?: Request) {
         { key: "fresh",   label: "Fresh-issue (not OFS-heavy)",  pass: ofsPct != null && ofsPct < 30 },
         { key: "band",    label: "Affordable band (<₹300)",      pass: band != null && band < 300 },
       ];
+      // ── HOUSE STACK (measured 2026-07-19, n=55, D30 from listing open) ──
+      // 30+ anchors AND >=Rs.200cr AND OFS<30%  ->  72.7% win, +17.2% median,
+      // only 23.6% chance of a -20% drawdown. Baseline is 62.2%/+12.7%/32.4%.
+      // This beat every signal tested this weekend: RHP governance flags, early
+      // executed volume, retail price-bid ratio and mutual-fund share. Adding MF
+      // to it made it WORSE at D1/D2/D3/D5 and D30, so the stack ships alone.
+      const stackAnchors = anc != null && anc >= 30;
+      const stackFloor   = size >= 200;
+      const stackFresh   = ofsPct != null && ofsPct < 30;
+      const houseStack   = stackAnchors && stackFloor && stackFresh;
+      const stackParts   = [
+        { label: "30+ anchors",   pass: stackAnchors, got: anc == null ? "—" : String(anc) },
+        { label: "≥₹200cr",       pass: stackFloor,   got: size ? `₹${Math.round(size)}cr` : "—" },
+        { label: "OFS <30%",      pass: stackFresh,   got: ofsPct == null ? "—" : `${Math.round(ofsPct)}%` },
+      ];
+
       const avoid = [
         size > 0 && size < 500 ? "Small issue (<₹500cr)" : null,
         gap != null && gap > 50 ? "Euphoric open (>+50%)" : null,
@@ -307,7 +323,14 @@ export async function GET(req?: Request) {
       else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : `No buy-at-open rules met — watch only.`;
 
       return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
-               playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c), ...gmpSignal(c) };
+               playbook_passed: passed, playbook_verdict: verdict_line,
+               house_stack: houseStack,
+               house_stack_parts: stackParts,
+               house_stack_hit: stackParts.filter(x => x.pass).length,
+               house_stack_stat: houseStack
+                 ? "72.7% win · +17.2% median · D30 (n=55)"
+                 : `${stackParts.filter(x => x.pass).length}/3 — baseline 62.2% win`,
+               ...fairValue(c), ...gmpSignal(c) };
     });
 
     // split: investable vs junk-floor (size below the owner-locked floor)
