@@ -81,10 +81,13 @@ def api_db(pg_uri):
       CREATE TABLE ipo_rhp_intel (company_name TEXT, verdict TEXT, one_line TEXT,
         quality_gate TEXT, margin_of_safety NUMERIC, full_json TEXT,
         confidence TEXT, rhp_url TEXT);
-      CREATE TABLE ipo_intelligence (company_name TEXT, anchor_count INT,
+      CREATE TABLE ipo_intelligence (id SERIAL, company_name TEXT, anchor_count INT,
         ofs_cr NUMERIC, fresh_issue_cr NUMERIC, price_band_high NUMERIC,
         price_band_low NUMERIC, chittorgarh_slug TEXT, score_band TEXT,
         score_expected_win NUMERIC, quality_score NUMERIC, quality_conf TEXT);
+      CREATE TABLE ipo_insights (insight_id BIGSERIAL, ipo_id INT, category TEXT,
+        statement TEXT, direction TEXT, source_type TEXT, source_locator TEXT,
+        source_excerpt TEXT, is_current BOOLEAN DEFAULT TRUE);
       CREATE TABLE ipo_research_notes (source TEXT, company TEXT, nse_symbol TEXT,
         rating TEXT, full_json TEXT, one_line TEXT, peer_name TEXT,
         peer_ps NUMERIC, note_ps NUMERIC);

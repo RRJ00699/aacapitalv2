@@ -525,15 +525,34 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           ? (() => { try { return JSON.parse(String(c.rhp_full)); } catch { return null; } })()
           : (c.rhp_full as Record<string, unknown> | null);
         const N = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : null; };
-        const bad: string[] = [];
-        const good: string[] = [];
+        // ── PR-B (Phase 6): evidence rows from ipo_insights ────────────────
+        // Each row exists only WITH the source's quoted words (fan-out rule).
+        // Reasons carry provenance; RHP-backed items render a "RHP · quoted"
+        // badge with the excerpt on hover. insights==null (no fan-out yet)
+        // -> full legacy fallback below, unchanged behavior.
+        type Insight = { category?: string; direction?: string; statement?: string;
+                         excerpt?: string | null; source?: string; locator?: string | null };
+        const insights: Insight[] = (() => {
+          const raw = (c as Record<string, unknown>).insights;
+          if (Array.isArray(raw)) return raw as Insight[];
+          if (typeof raw === "string") { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; } }
+          return [];
+        })();
+        type Reason = { text: string; quote?: string | null; loc?: string | null };
+        const bad: Reason[] = [];
+        const good: Reason[] = [];
         const gate = String(c.rhp_gate ?? "").toLowerCase();
-        if (gate === "reject") bad.push("RHP forensics: REJECT — the document itself argues against this issue");
+        if (gate === "reject") bad.push({ text: "RHP forensics: REJECT — the document itself argues against this issue" });
         const { raised, clear } = rhpFlagChips(fj0);
-        for (const r of raised) bad.push(r);
-        const risks = fj0 && Array.isArray((fj0 as Record<string, unknown>).top_3_material_risks)
-          ? ((fj0 as Record<string, unknown>).top_3_material_risks as string[]) : [];
-        for (const r of risks) bad.push(r);
+        for (const r of raised) bad.push({ text: r });
+        const insRisks = insights.filter((i) => i.category === "risk" && i.direction === "negative" && i.statement);
+        if (insRisks.length) {
+          for (const r of insRisks) bad.push({ text: String(r.statement), quote: r.excerpt, loc: r.locator });
+        } else {
+          const risks = fj0 && Array.isArray((fj0 as Record<string, unknown>).top_3_material_risks)
+            ? ((fj0 as Record<string, unknown>).top_3_material_risks as string[]) : [];
+          for (const r of risks) bad.push({ text: r });
+        }
         const ofsC = N(c.ofs_cr), freshC = N(c.fresh_issue_cr);
         const tot = (ofsC ?? 0) + (freshC ?? 0);
         const ofsPct = tot > 0 ? Math.round((ofsC ?? 0) / tot * 100) : null;
@@ -547,34 +566,40 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
         // Quantitative OFS weighting (fair-value, backtest factors) unchanged.
         const pend: string[] = [];
         if (ofsPct != null && ofsPct >= 60) {
+          const stIns = insights.find((i) => i.category === "structure" && i.statement);
           const st = fj0 && typeof fj0 === "object" ? (fj0 as Record<string, unknown>).structure as Record<string, unknown> | undefined : undefined;
           const stDetail = st && typeof st.detail === "string" ? (st.detail as string).trim() : "";
-          if (st?.ofs_heavy === true && stDetail) {
-            bad.push(`${ofsPct}% OFS — RHP: ${stDetail.slice(0, 160)}`);
+          if (stIns && stIns.direction === "negative") {
+            bad.push({ text: `${ofsPct}% OFS — RHP: ${String(stIns.statement).slice(0, 160)}`, quote: stIns.excerpt, loc: stIns.locator });
+          } else if (stIns) {
+            // evidence WAS read and is not a confirmed negative (e.g. an
+            // institutional seller) — no pending line, no manufactured claim
+          } else if (st?.ofs_heavy === true && stDetail) {
+            bad.push({ text: `${ofsPct}% OFS — RHP: ${stDetail.slice(0, 160)}` });
           } else {
             pend.push(`${ofsPct}% offer for sale confirmed. Seller rationale and use-of-proceeds assessment pending RHP analysis.`);
           }
         }
         const pe = N(c.ipo_pe), ppe = N(c.peer_median_pe);
-        if (pe != null && ppe != null && ppe > 0 && pe / ppe >= 1.5) bad.push(`Priced ${(pe / ppe).toFixed(1)}× the sector median P/E (${pe.toFixed(0)} vs ${ppe.toFixed(0)})`);
+        if (pe != null && ppe != null && ppe > 0 && pe / ppe >= 1.5) bad.push({ text: `Priced ${(pe / ppe).toFixed(1)}× the sector median P/E (${pe.toFixed(0)} vs ${ppe.toFixed(0)})` });
         const roe = N(c.roe), de = N(c.debt_equity), cagr = N(c.revenue_cagr_3y), pat = N(c.pat_cr);
-        if (pat != null && pat < 0) bad.push("Loss-making — negative PAT");
+        if (pat != null && pat < 0) bad.push({ text: "Loss-making — negative PAT" });
         // exact 0 for ROE/CAGR is almost always null-coded missing data, not a
         // real reading (Caliber showed "ROE 0.0%" — Rakesh's screenshot) — a
         // missing number must never manufacture a negative.
-        if (roe != null && roe !== 0 && roe < 10) bad.push(`Weak ROE ${roe.toFixed(1)}%`);
-        if (de != null && de > 1.5) bad.push(`Heavy leverage — D/E ${de.toFixed(1)}`);
-        if (cagr != null && cagr !== 0 && cagr < 8) bad.push(`Sluggish revenue growth ${cagr.toFixed(0)}%/yr`);
+        if (roe != null && roe !== 0 && roe < 10) bad.push({ text: `Weak ROE ${roe.toFixed(1)}%` });
+        if (de != null && de > 1.5) bad.push({ text: `Heavy leverage — D/E ${de.toFixed(1)}` });
+        if (cagr != null && cagr !== 0 && cagr < 8) bad.push({ text: `Sluggish revenue growth ${cagr.toFixed(0)}%/yr` });
         // strengths (fill only when the negative case is thin AND gate isn't reject)
         if (bad.length < 5 && gate !== "reject") {
-          if (ofsPct != null && ofsPct <= 20) good.push(`${100 - (ofsPct ?? 0)}% fresh issue — capital goes INTO the business`);
-          if (roe != null && roe >= 18) good.push(`Strong ROE ${roe.toFixed(1)}%`);
-          if (cagr != null && cagr >= 20) good.push(`Revenue compounding ${cagr.toFixed(0)}%/yr`);
-          if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push(`Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)`);
-          if (c.quality_promoter === true) good.push("Quality promoter track record");
+          if (ofsPct != null && ofsPct <= 20) good.push({ text: `${100 - (ofsPct ?? 0)}% fresh issue — capital goes INTO the business` });
+          if (roe != null && roe >= 18) good.push({ text: `Strong ROE ${roe.toFixed(1)}%` });
+          if (cagr != null && cagr >= 20) good.push({ text: `Revenue compounding ${cagr.toFixed(0)}%/yr` });
+          if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push({ text: `Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)` });
+          if (c.quality_promoter === true) good.push({ text: "Quality promoter track record" });
           if (c.house_stack === true)
-            good.push("HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue — 72.7% win, +17.2% median (D30, n=55)");
-          if (clear > 0 && raised.length === 0) good.push(`${clear} governance checks clear — no auditor/SEBI/pledge flags`);
+            good.push({ text: "HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue — 72.7% win, +17.2% median (D30, n=55)" });
+          if (clear > 0 && raised.length === 0) good.push({ text: `${clear} governance checks clear — no auditor/SEBI/pledge flags` });
         }
         const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];
         if (!items.length && !pend.length) return null;
@@ -595,7 +620,12 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                   color: C.green, margin: "7px 0 4px" }}>{nBad ? "…and in its favour" : "No confirmed negatives — in its favour"}</div>}
                 <div style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, lineHeight: 1.5, color: C.sub }}>
                   <span style={{ fontWeight: 800, flexShrink: 0, color: isBad ? C.red : C.green }}>{isBad ? "✕" : "✓"}</span>
-                  <span>{r}</span></div>
+                  <span>{r.text}
+                    {r.quote ? <span title={`RHP${r.loc ? ` · ${r.loc}` : ""}: “${String(r.quote).slice(0, 220)}”`}
+                      style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, letterSpacing: .3, padding: "1px 5px",
+                               borderRadius: 4, background: "rgba(120,120,140,.15)", color: C.meta,
+                               cursor: "help", whiteSpace: "nowrap" }}>RHP · quoted</span> : null}
+                  </span></div>
               </div>;
             })}
             {pend.map((r, i) => (

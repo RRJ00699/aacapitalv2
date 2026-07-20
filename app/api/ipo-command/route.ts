@@ -112,6 +112,16 @@ export async function GET(req?: Request) {
              f.red_flags, f.green_checks, f.red_count, f.green_count,
              bc.consensus AS street_consensus, bc.n_brokers AS street_brokers, bc.consensus_score AS street_score,
              ii.anchor_count, ii.ofs_cr, ii.fresh_issue_cr, ii.price_band_high AS band_high,
+             -- PR-B (Phase 6): machine-readable evidence for the reason builder.
+             -- Only CURRENT rows; every row carries the source's own words
+             -- (fan-out enforces no-excerpt-no-row). NULL until PR-A's fan-out
+             -- has processed an RHP — the UI falls back to legacy rendering.
+             (SELECT json_agg(json_build_object(
+                     'category', s.category, 'direction', s.direction,
+                     'statement', s.statement, 'excerpt', s.source_excerpt,
+                     'source', s.source_type, 'locator', s.source_locator))
+                FROM ipo_insights s
+               WHERE s.ipo_id = ii.id AND s.is_current) AS insights,
              ii.price_band_low AS band_low, ii.chittorgarh_slug, ii.score_band, ii.score_expected_win, ii.quality_score, ii.quality_conf,
              ri.rhp_url,
              c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,

@@ -58,6 +58,26 @@ more hour. `vm_verify.py` prints the DST-correct conversion for today.
    `vm_verify.py §3` shows exactly this as PARTIAL, per the four-state rule.
 4. Tick freshness breached its 1h SLA (2.1h) — watchdog territory, not fatal.
 
+## Post-deploy acceptance — "how do I know it really works"
+
+The ladder, in order; each rung catches what the one below cannot. Rungs 1–3
+run in the sandbox/CI before every commit; rungs 4–5 are yours after deploy.
+
+| # | Rung | Command | Pass looks like |
+|---|---|---|---|
+| 1 | Compiles | `npx tsc --noEmit` + `npm run build` (PC) | zero errors |
+| 2 | Logic + SQL execute | `python -m pytest _scripts/tests/ -q` (needs `pip install pgserver`) | all pass, ~0 skipped |
+| 3 | Routes actually run | included in rung 2 (route harness executes handlers with counting stubs) | A1/A2/A3 green |
+| 4 | Production reality | the one VM command above | exit 0; §3 matrices honest; §5 payload live |
+| 5 | Live day | watch one listing morning on /dashboard/ipo2 | ticks flow, states advance, no unsupported claims |
+
+After THIS deploy specifically, expect in the vm_verify output: the two
+stale Sonnet verdicts labeled "NO pdf fingerprint (legacy/stale)"; zero
+SUSPECT rhps/ dirs after the next pipeline (matcher fix + prune); `compute
+journal outcomes` and `SBI Haiku` either green or failing with a
+self-explanatory stderr_tail; and once a NEW RHP lands end-to-end, insight
+rows fanning out and cards showing "RHP · quoted" badges.
+
 ## Recovery quick-reference
 
 | Symptom | First command | Then |
