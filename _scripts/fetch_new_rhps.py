@@ -59,7 +59,15 @@ def new_ipos_without_rhp(days):
           AND NOT EXISTS (
               SELECT 1 FROM ipo_rhp_intel r
               WHERE lower(regexp_replace(r.company_name,'[^a-zA-Z0-9]','','g'))
-                  = lower(regexp_replace(ii.company_name,'[^a-zA-Z0-9]','','g')))
+                  = lower(regexp_replace(ii.company_name,'[^a-zA-Z0-9]','','g'))
+                -- PLACEHOLDER GUARD (2026-07-20): a row in ipo_rhp_intel does
+                -- NOT mean the RHP was read. fetch/store create rows before
+                -- extraction, so Xtranet, Indo-MIM and Lohia were EXCLUDED from
+                -- the target list while their full_json was NULL — the fetcher
+                -- reported "0 match(es), 30 still pending" across all 12 pages
+                -- while their RHPs sat on SEBI page 1. Only a real extraction
+                -- counts as "already have it".
+                AND r.full_json IS NOT NULL)
     """, (days,))
     names = [r[0] for r in cur.fetchall()]
     c.close()
