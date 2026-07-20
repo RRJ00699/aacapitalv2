@@ -167,6 +167,7 @@ def _download_matched(matched):
     import pypdf
     os.makedirs(OUT_DIR, exist_ok=True)
     got = 0
+    tried = 0  # Phase-3: downloads actually attempted (excludes already-have skips)
     with sync_playwright() as pw:
         br = pw.chromium.launch(headless=True)
         ctx = br.new_context(accept_downloads=True)
@@ -193,6 +194,7 @@ def _download_matched(matched):
             dest = os.path.join(d, "rhp.pdf")
             if os.path.exists(dest):
                 print(f"  ⏭ {company} (have it)"); continue
+            tried += 1
             try:
                 pg.goto(url, timeout=60000, wait_until="domcontentloaded")
 
@@ -263,6 +265,19 @@ def _download_matched(matched):
                 print(f"  ✗ {company} ({type(e).__name__})")
         br.close()
     print(f"\ndownloaded {got} RHP(s) into {OUT_DIR}/")
+    # Phase-3: attempted-but-zero means SEBI changed markup / viewer broke again
+    # (the exact failure mode that hid the Xtranet/Indo-MIM/Lohia backlog).
+    # Already-downloaded skips don't count as attempts, so 0 tried = clean exit.
+    if tried > 0 and got == 0:
+        try:
+            from lib.notify import notify
+            notify("RHP downloads ALL FAILED",
+                   f"{tried} RHP(s) attempted, 0 downloaded. "
+                   "SEBI page/viewer likely changed — backlog will grow until fixed.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

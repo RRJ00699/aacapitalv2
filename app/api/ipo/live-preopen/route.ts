@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import { fairValue } from "@/lib/fair-value";
 import { neon } from "@neondatabase/serverless";
+import { cached } from "@/lib/kv-cache";
 import { getBroker } from "@/lib/brokers";
 
 export const dynamic = "force-dynamic";
@@ -237,9 +238,12 @@ function confidence(all: Rule[], rhpReject: boolean, ofsPeReject: boolean, anyAv
 export async function GET() {
   try {
     const sql = db();
-    // IPOs listing within the live window: from 1 day before today through
-    // 7 days after listing (so a fresh listing shows immediately and stays a week).
-    const rows = await sql`
+    // Phase-2 zero-idle: this route is polled every 60s through the 8:55–10:20
+    // IST decision window, but the row set below only changes when the nightly
+    // pipeline runs. KV-cache the Neon READ for 1h — repeat polls skip Neon.
+    // Broker depth + the ipo_preopen_book capture below are live/WRITE paths
+    // and intentionally stay per-request.
+    const rows = JSON.parse(await cached("live-preopen:rows:v1", async () => (await sql`
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
@@ -253,7 +257,7 @@ export async function GET() {
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
         AND listing_date <= CURRENT_DATE + INTERVAL '1 day'
       ORDER BY listing_date ASC, issue_size_cr DESC NULLS LAST
-    ` as Array<Record<string, unknown>>;
+    `), 3600)) as Array<Record<string, unknown>>;
 
     // Try to get a live broker once (shared across listings). Degrade gracefully.
     let broker: any = null;

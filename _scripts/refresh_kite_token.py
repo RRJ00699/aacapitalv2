@@ -251,6 +251,17 @@ def verify_token(access_token: str) -> bool:
         return False
 
 
+def _alert(msg: str):
+    """Phase-3: token failure is the single worst silent failure (listing-day
+    ticker + candles all die). URGENT push; never raises."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from lib.notify import notify
+        notify("Kite token refresh FAILED", msg, priority="urgent", tags=["rotating_light"])
+    except Exception:
+        pass
+
+
 def main():
     log.info("=" * 50)
     log.info("AACapital — Kite Token Refresh")
@@ -263,6 +274,7 @@ def main():
             "KITE_TOTP_SECRET": TOTP_SECRET, "DATABASE_URL": DATABASE_URL,
         }.items() if not v]
         log.error(f"Missing env vars: {missing}")
+        _alert(f"Missing credentials: {', '.join(missing)}. Fix env / Settings then re-run.")
         sys.exit(1)
 
     try:
@@ -278,10 +290,14 @@ def main():
             log.info("✅ Token refresh complete — all pipelines will use new token")
         else:
             log.error("❌ Token saved but verification failed")
+            _alert("Token saved but VERIFICATION failed — Kite may reject calls today. "
+                   "Check API key/secret pair and Zerodha app status.")
             sys.exit(1)
 
     except Exception as e:
         log.error(f"Token refresh failed: {e}")
+        _alert(f"TOTP login flow failed: {str(e)[:200]}. "
+               "Listing-day ticker + candle sync will SKIP until fixed.")
         sys.exit(1)
 
 

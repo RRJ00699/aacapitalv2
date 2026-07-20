@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { kvStore } from "@/lib/kv-cache";
 
 export const dynamic = "force-dynamic";
 function db() { return neon(process.env.DATABASE_URL!); }
@@ -21,6 +22,20 @@ export async function GET(req: Request) {
   const date = searchParams.get("date"); // optional YYYY-MM-DD (IST listing day)
   if (!symbol) {
     return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 });
+  }
+
+  // Phase-2 zero-idle: VolumeConfirm polls every 60s per symbol. The window
+  // total is FINAL after 11:00 IST — cache confirmed 24h, in-window 60s, so
+  // repeat polls (and multiple devices) collapse to at most 1 Neon read/min,
+  // and post-window reads never wake Neon again that day.
+  const dayKey = date ?? new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+  const ckey = `cumvol:v1:${symbol}:${dayKey}`;
+  const store = kvStore();
+  if (store) {
+    try {
+      const hit = await store.get(ckey);
+      if (hit) return new NextResponse(hit, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
+    } catch { /* miss */ }
   }
 
   try {
@@ -49,23 +64,38 @@ export async function GET(req: Request) {
 
     const r = rows[0] as { vol_end: number | null; vol_start: number | null; tick_count: number };
     if (!r || !r.tick_count) {
-      return NextResponse.json({
+      const body = JSON.stringify({
         ok: true, symbol, window: "10:29–11:00 IST",
         cum_volume: null, status: "awaiting", note: "no ticks captured in window yet",
       });
+      if (store) { try { await store.put(ckey, body, { expirationTtl: 60 }); } catch { /* best-effort */ } }
+      return new NextResponse(body, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
     }
 
+    // Window total needs BOTH bounds. The old fallback returned vol_end alone
+    // (i.e. the whole-day cumulative volume) and labeled it "confirmed" — wrong
+    // number before 10:29. And "confirmed" additionally requires the 11:00 IST
+    // window close (always true for historical ?date= queries).
     const cum = (r.vol_end != null && r.vol_start != null)
       ? Math.max(0, Number(r.vol_end) - Number(r.vol_start))
-      : (r.vol_end != null ? Number(r.vol_end) : null);
+      : null;
+    const istNow = new Date(Date.now() + 5.5 * 3600_000);
+    const istToday = istNow.toISOString().slice(0, 10);
+    const windowClosed = dayKey < istToday ||
+      (dayKey === istToday && istNow.getUTCHours() * 60 + istNow.getUTCMinutes() >= 660); // 11:00 IST
+    const confirmed = cum != null && windowClosed;
 
-    return NextResponse.json({
+    const body = JSON.stringify({
       ok: true, symbol, window: "10:29–11:00 IST",
-      cum_volume: cum,
+      cum_volume: confirmed ? cum : null,
       vol_start: r.vol_start, vol_end: r.vol_end,
       tick_count: r.tick_count,
-      status: cum == null ? "awaiting" : "confirmed",
+      status: confirmed ? "confirmed" : "awaiting",
+      ...(confirmed ? {} : { note: "in window — accumulating ticks" }),
     });
+    // confirmed totals are final for the day — 24h; in-window partials — 60s
+    if (store) { try { await store.put(ckey, body, { expirationTtl: confirmed ? 86400 : 60 }); } catch { /* best-effort */ } }
+    return new NextResponse(body, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
   } catch (e: unknown) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "query failed" },
