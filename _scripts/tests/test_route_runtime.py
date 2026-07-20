@@ -17,8 +17,11 @@ pytestmark = [pytest.mark.integration,
                                  reason="node_modules missing — run npm ci (route runtime tier NOT covered)")]
 
 
-def run_route(route, calls=2):
-    r = subprocess.run(["node", str(HARNESS), route, str(calls)],
+def run_route(route, calls=2, expire=None):
+    args = ["node", str(HARNESS), route, str(calls)]
+    if expire:
+        args.append(expire)
+    r = subprocess.run(args,
                        capture_output=True, text=True, timeout=120, cwd=ROOT)
     assert r.returncode == 0, f"harness failed for {route}: {r.stderr[:300]}"
     return json.loads(r.stdout)
@@ -27,12 +30,23 @@ def run_route(route, calls=2):
 # ---------------- A2 — cache-hit proof ----------------
 
 def test_A2_ipo_command_second_call_zero_queries():
-    """The KV cache must actually serve the second call: ZERO Neon queries."""
+    """The KV cache must actually serve the second call: ZERO Neon queries.
+    Phase-2: a miss now writes TWO keys (primary + 7d :stale twin)."""
     d = run_route("app/api/ipo-command/route.ts", 2)
     c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
+    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 2
     assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
     assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
+
+def test_A2b_ipo_command_stale_tier_never_wakes_neon():
+    """Phase-2 zero-idle: when the PRIMARY key has expired but the :stale twin
+    survives, the route serves STALE with ZERO Neon queries and ZERO writes."""
+    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v1@3")
+    c1, c2, c3 = d["results"]
+    assert c1["xcache"] == "MISS" and c2["xcache"] == "HIT"
+    assert c3["xcache"] == "STALE", f"expected STALE, got {c3['xcache']}"
+    assert c3["queries"] == 0, "STALE path woke Neon — zero-idle broken"
+    assert c3["kv_puts"] == 0
 
 def test_A2_market_regime_second_call_zero_queries():
     """Ledger #12 FIX flipped: market-regime now caches in KV (keyed per

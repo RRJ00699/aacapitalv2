@@ -51,6 +51,13 @@ export async function GET(req?: Request) {
     try {
       const cached = await kv.get(CACHE_KEY);
       if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
+      // Phase-2 zero-idle: primary TTL lapsed (pipeline late / cold KV region).
+      // Serve the long-lived stale twin rather than waking Neon for a read.
+      // Header flags it so the UI / monitoring can surface "data may be old".
+      const stale = await kv.get(`${CACHE_KEY}:stale`);
+      if (stale) return new NextResponse(stale, { headers: {
+        "content-type": "application/json", "x-cache": "STALE",
+        "x-warning": "primary cache expired; serving stale copy, DB not woken" } });
     } catch { /* cache read failed — fall through to DB */ }
   }
 
@@ -348,7 +355,11 @@ export async function GET(req?: Request) {
     const payload = JSON.stringify({ cards: investable, filtered, filtered_count: filtered.length,
       live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
-    if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
+    if (kv) {
+      try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ }
+      // stale twin (7d): the read path's no-Neon fallback when primary lapses
+      try { await kv.put(`${CACHE_KEY}:stale`, payload, { expirationTtl: 604800 }); } catch { /* best-effort */ }
+    }
     return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
   } catch (e) {
     // DEGRADED MODE (Rakesh 2026-07-17: one error must never blank the page).
