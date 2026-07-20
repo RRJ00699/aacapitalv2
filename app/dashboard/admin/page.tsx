@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const admin = await getAdminEmail();
-  if (!admin) redirect("/dashboard/ipo");
+  if (!admin) redirect("/dashboard/ipo2");
   return (
     <AppShell current="admin">
       <AdminConsoleClient adminEmail={admin} />

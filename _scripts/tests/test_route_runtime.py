@@ -162,18 +162,20 @@ def test_A1_query_ceiling(route, ceiling):
 # ---------------- A3 — no-DB-in-hot-path contract ----------------
 
 HOT_ROUTES = [
-    "ipo-command", "ipo/live-preopen", "ipo/intelligence", "market/global",
+    "ipo-command", "ipo/live-preopen", "market/global",
     "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-]  # market/live archived 2026-07-18 (orphaned equity feed — see _archive/)
+]  # market/live archived 2026-07-18; ipo/intelligence archived 2026-07-20 (zero callers)
 
 # LEDGER #13: hot routes that hit Neon per-request TODAY without a KV cache
 # (audited 2026-07-17 via this test — 8 of the 9 hot routes; only ipo-command
 # caches). FROZEN allow-list — the guard's job is to stop this list GROWING.
 # Remove an entry the moment its route gains a cache; adding needs a review.
+# 2026-07-20 shrink: ipo/live-preopen + ipo/journey CURED (Phase-2 KV caches);
+# ipo/intelligence archived. Remaining three are the next zero-idle targets.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
-    "ipo/intelligence", "market/global", "market/live",
-    "ipo", "ipo/journey", "ipo/playbook",
-})  # CURED: live-preopen (60s+window bypass), market/snapshot (300s) — 2026-07-17
+    "market/global", "ipo", "ipo/playbook",
+})  # CURED 07-17: live-preopen, market/snapshot (#261 caches) · CURED 07-20:
+    # ipo/journey (Phase-2 KV day-cache) · archived: ipo/intelligence, market/live
 
 
 def _route_file(name):
@@ -184,7 +186,8 @@ def _uses_db(src):
     return bool(re.search(r"\bneon\(|\bgetDb\(|\bsql`", src))
 
 def _has_kv_cache(src):
-    return bool(re.search(r"getCloudflareContext|kv\.get|CACHE_KEY", src))
+    # Phase-2 routes cache via the shared helper import rather than inline KV
+    return bool(re.search(r"getCloudflareContext|kv\.get|CACHE_KEY|from \"@/lib/kv-cache\"", src))
 
 def test_A3_hot_routes_cache_or_allowlist():
     missing, violations, cured = [], [], []
