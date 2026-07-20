@@ -84,7 +84,7 @@ KNOWN_GAPS = {
     ("app/api/ipo/route.ts", 0):              "KIND2: return_day30 — routes use it as POINT-IN-TIME latest return; "
                                               "max_upside_30d is peak; return_cmp matches intent — owner call",
     ("app/api/ipo/post-listing/route.ts", 0): "KIND2: return_day30 point-in-time — see ipo/route entry",
-    # ("app/api/ipo/intelligence/route.ts",0) pruned 2026-07-20: route archived
+    # (ipo-intelligence entry, 0) pruned 2026-07-20: route archived
     #   to _archive/routes/ (zero callers) — see test_archived_routes_stay_dead.
     # (gmp harness-limit entry pruned 2026-07-20: route archived on main)
 }
