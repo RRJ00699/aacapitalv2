@@ -273,7 +273,7 @@ export async function GET() {
     // pipeline runs. KV-cache the Neon READ for 1h — repeat polls skip Neon.
     // Broker depth + the ipo_preopen_book capture below are live/WRITE paths
     // and intentionally stay per-request.
-    const rows = JSON.parse(await cached("live-preopen:rows:v1", async () => (await sql`
+    const rows = JSON.parse(await cached("live-preopen:rows:v2" /* v2: audit #6 filter */, async () => (await sql`
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
@@ -286,6 +286,10 @@ export async function GET() {
       WHERE listing_date IS NOT NULL
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
         AND listing_date <= CURRENT_DATE + INTERVAL '1 day'
+        -- HARD FILTER (audit #6): SME + confirmed <Rs.200cr never reach the
+        -- listing-day decision surface (LOCKED rule); NULL size stays.
+        AND COALESCE(is_sme, false) = false
+        AND (issue_size_cr IS NULL OR issue_size_cr >= 200)
       ORDER BY listing_date ASC, issue_size_cr DESC NULLS LAST
     `), 3600)) as Array<Record<string, unknown>>;
 

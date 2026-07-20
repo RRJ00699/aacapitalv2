@@ -12,7 +12,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
-const CACHE_KEY = "ipo-command:v1";
+const CACHE_KEY = "ipo-command:v2"; // v2 2026-07-20: SME/<200cr hard filter changed payload shape
 const CACHE_TTL_S = 43200; // 12h — pipeline warms it 2x/day; page loads never hit Neon between runs
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
@@ -68,24 +68,34 @@ export async function GET(req?: Request) {
              c.listing_gap_pct, c.final_qib, c.final_nii, c.final_retail, c.final_total,
              c.brlm_names,
              UPPER(REGEXP_REPLACE(COALESCE(c.symbol_final, c.nse_symbol, c.symbol, ''), '\\.NS$','')) AS sym,
+             -- SBI join FIX (audit #7, 2026-07-20): first-word ILIKE matched any
+             -- company sharing word 1 ("Laser" -> any Laser*). Now symbol OR
+             -- EXACT normalized name (SCHEMA.md strong-key rule) — same
+             -- normalization as the ipo_rhp_intel join below.
              (SELECT rating FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_rating,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_rating,
              (SELECT full_json FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_full,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_full,
              (SELECT one_line  FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_one_line,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_one_line,
              (SELECT peer_name FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_peer,
              (SELECT peer_ps FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_peer_ps,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_peer_ps,
              (SELECT note_ps FROM ipo_research_notes n WHERE n.source='SBI'
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(c.symbol_final,c.nse_symbol,c.symbol))
-                     OR n.company ILIKE '%'||split_part(c.company_name,' ',1)||'%') LIMIT 1) AS sbi_highlight,
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1) AS sbi_highlight,
              CASE
                -- IST is the ONLY market clock (UTC CURRENT_DATE put Caliber in
                -- Open Now while a CST device said opens-in-1d; 2026-07-17).
@@ -121,9 +131,14 @@ export async function GET(req?: Request) {
       -- 2023-24 — leaked via the old "both dates null shows forever" clause).
       -- Window = anchor FIRST lock-in = 30 DAYS post-listing (second lock-in is
       -- 90d but the trade decision lives inside the 30d window). All IST.
-      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
+      WHERE (c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
          OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
-         OR c.ipo_open_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+         OR c.ipo_open_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date)
+        -- HARD FILTER (audit #6, LOCKED rule: <Rs.200cr = don't touch; SME out
+        -- of scope). Was label-only ('AVOID'); now excluded from the feed.
+        -- issue_size NULL (size-pending upcoming) stays visible.
+        AND COALESCE(c.is_sme, false) = false
+        AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;

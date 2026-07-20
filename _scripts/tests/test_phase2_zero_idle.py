@@ -95,7 +95,7 @@ def test_cum_volume_confirm_requires_both_bounds_and_close():
 # ── E. live-preopen ─────────────────────────────────────────────────────────
 def test_live_preopen_caches_read_keeps_write():
     src = _read(APP, "api", "ipo", "live-preopen", "route.ts")
-    assert "live-preopen:rows:v1" in src, "nightly-read KV key missing"
+    assert "live-preopen:rows:v2" in src, "nightly-read KV key missing"
     assert 'from "@/lib/kv-cache"' in src
     # the pre-open book capture is a WRITE and must remain per-request
     assert "INSERT INTO ipo_preopen_book" in src

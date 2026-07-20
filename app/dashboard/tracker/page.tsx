@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TrackerPage() {
   const admin = await getAdminEmail();
-  if (!admin) redirect("/dashboard/ipo");
+  if (!admin) redirect("/dashboard/ipo2");
   return (
     <AppShell current="tracker">
       <TrackerClient />
