@@ -37,27 +37,37 @@ def main():
     import psycopg2
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
 
-    for stmt in [
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS first_print_price NUMERIC",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS first_print_volume BIGINT",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS vol_first_5m BIGINT",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS vol_first_15m BIGINT",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS vol_first_60m BIGINT",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS high_first_60m NUMERIC",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS low_first_60m NUMERIC",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS vwap_first_15m NUMERIC",
-        "ALTER TABLE ipo_consolidated ADD COLUMN IF NOT EXISTS first_trade_time TIME",
-    ]:
-        cur.execute(stmt)
+    # OWN TABLE, not columns on ipo_consolidated (fixed 2026-07-20).
+    # build_ipo_consolidated_v2.py REBUILDS that table from scratch, so every
+    # column added here by ALTER was silently wiped on each pipeline run — the
+    # 456-row backfill had to be repeated three times in two days, burning Kite
+    # calls and Neon compute for nothing. ipo_bid_details survived every rebuild
+    # precisely because it is a separate table. Same pattern here.
+    cur.execute("""CREATE TABLE IF NOT EXISTS ipo_listing_tape (
+        symbol TEXT PRIMARY KEY,
+        listing_date DATE,
+        first_trade_time TIME,
+        first_print_price NUMERIC,
+        first_print_volume BIGINT,
+        vol_first_5m BIGINT,
+        vol_first_15m BIGINT,
+        vol_first_60m BIGINT,
+        high_first_60m NUMERIC,
+        low_first_60m NUMERIC,
+        vwap_first_15m NUMERIC,
+        fetched_at TIMESTAMPTZ DEFAULT NOW())""")
+    cur.execute("CREATE INDEX IF NOT EXISTS ix_listing_tape_date ON ipo_listing_tape(listing_date)")
     conn.commit()
 
     cur.execute("""
-        SELECT UPPER(COALESCE(NULLIF(symbol_final,''), NULLIF(nse_symbol,''), symbol)) sym,
-               company_name, listing_date
-        FROM ipo_consolidated
-        WHERE listing_date >= %s AND listing_date < CURRENT_DATE
-          AND COALESCE(symbol_final, nse_symbol, symbol) IS NOT NULL
-          AND first_print_price IS NULL
+        SELECT UPPER(COALESCE(NULLIF(c.symbol_final,''), NULLIF(c.nse_symbol,''), c.symbol)) sym,
+               c.company_name, c.listing_date
+        FROM ipo_consolidated c
+        LEFT JOIN ipo_listing_tape t
+          ON t.symbol = UPPER(COALESCE(NULLIF(c.symbol_final,''), NULLIF(c.nse_symbol,''), c.symbol))
+        WHERE c.listing_date >= %s AND c.listing_date < CURRENT_DATE
+          AND COALESCE(c.symbol_final, c.nse_symbol, c.symbol) IS NOT NULL
+          AND t.symbol IS NULL
         ORDER BY listing_date DESC""", (f"{a.from_year}-01-01",))
     todo = cur.fetchall()
     if a.limit: todo = todo[:a.limit]
@@ -103,19 +113,30 @@ def main():
             f5, f15, f60 = live[:5], live[:15], live[:60]
             vwap15 = (sum(b["close"] * b["volume"] for b in f15) / sum(b["volume"] for b in f15)
                       if sum(b["volume"] for b in f15) else None)
-            cur.execute("""UPDATE ipo_consolidated SET
-                    first_print_price=%s, first_print_volume=%s,
-                    vol_first_5m=%s, vol_first_15m=%s, vol_first_60m=%s,
-                    high_first_60m=%s, low_first_60m=%s, vwap_first_15m=%s, first_trade_time=%s
-                WHERE UPPER(COALESCE(NULLIF(symbol_final,''), NULLIF(nse_symbol,''), symbol))=%s
-                  AND listing_date=%s""",
-                (first["open"], first["volume"],
+            cur.execute("""INSERT INTO ipo_listing_tape
+                    (symbol, listing_date, first_trade_time, first_print_price,
+                     first_print_volume, vol_first_5m, vol_first_15m, vol_first_60m,
+                     high_first_60m, low_first_60m, vwap_first_15m)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    listing_date=EXCLUDED.listing_date,
+                    first_trade_time=EXCLUDED.first_trade_time,
+                    first_print_price=EXCLUDED.first_print_price,
+                    first_print_volume=EXCLUDED.first_print_volume,
+                    vol_first_5m=EXCLUDED.vol_first_5m,
+                    vol_first_15m=EXCLUDED.vol_first_15m,
+                    vol_first_60m=EXCLUDED.vol_first_60m,
+                    high_first_60m=EXCLUDED.high_first_60m,
+                    low_first_60m=EXCLUDED.low_first_60m,
+                    vwap_first_15m=EXCLUDED.vwap_first_15m,
+                    fetched_at=NOW()""",
+                (sym, ld,
+                 first["date"].time() if hasattr(first.get("date"), "time") else None,
+                 first["open"], first["volume"],
                  sum(b["volume"] for b in f5), sum(b["volume"] for b in f15),
                  sum(b["volume"] for b in f60),
                  max(b["high"] for b in f60), min(b["low"] for b in f60),
-                 round(vwap15, 2) if vwap15 else None,
-                 first["date"].time() if hasattr(first.get("date"), "time") else None,
-                 sym, ld))
+                 round(vwap15, 2) if vwap15 else None))
             conn.commit(); done += 1
             print(f"  ✓ {sym} {ld}: first_trade={first['date'].strftime('%H:%M') if hasattr(first.get('date'),'strftime') else '?'} "
                   f"open={first['open']} vol5m={sum(b['volume'] for b in f5)}")
