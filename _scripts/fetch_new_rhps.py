@@ -50,12 +50,25 @@ def new_ipos_without_rhp(days):
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("no DATABASE_URL")
     c = psycopg2.connect(DB, connect_timeout=20); cur = c.cursor()
-    # new = listing within +/- `days` window OR upcoming; AND no rhp row yet
+    # new = a REAL mainboard IPO in the recent/upcoming window, AND no
+    # extraction yet. Baseline 2026-07-21: rows like NTPC / Standard Chartered
+    # PLC / Shipping Corp (discovery junk with NULL dates) were PERMANENT
+    # targets under the old "listing_date IS NULL OR ..." clause — they drove
+    # the SEBI over-matching. A target must now (a) be mainboard, (b) carry at
+    # least one real IPO date inside [-days, +60d]. Historical RHPs live on the
+    # owner's local machine — only NEW IPOs need fetching (owner 2026-07-21).
     cur.execute("""
         SELECT ii.company_name
         FROM ipo_intelligence ii
-        WHERE (ii.listing_date IS NULL
-               OR ii.listing_date >= CURRENT_DATE - INTERVAL '%s days')
+        WHERE COALESCE(ii.is_sme, false) = false
+          AND (
+                (ii.listing_date IS NOT NULL AND ii.listing_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (ii.close_date IS NOT NULL AND ii.close_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (ii.open_date IS NOT NULL AND ii.open_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+          )
           AND NOT EXISTS (
               SELECT 1 FROM ipo_rhp_intel r
               WHERE lower(regexp_replace(r.company_name,'[^a-zA-Z0-9]','','g'))
@@ -68,7 +81,7 @@ def new_ipos_without_rhp(days):
                 -- while their RHPs sat on SEBI page 1. Only a real extraction
                 -- counts as "already have it".
                 AND r.full_json IS NOT NULL)
-    """, (days,))
+    """, (days, days, days))
     names = [r[0] for r in cur.fetchall()]
     c.close()
     return names
@@ -128,8 +141,17 @@ def main():
             hits_here = 0
             for title, url in listings:
                 ntitle = norm(title)
+                # MATCH TIGHTENED (baseline 2026-07-21): the old 8-char-prefix substring let
+                # any pending name’s first 8 normalized characters match anywhere in
+                # any filing title — one leg of the ntpc/standard-chartered
+                # over-match. Now: full normalized-name containment ONLY, and
+                # the filing must actually be a prospectus-type document (or
+                # the title be exactly the company) — /public-issues/ also
+                # carries other filings.
+                is_rhp_doc = bool(re.search(r"red herring|prospectus", title, re.I))
                 hit = next((orig for k, orig in pending.items()
-                            if k and (k in ntitle or ntitle.startswith(k) or k[:8] in ntitle)), None)
+                            if k and (k in ntitle or ntitle.startswith(k))
+                            and (is_rhp_doc or ntitle == k)), None)
                 if hit:
                     matched.append((hit, title, url))
                     hits_here += 1
@@ -162,6 +184,36 @@ def main():
     # apply: download each matched filing using the proven PDF.js click logic
     _download_matched(matched)
 
+def _persist_rhp_url(company, url):
+    """Write the source link ONLY once a real PDF landed. The old pre-download
+    insert created placeholder ipo_rhp_intel rows for every match attempt —
+    including the junk over-matches (baseline 2026-07-21)."""
+    try:
+        import psycopg2 as _pg
+        _c = _pg.connect(os.environ["DATABASE_URL"])
+        _u = _c.cursor()
+        _u.execute("ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS rhp_url TEXT")
+        _u.execute("""INSERT INTO ipo_rhp_intel (company_name, rhp_url)
+            VALUES (%s, %s)
+            ON CONFLICT (company_name) DO UPDATE SET rhp_url = EXCLUDED.rhp_url""",
+            (company, url))
+        _c.commit(); _c.close()
+    except Exception:
+        pass
+
+
+def _prune_empty_dirs():
+    """A failed attempt used to leave `rhps/<slug>/` behind forever (makedirs
+    ran before the download) — the baseline showed 9 EMPTY dirs. Sweep them."""
+    try:
+        for d in os.listdir(OUT_DIR):
+            p = os.path.join(OUT_DIR, d)
+            if os.path.isdir(p) and not os.listdir(p):
+                os.rmdir(p); print(f"  · pruned empty dir {d}/")
+    except Exception:
+        pass
+
+
 def _download_matched(matched):
     from playwright.sync_api import sync_playwright
     import pypdf
@@ -173,22 +225,6 @@ def _download_matched(matched):
         ctx = br.new_context(accept_downloads=True)
         pg = ctx.new_page()
         for company, title, url in matched:
-            try:
-                # The source URL was captured here and then THROWN AWAY — the
-                # cards had no RHP link (Rakesh 2026-07-16). Persist it now;
-                # the sonnet row upserts later and keeps this column.
-                # Self-contained connection: this downloader has no DB handle.
-                import os as _os, psycopg2 as _pg
-                _c = _pg.connect(_os.environ["DATABASE_URL"])
-                _u = _c.cursor()
-                _u.execute("ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS rhp_url TEXT")
-                _u.execute("""INSERT INTO ipo_rhp_intel (company_name, rhp_url)
-                    VALUES (%s, %s)
-                    ON CONFLICT (company_name) DO UPDATE SET rhp_url = EXCLUDED.rhp_url""",
-                    (company, url))
-                _c.commit(); _c.close()
-            except Exception:
-                pass
             slug = slugify(company)
             d = os.path.join(OUT_DIR, slug); os.makedirs(d, exist_ok=True)
             dest = os.path.join(d, "rhp.pdf")
@@ -229,7 +265,7 @@ def _download_matched(matched):
                                     print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
                             except Exception:
                                 pass
-                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; continue
+                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; _persist_rhp_url(company, url); continue
                         print(f"  · {company}: direct url not a PDF, falling back to viewer")
                     except Exception as e:
                         print(f"  · {company}: direct fetch failed ({type(e).__name__}), falling back")
@@ -260,10 +296,11 @@ def _download_matched(matched):
                         print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
                 except Exception:
                     pass
-                print(f"  ✓ {company} -> {dest}"); got += 1
+                print(f"  ✓ {company} -> {dest}"); got += 1; _persist_rhp_url(company, url)
             except Exception as e:
                 print(f"  ✗ {company} ({type(e).__name__})")
         br.close()
+    _prune_empty_dirs()
     print(f"\ndownloaded {got} RHP(s) into {OUT_DIR}/")
     # Phase-3: attempted-but-zero means SEBI changed markup / viewer broke again
     # (the exact failure mode that hid the Xtranet/Indo-MIM/Lohia backlog).

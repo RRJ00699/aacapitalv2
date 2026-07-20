@@ -83,7 +83,16 @@ def main():
         import anthropic, pdfplumber  # noqa
     except ImportError as e:
         sys.exit(f"missing dep: {e} — pip install anthropic pdfplumber --break-system-packages")
-    client = anthropic.Anthropic()
+    # Phase-5 (baseline 2026-07-21: this step failed identically 2x/day with an
+    # opaque trace). Preflight the key and the client so pipeline_failures'
+    # stderr_tail names the EXACT fix instead of a stack dump.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit("ANTHROPIC_API_KEY missing from VM env (.env) — Haiku extraction "
+                 "cannot run. Add the key; the deferred notes retry automatically.")
+    try:
+        client = anthropic.Anthropic()
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"anthropic client init failed: {type(e).__name__}: {str(e)[:150]}")
 
     for nid, company, pdf_path in todo:
         remaining = DAILY_CAP - spent_today(cur)

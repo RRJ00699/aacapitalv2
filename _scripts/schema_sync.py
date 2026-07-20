@@ -181,6 +181,12 @@ DDL = [
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker TEXT",
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS entry_date DATE",
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ",
+    # Phase-5 fix (baseline 2026-07-21): compute_journal_outcomes writes these
+    # three but NOTHING owned their DDL — the thesis UPDATE threw UndefinedColumn
+    # on every nightly ("compute journal outcomes" in pipeline_failures 2x/day).
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS pnl_pct NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS outcome TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS thesis TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_trade_journal_order ON trade_journal(broker_order_id)",
 
     # ── NSE pre-open capture (nse_preopen_capture.py) ──
