@@ -94,6 +94,14 @@ def step(name, args, hard=False):
             _c.commit(); _c.close()
         except Exception:
             pass
+        try:
+            # Phase-3: mirror every failure-sink event to the phone (ntfy).
+            from lib.notify import notify
+            notify(f"Pipeline step FAILED: {name}",
+                   f"{script} exited {r.returncode}\n{(r.stderr or r.stdout or '')[-300:]}",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
         if r.stderr: log("   "+r.stderr.strip().splitlines()[-1])
         return False
     log(f"   ✓ {name} done")
@@ -117,6 +125,15 @@ def main():
     if not kite_ok:
         log("⚠️ Kite token stale — SKIPPING Kite-only steps (candles/OHLC). "
             "All non-Kite work (scrape, GMP, SBI, score, consolidated, verdicts) still runs.")
+        try:
+            # Phase-3: this means candles/OHLC silently stop updating — tell the phone.
+            from lib.notify import notify
+            notify("Pipeline: Kite token STALE",
+                   "Preflight failed — candles/OHLC/listing-day fields will be SKIPPED "
+                   "this run. Re-run refresh_kite_token or rotate creds in Settings.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
 
     ok=True
     # ── DISCOVERY + SOURCE-OF-TRUTH ENRICHMENT ──

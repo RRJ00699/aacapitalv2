@@ -173,15 +173,19 @@ def main():
         return
 
     processed, deferred, spent, cap_hit, notes = [], [], 0.0, False, ""
+    failed_steps = []   # audit #5: run() results were IGNORED — failures were silent
     try:
-        run("download", ["_scripts/fetch_new_rhps.py", "--apply"])
+        if not run("download", ["_scripts/fetch_new_rhps.py", "--apply"]):
+            failed_steps.append("download")
         if remaining <= 0.01:
             cap_hit = True
             notes = f"Daily ${DAILY_CAP:.0f} budget already spent (${already:.2f}); extraction skipped — RHPs deferred to next run."
             print(f"  ⛔ {notes}")
         else:
-            run("extract", ["_scripts/rhp_sonnet.py", "--dir", "rhps", "--year-min", "2016", "--cap", str(remaining)])
-            run("store",   ["_scripts/rhp_sonnet_store.py", "--dir", "rhp_summaries", "--apply"])
+            if not run("extract", ["_scripts/rhp_sonnet.py", "--dir", "rhps", "--year-min", "2016", "--cap", str(remaining)]):
+                failed_steps.append("extract")
+            if not run("store",   ["_scripts/rhp_sonnet_store.py", "--dir", "rhp_summaries", "--apply"]):
+                failed_steps.append("store")
         print("\n[purge] PDFs past anchor lock-in")
         purge_after_lockin(apply=True)
     finally:
@@ -191,8 +195,23 @@ def main():
             cap_hit = (already + spent) >= DAILY_CAP - 0.01
             if cap_hit and not notes:
                 notes = f"Cap reached at ${already + spent:.2f}/${DAILY_CAP:.0f}; {len(deferred)} RHP(s) deferred to next run."
+        if failed_steps and not notes:
+            notes = f"FAILED steps: {', '.join(failed_steps)} — see stderr above."
         write_run_log(conn, processed, deferred, spent, cap_hit, notes or f"OK — {len(processed)} processed.")
         if conn: conn.close()
+    if failed_steps:
+        # Phase-3: RHP failures used to be invisible (rhp_auto exited 0, the
+        # pipeline logged green, the backlog rotted for weeks). Now: push alert
+        # + non-zero exit so the pipeline failure sink fires too.
+        try:
+            from lib.notify import notify
+            notify("RHP auto FAILED",
+                   f"Steps failed: {', '.join(failed_steps)}. "
+                   f"{len(deferred)} RHP(s) still queued. Cap spent today: ${already + spent:.2f}/${DAILY_CAP:.0f}.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
+        sys.exit(1)
     print("\n✓ RHP AUTO COMPLETE")
 
 
