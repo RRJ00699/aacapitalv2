@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — Feature Tracker (every ask, nothing buried)
 _Last updated: 2026-07-14 · deploy-batched to avoid Vercel rate limit_
 

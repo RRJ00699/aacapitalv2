@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # Pre-listing Quality Score (0–100) — SPEC v1 · 2026-07-16
 **The mission metric**: "fundamentally strong, good promoters vs junk and
 inflated numbers" — as a number, BEFORE listing, from data already in the DB.

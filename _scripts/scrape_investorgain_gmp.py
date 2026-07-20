@@ -18,7 +18,7 @@ def scrape():
         # which ad/analytics-heavy pages like investorgain rarely do -> 60s timeout.
         # Instead: load the DOM, then explicitly wait for the data table to appear.
         last_err=None
-        for attempt in range(2):
+        for attempt in range(4):   # Phase-4: was 2 flat attempts; now 2s/4s/8s backoff
             try:
                 pg.goto(URL, wait_until="domcontentloaded", timeout=45000)
                 pg.wait_for_selector("table tr", timeout=20000)  # the data is here
@@ -27,10 +27,18 @@ def scrape():
                 break
             except PWTimeout as e:
                 last_err=e
-                pg.wait_for_timeout(2000)                        # brief backoff, retry once
+                pg.wait_for_timeout(int(2000 * (2 ** attempt)))  # exponential backoff
         if last_err:
             b.close()
-            raise SystemExit("GMP scrape: investorgain unreachable/slow (2 attempts) — "
+            try:  # Phase-4: tell the phone before the silent skip
+                from lib.notify import notify
+                notify("GMP scrape unreachable",
+                       "investorgain unreachable/slow after 4 backoff attempts — "
+                       "GMP context data skipped this run.",
+                       priority="high", tags=["warning"])
+            except Exception:
+                pass
+            raise SystemExit("GMP scrape: investorgain unreachable/slow (4 attempts) — "
                              "context-only data, skipping this run.")
         rows=pg.eval_on_selector_all("table tr", """els => els.map(r =>
             Array.from(r.querySelectorAll('th,td')).map(c => c.innerText.trim()))""")
@@ -51,6 +59,18 @@ def scrape():
             or next((_first_num(c) for c in r if _first_num(c)), "")
         est=next((c for c in r if "%" in c), "")
         out.append({"company":name,"raw":" | ".join(r),"gmp":gmp,"est_listing":est})
+    # Phase-4 markup tripwire: the table rendered but our parser matched NOTHING
+    # -> investorgain changed columns/markup. Alert (graceful: caller still gets
+    # [] and downstream steps run; GMP just stays stale until the parser is fixed).
+    if len(rows) > 3 and not out:  # >3: header/sort rows alone are not a tripwire
+        try:
+            from lib.notify import notify
+            notify("GMP parser matched 0 rows",
+                   f"investorgain table had {len(rows)} rows but the parser matched none — "
+                   "markup changed. GMP will stale until the parser is updated.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
     return out
 
 def main():

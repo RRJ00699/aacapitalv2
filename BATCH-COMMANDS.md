@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — Batch Command Reference
 # Run all commands from C:\aacapital-v2
 

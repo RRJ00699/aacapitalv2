@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 
 ## ADDENDUM (2026-07-05 late)
 - Institutional layer LIVE in nightly: delivery pct, bulk/block, anchor-deal conviction matcher (anchor_deal_signals; first signal: RAMBHAJO anchor ADDING 370k). Insider PIT feed PARKED: NSE blocks the API from datacenter IPs (HTTP 200, empty payload); step is a free no-op nightly; revisit via Playwright if wanted.

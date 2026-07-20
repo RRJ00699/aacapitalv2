@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — UI Requirements & Current Structure (FINAL)
 
 **Purpose:** the single authoritative record of the frontend — design system, every

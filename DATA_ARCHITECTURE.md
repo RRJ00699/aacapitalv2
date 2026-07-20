@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — Canonical Data Architecture
 
 **The formal contract for which tables the backend reads, which sources feed

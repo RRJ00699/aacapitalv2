@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — CURRENT STATE (2026-07-08)
 
 **This document supersedes ALL prior handovers and the 43-file "Tech Docs and Data Brain"

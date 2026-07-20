@@ -37,6 +37,13 @@ API = ("https://webnodejs.chittorgarh.com/cloud/report/data-read/"
 WARMUP_URL = "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/mainboard/"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+# Phase-4: rotate the UA per run so one fingerprinted UA can't kill every
+# nightly. Falls back to the static UA if the helper is unavailable.
+try:
+    from lib.http_resilience import pick_ua as _pick_ua, backoff_retry as _backoff_retry
+    UA = _pick_ua()
+except Exception:
+    _backoff_retry = None
 FUZZ_THRESHOLD = 90
 MAX_PAGES = 60          # 60 * ~5 = 300 IPOs/year headroom
 MIN_EXPECTED = 10
@@ -158,11 +165,19 @@ def sane(rec, year):
 
 # ---------------------------------------------------------------- fetcher ---
 def _get_rows(ctx, url):
-    try:
+    def _once():
         r = ctx.request.get(url, headers={"accept": "application/json"}, timeout=30000)
         if not r.ok:
-            return []
+            raise RuntimeError(f"HTTP {r.status}")
         return (r.json() or {}).get("reportTableData") or []
+    # Phase-4: a transient 5xx/timeout used to return [] -> fetch_year treated it
+    # as "past the last page" and silently TRUNCATED the year. Retry 4x with
+    # exponential backoff (1s/2s/4s + jitter) before giving up.
+    if _backoff_retry is not None:
+        ok, rows = _backoff_retry(_once, attempts=4, base=1.0, label="chittorgarh page")
+        return rows if ok else []
+    try:
+        return _once()
     except Exception:  # noqa: BLE001
         return []
 
@@ -294,6 +309,22 @@ def main():
         years = [datetime.date.today().year]
 
     raw = fetch_all(years)
+    # Phase-4 schema-change tripwire: the configured years ALWAYS contain IPOs,
+    # so a zero-row total means Cloudflare blocked us or the API/markup changed.
+    # Alert + exit 1 (fires the pipeline failure sink) instead of writing nothing
+    # and logging green.
+    total = sum(len(v) for v in raw.values())
+    if total == 0:
+        log.error("ZERO rows scraped across all years — blocked or API changed")
+        try:
+            from lib.notify import notify
+            notify("Chittorgarh scrape returned ZERO rows",
+                   f"Years {years}: 0 IPOs scraped. Cloudflare block or API/markup "
+                   "change — enrichment will silently stale until fixed.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
+        sys.exit(1)
     counters = {"ins": 0, "upd": 0, "symw": 0, "skip": 0}
     if a.write_db:
         try:

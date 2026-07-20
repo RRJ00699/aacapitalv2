@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # AACapital — Target Architecture (evidence-first)
 
 Written 2026-07-18 from the repo, not memory. Every claim below has a command

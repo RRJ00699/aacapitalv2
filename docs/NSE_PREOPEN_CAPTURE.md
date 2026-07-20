@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # NSE IPO Special Pre-Open Capture — 2026-07-17
 
 ## Endpoint (verify before enabling — 60-second ritual below)

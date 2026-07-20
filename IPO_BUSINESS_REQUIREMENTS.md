@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — IPO Business Requirements & Rating Spec (FINAL)
 
 **Purpose:** the single authoritative record of how AACapital rates IPOs — what
