@@ -107,6 +107,6 @@ if __name__ == '__main__':
     try:
         rows = fetch_training_rows()
     except psycopg2.OperationalError as e:
-        raise SystemExit('LOCAL_DATABASE_URL connection failed. Check local Postgres password/db name. Use percent encoding for @ in password, e.g. postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable\n' + str(e))
+        raise SystemExit('LOCAL_DATABASE_URL connection failed. Check local Postgres password/db name. Use percent encoding for @ in password, e.g. postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable\n' + str(e))
     save_model(DEFAULT_WEIGHTS, rows)
     logging.info('Saved multibagger model with %s training events', len(rows))

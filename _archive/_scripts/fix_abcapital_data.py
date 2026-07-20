@@ -36,7 +36,7 @@ print("\nStep 2: Score management commentary...")
 # Set screener creds if not in env
 if not os.environ.get("SCREENER_USERNAME"):
     os.environ["SCREENER_USERNAME"] = "try.rakeshreddy@gmail.com"
-    os.environ["SCREENER_PASSWORD"] = "Ashrith@2820"
+    os.environ["SCREENER_PASSWORD"] = "CHANGEME_ROTATED"
 
 r = subprocess.run(
     [sys.executable, "_scripts/score_management_commentary.py", "--symbols", "ABCAPITAL"],

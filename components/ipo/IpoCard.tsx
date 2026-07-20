@@ -633,7 +633,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 <span style={{ fontWeight: 800, flexShrink: 0, color: C.meta }}>◌</span>
                 <span>{r}</span></div>
             ))}
-            {clean && !pend.length && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn't find a strong reason not to. That itself is the finding.</div>}
+            {clean && !pend.length && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn&apos;t find a strong reason not to. That itself is the finding.</div>}
             {/* PROVENANCE (fixed 2026-07-20). This said "From the RHP + filings"
                 unconditionally. But these reasons are computed from STRUCTURED
                 fields — ofs_pct, roe, issue size — sourced from Chittorgarh /
@@ -706,7 +706,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 : typeof raw === "string" ? (() => { try { const p2 = JSON.parse(raw); return Array.isArray(p2) ? p2 : []; } catch { return []; } })() : [];
               if (!ins.length) return null;
               return <>
-                <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 6px" }}>RHP evidence · the document's own words</div>
+                <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 6px" }}>RHP evidence · the document&apos;s own words</div>
                 {ins.map((r, i) => {
                   const dir = String(r.direction ?? "");
                   const mark = dir === "negative" ? "−" : dir === "positive" ? "+" : "·";

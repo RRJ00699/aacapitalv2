@@ -24,5 +24,5 @@ npm run build
 If local DB auth fails, verify this exact command works:
 
 ```powershell
-psql "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable" -c "select current_database(), current_user;"
+psql "postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable" -c "select current_database(), current_user;"
 ```

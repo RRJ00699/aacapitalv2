@@ -97,5 +97,5 @@ def test_sbi_section_renders_parse_and_pending_language():
 
 def test_rhp_evidence_list_quotes_the_document():
     src = _read("components", "ipo", "IpoCard.tsx")
-    assert "the document's own words" in src
+    assert "the document&apos;s own words" in src  # lint-escaped apostrophe (Phase-8)
     assert "insights" in src and "excerpt" in src

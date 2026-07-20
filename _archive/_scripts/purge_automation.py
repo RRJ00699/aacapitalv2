@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
 LOCAL_URL    = os.environ.get("LOCAL_DATABASE_URL") or os.environ.get("LOCAL_POSTGRES_URL")
 # LOCAL_URL is your local postgres at postgresql://postgres:password@localhost:5432/aacapital
-# Set in .env.local: LOCAL_DATABASE_URL=postgresql://postgres:Ashrith@2820@localhost:5432/aacapital
+# Set in .env.local: LOCAL_DATABASE_URL=postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital
 # When LOCAL_URL is not set, archive strategy falls back to DELETE (data is lost)
 # IMPORTANT: Always set LOCAL_DATABASE_URL in .env.local on your Windows machine
 

@@ -1,5 +1,8 @@
 Status: CURRENT
 Authority: docs/AACAPITAL_PRODUCT_CONTRACT.md
+Last verified against code: 2026-07-21
+Verified commit: efa45de
+Authority: docs/AACAPITAL_PRODUCT_CONTRACT.md
 Last verified against VM: 2026-07-21 01:04 IST snapshot (owner-run)
 Verified commit on VM at snapshot: b3d9bcb (#255)
 

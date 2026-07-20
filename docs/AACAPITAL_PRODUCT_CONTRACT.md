@@ -1,6 +1,9 @@
 # AACAPITAL PRODUCT CONTRACT
 
-Status: CURRENT — **AUTHORITATIVE**
+Status: CURRENT
+Authority: docs/AACAPITAL_PRODUCT_CONTRACT.md
+Last verified against code: 2026-07-21
+Verified commit: efa45de — **AUTHORITATIVE**
 Last updated: 2026-07-20 (repo audit session; Phases 1–4 branches)
 
 This is the single authoritative product document. Where any other document,
@@ -149,3 +152,53 @@ Rejected / zero-weight factors must NOT silently return to production scoring.
   validation meeting the n≥30 bar, (3) update to this contract, (4) code
   change, (5) tests. PRs that change a locked rule without all five are
   rejected in review.
+
+## 9. Evidence, provenance & four-state gating (PR #265)
+
+Every qualitative UI conclusion is traceable or it does not render.
+
+**States** (never collapsed to null/false/empty): `CONFIRMED` (analysis done,
+row + fingerprint written) · `PARTIAL` (artifact exists, analysis incomplete —
+e.g. PDF downloaded, Sonnet not run; verdict without pdf fingerprint =
+legacy/stale = PARTIAL) · `PENDING` (source not yet published) · `FAILED`
+(parser/model/download crashed; carries `last_error` + `next_retry_at`).
+`NOT_VERIFIED` exists only in audit/runtime reports, never as a production
+IPO state.
+
+**Provenance store**: `ipo_insights` (additive, `schema_sync.py`) — one row
+per evidence-backed statement with category, direction
+(positive|negative|neutral|incomplete), source_type (RHP·DRHP·SBI·NSE·SEBI·
+Chittorgarh·Screener·Backtest·House Rule·Live Market Data), the source's own
+`source_excerpt` (hard rule: **no excerpt, no row**), locator, models,
+run id, `is_current` supersede-not-delete. Populated by fan-out from paid
+Sonnet/Haiku JSON — zero new AI spend. Document identity = `pdf_sha256`;
+a changed checksum invalidates prior insights (`is_current=false`) and
+re-opens the stage.
+
+**Stage truth**: `ipo_stage_state` (ipo_id, stage, status, attempt_count,
+timestamps, last_error, next_retry_at, fingerprints, version). Writers:
+fetch (RHP_DOWNLOADED), Sonnet store (SONNET_COMPLETE, input_fp=sha), Haiku
+(SBI_EXTRACTED). FAILED carries a backoff that gates ONLY that IPO. Bounded
+retries = 2×/day cron × the [-45d,+60d] eligibility window.
+
+## 10. Three decision layers (never blended)
+
+- **A · Company quality** — GOOD/WATCH/JUNK/INCOMPLETE from evidence
+  (RHP forensics, governance, financial quality, SBI context). Incomplete
+  required research ⇒ INCOMPLETE, never a defaulted GOOD.
+- **B · Pre-listing trade setup** — the approved backtested score only
+  (§4/§6); no untested factors.
+- **C · Live listing-day decision** — BUY/WATCH/SKIP/INCOMPLETE at the
+  executable price under house rules. Server attests `research_ready` +
+  `research_missing[]` (live-preopen); the Live UI renders RESEARCH
+  INCOMPLETE and demotes any go-signal to WATCH. A GOOD company can be a
+  SKIP at a rich price; an attractive tape never upgrades JUNK/INCOMPLETE.
+
+## 11. Fair-value & eligibility gating
+
+Fair value computes only with real EPS **and** approved peer valuation; else
+"Fair value unavailable — requires valid EPS and comparable peer valuation."
+No EPS manufacture, no issue-price-as-fair-value, no MoS from an unavailable
+fair value (the MoS rule reports unavailable, never a fake pass). Eligibility
+(one rule, every feed): mainboard only, `COALESCE(is_sme,false)=false`,
+confirmed size ≥ ₹200cr excluded when below, NULL size stays visible.

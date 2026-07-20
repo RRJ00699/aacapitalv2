@@ -1,4 +1,4 @@
-Status: RESEARCH — NOT PRODUCTION
+Status: FOLDED INTO CONTRACT §9-11 (2026-07-21) — historical design record, not a spec
 Authority: docs/AACAPITAL_PRODUCT_CONTRACT.md (this design folds into the
 contract as a new §9 "Evidence & provenance" only after owner approval;
 per directive 2026-07-21 no second product contract is created)

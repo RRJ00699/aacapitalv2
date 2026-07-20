@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 LOCAL_URL = (os.getenv("CANDLES_DATABASE_URL")
              or os.getenv("LOCAL_DATABASE_URL")
-             or "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable")
+             or "postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable")
 NEON_URL  = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 
 SECTOR_MAP = {
