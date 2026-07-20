@@ -143,6 +143,12 @@ def main():
                         print("    → fan-out skipped: no ipo_intelligence row for canonical name")
                 except Exception as _e:
                     print(f"    → fan-out skipped ({type(_e).__name__}: {str(_e)[:60]})")
+                try:  # PR-C stage truth: analysis stored = SONNET_COMPLETE
+                    from lib.stage_state import record as _rec
+                    _rec(conn, company, "SONNET_COMPLETE", "CONFIRMED", input_fp=pdf_sha,
+                         version=meta.get("model"))
+                except Exception:
+                    pass
                 conn.commit()
             print(f"  {'stored' if a.apply else 'would store'}: {company[:34]:36} [{row[3]}] {d.get('verdict')}")
             done+=1

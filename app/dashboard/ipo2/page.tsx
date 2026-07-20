@@ -606,6 +606,19 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
             {L?.rules_passed != null ? `${L.rules_passed}/${L.rules_total} rules pass` : "win-rate-weighted · awaiting"}</span>
         </span>
       </div>
+      {/* PR-D readiness gate: INCOMPLETE research is a first-class state —
+          a go-signal with unread research is treated as WATCH, and we say
+          exactly which inputs are missing (server-attested, never guessed). */}
+      {L && L.research_ready === false && (
+        <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: C.amberBg,
+          border: `1px solid ${C.amberBd}`, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: .5, color: C.amber, textTransform: "uppercase" }}>Research incomplete</span>
+          <span style={{ fontSize: 11.5, color: C.sub }}>
+            {Array.isArray(L.research_missing) && L.research_missing.length
+              ? `missing: ${(L.research_missing as string[]).join(" · ")}`
+              : "required research inputs unavailable"} — treat any go-signal as WATCH, not BUY</span>
+        </div>
+      )}
       {/* two-layer rule cards: static @9:30, live firming to 10:08 — bind rules_static/rules_live */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         <RuleCard title="Static rules" when="scored 9:30" rules={(L?.rules_static as LiveRule[] | undefined) ?? null} />

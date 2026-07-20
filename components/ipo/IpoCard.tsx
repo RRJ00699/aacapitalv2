@@ -647,12 +647,12 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           </div>
         );
       })()}
-      {Boolean(c.rhp_one_line || c.rhp_full || c.ai_summary) && (
+      {Boolean(c.rhp_one_line || c.rhp_full || c.ai_summary || c.sbi_full || c.sbi_one_line || c.sbi_rating) && (
         <button onClick={() => setShowRhp((v) => !v)} style={{
           background: "transparent", border: "none", color: C.meta,
           fontSize: 12, fontWeight: 600, padding: "10px 0 0", cursor: "pointer", display: "block",
         }}>
-          {showRhp ? "▲ Hide details" : "▼ RHP details · risks · governance flags · AI read"}
+          {showRhp ? "▲ Hide details" : "▼ RHP + SBI research · risks · flags · AI read"}
         </button>
       )}
       {c.chittorgarh_slug ? (
@@ -673,7 +673,10 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           ? ((fj as Record<string, Record<string, unknown>>).aacapital_decision?.dd_note as string) : null;
         const trustSummary = fj ? ((fj as Record<string, unknown>).trust_summary as string) : null;
         const { raised, clear } = rhpFlagChips(fj);
-        return (
+        const sj = typeof c.sbi_full === "string"
+          ? (() => { try { return JSON.parse(String(c.sbi_full)); } catch { return null; } })()
+          : (c.sbi_full as Record<string, unknown> | null);
+        return (<>
           <div style={{ marginTop: 10, padding: "14px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
             {c.rhp_gate ? <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 8 }}>
               RHP TRUST · {String(c.rhp_gate).toUpperCase()}{c.rhp_mos ? ` · margin of safety: ${String(c.rhp_mos)}` : ""}{c.rhp_confidence ? ` · confidence ${String(c.rhp_confidence)}` : ""}{c.rhp_url ? <a href={String(c.rhp_url)} target="_blank" rel="noreferrer" style={{ marginLeft: 8, fontSize: 10.5, color: C.gold, fontWeight: 700, textDecoration: "none" }}>RHP ↗</a> : null}</div> : null}
@@ -696,8 +699,49 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
               <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.5 }}>{ddNote}</div></>}
             {c.ai_summary ? <div style={{ fontSize: 12.5, color: C.meta, lineHeight: 1.5, marginTop: 11, display: "flex", gap: 7 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: C.meta, letterSpacing: 0.4, flexShrink: 0, marginTop: 1 }}>AI</span><span>{String(c.ai_summary)}</span></div> : null}
+            {(() => {
+              // ── PR-B/PR-D: the fan-out's quoted evidence, rendered raw ──
+              const raw = (c as Record<string, unknown>).insights;
+              const ins: Array<Record<string, unknown>> = Array.isArray(raw) ? raw as Array<Record<string, unknown>>
+                : typeof raw === "string" ? (() => { try { const p2 = JSON.parse(raw); return Array.isArray(p2) ? p2 : []; } catch { return []; } })() : [];
+              if (!ins.length) return null;
+              return <>
+                <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, color: C.meta, margin: "11px 0 6px" }}>RHP evidence · the document's own words</div>
+                {ins.map((r, i) => {
+                  const dir = String(r.direction ?? "");
+                  const mark = dir === "negative" ? "−" : dir === "positive" ? "+" : "·";
+                  const mc = dir === "negative" ? C.red : dir === "positive" ? C.green : C.meta;
+                  return <div key={i} style={{ marginBottom: 6, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>
+                    <span style={{ color: mc, fontWeight: 800, marginRight: 7 }}>{mark}</span>
+                    {String(r.statement ?? "")}
+                    {r.excerpt ? <div style={{ marginTop: 2, marginLeft: 15, fontSize: 11, color: C.meta, fontStyle: "italic" }}>
+                      “{String(r.excerpt).slice(0, 260)}”{r.locator ? <span style={{ fontStyle: "normal" }}> — {String(r.locator)}</span> : null}</div> : null}
+                  </div>;
+                })}
+              </>;
+            })()}
             <div style={{ marginTop: 11, fontSize: 10, color: C.dim }}>Source: Red Herring Prospectus · extracted by Claude · research signal, not a buy call</div>
           </div>
+          {/* ── SBI Securities research (Haiku-parsed) — independent lens, never
+                blended into our score. Missing note -> the directive's exact
+                pending language, never an invented recommendation. ── */}
+          <div style={{ marginTop: 8, padding: "13px 16px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 11 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.meta, letterSpacing: 0.4, marginBottom: 6 }}>
+              SBI SECURITIES RESEARCH{c.sbi_rating ? ` · ${String(c.sbi_rating)}` : ""}</div>
+            {sj ? <>
+              {(sj.one_line || c.sbi_one_line) ? <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.55, marginBottom: 8 }}>{String(sj.one_line ?? c.sbi_one_line)}</div> : null}
+              {Array.isArray(sj.strengths) && sj.strengths.length ? <div style={{ marginBottom: 6 }}>
+                {(sj.strengths as string[]).slice(0, 4).map((t, i) => <div key={i} style={{ display: "flex", gap: 7, fontSize: 12, color: C.sub, lineHeight: 1.5, marginBottom: 3 }}><span style={{ color: C.green, fontWeight: 800 }}>+</span><span>{t}</span></div>)}
+              </div> : null}
+              {Array.isArray(sj.risks) && sj.risks.length ? <div style={{ marginBottom: 6 }}>
+                {(sj.risks as string[]).slice(0, 4).map((t, i) => <div key={i} style={{ display: "flex", gap: 7, fontSize: 12, color: C.sub, lineHeight: 1.5, marginBottom: 3 }}><span style={{ color: C.red, fontWeight: 800 }}>−</span><span>{t}</span></div>)}
+              </div> : null}
+              {sj.valuation_comment ? <div style={{ fontSize: 11.5, color: C.meta, lineHeight: 1.5, marginBottom: 4 }}>Valuation: {String(sj.valuation_comment)}</div> : null}
+              {Array.isArray(sj.peer_comparison) && (sj.peer_comparison as unknown[]).length ? <div style={{ fontSize: 11, color: C.meta }}>Peer table: {(sj.peer_comparison as unknown[]).length} peers captured{sj.clean_or_flagged ? ` · note self-reports ${String(sj.clean_or_flagged)}` : ""}</div> : null}
+              <div style={{ marginTop: 9, fontSize: 10, color: C.dim }}>Source: SBI Securities IPO note · parsed by Claude Haiku · their call, not ours</div>
+            </> : <div style={{ fontSize: 12, color: C.meta }}>SBI research note not available or not yet parsed.</div>}
+          </div>
+        </>
         );
       })()}
     </div>

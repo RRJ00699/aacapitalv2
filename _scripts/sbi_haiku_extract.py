@@ -15,6 +15,7 @@ is 1-3/day, so the cap is a fence, not a constraint.
 Run:  python _scripts/sbi_haiku_extract.py           (lean step; safe to rerun)
 """
 import json, os, sys, datetime as dt
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import psycopg2
 
 DAILY_CAP = 0.50
@@ -101,8 +102,19 @@ def main():
                         (company, f"cap hit — deferred (remaining ${remaining:.3f})"))
             conn.commit(); print(f"  CAP HIT — {company} deferred to next run"); break
         if not os.path.exists(pdf_path):
-            cur.execute("INSERT INTO sbi_haiku_run_log (company, ok, note) VALUES (%s,false,'pdf missing on disk')", (company,))
-            conn.commit(); print(f"  SKIP {company}: pdf missing {pdf_path}"); continue
+            # Windows rows: pdf_path was written on the PC with backslashes
+            # ("data\research_notes\X.pdf" — VM run 2026-07-21). Normalize and
+            # retry by basename before declaring it missing; repair the SOURCE
+            # row when found (path was wrong, not empty — this is a fix, not a
+            # fill).
+            cand = os.path.join("data", "research_notes",
+                                os.path.basename(pdf_path.replace("\\", "/")))
+            if os.path.exists(cand):
+                cur.execute("UPDATE ipo_research_notes SET pdf_path=%s WHERE id=%s", (cand, nid))
+                conn.commit(); pdf_path = cand
+            else:
+                cur.execute("INSERT INTO sbi_haiku_run_log (company, ok, note) VALUES (%s,false,'pdf missing on disk')", (company,))
+                conn.commit(); print(f"  SKIP {company}: pdf missing {pdf_path}"); continue
         try:
             import pdfplumber
             text = ""
@@ -122,6 +134,11 @@ def main():
             cur.execute("INSERT INTO sbi_haiku_run_log (company, spent_usd, ok, note) VALUES (%s,%s,true,%s)",
                         (company, round(cost, 4), f"peers={len(data.get('peer_comparison') or [])}"))
             conn.commit()
+            try:
+                from lib.stage_state import record as _rec
+                _rec(conn, company, "SBI_EXTRACTED", "CONFIRMED", version=MODEL)
+            except Exception:
+                pass
             print(f"  ✓ {company}: ${cost:.4f} · rating={data.get('rating')} · peers={len(data.get('peer_comparison') or [])}")
         except Exception as e:
             conn.rollback()

@@ -69,6 +69,12 @@ def new_ipos_without_rhp(days):
              OR (ii.open_date IS NOT NULL AND ii.open_date
                      BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
           )
+          -- PR-C: honor per-IPO retry backoff (bounded retries; one failed
+          -- IPO never blocks another — its next_retry_at only gates ITSELF)
+          AND NOT EXISTS (
+              SELECT 1 FROM ipo_stage_state st
+              WHERE st.ipo_id = ii.id AND st.stage = 'RHP_DOWNLOADED'
+                AND st.next_retry_at IS NOT NULL AND st.next_retry_at > NOW())
           AND NOT EXISTS (
               SELECT 1 FROM ipo_rhp_intel r
               WHERE lower(regexp_replace(r.company_name,'[^a-zA-Z0-9]','','g'))
@@ -184,6 +190,21 @@ def main():
     # apply: download each matched filing using the proven PDF.js click logic
     _download_matched(matched)
 
+def _stage(company, status, error=None):
+    """PR-C: RHP_DOWNLOADED stage truth. FAILED -> 6h backoff (bounded retry:
+    the 2x/day cron gives ~2 attempts/day until the -45d window closes)."""
+    try:
+        import psycopg2 as _pg
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from lib.stage_state import record
+        _c = _pg.connect(os.environ["DATABASE_URL"])
+        record(_c, company, "RHP_DOWNLOADED", status, error=error,
+               retry_minutes=360 if status == "FAILED" else None)
+        _c.close()
+    except Exception:
+        pass
+
+
 def _persist_rhp_url(company, url):
     """Write the source link ONLY once a real PDF landed. The old pre-download
     insert created placeholder ipo_rhp_intel rows for every match attempt —
@@ -262,10 +283,10 @@ def _download_matched(matched):
                             try:
                                 n = len(pypdf.PdfReader(dest).pages)
                                 if n < 40:
-                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
+                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); _stage(company, "FAILED", f"{n}pp — not a full RHP"); continue
                             except Exception:
                                 pass
-                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; _persist_rhp_url(company, url); continue
+                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; _persist_rhp_url(company, url); _stage(company, "CONFIRMED"); continue
                         print(f"  · {company}: direct url not a PDF, falling back to viewer")
                     except Exception as e:
                         print(f"  · {company}: direct fetch failed ({type(e).__name__}), falling back")
@@ -287,18 +308,18 @@ def _download_matched(matched):
                             except Exception: continue
                     if dl: break
                 if not dl:
-                    print(f"  ✗ {company} (no download control)"); continue
+                    print(f"  ✗ {company} (no download control)"); _stage(company, "FAILED", "no download control"); continue
                 dl.save_as(dest)
                 # verify it's a real RHP (>40 pages)
                 try:
                     n = len(pypdf.PdfReader(dest).pages)
                     if n < 40:
-                        print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
+                        print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); _stage(company, "FAILED", f"{n}pp — not a full RHP"); continue
                 except Exception:
                     pass
-                print(f"  ✓ {company} -> {dest}"); got += 1; _persist_rhp_url(company, url)
+                print(f"  ✓ {company} -> {dest}"); got += 1; _persist_rhp_url(company, url); _stage(company, "CONFIRMED")
             except Exception as e:
-                print(f"  ✗ {company} ({type(e).__name__})")
+                print(f"  ✗ {company} ({type(e).__name__})"); _stage(company, "FAILED", f"{type(e).__name__}: {str(e)[:150]}")
         br.close()
     _prune_empty_dirs()
     print(f"\ndownloaded {got} RHP(s) into {OUT_DIR}/")
