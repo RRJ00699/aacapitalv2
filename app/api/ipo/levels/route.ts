@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   try {
     const live = await sql`
       SELECT trade_date, issue_price, listing_open, gap_pct, gap_bucket,
-             day_open, day_high, day_low, day_close, session_vwap, close_vs_vwap,
+             listing_open AS day_open, day_high, day_low, day_close, session_vwap, close_vs_vwap,
              floor_price, floor_volume, floor_defenses, ceiling_price, ceiling_volume,
              poc_price, obir_open, obir_close, circuit_locked, verdict, risk_note,
              profile_json, tick_count, computed_at
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const daily = await sql`
       SELECT d.date AS trade_date, d.t, d.close AS day_close, d.floor AS floor_price,
              d.ceiling AS ceiling_price, d.poc AS poc_price, d.broke_floor, d.broke_ceiling, d.cushion,
-             c.gap_bucket, c.gap_pct
+             c.gap_bucket, c.listing_gap_pct AS gap_pct
       FROM ipo_daily_levels d
       LEFT JOIN ipo_consolidated c ON c.symbol_final = d.symbol
       WHERE d.symbol = ${symbol}

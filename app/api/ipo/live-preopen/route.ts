@@ -22,10 +22,32 @@ import { fairValue } from "@/lib/fair-value";
 import { neon } from "@neondatabase/serverless";
 import { cached } from "@/lib/kv-cache";
 import { getBroker } from "@/lib/brokers";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
 function db() { return neon(process.env.DATABASE_URL!); }
+
+// ── KV cache (ledger #13) — 60s TTL, HARD BYPASS during the official NSE
+// special pre-open window (this file's timing model, corrected 2026-07-16):
+// 09:00–10:00 IST order-entry→discovery→buffer, decision deadline 09:58.
+// We bypass 08:55–10:05 IST (margin both sides) so the decision screen is
+// NEVER served stale in the window it exists for. Outside it, 60s.
+// NOTE: reviewer spec said bypass 10:00–10:14 — that is the OLD pre-2026-07-16
+// model this route explicitly corrected; implemented against the current one.
+const CACHE_KEY = "ipo-live-preopen:v1";
+const CACHE_TTL_S = 60;
+function inDecisionWindowIST(now = new Date()): boolean {
+  const [h, m] = now.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit",
+  }).split(":").map(Number);
+  const mins = h * 60 + m;
+  return mins >= 8 * 60 + 55 && mins <= 10 * 60 + 5;   // 08:55–10:05 IST
+}
+async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
+  try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
+  catch { return null; }
+}
 
 // ── Playbook win rates (from backtests, for win-rate-weighted confidence) ──
 const WIN = {
@@ -236,6 +258,14 @@ function confidence(all: Rule[], rhpReject: boolean, ofsPeReject: boolean, anyAv
 }
 
 export async function GET() {
+  const bypass = inDecisionWindowIST();
+  const kv = bypass ? null : await getKV();
+  if (kv) {
+    try {
+      const cached = await kv.get(CACHE_KEY);
+      if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
+    } catch { /* cache read failed — fall through to DB */ }
+  }
   try {
     const sql = db();
     // Phase-2 zero-idle: this route is polled every 60s through the 8:55–10:20
@@ -352,13 +382,21 @@ export async function GET() {
       };
     }));
 
-    return NextResponse.json({
+    const payload = JSON.stringify({
       ok: true,
       window: "listing_date within -7d..+1d",
       book_live: broker != null,               // false = pre-open book not wired this call
       count: listings.length,
       listings,
       fetchedAt: new Date().toISOString(),
+    });
+    if (kv) {
+      try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); }
+      catch { /* cache write failed — response still served */ }
+    }
+    return new NextResponse(payload, {
+      headers: { "content-type": "application/json",
+                 "x-cache": bypass ? "BYPASS-DECISION-WINDOW" : "MISS" },
     });
   } catch (err: any) {
     return NextResponse.json(

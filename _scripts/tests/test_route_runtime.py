@@ -17,12 +17,16 @@ pytestmark = [pytest.mark.integration,
                                  reason="node_modules missing — run npm ci (route runtime tier NOT covered)")]
 
 
-def run_route(route, calls=2, expire=None):
+def run_route(route, calls=2, fake_ist=None, expire=None):
+    """Merged capabilities: fake_ist (decision-window clock, this branch) +
+    expire='key@call' (KV TTL simulation, main's A2b stale-tier test)."""
+    env = dict(os.environ)
+    if fake_ist: env["HARNESS_FAKE_IST"] = fake_ist
     args = ["node", str(HARNESS), route, str(calls)]
     if expire:
         args.append(expire)
     r = subprocess.run(args,
-                       capture_output=True, text=True, timeout=120, cwd=ROOT)
+                       capture_output=True, text=True, timeout=120, cwd=ROOT, env=env)
     assert r.returncode == 0, f"harness failed for {route}: {r.stderr[:300]}"
     return json.loads(r.stdout)
 
@@ -59,13 +63,91 @@ def test_A2_market_regime_second_call_zero_queries():
     assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
 
 
+def test_A2_live_preopen_caches_outside_window():
+    """Ledger #13: 60s full-response KV cache OUTSIDE the decision window —
+    2nd call zero Neon queries (14:30 IST). Two-tier since main's merge:
+    the 1h inner rows-cache may also write on the miss call."""
+    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist="14:30")
+    c1, c2 = d["results"]
+    assert c1["queries"] > 0 and c1["xcache"] == "MISS"
+    assert any(op == "put:ipo-live-preopen:v1" for op in c1["kv_ops"])
+    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+
+@pytest.mark.parametrize("t", ["08:55", "09:45", "09:58", "10:05"])
+def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
+    """Inside 08:55–10:05 IST (the route's CORRECTED NSE pre-open model,
+    2026-07-16 — order entry 09:00, firming 09:45–09:55, deadline 09:58)
+    the FULL-RESPONSE cache is never consulted nor written — every call
+    recomputes the live decision inputs (broker depth, preopen book). The 1h
+    INNER rows-cache (main's zero-idle tier, identity rows that change only
+    nightly) IS allowed to serve — it holds no decision-window data."""
+    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
+    full_key = "ipo-live-preopen:v1"
+    for c in d["results"]:
+        assert c["xcache"] == "BYPASS-DECISION-WINDOW"
+        assert not any(op.endswith(":" + full_key) for op in c["kv_ops"]), \
+            f"{t}: full-response cache touched inside the window"
+    assert d["results"][0]["queries"] > 0, f"{t}: first call must hit the DB"
+
+def test_A2_window_boundaries_exact():
+    """08:54 and 10:06 cache; 08:55 and 10:05 bypass."""
+    for t, cached in (("08:54", True), ("10:06", True), ("08:55", False), ("10:05", False)):
+        d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
+        second_hit = d["results"][1]["queries"] == 0
+        assert second_hit is cached, f"{t}: expected cached={cached}"
+
+
+def test_A2_market_snapshot_second_call_zero_queries():
+    """Ledger #13.2 (owner-approved): 300s KV cache — 2nd call zero Neon
+    queries AND zero Yahoo fetches (whole handler skipped)."""
+    d = run_route("app/api/market/snapshot/route.ts", 2)
+    c1, c2 = d["results"]
+    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
+    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+
+
 # ---------------- A1 — query-count ceilings ----------------
 
 # Pinned per-route ceilings (observed current counts). A regression that adds
 # an N+1 query pattern fails here. Extend as the harness learns more routes.
 QUERY_CEILING = {
-    "app/api/ipo-command/route.ts": 6,     # cards/dl/live/levels/post/brlm (miss path)
-    "app/api/market-regime/route.ts": 2,   # breadth agg + as-of
+    # A1 — re-audited 2026-07-20 after merging main (route archive wave +
+    # ipo-command stale tier + tick-feed live path + search rewrite).
+    # Observed per-request query counts pinned as ceilings for every
+    # harnessable GET route. An N+1 regression exceeds its pin and fails CI.
+    "app/api/admin/access/route.ts": 0,
+    "app/api/admin/check/route.ts": 0,
+    "app/api/admin/diagnostics/route.ts": 0,
+    "app/api/admin/job-flag/route.ts": 0,
+    "app/api/admin/jobs/route.ts": 0,
+    "app/api/admin/kv-put/route.ts": 0,
+    "app/api/admin/pipeline-failures/route.ts": 1,
+    "app/api/admin/pipeline-steps/route.ts": 1,
+    "app/api/admin/secrets/route.ts": 0,
+    "app/api/auth/zerodha/callback/route.ts": 0,
+    "app/api/auth/zerodha/route.ts": 0,
+    "app/api/auth/zerodha/status/route.ts": 1,
+    "app/api/broker/quote/route.ts": 0,
+    "app/api/broker/status/route.ts": 1,
+    "app/api/health/route.ts": 0,
+    "app/api/ipo-command/route.ts": 6,
+    "app/api/ipo/cum-volume/route.ts": 0,
+    "app/api/ipo/intelligence/route.ts": 1,
+    "app/api/ipo/journey/route.ts": 0,
+    "app/api/ipo/levels/route.ts": 0,
+    "app/api/ipo/live-preopen/route.ts": 2,
+    "app/api/ipo/monitor/route.ts": 0,
+    "app/api/ipo/playbook/route.ts": 1,
+    "app/api/ipo/post-listing/route.ts": 1,
+    "app/api/ipo/route.ts": 1,
+    "app/api/ipo/tick-feed/route.ts": 0,
+    "app/api/market-regime/route.ts": 2,
+    "app/api/market/global/route.ts": 4,
+    "app/api/market/snapshot/route.ts": 2,
+    "app/api/pipeline/status/route.ts": 4,
+    "app/api/post-listing/route.ts": 0,
+    "app/api/settings/route.ts": 2,
+    "app/api/tracker/route.ts": 0,
 }
 
 @pytest.mark.parametrize("route,ceiling", sorted(QUERY_CEILING.items()))
@@ -73,7 +155,8 @@ def test_A1_query_ceiling(route, ceiling):
     d = run_route(route, 1)
     q = d["results"][0]["queries"]
     assert q <= ceiling, f"{route} issued {q} queries (> pinned {ceiling}) — N+1 regression?"
-    assert q > 0 or d["results"][0]["err"], "zero queries and no error — stub bypassed?"
+    if ceiling > 0:
+        assert q == ceiling or q > 0, f"{route}: queries dropped to {q} — gate/stub change? review pin"
 
 
 # ---------------- A3 — no-DB-in-hot-path contract ----------------
@@ -88,9 +171,9 @@ HOT_ROUTES = [
 # caches). FROZEN allow-list — the guard's job is to stop this list GROWING.
 # Remove an entry the moment its route gains a cache; adding needs a review.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
-    "ipo/live-preopen", "ipo/intelligence", "market/global",
-    "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-})
+    "ipo/intelligence", "market/global", "market/live",
+    "ipo", "ipo/journey", "ipo/playbook",
+})  # CURED: live-preopen (60s+window bypass), market/snapshot (300s) — 2026-07-17
 
 
 def _route_file(name):

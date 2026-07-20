@@ -22,7 +22,7 @@ const stubPlugin = {
   setup(b) {
     const hijack = [
       /^@neondatabase\/serverless$/, /^@\/lib\/api-guard$/,
-      /^@opennextjs\/cloudflare$/, /^pg$/, /^postgres$/,
+      /^@opennextjs\/cloudflare$/, /^pg$/, /^postgres$/, /^next\/headers$/,
     ];
     b.onResolve({ filter: /.*/ }, (args) => {
       if (hijack.some((re) => re.test(args.path))) return { path: STUBS };
@@ -62,8 +62,10 @@ for (let i = 0; i < calls; i++) {
     const at = expireArg.lastIndexOf("@");
     if (at > 0 && Number(expireArg.slice(at + 1)) === i + 1) H.kv.delete(expireArg.slice(0, at));
   }
-  const before = H.queries.length, gBefore = H.kvGets, pBefore = H.kvPuts;
-  const req = { nextUrl: new URL("https://x.local" + "/api/" + path.basename(path.dirname(routeFile))), headers: new Map() };
+  const before = H.queries.length, gBefore = H.kvGets, pBefore = H.kvPuts, oBefore = (H.kvOps || (H.kvOps = [])).length;
+  const u = "https://x.local/api/" + path.basename(path.dirname(routeFile));
+  const req = { url: u, nextUrl: new URL(u),
+                headers: { get: (_k) => null, has: () => false } };
   let status = null, xcache = null, err = null;
   try {
     const res = await mod.GET(req);
@@ -72,6 +74,7 @@ for (let i = 0; i < calls; i++) {
   } catch (e) { err = String(e).slice(0, 160); }
   results.push({ call: i + 1, queries: H.queries.length - before,
                  kv_gets: H.kvGets - gBefore, kv_puts: H.kvPuts - pBefore,
+                 kv_ops: H.kvOps.slice(oBefore),
                  status, xcache, err });
 }
 console.log(JSON.stringify({ route: process.argv[2], results, sampled_queries: globalThis.__H.queries.slice(0, 3) }));

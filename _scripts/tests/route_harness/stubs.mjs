@@ -1,7 +1,7 @@
 // Route-harness stubs. Discipline: the Neon stub COUNTS every query and never
 // touches the network; anything unstubbed that tries to leave the process
 // should throw, not silently succeed.
-globalThis.__H = globalThis.__H ?? { queries: [], kv: new Map(), kvGets: 0, kvPuts: 0 };
+globalThis.__H = globalThis.__H ?? { queries: [], kv: new Map(), kvGets: 0, kvPuts: 0, kvOps: [] };
 
 // ---- '@neondatabase/serverless' ----
 export function neon(_url) {
@@ -26,6 +26,12 @@ function rowsFor(q) {
   return [];
 }
 
+// ---- 'next/headers' (routes reading cookies/headers directly) ----
+export async function cookies() {
+  return { get: (_k) => undefined, getAll: () => [], has: () => false };
+}
+export async function headers() { return new Map(); }
+
 // ---- '@/lib/api-guard' ----
 // HARNESS_AUTH=deny simulates no session: guards return a 401 response and
 // the route must return it BEFORE any query runs.
@@ -45,9 +51,20 @@ export function getCloudflareContext() {
   return {
     env: {
       CACHE: {
-        get: async (k) => { globalThis.__H.kvGets++; return globalThis.__H.kv.get(k) ?? null; },
-        put: async (k, v, _o) => { globalThis.__H.kvPuts++; globalThis.__H.kv.set(k, v); },
+        get: async (k) => { globalThis.__H.kvGets++; globalThis.__H.kvOps.push("get:" + k); return globalThis.__H.kv.get(k) ?? null; },
+        put: async (k, v, _o) => { globalThis.__H.kvPuts++; globalThis.__H.kvOps.push("put:" + k); globalThis.__H.kv.set(k, v); },
       },
     },
+  };
+}
+
+// HARNESS_FAKE_IST=HH:MM makes Date#toLocaleTimeString return a fixed IST time,
+// so decision-window logic is deterministic under test.
+if (process.env.HARNESS_FAKE_IST) {
+  const fixed = process.env.HARNESS_FAKE_IST;
+  const orig = Date.prototype.toLocaleTimeString;
+  Date.prototype.toLocaleTimeString = function (loc, opts) {
+    if (opts && opts.timeZone === "Asia/Kolkata") return fixed;
+    return orig.call(this, loc, opts);
   };
 }
