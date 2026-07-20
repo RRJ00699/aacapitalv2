@@ -24,7 +24,11 @@ export async function GET(req: Request) {
         break;
       case "rhp_status":
         rows = await sql`SELECT i.company_name,
-            (ri.company_name IS NOT NULL) AS has_rhp,
+            -- has_rhp must mean the RHP was actually READ, not that a
+            -- placeholder row exists. fetch_new_rhps creates rows before
+            -- extraction, so this reported true for Xtranet/Lohia/Indo-MIM
+            -- while their verdict was blank (2026-07-20).
+            (ri.full_json IS NOT NULL) AS has_rhp,
             COALESCE(ri.full_json->>'verdict', ri.full_json->'aacapital_decision'->>'verdict') AS verdict
           FROM ipo_intelligence i
           LEFT JOIN ipo_rhp_intel ri ON regexp_replace(lower(ri.company_name), ${CANON}, '', 'g')

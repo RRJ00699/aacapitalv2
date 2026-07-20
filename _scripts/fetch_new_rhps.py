@@ -15,7 +15,8 @@ Fast: one page load, a handful of targeted downloads. Never walks history.
   python _scripts/fetch_new_rhps.py --apply    # download matched RHPs
   python _scripts/fetch_new_rhps.py --days 45  # how far back counts as "new" (default 45)
 """
-import os, sys, io, re, argparse, unicodedata
+import os
+import re, sys, io, re, argparse, unicodedata
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE = "https://www.sebi.gov.in"
@@ -186,7 +187,46 @@ def _download_matched(matched):
                 print(f"  ⏭ {company} (have it)"); continue
             try:
                 pg.goto(url, timeout=60000, wait_until="domcontentloaded")
-                pg.wait_for_selector("iframe, embed", timeout=20000)
+
+                # PRIMARY: pull the DIRECT pdf url out of the page and fetch it.
+                # Fixed 2026-07-20. The old code only clicked a Download button
+                # INSIDE the PDF.js viewer iframe — when that button did not
+                # render, every download failed with "no download control" and
+                # the RHP backlog never cleared (Xtranet, Indo-MIM, Lohia, all
+                # sitting on SEBI page 1 the whole time). SEBI always embeds the
+                # real file as .../sebi_data/attachdocs/<month>/<id>.pdf, wrapped
+                # in /web/?file=<url>. Verified by hand on Caliber: that URL
+                # returns %PDF-1.7, 13MB. Deterministic, no viewer needed.
+                direct = None
+                try:
+                    html = pg.content()
+                    m = re.search(r"https?://[^\"'\s>]*?sebi_data/attachdocs/[^\"'\s>]*?\.pdf", html, re.I)
+                    if not m:
+                        m2 = re.search(r"(/sebi_data/attachdocs/[^\"'\s>]*?\.pdf)", html, re.I)
+                        if m2: direct = BASE.rstrip("/") + m2.group(1)
+                    else:
+                        direct = m.group(0)
+                except Exception:
+                    pass
+                if direct:
+                    try:
+                        r = pg.request.get(direct, timeout=120000)
+                        if r.ok and r.body()[:5] == b"%PDF-":
+                            with open(dest, "wb") as fh: fh.write(r.body())
+                            try:
+                                n = len(pypdf.PdfReader(dest).pages)
+                                if n < 40:
+                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
+                            except Exception:
+                                pass
+                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; continue
+                        print(f"  · {company}: direct url not a PDF, falling back to viewer")
+                    except Exception as e:
+                        print(f"  · {company}: direct fetch failed ({type(e).__name__}), falling back")
+
+                # FALLBACK: the old viewer-button path
+                try: pg.wait_for_selector("iframe, embed", timeout=20000)
+                except Exception: pass
                 dl = None
                 for i in range(pg.locator("iframe").count()):
                     fr = pg.frame_locator("iframe").nth(i)

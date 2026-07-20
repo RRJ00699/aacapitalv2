@@ -571,7 +571,16 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 <span>{r}</span></div>;
             })}
             {clean && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn't find a strong reason not to. That itself is the finding.</div>}
-            <div style={{ fontSize: 10, color: C.dim, marginTop: 6 }}>From the RHP + filings · research signal, not a buy call</div>
+            {/* PROVENANCE (fixed 2026-07-20). This said "From the RHP + filings"
+                unconditionally. But these reasons are computed from STRUCTURED
+                fields — ofs_pct, roe, issue size — sourced from Chittorgarh /
+                IPOMatrix. On an IPO with no RHP extraction (Lohia, Indo-MIM) the
+                footer claimed a source that had never been read. Say what was
+                actually used. */}
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 6 }}>
+              {c.rhp_verdict ? "From the RHP + filings" : "From filings & issue data — RHP not yet read"}
+              {" · research signal, not a buy call"}
+            </div>
           </div>
         );
       })()}
