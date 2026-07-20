@@ -24,11 +24,12 @@ const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
 const ALLOWED_JOBS = new Set([
   // IPO Power House — IPO-focused jobs only. Non-IPO jobs (screener, old backtests,
   // theses, coverage, backfills) removed to keep the daily pipeline IPO-only.
-  "pipeline", "pipeline_weekly",   // main IPO pipeline
+  "pipeline", "pipeline_weekly",   // main IPO pipeline (lean — 2026-07-21)
+  "peer_pe", "peer_pe_notes", "vm_verify",          // fair-value input fetch · reality report
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
   "sbi_download", "sbi_parse",     // SBI research notes (street view)
-  "levels",                        // IPO daily levels
+  // IPO daily levels
   "universe_candles",              // candle sync (post-listing dashboard)
   "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)

@@ -42,6 +42,11 @@ def _cook(s):
 def extract_queries():
     src = ROUTE.read_text(encoding="utf-8")
     blocks = re.findall(r"await sql`([^`]+)`", src)
+    # 2026-07-21 deploy-order guard: the route now issues a CREATE TABLE IF
+    # NOT EXISTS self-heal before the cards query. Positional indices in this
+    # file mean the SELECTs — filter DDL out (it is covered by its own tests
+    # in test_admin_console_jobs).
+    blocks = [b for b in blocks if not b.lstrip().upper().startswith("CREATE TABLE")]
     assert len(blocks) >= 8, f"route changed shape: found {len(blocks)} sql blocks, expected >=8"
     return [_cook(b) for b in blocks]
 

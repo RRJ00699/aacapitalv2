@@ -79,13 +79,17 @@ DB = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 # experiments), screener_* (the Screener side-quest), coverage/universe_backfill
 # (one-time backfills). Keep the daily flow IPO-only.
 JOBS = {
-    "pipeline":        ["_scripts/run_ipo_pipeline.py"],
-    "pipeline_weekly": ["_scripts/run_ipo_pipeline.py", "--weekly"],
+    # 2026-07-21: run_ipo_pipeline.py is RETIRED (prints a banner + exit 1 —
+    # the owner hit exactly this from Admin). The lean pipeline IS production.
+    "pipeline":        ["_scripts/run_ipo_pipeline_lean.py"],
+    "pipeline_weekly": ["_scripts/run_ipo_pipeline_lean.py", "--weekly"],
+    "peer_pe_notes":   ["_scripts/derive_peer_pe_from_notes.py", "--apply"],
+    "peer_pe":         ["_scripts/fetch_peer_pe.py", "--apply"],
+    "vm_verify":       ["_scripts/vm_verify.py"],
     "token":           ["_scripts/refresh_kite_token.py"],
     "gmp":             ["_scripts/scrape_investorgain_gmp.py", "--write-db"],
     "sbi_download":    ["_scripts/download_sbi_notes.py", "--out", "data/research_notes"],
     "sbi_parse":       ["_scripts/parse_sbi_notes.py", "--dir", "data/research_notes", "--write-db"],
-    "levels":          ["_scripts/ipo_daily_levels.py", "--from-db", "--write-db"],
     "universe_candles": ["_scripts/kite-sync-candles.py", "--days", "5"],
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],

@@ -83,14 +83,20 @@ function Diagnostics(){
 
 function StepBoard(){
   const [steps,setSteps]=useState<Array<{step:string;ok:boolean;error?:string;ran_at:string}>|null>(null);
+  const [expected,setExpected]=useState<Array<{step:string;weekly?:boolean}>>([]);
   useEffect(()=>{fetch("/api/admin/pipeline-steps").then(r=>r.json())
-    .then(j=>setSteps(j.steps||[])).catch(()=>setSteps([]));},[]);
+    .then(j=>{setSteps(j.steps||[]);setExpected(j.expected||[]);}).catch(()=>setSteps([]));},[]);
   if(steps===null)return <div style={{fontSize:12,color:C.mt}}>loading…</div>;
   if(!steps.length)return <div style={{fontSize:12,color:C.mt}}>No step log yet — populates from the next pipeline run.</div>;
   const fails=steps.filter(s=>!s.ok).length;
+  // 2026-07-21: steps that SHOULD have run but left no row (the peer-PE ghost
+  // was invisible for weeks). Weekly-only steps excluded unless a weekly ran.
+  const ranNames=new Set(steps.map(s=>s.step));
+  const weeklyRan=expected.some(e=>e.weekly&&ranNames.has(e.step));
+  const missed=expected.filter(e=>!ranNames.has(e.step)&&(!e.weekly||weeklyRan));
   return (<div>
-    <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:fails?"#B42318":C.gr}}>
-      {steps.length} steps · {steps.length-fails} ✓ · {fails} ✕ · {String(steps[steps.length-1]?.ran_at).slice(0,16).replace("T"," ")}</div>
+    <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:fails||missed.length?"#B42318":C.gr}}>
+      {steps.length} steps · {steps.length-fails} ✓ · {fails} ✕{missed.length?` · ${missed.length} MISSED`:""} · {String(steps[steps.length-1]?.ran_at).slice(0,16).replace("T"," ")}</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr",gap:3}}>
       {steps.map((s2,i)=>(
         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 10px",
@@ -98,6 +104,13 @@ function StepBoard(){
           <span style={{fontWeight:800,color:s2.ok?C.gr:"#B42318",flexShrink:0}}>{s2.ok?"✓":"✕"}</span>
           <span style={{fontSize:12,flex:1}}>{s2.step}</span>
           {!s2.ok&&s2.error?<span style={{fontFamily:"var(--f-mono)",fontSize:9.5,color:"#B42318",maxWidth:"46%",overflowWrap:"anywhere"}}>{s2.error.slice(0,90)}</span>:null}
+        </div>))}
+      {missed.map((m,i)=>(
+        <div key={`m${i}`} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",
+          background:"#FFFAEB",border:"1px solid #FEDF89",borderRadius:8}}>
+          <span style={{fontWeight:800,color:"#B54708",flexShrink:0}}>◌</span>
+          <span style={{fontSize:12,flex:1,color:"#B54708"}}>{m.step}</span>
+          <span style={{fontSize:9.5,color:"#B54708",fontWeight:700}}>EXPECTED — NO ROW RECORDED</span>
         </div>))}
     </div>
   </div>);}

@@ -21,11 +21,13 @@ const C = {
 // _scripts/job_runner.py. Non-IPO jobs (theses, exit/base backtests, coverage,
 // universe backfill, screener, convergence) removed.
 const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }[] = [
-  { key: "pipeline",        label: "Run full pipeline",     desc: "scrape → enrich → GMP → delivery → candles → SBI → score → verdicts → consolidated → RHP → backup", heavy: true },
-  { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Full pipeline plus the Sunday data purge", heavy: true },
+  { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → SBI → Haiku/Sonnet → score → verdicts → consolidated → gates", heavy: true },
+  { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Lean pipeline plus the post-lock candle purge", heavy: true },
+  { key: "peer_pe_notes",   label: "Peer P/E from SBI notes", desc: "Median of the Haiku-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
+  { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
+  { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
-  { key: "levels",          label: "Rebuild daily levels",  desc: "Recompute floor/ceiling → ipo_daily_levels" },
   { key: "universe_candles",label: "Sync candles",          desc: "NSE daily OHLCV, rolling 5 days (Kite) — feeds post-listing dashboard" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },

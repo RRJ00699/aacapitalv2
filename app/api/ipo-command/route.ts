@@ -62,6 +62,29 @@ export async function GET(req?: Request) {
   }
 
   try {
+    // ── DEPLOY-ORDER GUARD (incident 2026-07-21) ──────────────────────────
+    // This route queries ipo_insights, whose DDL ships via schema_sync.py on
+    // the VM. A deploy that lands BEFORE the next schema run raced the DDL
+    // and degraded the whole screen (NeonDbError: relation "ipo_insights"
+    // does not exist — owner screenshot). The rebuild path now self-heals
+    // with the EXACT schema_sync DDL (single-owner rule intact: schema_sync
+    // remains authoritative; a test asserts these two statements stay
+    // byte-equivalent). Runs only on cache MISS (~2×/day) — negligible cost,
+    // and a deploy can never again depend on cron timing.
+    await sql`CREATE TABLE IF NOT EXISTS ipo_insights (
+        insight_id BIGSERIAL PRIMARY KEY,
+        ipo_id INT NOT NULL,
+        category TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('positive','negative','neutral','incomplete')),
+        source_type TEXT NOT NULL,
+        source_name TEXT, source_document_id TEXT, source_url TEXT,
+        source_locator TEXT, source_excerpt TEXT,
+        extraction_model TEXT, analysis_model TEXT, analysis_run_id TEXT,
+        confidence TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        source_published_at TIMESTAMPTZ, source_downloaded_at TIMESTAMPTZ,
+        is_current BOOLEAN DEFAULT TRUE)`;
     const cards = await sql`
       SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, c.issue_size_cr,
              c.issue_price, c.ipo_score, c.score_band, c.score_evidence, c.gap_bucket,
