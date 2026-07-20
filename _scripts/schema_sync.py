@@ -43,6 +43,34 @@ DDL = [
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS one_line TEXT",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS ai_model TEXT",
     # ── observability ──
+    # ── PR-A provenance (PROVENANCE_DESIGN.md §2 — additive only) ──
+    """CREATE TABLE IF NOT EXISTS ipo_insights (
+        insight_id BIGSERIAL PRIMARY KEY,
+        ipo_id INT NOT NULL,
+        category TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('positive','negative','neutral','incomplete')),
+        source_type TEXT NOT NULL,
+        source_name TEXT, source_document_id TEXT, source_url TEXT,
+        source_locator TEXT, source_excerpt TEXT,
+        extraction_model TEXT, analysis_model TEXT, analysis_run_id TEXT,
+        confidence TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        source_published_at TIMESTAMPTZ, source_downloaded_at TIMESTAMPTZ,
+        is_current BOOLEAN DEFAULT TRUE)""",
+    "CREATE INDEX IF NOT EXISTS idx_ipo_insights_ipo ON ipo_insights (ipo_id) WHERE is_current",
+    """CREATE TABLE IF NOT EXISTS ipo_stage_state (
+        ipo_id INT NOT NULL, stage TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('CONFIRMED','PARTIAL','PENDING','FAILED')),
+        attempt_count INT DEFAULT 0,
+        started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+        last_error TEXT, next_retry_at TIMESTAMPTZ,
+        input_fingerprint TEXT, output_fingerprint TEXT, pipeline_version TEXT,
+        PRIMARY KEY (ipo_id, stage))""",
+    # stale-verdict detection (baseline 2026-07-21: verdicts existed with no
+    # document behind them) — fingerprint column; ADD IF NOT EXISTS is a no-op
+    # where prod already has it (contract_schema.py lists it).
+    "ALTER TABLE ipo_rhp_intel ADD COLUMN IF NOT EXISTS pdf_sha256 TEXT",
     """CREATE TABLE IF NOT EXISTS pipeline_failures (
         id SERIAL PRIMARY KEY, step TEXT, script TEXT,
         stderr_tail TEXT, failed_at TIMESTAMPTZ DEFAULT NOW())""",
@@ -153,6 +181,12 @@ DDL = [
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker TEXT",
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS entry_date DATE",
     "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ",
+    # Phase-5 fix (baseline 2026-07-21): compute_journal_outcomes writes these
+    # three but NOTHING owned their DDL — the thesis UPDATE threw UndefinedColumn
+    # on every nightly ("compute journal outcomes" in pipeline_failures 2x/day).
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS pnl_pct NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS outcome TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS thesis TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_trade_journal_order ON trade_journal(broker_order_id)",
 
     # ── NSE pre-open capture (nse_preopen_capture.py) ──

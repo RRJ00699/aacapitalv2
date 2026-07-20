@@ -542,6 +542,16 @@ CREATE TABLE technical_signals (symbol TEXT, signal TEXT, signal_date DATE,
     strength NUMERIC, computed_at TIMESTAMPTZ, updated_at TIMESTAMPTZ);
 CREATE TABLE management_commentary (symbol TEXT, quarter TEXT, summary TEXT,
     sentiment NUMERIC, scored_at TIMESTAMPTZ);
+CREATE TABLE ipo_insights (
+    insight_id BIGSERIAL PRIMARY KEY, ipo_id INT NOT NULL, category TEXT NOT NULL,
+    statement TEXT NOT NULL, direction TEXT NOT NULL, source_type TEXT NOT NULL,
+    source_name TEXT, source_document_id TEXT, source_url TEXT, source_locator TEXT,
+    source_excerpt TEXT, extraction_model TEXT, analysis_model TEXT,
+    analysis_run_id TEXT, confidence TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+    source_published_at TIMESTAMPTZ, source_downloaded_at TIMESTAMPTZ,
+    is_current BOOLEAN DEFAULT TRUE);
+-- ships in this PR via schema_sync (PR-A) — routes may reference it
+
 CREATE TABLE pipeline_steps (id SERIAL, run_date DATE, step TEXT, script TEXT,
     ok BOOLEAN, error TEXT, ran_at TIMESTAMPTZ);
 CREATE TABLE pipeline_failures (id SERIAL, step TEXT, script TEXT,

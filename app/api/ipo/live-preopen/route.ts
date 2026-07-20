@@ -281,7 +281,13 @@ export async function GET() {
              (SELECT COALESCE(ri.full_json->>'verdict', ri.full_json->'aacapital_decision'->>'verdict') FROM ipo_rhp_intel ri
               WHERE regexp_replace(lower(ri.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
                   = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
-              LIMIT 1) AS rhp_gate
+              LIMIT 1) AS rhp_gate,
+             (SELECT (n.full_json IS NOT NULL) FROM ipo_research_notes n
+              WHERE n.source='SBI'
+                AND (UPPER(n.nse_symbol)=UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol, ipo_consolidated.symbol))
+                     OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                        = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g'))
+              LIMIT 1) AS sbi_parsed
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
@@ -304,6 +310,17 @@ export async function GET() {
       const s = scoreStatic(c);
       const mos = marginOfSafety(c);
       const lv = scoreLive(c, mos);
+
+      // ── PR-D research-readiness gate (directive: a missing RHP analysis
+      // must never appear as a passed company-quality gate; INCOMPLETE is a
+      // first-class state, distinct from a scored SKIP). Computed HERE so the
+      // UI can only render what the server attests.
+      const researchMissing: string[] = [];
+      if (c.rhp_gate == null && c.sbi_parsed !== true) researchMissing.push("RHP & SBI research both unread");
+      else if (c.rhp_gate == null) researchMissing.push("RHP analysis pending");
+      if (c.eps_post == null || c.peer_median_pe == null) researchMissing.push("fair value inputs (EPS/peer P/E)");
+      if (c.issue_price == null) researchMissing.push("issue price");
+      const researchReady = researchMissing.length === 0;
 
       // The Stack (Rule 3): mega + opening-positive + 30 anchors
       const stackPassed =
@@ -364,6 +381,8 @@ export async function GET() {
         sym,
         company_name: c.company_name,
         listing_date: c.listing_date,
+        research_ready: researchReady,
+        research_missing: researchMissing,   // exact unavailable pieces — the UI names them
         rules_static: staticRules,
         rules_live: liveRules,
         avoid_flags: s.avoid,

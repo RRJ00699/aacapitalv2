@@ -29,7 +29,7 @@ DATABASE_URL = (
     os.environ.get("DATABASE_URL") or
     os.environ.get("NEON_DATABASE_URL") or
     os.environ.get("LOCAL_DATABASE_URL") or
-    "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable"
+    "postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable"
 )
 
 def get_conn():

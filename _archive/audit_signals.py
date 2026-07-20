@@ -16,7 +16,7 @@ NEON = os.environ["NEON_DATABASE_URL"].strip('"')
 LOCAL = {
     "host": "localhost", "port": 5432,
     "database": "aacapital", "user": "postgres",
-    "password": "Ashrith@2820", "sslmode": "disable",
+    "password": "CHANGEME_ROTATED", "sslmode": "disable",
 }
 
 conn = psycopg2.connect(NEON)

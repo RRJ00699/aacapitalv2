@@ -43,9 +43,12 @@ def test_ofs_pending_state_without_rhp_evidence():
 
 
 def test_ofs_negative_requires_structure_evidence():
+    """PR-B extended the Phase-7 gate into a ladder:
+       insight(negative) -> insight(non-negative: silence) -> fj0 evidence -> pending."""
     src = _read("components", "ipo", "IpoCard.tsx")
-    m = re.search(r"if \(st\?\.ofs_heavy === true && stDetail\)\s*{\s*\n\s*bad\.push\(`\$\{ofsPct\}% OFS — RHP: ", src)
-    assert m, "confirmed OFS negative must be gated on structure.ofs_heavy + detail and quote the RHP"
+    assert 'stIns.direction === "negative"' in src, "insight-backed negative gate missing"
+    m = re.search(r"else if \(st\?\.ofs_heavy === true && stDetail\)\s*{\s*\n\s*bad\.push\(\{ text: `\$\{ofsPct\}% OFS — RHP: ", src)
+    assert m, "fj0 fallback must stay gated on structure.ofs_heavy + detail and quote the RHP"
 
 
 def test_strengths_divided_from_not_buy_reasons():
@@ -76,7 +79,7 @@ def test_api_ipo_hard_filter():
     assert FILTER.search(src) and SIZE.search(src)
 
 def test_cache_keys_bumped_for_filter_change():
-    assert "ipo-command:v2" in _read("app", "api", "ipo-command", "route.ts")
+    assert "ipo-command:v3" in _read("app", "api", "ipo-command", "route.ts")
     assert "live-preopen:rows:v2" in _read("app", "api", "ipo", "live-preopen", "route.ts")
 
 

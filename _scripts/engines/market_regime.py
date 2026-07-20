@@ -218,7 +218,7 @@ def fetch_breadth_from_local(conn_local, as_of: date) -> float:
     """
     LOCAL_URL = os.environ.get(
         "LOCAL_DATABASE_URL",
-        "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable"
+        "postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable"
     )
     try:
         lconn = psycopg2.connect(LOCAL_URL)

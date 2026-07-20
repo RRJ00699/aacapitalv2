@@ -66,16 +66,19 @@ for (let i = 0; i < calls; i++) {
   const u = "https://x.local/api/" + path.basename(path.dirname(routeFile));
   const req = { url: u, nextUrl: new URL(u),
                 headers: { get: (_k) => null, has: () => false } };
-  let status = null, xcache = null, err = null;
+  let status = null, xcache = null, err = null, body = null;
   try {
     const res = await mod.GET(req);
     status = res?.status ?? 200;
     xcache = res?.headers?.get ? res.headers.get("x-cache") : null;
+    if (process.env.HARNESS_CAPTURE_BODY === "1" && res?.text) {
+      try { body = (await res.text()).slice(0, 20000); } catch { body = null; }
+    }
   } catch (e) { err = String(e).slice(0, 160); }
   results.push({ call: i + 1, queries: H.queries.length - before,
                  kv_gets: H.kvGets - gBefore, kv_puts: H.kvPuts - pBefore,
                  kv_ops: H.kvOps.slice(oBefore),
-                 status, xcache, err });
+                 status, xcache, err, body });
 }
 console.log(JSON.stringify({ route: process.argv[2], results, sampled_queries: globalThis.__H.queries.slice(0, 3) }));
 fs.unlinkSync(out);

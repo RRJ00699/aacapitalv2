@@ -54,7 +54,7 @@ def test_daily_run_order_contracts(orch):
     assert ran[0] == "schema_sync.py"                # DDL owner runs FIRST
     assert ran.index("check_data_contract.py") > ran.index("compute_flags.py")  # gate LAST block
     assert "purge_candles_after_lockin.py" not in ran     # weekly-only
-    log = (tmp / "p.log").read_text()
+    log = (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
     assert "LEAN PIPELINE OK" in log
 
 def test_kite_stale_skips_kite_steps_runs_rest(orch):
@@ -65,7 +65,7 @@ def test_kite_stale_skips_kite_steps_runs_rest(orch):
                       "fill_listing_open_from_candles.py"):
         assert kite_only not in ran
     assert "scrape_chittorgarh.py" in ran            # non-Kite work still runs
-    assert "Kite token stale" in (tmp / "p.log").read_text()
+    assert "Kite token stale" in (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
 
 def test_weekly_flag_adds_purges(orch):
     ran, fail, mp, tmp = orch
@@ -74,14 +74,14 @@ def test_weekly_flag_adds_purges(orch):
     # Ledger #11 FIX: the dead purge_stale_data.py reference was removed —
     # no silent skip line pollutes the weekly log anymore.
     assert "purge_stale_data.py" not in ran
-    assert "purge_stale_data" not in (tmp / "p.log").read_text()
+    assert "purge_stale_data" not in (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
 
 def test_consolidated_failure_exits_2_with_warning(orch):
     ran, fail, mp, tmp = orch
     fail["build_ipo_consolidated_v2.py"] = 1
     code = _main(mp)
     assert code == 2                                  # cron sees the red
-    log = (tmp / "p.log").read_text()
+    log = (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
     assert "COMPLETED WITH WARNINGS" in log
     assert "rebuild consolidated exited 1" in log
 
@@ -95,7 +95,7 @@ def test_non_hard_step_failure_does_not_stop_run(orch):
 def test_missing_script_skips_not_fails(orch, capsys):
     ran, fail, mp, tmp = orch
     assert P.step("ghost", ["does_not_exist_xyz.py"]) is True
-    assert "not in repo — skipping" in (tmp / "p.log").read_text()
+    assert "not in repo — skipping" in (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
 
 def test_healthcheck_pinged_only_on_full_green(orch):
     ran, fail, mp, tmp = orch

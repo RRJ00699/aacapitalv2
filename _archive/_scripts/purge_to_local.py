@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 NEON_URL  = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
 LOCAL_URL = (os.getenv("LOCAL_DATABASE_URL")
              or os.getenv("CANDLES_DATABASE_URL")
-             or "postgresql://postgres:Ashrith%402820@localhost:5432/aacapital?sslmode=disable")
+             or "postgresql://postgres:CHANGEME_ROTATED@localhost:5432/aacapital?sslmode=disable")
 
 CUTOFF_YEARS = 2   # archive data older than this
 

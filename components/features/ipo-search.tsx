@@ -1,115 +1,190 @@
 // components/features/ipo-search.tsx
-// IPO search — filters the IPO Command Center by company name or symbol.
-// Queries /api/ipo-command's cards client-side (already loaded) for instant results.
-"use client"
-import { useState, useEffect, useRef } from "react"
+// Phase 9 — Search as the product's entry hub: Search → Understand → Navigate
+// → Decide. Consumes the KV-served /api/ipo-command payload only (zero-idle:
+// no new endpoints, no Neon on keystroke). All research statuses come from
+// the API's structured `research` block — the UI formats, never infers.
+"use client";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { FILTER_CHIPS, type Chip, type Row, runSearch, stageOf, primaryAction } from "@/lib/search-intent";
 
-const BRONZE = "#B6700E", BRONZE_DK = "#A26109"
-const C = { surface:"#FFFFFF", border:"#E2E8F2", text:"#1A2438", sub:"#68738C", bg:"#F4F6FA" }
+const C = { surface: "#FFFFFF", border: "#E2E8F2", text: "#1A2438", sub: "#68738C",
+  bg: "#F4F6FA", dim: "#9AA3B8", green: "#0E7A4D", greenBg: "#EAF6F0", red: "#C4443A",
+  redBg: "#FBEFED", amber: "#B6700E", amberBg: "#FBF3E6", blue: "#2E5A9E", blueBg: "#EDF2FA" };
 
-interface IpoHit { company_name: string; sym?: string; playbook_setup?: string; listing_gap_pct?: number|null; ipo_status?: string }
-interface Props { onSelect: (company: string) => void; placeholder?: string }
+interface Props { onSelect: (company: string, target?: string) => void; placeholder?: string }
 
-const setupColor = (s?: string) =>
-  s==="stack"||s==="core" ? "#0E7A4D" : s==="avoid" ? "#C4443A" : s==="core-lite" ? "#2E5A9E" : "#68738C"
+const STAGE_STYLE: Record<string, [string, string]> = {
+  LISTING: [C.red, C.redBg], OPEN: [C.green, C.greenBg], UPCOMING: [C.blue, C.blueBg],
+  LISTED: [C.sub, C.bg], CLOSED: [C.amber, C.amberBg] };
+const D = (v: unknown) => (v ? String(v).slice(5, 10) : "—");
 
-export function IpoSearch({ onSelect, placeholder = "Search IPO by name or symbol..." }: Props) {
-  const [query, setQuery] = useState("")
-  const [all, setAll] = useState<IpoHit[]>([])
-  const [results, setResults] = useState<IpoHit[]>([])
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+function Badge({ t, fg, bg }: { t: string; fg: string; bg: string }) {
+  return <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: .3, color: fg, background: bg,
+    borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>{t}</span>;
+}
 
-  // load the IPO list once (from the command endpoint the page already uses)
+function Skeleton() {
+  return <div aria-hidden style={{ padding: "10px 12px" }}>
+    {[0, 1, 2].map((i) => <div key={i} style={{ height: 44, borderRadius: 9, background: C.bg,
+      marginBottom: 8, animation: "fade 1s ease infinite alternate" }} />)}
+  </div>;
+}
+
+export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try: good · listing today · rhp pending" }: Props) {
+  const [query, setQuery] = useState("");
+  const [deb, setDeb] = useState("");
+  const [cards, setCards] = useState<Row[] | null>(null);   // null = loading
+  const [post, setPost] = useState<Row[]>([]);
+  const [chips, setChips] = useState<Chip[]>([]);
+  const [open, setOpen] = useState(false);
+  const [sel, setSel] = useState(0);
+  const [preview, setPreview] = useState<Row | null>(null);
+  const [recent, setRecent] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+  const fetched = useRef(false);
+
+  // ONE payload fetch, once (duplicate-call guard) — same KV body the page uses.
   useEffect(() => {
-    let live = true
-    fetch("/api/ipo-command").then(r=>r.json()).then(d => {
-      if (!live) return
-      const cards = (d?.cards ?? []) as IpoHit[]
-      setAll(cards.map(c => ({ company_name:c.company_name, sym:(c as any).sym,
-        playbook_setup:(c as any).playbook_setup, listing_gap_pct:(c as any).listing_gap_pct,
-        ipo_status:(c as any).ipo_status })))
-    }).catch(()=>{})
-    return () => { live = false }
-  }, [])
+    if (fetched.current) return; fetched.current = true;
+    let live = true;
+    fetch("/api/ipo-command").then((r) => r.json()).then((d) => {
+      if (!live) return;
+      setCards((d?.cards ?? []) as Row[]);
+      setPost((d?.post ?? []) as Row[]);
+    }).catch(() => setCards([]));
+    return () => { live = false; };
+  }, []);
 
+  useEffect(() => { const t = setTimeout(() => setDeb(query), 200); return () => clearTimeout(t); }, [query]);
   useEffect(() => {
-    function h(e: MouseEvent){ if(ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h)
-  }, [])
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setPreview(null); } };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, []);
 
-  useEffect(() => {
-    const q = query.trim().toLowerCase()
-    if (q.length < 1) { setResults([]); setOpen(false); return }
-    const hits = all.filter(c =>
-      (c.company_name||"").toLowerCase().includes(q) || (c.sym||"").toLowerCase().includes(q)
-    ).slice(0, 12)
-    setResults(hits); setOpen(true)
-  }, [query, all])
+  const results = useMemo(
+    () => (cards ? runSearch(cards, post, deb, chips) : []),
+    [cards, post, deb, chips]);
+  useEffect(() => setSel(0), [deb, chips]);
 
-  function pick(company: string){ setQuery(""); setResults([]); setOpen(false); onSelect(company) }
+  function pick(c: Row) {
+    const name = String(c.company_name ?? "");
+    setRecent((r) => [name, ...r.filter((x) => x !== name)].slice(0, 5));
+    setQuery(""); setOpen(false); setPreview(null);
+    onSelect(name, primaryAction(c).target);
+  }
+
+  function onKey(e: React.KeyboardEvent) {
+    if (e.key === "Escape") { setOpen(false); setPreview(null); return; }
+    if (!results.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    if (e.key === "Enter") { e.preventDefault(); pick(results[sel]); }
+  }
+
+  const rsh = (c: Row) => (c.research ?? {}) as Record<string, Record<string, unknown> & string | undefined> & Record<string, unknown>;
 
   return (
-    <div ref={ref} style={{ position:"relative", width:"100%" }}>
-      <div style={{ position:"relative" }}>
-        <input
-          value={query}
-          onChange={e=>setQuery(e.target.value)}
-          onFocus={()=>{ if(results.length) setOpen(true) }}
-          onKeyDown={e=>{
-            if(e.key==="Escape"){ setOpen(false); setQuery("") }
-            if(e.key==="Enter" && results[0]){ e.preventDefault(); pick(results[0].company_name) }
-          }}
-          placeholder={placeholder}
-          autoComplete="off" spellCheck={false}
-          style={{ width:"100%", boxSizing:"border-box",
-            border:`1px solid ${open?BRONZE:C.border}`, borderRadius:10,
-            padding:"9px 34px 9px 13px", fontSize:13, background:C.surface, color:C.text, outline:"none" }}
-        />
-        <div style={{ position:"absolute", right:11, top:"50%", transform:"translateY(-50%)", color:BRONZE, fontSize:14 }}>⌕</div>
-      </div>
-
-      {open && results.length > 0 && (
-        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.surface,
-          border:`1px solid ${C.border}`, borderRadius:10, boxShadow:"0 6px 24px rgba(15,27,45,0.12)",
-          zIndex:99999, overflow:"hidden", maxHeight:420, overflowY:"auto" }}>
-          {results.map((r,i) => (
-            <div key={r.company_name+i}
-              onMouseDown={e=>{ e.preventDefault(); pick(r.company_name) }}
-              style={{ padding:"10px 13px", cursor:"pointer",
-                borderBottom: i<results.length-1?`1px solid ${C.bg}`:"none" }}
-              onMouseEnter={e=>e.currentTarget.style.background=C.bg}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                <span style={{ fontSize:13.5, fontWeight:700, color:BRONZE }}>{r.company_name}</span>
-                {r.sym && <span style={{ fontSize:10, fontFamily:"ui-monospace,monospace", color:C.sub, background:C.bg, padding:"1px 5px", borderRadius:4 }}>{r.sym}</span>}
-                {r.playbook_setup && (
-                  <span style={{ marginLeft:"auto", fontSize:9.5, fontWeight:800, letterSpacing:.5,
-                    textTransform:"uppercase", color:setupColor(r.playbook_setup) }}>
-                    {r.playbook_setup==="core-lite"?"core":r.playbook_setup}
-                  </span>
+    <div ref={ref} style={{ position: "relative", width: "100%", maxWidth: 460 }}>
+      <input role="combobox" aria-expanded={open} aria-label="Search IPOs by name, symbol or status"
+        value={query} placeholder={placeholder}
+        onFocus={() => setOpen(true)} onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onKeyDown={onKey}
+        style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
+          fontSize: 13, color: C.text, background: C.surface }} />
+      {open && (
+        <div role="listbox" aria-label="IPO search results"
+          style={{ position: "absolute", top: "110%", left: 0, right: 0, zIndex: 60, background: C.surface,
+            border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 34px rgba(20,30,60,.14)",
+            maxHeight: 480, overflowY: "auto" }}>
+          {/* filter chips — combine with text */}
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", padding: "9px 10px 4px" }}>
+            {FILTER_CHIPS.map((ch) => {
+              const on = chips.includes(ch);
+              return <button key={ch} onClick={() => setChips((cs) => on ? cs.filter((x) => x !== ch) : [...cs, ch])}
+                aria-pressed={on}
+                style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, cursor: "pointer",
+                  border: `1px solid ${on ? C.blue : C.border}`, color: on ? "#fff" : C.sub,
+                  background: on ? C.blue : C.surface }}>{ch}</button>;
+            })}
+          </div>
+          {cards === null && <Skeleton />}
+          {cards !== null && !deb && !chips.length && (
+            <div style={{ padding: "8px 12px", fontSize: 11, color: C.dim }}>
+              {recent.length ? <>Recent: {recent.map((r, i) =>
+                <button key={i} onClick={() => setQuery(r)} style={{ margin: "0 5px 0 0", fontSize: 11, color: C.blue,
+                  background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{r}</button>)}</>
+                : "Type a name/symbol, or a status: good · junk · listing today · rhp pending · high qib"}
+            </div>
+          )}
+          {cards !== null && (deb || chips.length > 0) && results.length === 0 && (
+            <div style={{ padding: "14px 14px 16px", fontSize: 12, color: C.sub }}>
+              No IPO matched your search.
+              <div style={{ marginTop: 7, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(["Upcoming", "Listing Today", "Recently Listed", "GOOD"] as Chip[]).map((ch) =>
+                  <button key={ch} onClick={() => { setQuery(""); setChips([ch]); }}
+                    style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+                      border: `1px solid ${C.border}`, background: C.bg, color: C.sub, cursor: "pointer" }}>{ch}</button>)}
+              </div>
+            </div>
+          )}
+          {results.map((c, i) => {
+            const stage = stageOf(c); const [fg, bg] = STAGE_STYLE[stage] ?? [C.sub, C.bg];
+            const r = rsh(c);
+            const cq = (r.company_quality ?? {}) as { status?: string; verdict?: string };
+            const comp = (r.research_completeness ?? {}) as { label?: string };
+            const ps = (r.prelisting_score ?? {}) as { score?: number | null; band?: string | null };
+            const act = primaryAction(c);
+            const active = i === sel;
+            return (
+              <div key={i} role="option" aria-selected={active}
+                onMouseEnter={() => setSel(i)}
+                onClick={() => setPreview(preview === c ? null : c)}
+                style={{ padding: "9px 12px", borderTop: `1px solid ${C.border}`, cursor: "pointer",
+                  background: active ? C.bg : C.surface }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{String(c.company_name ?? "")}</span>
+                  {c.sym ? <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>{String(c.sym)}</span> : null}
+                  <Badge t={stage === "LISTING" ? "LISTING TODAY" : stage} fg={fg} bg={bg} />
+                  <span style={{ marginLeft: "auto" }} />
+                  <button onClick={(e) => { e.stopPropagation(); pick(c); }}
+                    aria-label={`${act.label} for ${String(c.company_name ?? "")}`}
+                    style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.blue, border: "none",
+                      borderRadius: 8, padding: "4px 9px", cursor: "pointer" }}>{act.label}</button>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5, alignItems: "center" }}>
+                  <span style={{ fontSize: 9.5, color: C.dim }}>open {D(c.open_date)} · close {D(c.close_date)} · list {D(c.listing_date)}</span>
+                  {comp.label ? <Badge t={String(comp.label)} fg={comp.label === "Research Complete" ? C.green : C.amber}
+                    bg={comp.label === "Research Complete" ? C.greenBg : C.amberBg} /> : null}
+                  {cq.status === "CONFIRMED" && cq.verdict
+                    ? <Badge t={String(cq.verdict)} fg={cq.verdict === "GOOD" ? C.green : cq.verdict === "JUNK" ? C.red : C.amber}
+                        bg={cq.verdict === "GOOD" ? C.greenBg : cq.verdict === "JUNK" ? C.redBg : C.amberBg} />
+                    : <Badge t="QUALITY: INCOMPLETE" fg={C.sub} bg={C.bg} />}
+                  {r.rhp_status ? <Badge t={`RHP ${String(r.rhp_status)}`} fg={r.rhp_status === "CONFIRMED" ? C.green : C.sub} bg={C.bg} /> : null}
+                  {r.sbi_status ? <Badge t={`SBI ${String(r.sbi_status)}`} fg={r.sbi_status === "CONFIRMED" ? C.green : C.sub} bg={C.bg} /> : null}
+                  {ps.band ? <Badge t={`${ps.score ?? "—"} · ${String(ps.band)}`} fg={C.blue} bg={C.blueBg} /> : null}
+                  {r.fair_value_status === "UNAVAILABLE" ? <Badge t="FV UNAVAILABLE" fg={C.amber} bg={C.amberBg} /> : null}
+                </div>
+                {preview === c && (
+                  <div aria-label="IPO quick preview" style={{ marginTop: 8, padding: "9px 11px", background: C.bg,
+                    borderRadius: 9, fontSize: 11, color: C.sub, lineHeight: 1.6 }}>
+                    <div><b>Pipeline:</b> {String(r.pipeline_status ?? "—")} · <b>Research:</b> {String(comp.label ?? "—")}</div>
+                    <div><b>Fair value:</b> {String(r.fair_value_status ?? "—")} · <b>MoS:</b> {String(r.margin_of_safety_status ?? "—")}
+                      {r.fair_value_note ? ` — ${String(r.fair_value_note)}` : ""}</div>
+                    {Array.isArray(r.evidence) && (r.evidence as Array<Record<string, unknown>>).length ? <div style={{ marginTop: 3 }}>
+                      {(r.evidence as Array<Record<string, unknown>>).slice(0, 3).map((ev, j) =>
+                        <div key={j}><span style={{ color: ev.direction === "negative" ? C.red : ev.direction === "positive" ? C.green : C.dim, fontWeight: 800 }}>
+                          {ev.direction === "negative" ? "−" : ev.direction === "positive" ? "+" : "·"}</span> {String(ev.statement ?? "")}</div>)}
+                    </div> : <div style={{ color: C.dim }}>No evidence rows yet — reasons appear once RHP analysis lands.</div>}
+                    <button onClick={(e) => { e.stopPropagation(); pick(c); }}
+                      style={{ marginTop: 6, fontSize: 10.5, fontWeight: 800, color: "#fff", background: C.blue,
+                        border: "none", borderRadius: 8, padding: "5px 11px", cursor: "pointer" }}>{act.label} →</button>
+                  </div>
                 )}
               </div>
-              {r.listing_gap_pct != null && (
-                <div style={{ fontSize:10.5, color:C.sub, marginTop:2 }}>
-                  {r.ipo_status?.replace(/_/g," ") || ""} {r.listing_gap_pct!=null?`· gap ${r.listing_gap_pct>0?"+":""}${Number(r.listing_gap_pct).toFixed(1)}%`:""}
-                </div>
-              )}
-            </div>
-          ))}
-          <div style={{ padding:"6px 13px", background:C.bg, fontSize:10, color:C.sub, borderTop:`1px solid ${C.border}` }}>
-            {results.length} IPO{results.length!==1?"s":""} · click to jump
-          </div>
-        </div>
-      )}
-
-      {open && query.length >= 1 && results.length === 0 && (
-        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.surface,
-          border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", textAlign:"center",
-          fontSize:12, color:C.sub, zIndex:99999 }}>
-          No IPO matches &ldquo;{query}&rdquo;
+            );
+          })}
         </div>
       )}
     </div>
-  )
+  );
 }

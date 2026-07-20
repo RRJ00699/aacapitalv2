@@ -15,7 +15,7 @@ LOCAL_CONN = {
     "port": 5432,
     "database": "aacapital",
     "user": "postgres",
-    "password": "Ashrith@2820",
+    "password": "CHANGEME_ROTATED",
     "sslmode": "disable",
 }
 
