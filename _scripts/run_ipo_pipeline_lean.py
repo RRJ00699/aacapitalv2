@@ -146,7 +146,7 @@ def main():
         step("candles: in-window daily sync", ["sync_inwindow_candles.py"])
         step("candles: full NSE universe",    ["kite-sync-candles.py"])
         step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"])
-        step("derive listing_open",           ["fill_listing_open_from_candles.py"])
+        step("derive listing_open",           ["fill_listing_open_from_candles.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     else:
         log("   ⏭  Kite steps skipped (stale token)")
 
@@ -164,7 +164,7 @@ def main():
     # ── COMPUTE (single pass — no duplicate block) ──
     step("ipo score v0 (derived)",          ["ipo_score.py","--apply"])
     step("d10 outcome precompute",          ["compute_d10.py"])
-    step("reconcile listing dates",         ["reconcile_listing_dates.py"])
+    step("reconcile listing dates",         ["reconcile_listing_dates.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     # REMOVED 2026-07-18 (dead step): "close-in-range strength" — CIR is REJECTED
     # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
     # the CIR columns. Script archived to _archive/. (close_in_range.py)
