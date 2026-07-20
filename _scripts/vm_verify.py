@@ -211,9 +211,13 @@ def main() -> int:
         rhp_dl = CONF if os.path.exists(rhp_pdf) else PEND
         rhp_dl_note = f"`{rhp_pdf}` sha256:{sha256(rhp_pdf)}" if rhp_dl == CONF else "no local PDF"
         summ = os.path.join(REPO, "rhp_summaries", f"{slug}_summary.json")
-        sonnet_row = q(conn, "SELECT verdict, full_json IS NOT NULL FROM ipo_rhp_intel WHERE regexp_replace(lower(company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')=regexp_replace(lower(%s),'(ltd|limited|and|&)|[^a-z0-9]','','g') LIMIT 1", (name,))
-        sonnet = NV if sonnet_row is None else (CONF if sonnet_row and sonnet_row[0][0] else
-                 (PART if os.path.exists(summ) else (PART if rhp_dl == CONF else PEND)))
+        sonnet_row = q(conn, "SELECT verdict, full_json IS NOT NULL, pdf_sha256 FROM ipo_rhp_intel WHERE regexp_replace(lower(company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')=regexp_replace(lower(%s),'(ltd|limited|and|&)|[^a-z0-9]','','g') LIMIT 1", (name,))
+        # Baseline 2026-07-21: DB verdicts existed with no PDF/summary behind
+        # them. A verdict WITHOUT a pdf fingerprint is legacy/stale evidence,
+        # not a confirmed analysis of the CURRENT document -> PARTIAL.
+        sonnet = NV if sonnet_row is None else (
+            (CONF if sonnet_row[0][2] else PART) if (sonnet_row and sonnet_row[0][0]) else
+            (PART if os.path.exists(summ) else (PART if rhp_dl == CONF else PEND)))
         sbi_rows = q(conn, "SELECT rating, full_json IS NOT NULL FROM ipo_research_notes WHERE source='SBI' AND (UPPER(nse_symbol)=UPPER(%s) OR regexp_replace(lower(company),'(ltd|limited|and|&)|[^a-z0-9]','','g')=regexp_replace(lower(%s),'(ltd|limited|and|&)|[^a-z0-9]','','g')) LIMIT 1", (sym or "", name))
         sbi_pdf = any(slugify(f).startswith(slug.split("-")[0]) for f in os.listdir(os.path.join(REPO, "data", "research_notes")) ) if os.path.isdir(os.path.join(REPO, "data", "research_notes")) else False
         sbi = NV if sbi_rows is None else (CONF if sbi_rows else (PART if sbi_pdf else PEND))
@@ -229,7 +233,7 @@ def main() -> int:
              f"band {plo}–{phi} · ₹{size}cr · fresh {fresh} · OFS {ofs} · anchors {anc if anc is not None else 'PENDING'}"),
             ("RHP downloaded", rhp_dl, rhp_dl_note),
             ("RHP extracted (summary)", CONF if os.path.exists(summ) else (PEND if rhp_dl != CONF else PART), summ if os.path.exists(summ) else "no summary json"),
-            ("Sonnet analysis (DB)", sonnet, (f"verdict `{sonnet_row[0][0]}`" if sonnet_row else "no ipo_rhp_intel row")),
+            ("Sonnet analysis (DB)", sonnet, (f"verdict `{sonnet_row[0][0]}`" + ("" if (sonnet_row and sonnet_row[0][2]) else " — NO pdf fingerprint (legacy/stale)") if sonnet_row else "no ipo_rhp_intel row")),
             ("SBI note", sbi, (f"rating `{sbi_rows[0][0]}`" if sbi_rows else ("PDF on disk, unparsed" if sbi_pdf else "not published/downloaded"))),
             ("Haiku extract (DB)", haiku, ""),
             ("Score / band", CONF if score is not None else PEND, f"score {score} · band {band} · quality {qs}"),

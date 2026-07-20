@@ -109,6 +109,40 @@ def main():
                     contingent_liabilities_material=EXCLUDED.contingent_liabilities_material,
                     promoter_pledge_flag=EXCLUDED.promoter_pledge_flag,confidence=EXCLUDED.confidence,
                     full_json=EXCLUDED.full_json,raw_text=EXCLUDED.raw_text,model=EXCLUDED.model,cost_usd=EXCLUDED.cost_usd,stored_at=now()""",row)
+                # ── PR-A provenance ─────────────────────────────────────────
+                # 1) pdf fingerprint: baseline 2026-07-21 found verdicts in DB
+                #    with NO document behind them — a NULL pdf_sha256 is the
+                #    machine-readable mark of such legacy/stale rows.
+                # 2) fan out full_json into ipo_insights (supersede, no delete)
+                #    — zero new model spend, mines what the cap already bought.
+                pdf_sha=None
+                try:
+                    import hashlib
+                    _slug=os.path.basename(fp).replace("_summary.json","")
+                    _pdf=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(fp))),"rhps",_slug,"rhp.pdf")
+                    if not os.path.exists(_pdf):
+                        _pdf=os.path.join("rhps",_slug,"rhp.pdf")
+                    if os.path.exists(_pdf):
+                        h=hashlib.sha256()
+                        with open(_pdf,"rb") as _fh:
+                            for _c in iter(lambda:_fh.read(1<<20),b""): h.update(_c)
+                        pdf_sha=h.hexdigest()
+                except Exception: pass
+                cur.execute("UPDATE ipo_rhp_intel SET pdf_sha256=%s WHERE company_name=%s AND %s IS NOT NULL",
+                            (pdf_sha,company,pdf_sha))
+                try:
+                    from insights_fanout import fanout, store_insights
+                    cur.execute("SELECT id FROM ipo_intelligence WHERE company_name=%s LIMIT 1",(company,))
+                    _r=cur.fetchone()
+                    if _r:
+                        _n=store_insights(cur,_r[0],fanout(d),
+                                          analysis_run_id=f"{meta.get('model','sonnet')}:{os.path.basename(fp)}",
+                                          analysis_model=meta.get("model"),pdf_sha256=pdf_sha)
+                        print(f"    → {_n} insight row(s) fanned out"+("" if pdf_sha else " (LEGACY: no pdf fingerprint)"))
+                    else:
+                        print("    → fan-out skipped: no ipo_intelligence row for canonical name")
+                except Exception as _e:
+                    print(f"    → fan-out skipped ({type(_e).__name__}: {str(_e)[:60]})")
                 conn.commit()
             print(f"  {'stored' if a.apply else 'would store'}: {company[:34]:36} [{row[3]}] {d.get('verdict')}")
             done+=1
