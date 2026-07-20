@@ -53,3 +53,14 @@ def test_viewer_click_survives_as_fallback():
 
 def test_still_rejects_short_documents():
     assert "not a full RHP" in _src(), "page-count sanity check lost"
+
+
+def test_placeholder_rows_do_not_block_the_target_list():
+    """REGRESSION 2026-07-20: the target query excluded any IPO with a row in
+    ipo_rhp_intel — including EMPTY placeholder rows. Xtranet, Indo-MIM and
+    Lohia were therefore never searched for, while the log reported
+    "0 match(es), 30 still pending" across all 12 SEBI pages and their RHPs sat
+    on page 1 the whole time. Only a real extraction counts as "already have it".
+    """
+    assert "r.full_json IS NOT NULL" in _src(), \
+        "placeholder rows still count as 'already have the RHP'"
