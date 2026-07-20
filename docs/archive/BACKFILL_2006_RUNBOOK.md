@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # 2006 Backfill Runbook — clean revalidation, zero code change
 
 ## The design guarantee

@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — Database Schema & Hard Rules
 
 **Authoritative reference for the IPO research DB (Neon Postgres).**

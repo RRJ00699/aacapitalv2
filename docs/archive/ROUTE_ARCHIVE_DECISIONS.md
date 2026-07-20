@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # Route archive decisions — Phase 1 (IPO-only cleanup)
 
 Method: for every `app/api/**/route.ts`, count callers across **app, components,

@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # AACapital root-level Python import hotfix
 
 This zip is intentionally root-relative. Extract/copy its contents directly into `C:\aacapital-v2`.

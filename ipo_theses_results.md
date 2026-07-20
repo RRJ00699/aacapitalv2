@@ -1,3 +1,5 @@
+Status: RESEARCH — NOT PRODUCTION
+
 # Untested theses — N=118 IPOs with SBI note + price data
 
 Outcome = buy day-0 open → best close within 10 sessions (%).

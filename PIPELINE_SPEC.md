@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # AACapital — End-to-End Automated Pipeline Spec
 
 The full "IPO appears → data fills → decision made" flow, source-of-truth to

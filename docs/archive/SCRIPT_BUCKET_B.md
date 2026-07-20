@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # Bucket B — IPO-domain scripts with no automated caller (116)
 
 These are NOT dead code. They are unreachable from cron/pipeline/job_runner, but

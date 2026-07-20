@@ -1,3 +1,10 @@
+> ARCHIVED DOCUMENT
+>
+> This file is retained for historical reference only.
+> It is not an implementation specification.
+> Current product rules are defined in:
+> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+
 # Script archive candidates — audit 2026-07-17
 
 186 scripts; 60 reachable from cron/lean/job-console (2-hop); **126 candidates below**.

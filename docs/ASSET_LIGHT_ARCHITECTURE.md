@@ -1,3 +1,5 @@
+Status: CURRENT
+
 # Asset-Light Architecture — AACapital
 
 **Principle:** reads serve from cache; Neon wakes only for scheduled WRITES.
