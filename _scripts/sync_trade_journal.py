@@ -36,7 +36,8 @@ def main():
         cur.execute("""INSERT INTO trade_journal
                          (broker_order_id, symbol, exchange, action, quantity,
                           price, timestamp, broker, entry_date)
-                       VALUES (%s, UPPER(%s), %s, UPPER(%s), %s, %s, %s, 'zerodha', %s::date)""",
+                       VALUES (%s, UPPER(%s), %s, UPPER(%s), %s, %s, %s, 'zerodha', %s::date)
+                       ON CONFLICT (broker_order_id) DO NOTHING""",
                     (oid, o.get("tradingsymbol"), o.get("exchange"),
                      o.get("transaction_type"), o.get("filled_quantity"),
                      o.get("average_price"), ts, ts[:10] or None))

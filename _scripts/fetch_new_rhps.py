@@ -15,7 +15,8 @@ Fast: one page load, a handful of targeted downloads. Never walks history.
   python _scripts/fetch_new_rhps.py --apply    # download matched RHPs
   python _scripts/fetch_new_rhps.py --days 45  # how far back counts as "new" (default 45)
 """
-import os, sys, io, re, argparse, unicodedata
+import os
+import re, sys, io, re, argparse, unicodedata
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE = "https://www.sebi.gov.in"
@@ -58,7 +59,15 @@ def new_ipos_without_rhp(days):
           AND NOT EXISTS (
               SELECT 1 FROM ipo_rhp_intel r
               WHERE lower(regexp_replace(r.company_name,'[^a-zA-Z0-9]','','g'))
-                  = lower(regexp_replace(ii.company_name,'[^a-zA-Z0-9]','','g')))
+                  = lower(regexp_replace(ii.company_name,'[^a-zA-Z0-9]','','g'))
+                -- PLACEHOLDER GUARD (2026-07-20): a row in ipo_rhp_intel does
+                -- NOT mean the RHP was read. fetch/store create rows before
+                -- extraction, so Xtranet, Indo-MIM and Lohia were EXCLUDED from
+                -- the target list while their full_json was NULL — the fetcher
+                -- reported "0 match(es), 30 still pending" across all 12 pages
+                -- while their RHPs sat on SEBI page 1. Only a real extraction
+                -- counts as "already have it".
+                AND r.full_json IS NOT NULL)
     """, (days,))
     names = [r[0] for r in cur.fetchall()]
     c.close()
@@ -88,29 +97,62 @@ def main():
         pg.goto(LISTING_URL, timeout=60000, wait_until="domcontentloaded")
         try: pg.wait_for_selector("table tbody tr", timeout=30000)
         except Exception: pass
-        # read ONLY the first (newest) page
-        rows = pg.locator("table tbody tr")
-        listings = []
-        for i in range(rows.count()):
-            links = rows.nth(i).locator("a[href*='/filings/public-issues/']")
-            for j in range(links.count()):
-                al = links.nth(j)
-                title = (al.inner_text() or "").strip()
-                href = al.get_attribute("href") or ""
-                if not title or not href or SKIP_TITLE_RE.search(title): continue
-                url = href if href.startswith("http") else BASE + href
-                listings.append((title, url))
-        print(f"SEBI newest page: {len(listings)} filings")
-        # match each new IPO against the page
-        for title, url in listings:
-            ntitle = norm(title)
-            hit = next((orig for k, orig in tset.items()
-                        if k and (k in ntitle or ntitle.startswith(k) or k[:8] in ntitle)), None)
-            if hit:
-                matched.append((hit, title, url))
-                print(f"  ✓ MATCH: {hit!r}  <-  SEBI '{title[:50]}'")
+        # PAGINATE (fixed 2026-07-20). This read ONLY page 1 (~21 filings), so
+        # any IPO whose RHP had rolled onto page 2+ could NEVER be found: the
+        # backlog sat at "35 IPOs without an RHP" indefinitely while the log said
+        # "no new IPOs found on SEBI's newest page yet". Now it walks pages until
+        # every pending symbol is matched, MAX_PAGES is hit, or a page repeats.
+        MAX_PAGES = int(os.environ.get("SEBI_MAX_PAGES", "12"))
+        pending = dict(tset)          # shrinks as we match
+        seen_first_title = None
+        listings_total = 0
+        for page_no in range(1, MAX_PAGES + 1):
+            rows = pg.locator("table tbody tr")
+            listings = []
+            for i in range(rows.count()):
+                links = rows.nth(i).locator("a[href*='/filings/public-issues/']")
+                for j in range(links.count()):
+                    al = links.nth(j)
+                    title = (al.inner_text() or "").strip()
+                    href = al.get_attribute("href") or ""
+                    if not title or not href or SKIP_TITLE_RE.search(title): continue
+                    url = href if href.startswith("http") else BASE + href
+                    listings.append((title, url))
+            if not listings:
+                print(f"  page {page_no}: no filings — stopping"); break
+            # a repeated first row means pagination did not actually advance
+            if seen_first_title is not None and listings[0][0] == seen_first_title:
+                print(f"  page {page_no}: same content as previous — stopping"); break
+            seen_first_title = listings[0][0]
+            listings_total += len(listings)
+            hits_here = 0
+            for title, url in listings:
+                ntitle = norm(title)
+                hit = next((orig for k, orig in pending.items()
+                            if k and (k in ntitle or ntitle.startswith(k) or k[:8] in ntitle)), None)
+                if hit:
+                    matched.append((hit, title, url))
+                    hits_here += 1
+                    print(f"  ✓ MATCH (p{page_no}): {hit!r}  <-  SEBI '{title[:46]}'")
+                    pending = {k: v for k, v in pending.items() if v != hit}
+            print(f"  page {page_no}: {len(listings)} filings, {hits_here} match(es), "
+                  f"{len(pending)} still pending")
+            if not pending:
+                print("  all pending IPOs matched — stopping"); break
+            # advance
+            try:
+                nxt = pg.locator("a[aria-label='Next'], li.next a, a:has-text('Next')").first
+                if nxt.count() == 0 or not nxt.is_enabled():
+                    print(f"  no Next control after page {page_no} — stopping"); break
+                nxt.click(timeout=10000)
+                pg.wait_for_timeout(1500)
+                try: pg.wait_for_selector("table tbody tr", timeout=15000)
+                except Exception: pass
+            except Exception as e:
+                print(f"  pagination stopped at page {page_no}: {str(e)[:60]}"); break
+        print(f"SEBI scanned: {listings_total} filings across up to {MAX_PAGES} pages")
         if not matched:
-            print("  no new IPOs found on SEBI's newest page yet.")
+            print("  no pending IPOs found on SEBI (checked multiple pages).")
         br.close()
 
     if not a.apply:
@@ -125,6 +167,7 @@ def _download_matched(matched):
     import pypdf
     os.makedirs(OUT_DIR, exist_ok=True)
     got = 0
+    tried = 0  # Phase-3: downloads actually attempted (excludes already-have skips)
     with sync_playwright() as pw:
         br = pw.chromium.launch(headless=True)
         ctx = br.new_context(accept_downloads=True)
@@ -151,9 +194,49 @@ def _download_matched(matched):
             dest = os.path.join(d, "rhp.pdf")
             if os.path.exists(dest):
                 print(f"  ⏭ {company} (have it)"); continue
+            tried += 1
             try:
                 pg.goto(url, timeout=60000, wait_until="domcontentloaded")
-                pg.wait_for_selector("iframe, embed", timeout=20000)
+
+                # PRIMARY: pull the DIRECT pdf url out of the page and fetch it.
+                # Fixed 2026-07-20. The old code only clicked a Download button
+                # INSIDE the PDF.js viewer iframe — when that button did not
+                # render, every download failed with "no download control" and
+                # the RHP backlog never cleared (Xtranet, Indo-MIM, Lohia, all
+                # sitting on SEBI page 1 the whole time). SEBI always embeds the
+                # real file as .../sebi_data/attachdocs/<month>/<id>.pdf, wrapped
+                # in /web/?file=<url>. Verified by hand on Caliber: that URL
+                # returns %PDF-1.7, 13MB. Deterministic, no viewer needed.
+                direct = None
+                try:
+                    html = pg.content()
+                    m = re.search(r"https?://[^\"'\s>]*?sebi_data/attachdocs/[^\"'\s>]*?\.pdf", html, re.I)
+                    if not m:
+                        m2 = re.search(r"(/sebi_data/attachdocs/[^\"'\s>]*?\.pdf)", html, re.I)
+                        if m2: direct = BASE.rstrip("/") + m2.group(1)
+                    else:
+                        direct = m.group(0)
+                except Exception:
+                    pass
+                if direct:
+                    try:
+                        r = pg.request.get(direct, timeout=120000)
+                        if r.ok and r.body()[:5] == b"%PDF-":
+                            with open(dest, "wb") as fh: fh.write(r.body())
+                            try:
+                                n = len(pypdf.PdfReader(dest).pages)
+                                if n < 40:
+                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); continue
+                            except Exception:
+                                pass
+                            print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; continue
+                        print(f"  · {company}: direct url not a PDF, falling back to viewer")
+                    except Exception as e:
+                        print(f"  · {company}: direct fetch failed ({type(e).__name__}), falling back")
+
+                # FALLBACK: the old viewer-button path
+                try: pg.wait_for_selector("iframe, embed", timeout=20000)
+                except Exception: pass
                 dl = None
                 for i in range(pg.locator("iframe").count()):
                     fr = pg.frame_locator("iframe").nth(i)
@@ -182,6 +265,19 @@ def _download_matched(matched):
                 print(f"  ✗ {company} ({type(e).__name__})")
         br.close()
     print(f"\ndownloaded {got} RHP(s) into {OUT_DIR}/")
+    # Phase-3: attempted-but-zero means SEBI changed markup / viewer broke again
+    # (the exact failure mode that hid the Xtranet/Indo-MIM/Lohia backlog).
+    # Already-downloaded skips don't count as attempts, so 0 tried = clean exit.
+    if tried > 0 and got == 0:
+        try:
+            from lib.notify import notify
+            notify("RHP downloads ALL FAILED",
+                   f"{tried} RHP(s) attempted, 0 downloaded. "
+                   "SEBI page/viewer likely changed — backlog will grow until fixed.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

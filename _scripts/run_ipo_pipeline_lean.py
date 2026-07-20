@@ -25,6 +25,19 @@ LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
 LOG=os.path.join(LOGDIR,f"pipeline_lean_{datetime.date.today()}.log")
 
 
+
+def _warm_command_cache():
+    """After a clean run, trigger the command route to rebuild its KV cache with
+    the machine key. One HTTPS call while Neon is already awake; every page load
+    between pipelines then serves from KV -> zero Neon reads."""
+    import os as _os, urllib.request as _u
+    key = _os.environ.get("ADMIN_JOB_KEY")
+    base = _os.environ.get("NEXT_PUBLIC_APP_URL", "https://aacapitalprivatelimited.com")
+    if not key: return
+    req = _u.Request(f"{base}/api/ipo-command?warm=1",
+                     headers={"X-AAC-Key": key, "User-Agent": "aac-pipeline"})
+    _u.urlopen(req, timeout=45).read()
+
 def _log_step(name, script, ok, err=""):
     """StepBoard sink: EVERY step outcome -> pipeline_steps (green/red board in
     Settings, Rakesh 2026-07-17). Best-effort — can never break the pipeline."""
@@ -81,6 +94,14 @@ def step(name, args, hard=False):
             _c.commit(); _c.close()
         except Exception:
             pass
+        try:
+            # Phase-3: mirror every failure-sink event to the phone (ntfy).
+            from lib.notify import notify
+            notify(f"Pipeline step FAILED: {name}",
+                   f"{script} exited {r.returncode}\n{(r.stderr or r.stdout or '')[-300:]}",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
         if r.stderr: log("   "+r.stderr.strip().splitlines()[-1])
         return False
     log(f"   ✓ {name} done")
@@ -104,6 +125,15 @@ def main():
     if not kite_ok:
         log("⚠️ Kite token stale — SKIPPING Kite-only steps (candles/OHLC). "
             "All non-Kite work (scrape, GMP, SBI, score, consolidated, verdicts) still runs.")
+        try:
+            # Phase-3: this means candles/OHLC silently stop updating — tell the phone.
+            from lib.notify import notify
+            notify("Pipeline: Kite token STALE",
+                   "Preflight failed — candles/OHLC/listing-day fields will be SKIPPED "
+                   "this run. Re-run refresh_kite_token or rotate creds in Settings.",
+                   priority="high", tags=["warning"])
+        except Exception:
+            pass
 
     ok=True
     # ── DISCOVERY + SOURCE-OF-TRUTH ENRICHMENT ──
@@ -119,16 +149,21 @@ def main():
     step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
     step("EPS backfill (caution-marked)",   ["backfill_eps_post.py","--apply"])
     step("refresh GMP",                     ["ipo/refresh_gmp.py"])
-    step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])
-    step("anchor-deal conviction match",    ["match_anchor_deals.py"])
-    step("market regime + VIX (today)",     ["backfill_market_regimes.py"])
+    step("delivery pct (NSE bhavcopy)",     ["fetch_delivery_bhavcopy.py"])  # KEEP: app/api/post-listing reads delivery_data
+    # REMOVED 2026-07-18 (dead step): "anchor-deal conviction match" wrote to
+    # institutional_large_deals — a table that does not exist, and no route or
+    # compute reads it. Script archived to _archive/. (match_anchor_deals.py)
+    # --apply was MISSING: the step ran in dry-run for weeks and wrote nothing,
+    # freezing market_regimes at 2026-07-03 while the spec (2C.10) requires
+    # regime + VIX as live decision inputs. Found 2026-07-18.
+    step("market regime + VIX (today)",     ["backfill_market_regimes.py", "--apply"])
 
     # ── KITE PRICE DATA (skip cleanly if token stale) ──
     if kite_ok:
         step("candles: in-window daily sync", ["sync_inwindow_candles.py"])
         step("candles: full NSE universe",    ["kite-sync-candles.py"])
         step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"])
-        step("derive listing_open",           ["fill_listing_open_from_candles.py"])
+        step("derive listing_open",           ["fill_listing_open_from_candles.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     else:
         log("   ⏭  Kite steps skipped (stale token)")
 
@@ -146,8 +181,10 @@ def main():
     # ── COMPUTE (single pass — no duplicate block) ──
     step("ipo score v0 (derived)",          ["ipo_score.py","--apply"])
     step("d10 outcome precompute",          ["compute_d10.py"])
-    step("reconcile listing dates",         ["reconcile_listing_dates.py"])
-    step("close-in-range strength",         ["close_in_range.py"])
+    step("reconcile listing dates",         ["reconcile_listing_dates.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
+    # REMOVED 2026-07-18 (dead step): "close-in-range strength" — CIR is REJECTED
+    # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
+    # the CIR columns. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",     ["backfill_master_computables.py"])
     step("sector cleanup",                  ["fix_sectors.py"])
     step("peer PE (self-computed)",         ["compute_peer_pe.py"])          # fair value — KEEP
@@ -176,6 +213,10 @@ def main():
     step("date sanity gate (D)",           ["check_date_sanity.py"])
     step("freshness monitor (P2)",         ["check_freshness.py"])
     step("smoke probe (live API)",         ["smoke_probe.py"])
+
+    if ok and gate:
+        try: _warm_command_cache()
+        except Exception as _e: log(f"cache warm skipped: {_e}")
 
     log(f"=== LEAN PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
     if ok and gate:

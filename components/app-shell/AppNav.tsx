@@ -16,7 +16,6 @@ import Link from "next/link";
 const TABS = [
   { v: "ipo",           l: "IPO",           href: "/ipo" },
   // Today removed from nav — Domestic + Global markets now live on the IPO page.
-  // { v: "today",         l: "Today",         href: "/today",          e: "🏠" },
 ];
 
 export default function AppNav({

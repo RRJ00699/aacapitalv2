@@ -9,6 +9,11 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // CACHE binding removed 2026-07-18: it shipped with a PLACEHOLDER id and broke
+  // EVERY production deploy ("KV namespace 'PLACEHOLDER_CACHE_NS_ID' is not valid",
+  // code 10042). Re-add ONLY with a real id from `npx wrangler kv namespace create CACHE`.
+  // All consumers already guard for a missing CACHE binding (`?? null` + `if (kv)`),
+  // so read-caching is simply disabled until then — no functional loss.
   "kv_namespaces": [
     { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" }
   ],

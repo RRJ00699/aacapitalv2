@@ -7,13 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "similarity:multibagger": "tsx _scripts/engines/multibagger_similarity_engine.ts --limit 500 --top 5",
     "prod:market": "python _scripts/prod/kite_sync_and_predict.py --mode market",
     "prod:ipo": "python _scripts/prod/kite_sync_and_predict.py --mode ipo",
     "prod:all": "python _scripts/prod/kite_sync_and_predict.py --mode all",
-    "ml:multibagger": "python _scripts/ml/train_multibagger_model.py",
-    "commentary:ingest": "python _scripts/prod/management_commentary_pipeline.py --transcript-dir data/transcripts",
-    "commentary:archive": "python _scripts/prod/management_commentary_pipeline.py --archive --purge-days 21",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
@@ -58,5 +54,8 @@
     "tsx": "^4.22.4",
     "typescript": "^5",
     "wrangler": "^4.110.0"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.0"
   }
 }

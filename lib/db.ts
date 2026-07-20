@@ -11,21 +11,31 @@
 
 import { neon } from '@neondatabase/serverless'
 
-const neonConnectionString = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL
-
-if (!neonConnectionString) {
-  throw new Error('\n[db] DATABASE_URL or NEON_DATABASE_URL is required for AACapital cloud intelligence tables.\n')
-}
-
-// One HTTP client; neon() is stateless (no pool/socket), safe per-request on edge.
-const client = neon(neonConnectionString)
-
 type QueryValue = unknown
+
+// Lazy client — do NOT read env or throw at MODULE SCOPE. `next build` evaluates
+// route modules during "Collecting page data" without runtime env available, so a
+// module-scope throw here fails the production build. deploy.yml runs the build
+// with no DATABASE_URL; ci.yml injects a dummy one — which is exactly why CI went
+// green but the deploy died at /api/auth/zerodha/callback. Resolving on first
+// query keeps the identical clear error at runtime, but the build no longer needs
+// the DB env.
+let _client: ReturnType<typeof neon> | null = null
+
+function getClient() {
+  if (_client) return _client
+  const neonConnectionString = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL
+  if (!neonConnectionString) {
+    throw new Error('\n[db] DATABASE_URL or NEON_DATABASE_URL is required for AACapital cloud intelligence tables.\n')
+  }
+  // neon() is stateless (no pool/socket), safe per-request on edge.
+  _client = neon(neonConnectionString)
+  return _client
+}
 
 async function runQuery(strings: TemplateStringsArray, values: QueryValue[]): Promise<any[]> {
   // neon supports tagged-template queries with the same $1..$n semantics.
-  // Delegate directly to the neon tagged template.
-  return (await (client as any)(strings, ...values)) as any[]
+  return (await (getClient() as any)(strings, ...values)) as any[]
 }
 
 export async function sql(strings: TemplateStringsArray, ...values: QueryValue[]): Promise<any[]> {

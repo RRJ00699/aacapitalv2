@@ -85,9 +85,7 @@ KNOWN_GAPS = {
                                               "max_upside_30d is peak; return_cmp matches intent — owner call",
     ("app/api/ipo/post-listing/route.ts", 0): "KIND2: return_day30 point-in-time — see ipo/route entry",
     ("app/api/ipo/intelligence/route.ts", 0): "KIND2: return_day30 point-in-time — see ipo/route entry",
-    # ══ HARNESS-LIMIT — dynamic SQL fragment (raw `'${date}'::date` string
-    # built in JS), not parameterizable by extraction. Not a route bug. ══
-    ("app/api/ipo/gmp/route.ts", 3):          "HARNESS: dynamic SQL fragment interpolation",
+    # (gmp harness-limit entry pruned 2026-07-20: route archived on main)
 }
 
 

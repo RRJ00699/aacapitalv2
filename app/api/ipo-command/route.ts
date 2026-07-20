@@ -6,31 +6,58 @@
 // all from tables the nightly already populates. Null-safe everywhere.
 import { NextResponse } from "next/server";
 import { fairValue } from "@/lib/fair-value";
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { requireUser } from "@/lib/api-guard";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
 const CACHE_KEY = "ipo-command:v1";
-const CACHE_TTL_S = 600; // 10 min — Neon queried at most ~6x/hr instead of every load
+const CACHE_TTL_S = 43200; // 12h — pipeline warms it 2x/day; page loads never hit Neon between runs
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
   catch { return null; } // not on CF (local/Vercel) → no cache, query direct
 }
 
 export const dynamic = "force-dynamic";
-const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+// lazy neon client — do NOT init at module scope: `next build` (deploy.yml) has no
+// DATABASE_URL, and a module-scope neon() throws during page-data collection. Same
+// runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
+let _neonSql: NeonQueryFunction<false, false> | null = null;
+const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  return _neonSql(strings, ...values);
+}) as NeonQueryFunction<false, false>;
 
-export async function GET() {
-  const gate = await requireUser();
-  if (gate) return gate;
+export async function GET(req?: Request) {
+  // Pipeline cache-warm: ?warm=1 + machine key skips the session gate AND the
+  // cache read (it exists to REBUILD the cache), falling straight to the query
+  // + KV write below. Normal loads (harness calls GET() with no req) are
+  // unaffected: isWarm is false, session gate + cache read run as before.
+  let isWarm = false;
+  if (req) {
+    try {
+      isWarm = new URL(req.url).searchParams.get("warm") === "1"
+        && req.headers.get("x-aac-key") === process.env.ADMIN_JOB_KEY;
+    } catch { isWarm = false; }
+  }
+  if (!isWarm) {
+    const gate = await requireUser();
+    if (gate) return gate;
+  }
 
   const kv = await getKV();
-  if (kv) {
+  if (kv && !isWarm) {
     try {
       const cached = await kv.get(CACHE_KEY);
       if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } });
+      // Phase-2 zero-idle: primary TTL lapsed (pipeline late / cold KV region).
+      // Serve the long-lived stale twin rather than waking Neon for a read.
+      // Header flags it so the UI / monitoring can surface "data may be old".
+      const stale = await kv.get(`${CACHE_KEY}:stale`);
+      if (stale) return new NextResponse(stale, { headers: {
+        "content-type": "application/json", "x-cache": "STALE",
+        "x-warning": "primary cache expired; serving stale copy, DB not woken" } });
     } catch { /* cache read failed — fall through to DB */ }
   }
 
@@ -90,13 +117,13 @@ export async function GET() {
         OR regexp_replace(lower(ri.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
         = regexp_replace(lower(c.company_name), '(ltd|limited|and|&)|[^a-z0-9]', '', 'g')
       LEFT JOIN ipo_intelligence ii ON regexp_replace(lower(ii.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')=regexp_replace(lower(c.company_name),'(ltd|limited|pvt|private)|[^a-z0-9]','','g')
-      -- BUG F (Knack missing): anchor lock-in runs ~30 sessions post-listing;
-      -- widen so a still-locked IPO shows even if its listing was >30d ago.
-      -- All comparisons on IST date (one clock).
-      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 45
+      -- CURRENT IPOs ONLY (Rakesh 2026-07-18: Suryoday/Mamaearth/Ventive — all
+      -- 2023-24 — leaked via the old "both dates null shows forever" clause).
+      -- Window = anchor FIRST lock-in = 30 DAYS post-listing (second lock-in is
+      -- 90d but the trade decision lives inside the 30d window). All IST.
+      WHERE c.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
          OR c.ipo_close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
          OR c.ipo_open_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
-         OR (c.listing_date IS NULL AND c.ipo_close_date IS NULL)
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;
@@ -112,7 +139,7 @@ export async function GET() {
         JOIN price_candles p
           ON UPPER(p.symbol) = UPPER(REGEXP_REPLACE(c.symbol_final,'\\.NS$',''))
          AND p.date >= c.listing_date
-        WHERE c.listing_date >= CURRENT_DATE - 45 AND c.symbol_final IS NOT NULL)
+        WHERE c.listing_date >= CURRENT_DATE - 30 AND c.symbol_final IS NOT NULL)
       SELECT sym,
              MIN(low)  FILTER (WHERE rn <= 5) AS floor,
              MAX(high) FILTER (WHERE rn <= 5) AS ceiling,
@@ -237,6 +264,13 @@ export async function GET() {
 
 
     // ── AACapital Playbook rules — applied to every IPO (tested 2026-07-13) ──
+    // JUNK FLOOR (IPO_BUSINESS_REQUIREMENTS.md §2, owner-locked): issue size
+    // < Rs.200cr is RULED OUT — "below this floor, don't touch". Until now the
+    // engine only LABELLED these AVOID and still rendered them alongside real
+    // candidates, which is the opposite of "filter junk, focus on good
+    // companies". They are now split out of `cards` into `filtered` with the
+    // reason attached: enforced, but nothing is hidden or lost.
+    const JUNK_FLOOR_CR = 200;
     const enrichedCards = (cards as Record<string, unknown>[]).map((c) => {
       const size  = Number(c.issue_size_cr) || 0;
       const gap   = c.listing_gap_pct == null ? null : Number(c.listing_gap_pct);
@@ -255,6 +289,22 @@ export async function GET() {
         { key: "fresh",   label: "Fresh-issue (not OFS-heavy)",  pass: ofsPct != null && ofsPct < 30 },
         { key: "band",    label: "Affordable band (<₹300)",      pass: band != null && band < 300 },
       ];
+      // ── HOUSE STACK (measured 2026-07-19, n=55, D30 from listing open) ──
+      // 30+ anchors AND >=Rs.200cr AND OFS<30%  ->  72.7% win, +17.2% median,
+      // only 23.6% chance of a -20% drawdown. Baseline is 62.2%/+12.7%/32.4%.
+      // This beat every signal tested this weekend: RHP governance flags, early
+      // executed volume, retail price-bid ratio and mutual-fund share. Adding MF
+      // to it made it WORSE at D1/D2/D3/D5 and D30, so the stack ships alone.
+      const stackAnchors = anc != null && anc >= 30;
+      const stackFloor   = size >= 200;
+      const stackFresh   = ofsPct != null && ofsPct < 30;
+      const houseStack   = stackAnchors && stackFloor && stackFresh;
+      const stackParts   = [
+        { label: "30+ anchors",   pass: stackAnchors, got: anc == null ? "—" : String(anc) },
+        { label: "≥₹200cr",       pass: stackFloor,   got: size ? `₹${Math.round(size)}cr` : "—" },
+        { label: "OFS <30%",      pass: stackFresh,   got: ofsPct == null ? "—" : `${Math.round(ofsPct)}%` },
+      ];
+
       const avoid = [
         size > 0 && size < 500 ? "Small issue (<₹500cr)" : null,
         gap != null && gap > 50 ? "Euphoric open (>+50%)" : null,
@@ -280,12 +330,36 @@ export async function GET() {
       else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : `No buy-at-open rules met — watch only.`;
 
       return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
-               playbook_passed: passed, playbook_verdict: verdict_line, ...fairValue(c), ...gmpSignal(c) };
+               playbook_passed: passed, playbook_verdict: verdict_line,
+               house_stack: houseStack,
+               house_stack_parts: stackParts,
+               house_stack_hit: stackParts.filter(x => x.pass).length,
+               house_stack_stat: houseStack
+                 ? "72.7% win · +17.2% median · D30 (n=55)"
+                 : `${stackParts.filter(x => x.pass).length}/3 — baseline 62.2% win`,
+               ...fairValue(c), ...gmpSignal(c) };
     });
 
-    const payload = JSON.stringify({ cards: enrichedCards, live, levels, blocks, post, brlm, dl, track,
+    // split: investable vs junk-floor (size below the owner-locked floor)
+    const investable: Record<string, unknown>[] = [];
+    const filtered: Record<string, unknown>[] = [];
+    for (const c of enrichedCards as Record<string, unknown>[]) {
+      const sz = Number(c.issue_size_cr) || 0;
+      if (sz > 0 && sz < JUNK_FLOOR_CR) {
+        filtered.push({ ...c, filtered_reason: `issue size ₹${Math.round(sz)}cr < ₹${JUNK_FLOOR_CR}cr junk floor — ruled out (spec §2)` });
+      } else {
+        investable.push(c);
+      }
+    }
+
+    const payload = JSON.stringify({ cards: investable, filtered, filtered_count: filtered.length,
+      live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
-    if (kv) { try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ } }
+    if (kv) {
+      try { await kv.put(CACHE_KEY, payload, { expirationTtl: CACHE_TTL_S }); } catch { /* cache write best-effort */ }
+      // stale twin (7d): the read path's no-Neon fallback when primary lapses
+      try { await kv.put(`${CACHE_KEY}:stale`, payload, { expirationTtl: 604800 }); } catch { /* best-effort */ }
+    }
     return new NextResponse(payload, { headers: { "content-type": "application/json", "x-cache": "MISS" } });
   } catch (e) {
     // DEGRADED MODE (Rakesh 2026-07-17: one error must never blank the page).

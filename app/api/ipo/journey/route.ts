@@ -5,8 +5,14 @@
 // exit at the floor, don't ride it down to close.
 import { NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
+import { kvStore } from "@/lib/kv-cache"
 
 function db() { return neon(process.env.DATABASE_URL!) }
+
+// IST calendar day — candles only change on EOD sync, so one KV key per day.
+function istDate(): string {
+  return new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10)
+}
 
 const ARM = 0.08     // arm the floor once high hits +8%
 const FLOOR = 0.03   // protect +3% once armed
@@ -18,10 +24,39 @@ export async function GET(req: NextRequest) {
   const sql = db()
 
   try {
-    const rows = (await sql`
-      SELECT date, open, high, low, close, volume
-      FROM price_candles WHERE UPPER(symbol) = ${sym}
-      ORDER BY date ASC LIMIT 40`) as Array<Record<string, unknown>>
+    // Phase-1 fix #3: price_candles holds the FULL NSE universe (kite-sync-candles),
+    // so the earliest candle for a symbol is NOT necessarily its listing day.
+    // Floor the window at ipo_intelligence.listing_date so entry/floor/trail math
+    // starts at the true listing open. MIN() on purpose: if a junk duplicate row
+    // carries a wrong LATER date, MIN degrades gracefully to more candles instead
+    // of silently cutting real ones. No IPO row -> no floor (previous behavior).
+    // Phase-2 zero-idle: the journey page + HoldStrip poll this every 60s during
+    // market hours, but candles only change once a day (EOD sync). Cache the
+    // Neon read in KV per sym per IST day — repeat polls read cache, not Neon.
+    // EMPTY results are NOT cached: on listing day the first candle lands at the
+    // EOD sync, and a cached empty would hide it for the rest of the TTL.
+    // The LIVE price below still comes from the broker quote on every request.
+    const ckey = `journey:candles:v1:${sym}:${istDate()}`
+    const store = kvStore()
+    let rows: Array<Record<string, unknown>> | null = null
+    if (store) { try { const hit = await store.get(ckey); if (hit) rows = JSON.parse(hit) } catch { /* miss */ } }
+    if (!rows) {
+      rows = (await sql`
+      WITH ld AS (
+        SELECT MIN(listing_date) AS listing_date
+        FROM ipo_intelligence
+        WHERE UPPER(COALESCE(nse_symbol, symbol)) = ${sym}
+          AND listing_date IS NOT NULL
+      )
+      SELECT c.date, c.open, c.high, c.low, c.close, c.volume
+      FROM price_candles c, ld
+      WHERE UPPER(c.symbol) = ${sym}
+        AND (ld.listing_date IS NULL OR c.date >= ld.listing_date)
+      ORDER BY c.date ASC LIMIT 40`) as Array<Record<string, unknown>>
+      if (store && rows.length) {
+        try { await store.put(ckey, JSON.stringify(rows), { expirationTtl: 21600 }) } catch { /* best-effort */ }
+      }
+    }
     if (!rows.length) {
       return NextResponse.json({ ok: true, sym, hasData: false,
         note: "No candles yet — the journey begins once it lists and trades." })

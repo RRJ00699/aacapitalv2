@@ -799,6 +799,43 @@ function IpoCommand() {
   const [vFilter, setVFilter] = useState("ALL");
   const [liveSel, setLiveSel] = useState<string | null>(null);
   const preopen = useLivePreopen(view === "live");
+  // ── Phase-1 fix #1: live tick overlay ─────────────────────────────────────
+  // The ipo-command payload is KV-cached for 12h, so its `live` ticks are stale
+  // on listing morning. Poll /api/ipo/tick-feed?live=1 (KV-only fast path, ZERO
+  // Neon) every 5s for 7-day-window symbols, and overlay the freshest tick.
+  // IST market hours regardless of the viewer's timezone (user is CST):
+  // 09:00 IST = 03:30 UTC (210 min) · 15:30 IST = 10:00 UTC (600 min), Mon–Fri.
+  const [liveOverlay, setLiveOverlay] = useState<Record<string, R>>({});
+  useEffect(() => {
+    if (view !== "live" || !d) return;
+    const inISTMarketHours = () => {
+      const n = new Date(); const dow = n.getUTCDay();
+      if (dow === 0 || dow === 6) return false;
+      const m = n.getUTCHours() * 60 + n.getUTCMinutes();
+      return m >= 210 && m <= 600;
+    };
+    const syms = Array.from(new Set((d.cards || [])
+      .filter(c => {
+        if (!c.sym || !c.listing_date) return false;
+        const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+        return days >= 0 && days <= 7;
+      })
+      .map(c => String(c.sym))));
+    if (!syms.length) return;
+    let stop = false;
+    const poll = () => {
+      if (stop || !inISTMarketHours()) return;
+      for (const sym of syms) {
+        fetch(`/api/ipo/tick-feed?symbol=${encodeURIComponent(sym)}&live=1`)
+          .then(r => r.json())
+          .then(j => { if (!stop && j && j.latest) setLiveOverlay(p => ({ ...p, [sym]: j.latest as R })); })
+          .catch(() => { /* KV miss/offline — panel falls back to cached d.live */ });
+      }
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => { stop = true; clearInterval(t); };
+  }, [view, d]);
   // Live <-> Command cross-links (same page; tabs are state, so link = switch + scroll)
   const jumpToCommand = (sym: string) => {
     setVFilter("ALL"); setView("command");
@@ -817,9 +854,20 @@ function IpoCommand() {
     const onFocus = (e: Event) => {
       const company = String((e as CustomEvent).detail?.company || "");
       if (!company || !d) return;
-      const hit = (d.cards || []).find(c =>
-        String(c.company_name || "").toLowerCase().includes(company.toLowerCase()) ||
-        canonSym(String(c.sym || "")) === canonSym(company));
+      // Listed IPO -> land on the POST-LISTING table, on the exact row.
+      const match = (r: R) =>
+        String(r.company_name || "").toLowerCase().includes(company.toLowerCase()) ||
+        canonSym(String(r.sym || "")) === canonSym(company);
+      const postHit = (d.post || []).find(match);
+      if (postHit) {
+        setView("post");
+        requestAnimationFrame(() => requestAnimationFrame(() =>
+          document.getElementById(`postrow-${canonSym(String(postHit.sym || postHit.company_name || ""))}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" })));
+        return;
+      }
+      // Not listed yet (upcoming/open) -> Command card, as before.
+      const hit = (d.cards || []).find(match);
       if (!hit) return;
       setVFilter("ALL"); setView("command");
       requestAnimationFrame(() => requestAnimationFrame(() =>
@@ -855,11 +903,25 @@ function IpoCommand() {
   const liveSyms = Array.from(new Map((d?.live||[]).map(t=>[canonSym(String(t.symbol)), String(t.symbol)])).values());
   const liveCanon = Array.from(new Set((d?.live||[]).map(t=>canonSym(String(t.symbol)))));
   // Live screen window: any IPO listed within the last 7 days (payload fields only)
-  const windowCards = cards.filter(c => {
-    if (!c.listing_date || !c.sym) return false;
-    const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
-    return days >= 0 && days <= 7;
-  });
+  const windowCards = (() => {
+    const raw = cards.filter(c => {
+      if (!c.listing_date || !c.sym) return false;
+      const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+      return days >= 0 && days <= 7;
+    });
+    // Defensive dedupe: a junk DB twin (two Laser rows, 2026-07-18) rendered
+    // duplicate pills AND duplicate decision panels. One entry per canonical
+    // symbol — keep the most complete row (most non-null fields). The twin
+    // itself gets hunted at the data layer; the UI must survive it meanwhile.
+    const best = new Map<string, { c: (typeof raw)[number]; score: number }>();
+    for (const c of raw) {
+      const k = canonSym(String(c.sym));
+      const score = Object.values(c).filter(v => v != null).length;
+      const prev = best.get(k);
+      if (!prev || score > prev.score) best.set(k, { c, score });
+    }
+    return Array.from(best.values()).map(e => e.c);
+  })();
   const next = cards.find(c=>c.state==="UPCOMING");
   const pills: [string,string][] = [["live","Live"],["command","Command"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
@@ -943,7 +1005,7 @@ function IpoCommand() {
         </div>}
         {windowCards.filter(w => String(w.sym) === (liveSel ?? String(windowCards[0]?.sym))).map((wc) => {
           const sym = String(wc.sym);
-          const isLive = liveCanon.includes(canonSym(sym));
+          const isLive = liveCanon.includes(canonSym(sym)) || liveOverlay[sym] != null;
           return (
           <div key={sym}>
           <div style={{display:"flex",justifyContent:"flex-end",margin:"0 2px 6px"}}>
@@ -957,7 +1019,7 @@ function IpoCommand() {
               {isLive ? (
                 <>{(() => {
           const ticks = (d!.live).filter(t=>t.symbol===sym);
-          const last = ticks[ticks.length-1] || {};
+          const last = (liveOverlay[sym] ?? ticks[ticks.length-1] ?? {}) as R; // KV overlay wins over cached snapshot
           const lv = (d!.levels).find(l=>l.symbol===sym) || {};
           const meta = cards.find(c=>c.sym===sym) || {};
           const blk = (d!.blocks).filter(b=>b.symbol===sym);
@@ -1209,7 +1271,7 @@ function IpoCommand() {
           <thead><tr><th style={th}>Listed</th><th style={th}>Company</th><th style={th}>Verdict</th>
             <th style={th}>Gap</th><th style={th}>Listing gap</th><th style={th}>10-session best</th><th style={th}>Call</th><th style={th}>Journey</th></tr></thead>
           <tbody>{(d?.post||[]).map((r,i)=>(
-            <tr key={i}><td style={{...td,...num}}>{D(r.listing_date)}</td>
+            <tr key={i} id={`postrow-${canonSym(String(r.sym || r.company_name || i))}`}><td style={{...td,...num}}>{D(r.listing_date)}</td>
               <td style={{...td,fontWeight:600,color:C.text}}>{String(r.company_name||"")}</td>
               <td style={td}>{r.verdict!=null?<Verdict v={r.verdict as string}/>:<Chip b={r.score_band as string}/>}</td>
               <td style={td}>{String(r.gap_bucket||"—")}</td>

@@ -31,7 +31,12 @@ def _flag_pending():
         import urllib.request, json as _j
         req = urllib.request.Request(
             "https://aacapitalprivatelimited.com/api/admin/job-flag",
-            headers={"X-AAC-Key": key})
+            # UA required: Cloudflare bot protection 403s the default
+            # Python-urllib UA from datacenter IPs — this exact miss kept the
+            # flag check failing -> minute-cadence DB polls -> the 147 CU-h
+            # month (diagnosed 2026-07-18; smoke_probe passed because it
+            # always sent a UA).
+            headers={"X-AAC-Key": key, "User-Agent": "aac-runner"})
         d = _j.load(urllib.request.urlopen(req, timeout=10))
         return bool(d.get("pending")) if d.get("ok") else None
     except Exception:
@@ -60,7 +65,7 @@ def _clear_flag():
         import urllib.request
         req = urllib.request.Request(
             "https://aacapitalprivatelimited.com/api/admin/job-flag",
-            headers={"X-AAC-Key": key}, method="DELETE")
+            headers={"X-AAC-Key": key, "User-Agent": "aac-runner"}, method="DELETE")
         urllib.request.urlopen(req, timeout=10)
     except Exception:
         pass
@@ -85,6 +90,15 @@ JOBS = {
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
     "sync":            ["_scripts/git_sync.py"],
+    # Mobile-first ops (2026-07-18): the derived layer could only be recomputed
+    # by running the WHOLE pipeline. These let the phone re-run one stage after a
+    # fix, without a laptop. All are idempotent (UPDATE-in-place / ON CONFLICT).
+    "verdicts":        ["_scripts/compute_verdicts.py", "--apply"],
+    "score":           ["_scripts/ipo_score.py", "--apply"],
+    "quality":         ["_scripts/compute_quality_score.py", "--apply"],
+    "schema":          ["_scripts/schema_sync.py"],
+    "smoke":           ["_scripts/smoke_probe.py"],
+    "sbi_haiku":       ["_scripts/sbi_haiku_extract.py"],
 }
 
 def ensure_table(cur):
@@ -132,7 +146,13 @@ def main():
     processed = 0
     while True:
         claimed = claim_one(cur); conn.commit()
-        if not claimed: break
+        if not claimed:
+            # QUEUE EMPTY -> clear the KV flag. _clear_flag() was defined but
+            # NEVER CALLED (2026-07-18): the flag read pending:true forever, so
+            # this minute-cron runner opened a Neon connection EVERY MINUTE and
+            # the scale-to-zero design was silently defeated.
+            _clear_flag()
+            break
         jid, job = claimed
         try:
             code, tail, err = run_job(job)

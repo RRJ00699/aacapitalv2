@@ -5,13 +5,20 @@
 // Already behind the login wall (proxy.ts); this adds an admin-email gate on top.
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import { getAdminEmail } from "@/lib/admin";
 import { requireUser } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
-const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+// lazy neon client — do NOT init at module scope: `next build` (deploy.yml) has no
+// DATABASE_URL, and a module-scope neon() throws during page-data collection. Same
+// runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
+let _neonSql: NeonQueryFunction<false, false> | null = null;
+const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  return _neonSql(strings, ...values);
+}) as NeonQueryFunction<false, false>;
 
 // MUST mirror the JOBS whitelist keys in _scripts/job_runner.py.
 const ALLOWED_JOBS = new Set([
@@ -25,6 +32,11 @@ const ALLOWED_JOBS = new Set([
   "universe_candles",              // candle sync (post-listing dashboard)
   "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)
+  // Added 2026-07-18: these existed in job_runner.py AND had console buttons,
+  // but this route rejected them with "unknown job '<name>'" — a THIRD
+  // definition of the job list that nobody kept in sync.
+  "schema", "verdicts", "score", "quality", "smoke", "sbi_haiku",
+  "ipomatrix",   // had a button + runner entry but the API rejected it too
 ]);
 
 // Same DDL job_runner.py uses, so the first enqueue works even before the VM

@@ -5,7 +5,6 @@ ipo_score.py — Score v0: evidence-weighted buy-at-open setup score.
 Every weight traces to a SIGNAL line (n>=30, era-consistent) from factor_backtest
 runs of 2026-07-05 on n=370, baseline 72%/+5.9%, hold=10 sessions:
 
-  +2  gap MID            (84.1%/+9.4,  n=69,  eras 78/88/84)
   +2  size >2000cr       (81.8%/+9.2,  n=77,  eras 72/88/85)
   -2  size 150-500cr     (58.9%/+1.5,  n=73;  LOW x 150-500 = 50.0%/+0.4, n=40)
   +1  peer-PE <0.6x      (76.7%/+7.6,  n=30)
@@ -42,8 +41,13 @@ def band_of(s):
 def score_row(r):
     s, why = 0, []
     gb = (r.get("gap_bucket") or "").upper()
-    if gb == "MID":    s += 2; why.append("MID gap +2")
-    elif gb == "HIGH": s -= 1; why.append("HIGH gap -1")
+    # MID GAP REMOVED 2026-07-18. IPO_BUSINESS_REQUIREMENTS.md §5 lists MID gap
+    # as DEAD: the original +2 (84.1% win, n=69) was measured on POLLUTED data
+    # and COLLAPSED to a coin-flip once the data was rebuilt. Scoring it inflated
+    # the band on every MID-gap IPO — the single highest-value correctness fix in
+    # ARCHITECTURE_TARGET.md §6. HIGH gap -1 stays (still evidenced, decayed but
+    # not dead). Do not reinstate without a new leakage-free backtest.
+    if gb == "HIGH":   s -= 1; why.append("HIGH gap -1")
     sz = r.get("issue_size_cr")
     if sz is not None:
         sz = float(sz)
@@ -62,7 +66,14 @@ def score_row(r):
     return s, why, pending
 
 def era_of(d):
-    return "?" if d is None else ("<=2021" if d.year <= 2021 else ("2022-24" if d.year <= 2024 else "2025+"))
+    # Era buckets widened for the 2006 IPOMatrix backfill: deep history gets its
+    # own buckets so the backtest reveals if 2006-15 behaves differently rather
+    # than hiding it all in one <=2021 lump (Rakesh 2026-07-18).
+    if d is None: return "?"
+    y = d.year
+    return ("<=2010" if y <= 2010 else "2011-15" if y <= 2015 else
+            "2016-20" if y <= 2020 else "2021" if y == 2021 else
+            "2022-24" if y <= 2024 else "2025+")
 
 def load(cur):
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='ipo_consolidated'")
@@ -117,7 +128,7 @@ def main():
             gn = len(g); w = sum(1 for _, win, _, _ in g if win) / gn * 100
             m = sorted(x for x, _, _, _ in g)[gn // 2]
             eras = []
-            for e in ("<=2021", "2022-24", "2025+"):
+            for e in ("<=2010", "2011-15", "2016-20", "2021", "2022-24", "2025+"):
                 ge = [x for x in g if x[2] == e]
                 eras.append(f"{e}:{sum(1 for _, win, _, _ in ge if win)/len(ge)*100:.0f}%({len(ge)})" if len(ge) >= 8 else f"{e}:-")
             print(f"{name:10} {f'{lo}..{hi}':12} {gn:>4} {w:>6.1f} {m:>+7.1f}  {' '.join(eras)}")

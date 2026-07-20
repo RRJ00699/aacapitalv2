@@ -32,6 +32,15 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "rhp_auto",        label: "RHP auto (new IPOs)",   desc: "SEBI download → Sonnet extract (mainboard, $1 cap) → ipo_rhp_intel → purge PDF after anchor lock-in", heavy: true },
     { key: "ipomatrix",       label: "IPOMatrix enrich",     desc: "Fill anchors/structure for new IPOs from IPOMatrix JSON (needs fresh cookie)", heavy: false },
   { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
+  // Added 2026-07-18: these were in job_runner's whitelist but had NO button, so
+  // they were invisible from the phone. Run `schema` FIRST after any merge that
+  // touches the DDL — it repairs missing tables/columns before anything reads them.
+  { key: "schema",          label: "Schema sync (run first)", desc: "Apply all DDL — creates/repairs missing tables & columns. Run this before any other job after a code merge." },
+  { key: "verdicts",        label: "Recompute verdicts",   desc: "compute_verdicts --apply → TRADE / WATCH / CAUTION / AVOID on every IPO" },
+  { key: "score",           label: "Recompute ipo_score",  desc: "ipo_score --apply → tally, band and backtested win-rate" },
+  { key: "quality",         label: "Recompute quality",    desc: "compute_quality_score --apply → the 0-100 junk filter behind the dial" },
+  { key: "sbi_haiku",       label: "SBI Haiku extract",    desc: "Read unextracted SBI notes with Haiku ($0.50/day cap, new IPOs only)", heavy: true },
+  { key: "smoke",           label: "Smoke probe",          desc: "Verify the DB contract + worker chain — run after schema to confirm everything is wired" },
 ];
 
 type Run = {
@@ -149,6 +158,11 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⚙️ Settings</a>
           <a href="/dashboard/access" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
+          {/* Tracker was orphaned (no nav entry, reachable only by typing the
+              URL). Owner 2026-07-18: keep it and surface it here — it is a
+              working interruption log, admin-only, and Admin is where it belongs. */}
+          <a href="/dashboard/tracker" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
+            background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⏱️ Tracker</a>
           <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
         </div>
         {/* Refresh removed (Rakesh 2026-07-17): gave no feedback and the list

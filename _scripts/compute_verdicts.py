@@ -169,25 +169,74 @@ def main():
     # REGIME DEPRECATED (Rakesh 2026-07-17: "old regime, we don't use it now").
     # The table also lacks a `regime` column, which crashed verdicts for 2 days
     # (sink caught it). Always NULL — downstream already handles bull=None.
-    regime_sql = "NULL"
-    cur.execute(f"""
-        SELECT {", ".join(cols)}, {regime_sql} AS regime_bull
+    # REGIME RESTORED 2026-07-18. History: the original query selected a column
+    # named `regime`, but market_regimes actually writes `active_regime` — so it
+    # crashed, and #193 "fixed" it by hardcoding NULL. That silently KILLED the
+    # TRADE verdict, because both trade strategies require `bull is True`
+    # (why_trade was 2/761 — all pre-deprecation legacy rows).
+    # Owner ruling 2026-07-18: regime IS required (spec §2C.10). The writer was
+    # also dry-running (missing --apply, fixed in the same pass), so the data is
+    # flowing again. Guarded three ways: table must exist, column must exist, and
+    # the row must be FRESH (<= 5 days) — a stale regime must read as unknown
+    # (NULL), never as a false bull.
+    cur.execute("""SELECT to_regclass('market_regimes') IS NOT NULL
+                          AND EXISTS (SELECT 1 FROM information_schema.columns
+                                      WHERE table_name='market_regimes'
+                                        AND column_name='active_regime') AS ok""")
+    _row = cur.fetchone()
+    _regime_ok = bool(_row["ok"] if isinstance(_row, dict) else _row[0])
+    regime_sql = ("""(SELECT (m.active_regime ILIKE '%bull%' OR m.active_regime ILIKE '%normal%')
+                      FROM market_regimes m
+                      WHERE m.evaluation_date >= CURRENT_DATE - 5
+                      ORDER BY m.evaluation_date DESC LIMIT 1)""") if _regime_ok else "NULL"
+    # DISTINCT ON canon key (2026-07-18): ipo_verdicts carries a CANON unique
+    # index, but this INSERT upserts ON CONFLICT (company_name) — an EXACT match.
+    # Two source rows whose names differ but canonicalise the same (e.g.
+    # "M B Switchgears Ltd" vs "MB Switchgears Limited" -> mbswitchgears) both
+    # slip past the exact-name conflict target and then violate the canon index,
+    # killing the whole run. Collapse to one row per canon key at the source and
+    # prefer the most complete record (most recent listing, then longest name).
+    cur.execute(rf"""
+        SELECT DISTINCT ON (
+            regexp_replace(lower(i.company_name),
+                '\y(ltd|limited|pvt|private|and)\y|&|[^a-z0-9]', '', 'g'))
+               {", ".join(cols)}, {regime_sql} AS regime_bull
         FROM ipo_intelligence i
         LEFT JOIN ipo_rhp_intel ri ON ri.company_name = i.company_name
         WHERE i.company_name IS NOT NULL
+        ORDER BY regexp_replace(lower(i.company_name),
+                   '\y(ltd|limited|pvt|private|and)\y|&|[^a-z0-9]', '', 'g'),
+                 i.listing_date DESC NULLS LAST,
+                 length(i.company_name) DESC
     """)
     rows = cur.fetchall()
+
+    # ADAPTIVE CONFLICT TARGET (2026-07-18). Production guards ipo_verdicts with
+    # ux_verdicts_company — a UNIQUE index on the CANON expression. Upserting
+    # ON CONFLICT (company_name) missed it, so a new name variant (e.g.
+    # "MB Switchgears Limited" when "M B Switchgears Ltd" was already stored)
+    # attempted an INSERT, violated the canon index and ABORTED the entire run:
+    # zero verdicts written. Test/dev DBs may only have a plain company_name
+    # unique, so the target is detected rather than hardcoded.
+    cur.execute("""SELECT indexdef FROM pg_indexes
+                   WHERE tablename = 'ipo_verdicts' AND indexdef ILIKE '%UNIQUE%'""")
+    _defs = " ".join((r["indexdef"] if isinstance(r, dict) else r[0]) for r in cur.fetchall())
+    CONFLICT_TARGET = (
+        "(regexp_replace(lower(company_name), "
+        "'\\y(ltd|limited|pvt|private|and)\\y|&|[^a-z0-9]', '', 'g'))"
+        if "regexp_replace" in _defs else "(company_name)")
+    print(f"  upsert conflict target: {'canon expression' if 'regexp' in CONFLICT_TARGET else 'company_name'}")
     tally, wrote = {}, 0
     for r in rows:
         d = decide(r)
         tally[d["verdict"]] = tally.get(d["verdict"], 0) + 1
         if a.apply:
-            cur.execute("""
+            cur.execute(rf"""
                 INSERT INTO ipo_verdicts
                   (company_name, verdict, why_trade, why_caution, why_avoid,
                    why_passes, regime, quality_promoter, score, confidence, computed_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
-                ON CONFLICT (company_name) DO UPDATE SET
+                ON CONFLICT {CONFLICT_TARGET} DO UPDATE SET
                   verdict=EXCLUDED.verdict, why_trade=EXCLUDED.why_trade,
                   why_caution=EXCLUDED.why_caution, why_avoid=EXCLUDED.why_avoid,
                   why_passes=EXCLUDED.why_passes, regime=EXCLUDED.regime,

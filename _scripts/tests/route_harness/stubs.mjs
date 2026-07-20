@@ -1,7 +1,7 @@
 // Route-harness stubs. Discipline: the Neon stub COUNTS every query and never
 // touches the network; anything unstubbed that tries to leave the process
 // should throw, not silently succeed.
-globalThis.__H = globalThis.__H ?? { queries: [], kv: new Map(), kvGets: 0, kvPuts: 0 };
+globalThis.__H = globalThis.__H ?? { queries: [], kv: new Map(), kvGets: 0, kvPuts: 0, kvOps: [] };
 
 // ---- '@neondatabase/serverless' ----
 export function neon(_url) {
@@ -51,8 +51,8 @@ export function getCloudflareContext() {
   return {
     env: {
       CACHE: {
-        get: async (k) => { globalThis.__H.kvGets++; return globalThis.__H.kv.get(k) ?? null; },
-        put: async (k, v, _o) => { globalThis.__H.kvPuts++; globalThis.__H.kv.set(k, v); },
+        get: async (k) => { globalThis.__H.kvGets++; globalThis.__H.kvOps.push("get:" + k); return globalThis.__H.kv.get(k) ?? null; },
+        put: async (k, v, _o) => { globalThis.__H.kvPuts++; globalThis.__H.kvOps.push("put:" + k); globalThis.__H.kv.set(k, v); },
       },
     },
   };

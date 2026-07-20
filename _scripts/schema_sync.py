@@ -35,6 +35,10 @@ DDL = [
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS score_expected_win NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS score_expected_med NUMERIC",
     # ── ipo_research_notes: Haiku extraction ──
+    # ipo_research_notes had NO id column: sbi_haiku_extract selects n.id and threw
+    # "column id does not exist" on EVERY run since launch -> 0 attempts, $0 spent,
+    # 244 notes untouched (2026-07-18). SERIAL backfills existing rows.
+    "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS id SERIAL",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS full_json JSONB",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS one_line TEXT",
     "ALTER TABLE ipo_research_notes ADD COLUMN IF NOT EXISTS ai_model TEXT",
@@ -55,6 +59,17 @@ DDL = [
         id SERIAL PRIMARY KEY, symbol TEXT, discovery_price NUMERIC,
         buy_qty BIGINT, sell_qty BIGINT, lean_pct NUMERIC,
         captured_at TIMESTAMPTZ DEFAULT NOW(), source TEXT DEFAULT 'live')""",
+    # CREATE TABLE IF NOT EXISTS is a NO-OP on a pre-existing table, so an older
+    # ipo_preopen_book never gained these columns — `source` was missing entirely
+    # (2026-07-19). Same class of bug as trade_journal. Add each individually so
+    # an existing table is repaired rather than skipped.
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS symbol TEXT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS discovery_price NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS buy_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS sell_qty BIGINT",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS lean_pct NUMERIC",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ DEFAULT NOW()",
+    "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'live'",
     # ── GUARDRAIL A: natural-key UNIQUE indexes so cleanups can't let dups
     # return (the recurring double-Laser). One canonical row per IPO/tick. ──
     # self-heal: drop dup companies (keep lowest ctid) so the unique index applies
@@ -120,6 +135,26 @@ DDL = [
         domain TEXT PRIMARY KEY, last_write TIMESTAMPTZ,
         row_count BIGINT, updated_at TIMESTAMPTZ DEFAULT NOW())""",
     # ── admin job console ──
+    # ── trade journal ──
+    # The table EXISTS in prod but lacks the columns sync_trade_journal writes
+    # ("SCHEMA MISMATCH — trade_journal lacks ['action','broker',
+    # 'broker_order_id','entry_date',...]" on the StepBoard, 2026-07-18).
+    # CREATE TABLE IF NOT EXISTS is a NO-OP on an existing table, so each column
+    # must be added individually. broker_order_id UNIQUE makes re-syncing the
+    # same Zerodha order idempotent.
+    """CREATE TABLE IF NOT EXISTS trade_journal (
+        id BIGSERIAL PRIMARY KEY, created_at TIMESTAMPTZ DEFAULT NOW())""",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker_order_id TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS symbol TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exchange TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS action TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quantity NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS price NUMERIC",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS broker TEXT",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS entry_date DATE",
+    "ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_trade_journal_order ON trade_journal(broker_order_id)",
+
     # ── NSE pre-open capture (nse_preopen_capture.py) ──
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS ieq BIGINT",
     "ALTER TABLE ipo_preopen_book ADD COLUMN IF NOT EXISTS best_bid NUMERIC",

@@ -99,19 +99,20 @@ def main():
     #step("bulk/block deals (NSE)",         ["fetch_institutional_deals.py"])
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("insider trades (NSE, exp.)",     ["fetch_insider_trades.py"])
-    # [IPO-only] removed non-IPO step (writes to dropped table):
-    #step("anchor-deal conviction match",   ["match_anchor_deals.py","--apply"])
+    # anchor-deal conviction match removed 2026-07-18 (dead: institutional_large_deals
+    # table does not exist; no consumer). Script archived to _archive/.
     ok&=step("market regime + VIX (today)", ["backfill_market_regimes.py"])
     ok &= (step("candles: in-window daily sync",  ["sync_inwindow_candles.py"]) if kite_ok else True)
     (step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"]) if kite_ok else None)
     ok &= (step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"]) if kite_ok else True)
-    ok &= (step("derive listing_open",         ["fill_listing_open_from_candles.py"]) if kite_ok else True)
+    ok &= (step("derive listing_open",         ["fill_listing_open_from_candles.py","--apply"]) if kite_ok else True)  # Phase-1 fix #2: was dry-run
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
     step("d10 outcome precompute",        ["compute_d10.py"])
     step("reconcile listing dates",     ["reconcile_listing_dates.py","--apply"])
-    step("close-in-range strength",     ["close_in_range.py","--apply"])
+    # REMOVED 2026-07-18 (dead step): close-in-range — CIR rejected as leakage
+    # (spec §5); no consumer. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",   ["backfill_master_computables.py","--apply"])
     # [DEAD-TABLE, removed] step("sector cleanup",                ["fix_sectors.py","--apply"])
     # [DEAD-TABLE, removed] step("peer PE (self-computed)",       ["compute_peer_pe.py","--apply"])

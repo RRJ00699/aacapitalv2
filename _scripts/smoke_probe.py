@@ -51,17 +51,32 @@ def main():
             except Exception as e:
                 fails.append(f"{table}: {str(e).splitlines()[0][:140]}")
                 conn.rollback()
+        # DATA-HEALTH INVARIANT (permanent guard): the dial's columns must not
+        # silently empty. quality_score powers a UI mode; if it drops to near-
+        # zero, the pipeline FAILS here -> phone, instead of a dead dial nobody
+        # notices. Threshold is absolute-low (100) so a backfill only helps.
+        try:
+            cur.execute("SELECT count(*) FROM ipo_intelligence WHERE quality_score IS NOT NULL")
+            qs = cur.fetchone()[0]
+            if qs < 100:
+                fails.append(f"quality_score near-empty ({qs} rows) — dial dead, compute or upstream broke")
+        except Exception:
+            pass
         conn.close()
     except Exception as e:
         fails.append(f"DB unreachable: {str(e)[:120]}")
     key = os.getenv("ADMIN_JOB_KEY", "")
     if key:
+        # Probe with the RUNNER'S exact identity, not smoke's: the 147 CU-h
+        # leak was Cloudflare 403ing the runner's UA while smoke's own UA
+        # passed — a green smoke masking a red runner. Never again: this
+        # check fails iff the runner's real request path would fail.
         try:
             req = urllib.request.Request(
                 "https://aacapitalprivatelimited.com/api/admin/job-flag",
-                headers={"X-AAC-Key": key, "User-Agent": "aac-smoke"})
+                headers={"X-AAC-Key": key, "User-Agent": "aac-runner"})
             d = json.load(urllib.request.urlopen(req, timeout=30))
-            if not d.get("ok"): fails.append("worker chain: job-flag rejected the key")
+            if not d.get("ok"): fails.append("worker chain: job-flag rejected the key (runner identity)")
         except Exception as e:
             fails.append(f"worker chain: {str(e)[:100]}")
     if fails:

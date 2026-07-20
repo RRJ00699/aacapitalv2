@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import { fairValue } from "@/lib/fair-value";
 import { neon } from "@neondatabase/serverless";
+import { cached } from "@/lib/kv-cache";
 import { getBroker } from "@/lib/brokers";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
@@ -126,6 +127,30 @@ function scoreStatic(c: Record<string, unknown>) {
     detail: anchors == null ? "anchor count pending"
           : has50 ? `${anchors} anchors (50+ ✓)` : `${anchors} anchors (below 50)`,
   });
+
+  // Rule 5b — HOUSE STACK (measured 2026-07-19, n=55, D30 from listing open).
+  // 30+ anchors AND >=Rs.200cr AND OFS<30% -> 72.7% win / +17.2% median, vs a
+  // 62.2% / +12.7% baseline, and drawdown risk 23.6% vs 32.4%. Fully STATIC —
+  // every input is known before the open, so it resolves at 09:30 with the rest.
+  // It out-performed every candidate signal tested that day (RHP governance
+  // flags, executed early volume, retail price-bid ratio, mutual-fund share);
+  // layering MF on top made it WORSE at D1/D2/D3/D5 and D30, so it ships alone.
+  {
+    const stackOk = anchors != null && anchors >= 30
+                 && size != null && size >= 200
+                 && ofs != null && ofs < 30;
+    const missing: string[] = [];
+    if (!(anchors != null && anchors >= 30)) missing.push(anchors == null ? "anchors pending" : `${anchors} anchors`);
+    if (!(size != null && size >= 200))      missing.push(size == null ? "size pending" : `₹${Math.round(size)}cr`);
+    if (!(ofs != null && ofs < 30))    missing.push(ofs == null ? "OFS pending" : `OFS ${Math.round(ofs)}%`);
+    rules.push({
+      name: "The House Stack (30 anchors + ₹200cr + fresh)",
+      passed: (anchors == null || size == null || ofs == null) ? null : stackOk,
+      win: 73,
+      detail: stackOk ? "all three — 72.7% win, +17.2% med (D30, n=55)"
+                      : `missing: ${missing.join(" · ")}`,
+    });
+  }
 
   // Rule 6 — not-expensive P/E (static, known pre-listing). P/E ≤ 70 passes;
   // above is the AVOID-flag territory. Backtest: cheap-vs-peer carries edge,
@@ -243,9 +268,12 @@ export async function GET() {
   }
   try {
     const sql = db();
-    // IPOs listing within the live window: from 1 day before today through
-    // 7 days after listing (so a fresh listing shows immediately and stays a week).
-    const rows = await sql`
+    // Phase-2 zero-idle: this route is polled every 60s through the 8:55–10:20
+    // IST decision window, but the row set below only changes when the nightly
+    // pipeline runs. KV-cache the Neon READ for 1h — repeat polls skip Neon.
+    // Broker depth + the ipo_preopen_book capture below are live/WRITE paths
+    // and intentionally stay per-request.
+    const rows = JSON.parse(await cached("live-preopen:rows:v1", async () => (await sql`
       SELECT company_name, nse_symbol, symbol_final, listing_date,
              issue_size_cr, anchor_count, ofs_pct, issue_price, ipo_pe,
              peer_median_pe, listing_open, gmp_day_before_pct,
@@ -259,7 +287,7 @@ export async function GET() {
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
         AND listing_date <= CURRENT_DATE + INTERVAL '1 day'
       ORDER BY listing_date ASC, issue_size_cr DESC NULLS LAST
-    ` as Array<Record<string, unknown>>;
+    `), 3600)) as Array<Record<string, unknown>>;
 
     // Try to get a live broker once (shared across listings). Degrade gracefully.
     let broker: any = null;
