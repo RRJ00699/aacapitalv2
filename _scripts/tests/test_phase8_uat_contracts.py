@@ -13,7 +13,7 @@ def _read(*p):
 
 # ── zero-idle: every live/hot value the user sees on the cards page is KV ──
 def test_hot_reads_are_kv_served():
-    assert 'const CACHE_KEY = "ipo-command:v2"' in _read("app", "api", "ipo-command", "route.ts")
+    assert 'const CACHE_KEY = "ipo-command:v3"' in _read("app", "api", "ipo-command", "route.ts")
     assert 'cached("live-preopen:rows:v2"' in _read("app", "api", "ipo", "live-preopen", "route.ts")
     j = _read("app", "api", "ipo", "journey", "route.ts")
     assert "kv-cache" in j
@@ -90,5 +90,7 @@ def test_single_authority_and_stamps():
 
 def test_no_leaked_credentials_at_head():
     import subprocess
-    r = subprocess.run(["git", "grep", "-l", "Ashrith"], capture_output=True, text=True, cwd=REPO)
-    assert r.stdout.strip() == "", "redacted credential resurfaced"
+    needle = "Ash" + "rith"  # split so this test never matches itself
+    r = subprocess.run(["git", "grep", "-l", needle], capture_output=True, text=True, cwd=REPO)
+    hits = [h for h in r.stdout.strip().splitlines() if "test_phase8" not in h]
+    assert hits == [], f"redacted credential resurfaced: {hits}"

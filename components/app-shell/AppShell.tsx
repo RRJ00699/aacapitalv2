@@ -16,9 +16,11 @@ export default function AppShell({
   refreshTime?: string;
 }) {
   // IPO search selection → broadcast so the IPO page can scroll to / highlight it.
-  const handleSearchSelect = (company: string) => {
+  const handleSearchSelect = (company: string, target?: string) => {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company } }));
+      // Phase 9: stage-aware navigation — the search hub says WHERE to land
+      // (command / subscription / live / journey), the page obeys.
+      window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
     }
   };
 

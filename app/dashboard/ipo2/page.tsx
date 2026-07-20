@@ -866,7 +866,16 @@ function IpoCommand() {
   useEffect(() => {
     const onFocus = (e: Event) => {
       const company = String((e as CustomEvent).detail?.company || "");
+      const target = String((e as CustomEvent).detail?.target || "");
       if (!company || !d) return;
+      // Phase 9 stage-aware routing: LISTING -> Live screen; LISTED -> post/
+      // journey; UPCOMING/OPEN -> Command card (subscription lives on it).
+      if (target === "live") {
+        const lm = (d.cards || []).find((r: R) =>
+          String(r.company_name || "").toLowerCase().includes(company.toLowerCase()) ||
+          canonSym(String(r.sym || "")) === canonSym(company));
+        if (lm?.sym) { jumpToLive(String(lm.sym)); return; }
+      }
       // Listed IPO -> land on the POST-LISTING table, on the exact row.
       const match = (r: R) =>
         String(r.company_name || "").toLowerCase().includes(company.toLowerCase()) ||

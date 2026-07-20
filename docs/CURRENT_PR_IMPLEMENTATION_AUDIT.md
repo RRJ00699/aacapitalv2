@@ -48,7 +48,7 @@ regression tests for Phases 1-7 all green at head.
   cleanup is out of scope pre-listing); **my changed files: 2 errors were
   mine, fixed**; the rest on those files pre-date this PR.
 - Secrets: `.env*` untracked ✓. **Found & redacted at HEAD**: a real
-  password (`Ashrith@2820` / URL-encoded variant) in 4 _archive scripts,
+  password (a Screener + local-PG password, now `CHANGEME_ROTATED`) in 4 _archive scripts,
   including `SCREENER_PASSWORD`. **Owner action: rotate the Screener.in
   password and the local Postgres password** — git history retains them.
 

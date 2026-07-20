@@ -18,9 +18,16 @@ export class Pool {
   constructor() { throw new Error("route-harness: Pool (websocket) not stubbed — a route tried a real connection"); }
 }
 
-// minimal shaped rows so handlers that read [0].x don't crash
+// minimal shaped rows so handlers that read [0].x don't crash.
+// HARNESS_FIXTURE_JSON (opt-in): path to a JSON object mapping a lowercase
+// SQL substring -> rows to return, so proof runs can produce REAL payloads.
+let FIXTURE = null;
+if (process.env.HARNESS_FIXTURE_JSON) {
+  try { FIXTURE = JSON.parse((await import("fs")).readFileSync(process.env.HARNESS_FIXTURE_JSON, "utf8")); } catch { FIXTURE = null; }
+}
 function rowsFor(q) {
   const lower = q.toLowerCase();
+  if (FIXTURE) for (const k of Object.keys(FIXTURE)) if (lower.includes(k)) return FIXTURE[k];
   if (lower.includes("count(*)")) return [{ above: 60, total: 100, count: 0 }];
   if (lower.includes("max(date)")) return [{ d: null }];
   return [];

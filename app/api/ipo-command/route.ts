@@ -12,7 +12,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
-const CACHE_KEY = "ipo-command:v2"; // v2 2026-07-20: SME/<200cr hard filter changed payload shape
+const CACHE_KEY = "ipo-command:v3"; // v3 2026-07-21: structured research block (Phase 9)
 const CACHE_TTL_S = 43200; // 12h — pipeline warms it 2x/day; page loads never hit Neon between runs
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
@@ -377,7 +377,39 @@ export async function GET(req?: Request) {
       }
     }
 
-    const payload = JSON.stringify({ cards: investable, filtered, filtered_count: filtered.length,
+    // ── Phase-9 structured research block (API-first: UI formats, never
+    // infers). Derivations use ONLY approved existing fields — no invented
+    // thresholds: company_quality.verdict maps the existing RHP quality gate
+    // (accept→GOOD, watch→WATCH, reject→JUNK) and exists ONLY when RHP is
+    // CONFIRMED; otherwise status=INCOMPLETE with no verdict at all.
+    const enrich = (c: Record<string, unknown>) => {
+      const rhpStatus = c.rhp_full ? "CONFIRMED" : c.rhp_url ? "PARTIAL" : "PENDING";
+      const sbiStatus = c.sbi_full ? "CONFIRMED" : c.sbi_rating ? "PARTIAL" : "PENDING";
+      const fvReady = c.eps_post != null && c.peer_median_pe != null;
+      const gate = String(c.rhp_gate ?? "").toLowerCase();
+      const cq = rhpStatus === "CONFIRMED"
+        ? { status: "CONFIRMED",
+            verdict: gate === "reject" ? "JUNK" : gate === "watch" ? "WATCH" : gate ? "GOOD" : "WATCH" }
+        : { status: "INCOMPLETE" as const };   // no verdict field on purpose
+      const done = [rhpStatus === "CONFIRMED", sbiStatus === "CONFIRMED",
+                    c.ipo_score != null, fvReady].filter(Boolean).length;
+      return { ...c, research: {
+        pipeline_status: rhpStatus === "PENDING" && sbiStatus === "PENDING" ? "ENRICHED"
+          : (rhpStatus === "CONFIRMED" && c.ipo_score != null ? "RESEARCH_COMPLETE" : "RESEARCH_PARTIAL"),
+        research_completeness: { done, of: 4,
+          label: done === 4 ? "Research Complete" : done === 0 ? "Research Pending" : "Research Partial" },
+        rhp_status: rhpStatus, sbi_status: sbiStatus,
+        company_quality: cq,
+        prelisting_score: { score: c.ipo_score ?? null, band: c.score_band ?? null,
+          expected_win: c.score_expected_win ?? null },
+        fair_value_status: fvReady ? "READY" : "UNAVAILABLE",
+        margin_of_safety_status: fvReady ? "READY" : "UNAVAILABLE",
+        fair_value_note: fvReady ? null : "Fair value unavailable — requires valid EPS and comparable peer valuation.",
+        evidence: c.insights ?? null,
+      } };
+    };
+    const investableR = investable.map(enrich);
+    const payload = JSON.stringify({ cards: investableR, filtered, filtered_count: filtered.length,
       live, levels, blocks, post, brlm, dl, track,
       generated_at: new Date().toISOString() });
     if (kv) {
