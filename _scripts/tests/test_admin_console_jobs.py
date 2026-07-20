@@ -44,3 +44,33 @@ def test_important_jobs_have_buttons():
 def test_schema_job_is_present_and_first_class():
     assert "schema" in _buttons(), "no Schema sync button — DDL cannot be applied from a phone"
     assert "schema" in _whitelist(), "schema job missing from the runner whitelist"
+
+
+def test_no_admin_job_points_at_a_retired_script():
+    """2026-07-21: owner triggered 'Run full pipeline' from Admin and got the
+    RETIRED banner + exit 1 — the whitelist still pointed at the old
+    orchestrator. Every whitelisted script must exist and must not be a
+    retired stub."""
+    import os, re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "job_runner.py"), encoding="utf-8").read()
+    scripts = set(re.findall(r'\["(_scripts/[a-z_\-]+\.py)"', src))
+    assert "_scripts/run_ipo_pipeline_lean.py" in scripts, "pipeline job must run the LEAN orchestrator"
+    repo = os.path.dirname(root)
+    for rel in scripts:
+        pth = os.path.join(repo, rel)
+        assert os.path.exists(pth), f"whitelisted job script missing: {rel}"
+        head = open(pth, encoding="utf-8", errors="ignore").read(2000)
+        assert "RETIRED" not in head, f"whitelisted job points at a RETIRED stub: {rel}"
+
+
+def test_pipeline_calls_the_real_peer_pe_script():
+    """compute_peer_pe.py never existed — peer P/E was silently skipped every
+    run (root cause of 'fair value unavailable' on every IPO). The lean
+    pipeline must call fetch_peer_pe.py --apply, and the ghosts stay gone."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
+    assert '["fetch_peer_pe.py", "--apply"]' in src
+    for ghost in ("compute_peer_pe.py", "fix_sectors.py", "compute_quality_flags.py"):
+        assert ghost not in src, f"ghost step resurrected: {ghost}"

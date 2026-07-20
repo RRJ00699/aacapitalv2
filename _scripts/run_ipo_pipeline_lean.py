@@ -186,9 +186,14 @@ def main():
     # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
     # the CIR columns. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",     ["backfill_master_computables.py"])
-    step("sector cleanup",                  ["fix_sectors.py"])
-    step("peer PE (self-computed)",         ["compute_peer_pe.py"])          # fair value — KEEP
-    step("quality flags (Laser pattern)",   ["compute_quality_flags.py"])
+    # FIXED 2026-07-21 (owner pipeline run): this called a peer-PE script name
+    # that never existed in the repo — the real script is fetch_peer_pe.py. Peer P/E was
+    # silently skipped EVERY run, so peer_median_pe stayed NULL and fair value
+    # rendered UNAVAILABLE for every IPO. --apply = write-db; polite sleep kept.
+    # sector-cleanup / quality-flags steps REMOVED 2026-07-21: those two
+    # script names never existed in this repo (skip-noise since the cutover);
+    # sectors come from scrape/IPOMatrix, quality from compute_quality_score.
+    step("peer PE (fetch, fair-value input)", ["fetch_peer_pe.py", "--apply"])   # fair value — KEEP
 
     # ── BUILD + VERDICTS ──
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py"])
