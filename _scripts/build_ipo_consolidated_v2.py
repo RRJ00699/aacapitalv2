@@ -112,7 +112,7 @@ MAP = [
   ("retail_alloc_pct",        "s.retail_alloc_pct"),
   # structure_type: derive from the fresh/OFS split IPOMatrix already writes to
   # ipo_intelligence, so it fills WITHOUT the (currently absent) subscription table.
-  # Fresh-heavy = capex/expansion; OFS-heavy = promoter cash-out; else mixed.
+  # Fresh-heavy vs OFS-heavy = STRUCTURE labels only (backtested split); seller motive needs RHP evidence (Phase-7).
   ("structure_type",
    "COALESCE(s.structure_type, CASE "
    "WHEN COALESCE(i.ofs_cr,0) + COALESCE(i.fresh_issue_cr,0) = 0 THEN NULL "

@@ -29,6 +29,8 @@ export async function GET(req: Request) {
       WHERE listing_date IS NOT NULL
         AND listing_date >= (CURRENT_DATE - ${days}::int)
         AND listing_date <= CURRENT_DATE
+        AND COALESCE(is_sme, false) = false
+        AND (issue_size_cr IS NULL OR issue_size_cr >= 200)  -- audit #6 hard filter
       ORDER BY listing_date DESC
       LIMIT 50
     `.catch(() => [] as any[])

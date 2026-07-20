@@ -347,7 +347,10 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
       sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
     { label: "OFS mix", value: ofsPct != null ? `${ofsPct}%` : "—",
-      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "promoter cash-out" : "mixed") : "awaiting",
+      // Phase-7 (2026-07-20): ">60 = promoter cash-out" was an evidence-free
+      // interpretation of a structured number. The BACKTESTED fact is the
+      // fresh-vs-OFS win-rate split; seller identity/motive needs the RHP.
+      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "OFS-heavy" : "mixed") : "awaiting",
       state: ofsPct == null ? "na" : ofsPct < 30 ? "pass" : ofsPct > 60 ? "warn" : "neutral" },
     { label: "PE vs peer", value: peRatio != null ? `${peRatio.toFixed(2)}×` : ipoPe != null ? `${ipoPe.toFixed(0)}` : "—",
       sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
@@ -534,7 +537,24 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
         const ofsC = N(c.ofs_cr), freshC = N(c.fresh_issue_cr);
         const tot = (ofsC ?? 0) + (freshC ?? 0);
         const ofsPct = tot > 0 ? Math.round((ofsC ?? 0) / tot * 100) : null;
-        if (ofsPct != null && ofsPct >= 60) bad.push(`${ofsPct}% OFS — mostly promoter cash-out, not growth capital`);
+        // ── Phase-7 OFS repair (2026-07-20) ────────────────────────────────
+        // ofs_pct is a STRUCTURED FACT: it proves the issue is an offer for
+        // sale — nothing about seller identity or motive. "Promoter cash-out"
+        // is an INTERPRETATION and requires document evidence. Sonnet already
+        // extracts it (structure.ofs_heavy + quoted detail, rhp_sonnet.py):
+        //   evidence present  -> confirmed negative WITH the RHP's own words
+        //   evidence absent   -> neutral fact + explicit pending state
+        // Quantitative OFS weighting (fair-value, backtest factors) unchanged.
+        const pend: string[] = [];
+        if (ofsPct != null && ofsPct >= 60) {
+          const st = fj0 && typeof fj0 === "object" ? (fj0 as Record<string, unknown>).structure as Record<string, unknown> | undefined : undefined;
+          const stDetail = st && typeof st.detail === "string" ? (st.detail as string).trim() : "";
+          if (st?.ofs_heavy === true && stDetail) {
+            bad.push(`${ofsPct}% OFS — RHP: ${stDetail.slice(0, 160)}`);
+          } else {
+            pend.push(`${ofsPct}% offer for sale confirmed. Seller rationale and use-of-proceeds assessment pending RHP analysis.`);
+          }
+        }
         const pe = N(c.ipo_pe), ppe = N(c.peer_median_pe);
         if (pe != null && ppe != null && ppe > 0 && pe / ppe >= 1.5) bad.push(`Priced ${(pe / ppe).toFixed(1)}× the sector median P/E (${pe.toFixed(0)} vs ${ppe.toFixed(0)})`);
         const roe = N(c.roe), de = N(c.debt_equity), cagr = N(c.revenue_cagr_3y), pat = N(c.pat_cr);
@@ -557,20 +577,33 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           if (clear > 0 && raised.length === 0) good.push(`${clear} governance checks clear — no auditor/SEBI/pledge flags`);
         }
         const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];
-        if (!items.length) return null;
+        if (!items.length && !pend.length) return null;
         const clean = bad.length === 0;
+        const nBad = Math.min(bad.length, 5);
         return (
           <div style={{ marginTop: 12, padding: "13px 15px", borderRadius: 11,
             background: clean ? C.greenBg : C.redBg, border: `1px solid ${clean ? C.greenBd : C.redBd}` }}>
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase",
               color: clean ? C.green : C.red, marginBottom: 7 }}>Why should I NOT buy this IPO?</div>
             {items.map((r, i) => {
-              const isBad = i < Math.min(bad.length, 5);
-              return <div key={i} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, lineHeight: 1.5, color: C.sub }}>
-                <span style={{ fontWeight: 800, flexShrink: 0, color: isBad ? C.red : C.green }}>{isBad ? "✕" : "✓"}</span>
-                <span>{r}</span></div>;
+              const isBad = i < nBad;
+              return <div key={i}>
+                {/* Phase-7: strengths were rendered flush under the "NOT buy"
+                    question ("Strong ROE" read as a not-buy reason — owner
+                    screenshot). Divide the lanes explicitly. */}
+                {i === nBad && <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: .4, textTransform: "uppercase",
+                  color: C.green, margin: "7px 0 4px" }}>{nBad ? "…and in its favour" : "No confirmed negatives — in its favour"}</div>}
+                <div style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, lineHeight: 1.5, color: C.sub }}>
+                  <span style={{ fontWeight: 800, flexShrink: 0, color: isBad ? C.red : C.green }}>{isBad ? "✕" : "✓"}</span>
+                  <span>{r}</span></div>
+              </div>;
             })}
-            {clean && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn't find a strong reason not to. That itself is the finding.</div>}
+            {pend.map((r, i) => (
+              <div key={`p${i}`} style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12.5, lineHeight: 1.5, color: C.meta }}>
+                <span style={{ fontWeight: 800, flexShrink: 0, color: C.meta }}>◌</span>
+                <span>{r}</span></div>
+            ))}
+            {clean && !pend.length && <div style={{ fontSize: 10.5, color: C.meta, marginTop: 4 }}>Honest answer: we couldn't find a strong reason not to. That itself is the finding.</div>}
             {/* PROVENANCE (fixed 2026-07-20). This said "From the RHP + filings"
                 unconditionally. But these reasons are computed from STRUCTURED
                 fields — ofs_pct, roe, issue size — sourced from Chittorgarh /

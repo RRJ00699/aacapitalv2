@@ -45,7 +45,7 @@ def test_A2_ipo_command_second_call_zero_queries():
 def test_A2b_ipo_command_stale_tier_never_wakes_neon():
     """Phase-2 zero-idle: when the PRIMARY key has expired but the :stale twin
     survives, the route serves STALE with ZERO Neon queries and ZERO writes."""
-    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v1@3")
+    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v2@3")
     c1, c2, c3 = d["results"]
     assert c1["xcache"] == "MISS" and c2["xcache"] == "HIT"
     assert c3["xcache"] == "STALE", f"expected STALE, got {c3['xcache']}"

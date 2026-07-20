@@ -44,7 +44,7 @@ export function fairValue(c: Record<string, unknown>) {
       let sfac = 1.0;
       if (!isNaN(ofsPct)) {
         if (ofsPct < 20) sfac += 0.06;        // mostly fresh — capex/expansion, good
-        else if (ofsPct > 60) sfac -= 0.08;   // mostly OFS — promoter cash-out, weak
+        else if (ofsPct > 60) sfac -= 0.08;   // OFS-heavy — backtested statistical drag (NOT a motive claim; Phase-7)
       }
       sfac = Math.max(0.90, Math.min(1.10, sfac));
       const fv = base * q * sfac;
