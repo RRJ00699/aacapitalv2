@@ -28,14 +28,18 @@ export async function GET(req: Request) {
     // Window bounds in IST → compare against recorded_at (UTC) shifted +5:30.
     // 10:29 IST = 04:59 UTC · 11:00 IST = 05:30 UTC. We filter on the IST-local
     // clock via (recorded_at AT TIME ZONE 'Asia/Kolkata').
-    const day = date ? `'${date}'::date` : `(now() AT TIME ZONE 'Asia/Kolkata')::date`;
+    // Phase-1 bug fix ("in window — accumulating ticks" stuck forever): the old
+    // code built an IST-today fallback in a `day` variable but never used it —
+    // the filter compared against ${date ?? null}::date, i.e. `= NULL` on every
+    // normal UI call (no ?date=), which matches zero rows. COALESCE to IST today.
     const rows = await sql`
       WITH win AS (
         SELECT day_volume, recorded_at,
                (recorded_at AT TIME ZONE 'Asia/Kolkata') AS ist
         FROM ipo_tick_feed
         WHERE UPPER(symbol) = ${symbol}
-          AND (recorded_at AT TIME ZONE 'Asia/Kolkata')::date = ${date ?? null}::date
+          AND (recorded_at AT TIME ZONE 'Asia/Kolkata')::date
+              = COALESCE(${date ?? null}::date, (now() AT TIME ZONE 'Asia/Kolkata')::date)
       )
       SELECT
         (SELECT day_volume FROM win WHERE ist::time <= '11:00' ORDER BY ist DESC LIMIT 1) AS vol_end,

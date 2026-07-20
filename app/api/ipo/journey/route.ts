@@ -18,10 +18,24 @@ export async function GET(req: NextRequest) {
   const sql = db()
 
   try {
+    // Phase-1 fix #3: price_candles holds the FULL NSE universe (kite-sync-candles),
+    // so the earliest candle for a symbol is NOT necessarily its listing day.
+    // Floor the window at ipo_intelligence.listing_date so entry/floor/trail math
+    // starts at the true listing open. MIN() on purpose: if a junk duplicate row
+    // carries a wrong LATER date, MIN degrades gracefully to more candles instead
+    // of silently cutting real ones. No IPO row -> no floor (previous behavior).
     const rows = (await sql`
-      SELECT date, open, high, low, close, volume
-      FROM price_candles WHERE UPPER(symbol) = ${sym}
-      ORDER BY date ASC LIMIT 40`) as Array<Record<string, unknown>>
+      WITH ld AS (
+        SELECT MIN(listing_date) AS listing_date
+        FROM ipo_intelligence
+        WHERE UPPER(COALESCE(nse_symbol, symbol)) = ${sym}
+          AND listing_date IS NOT NULL
+      )
+      SELECT c.date, c.open, c.high, c.low, c.close, c.volume
+      FROM price_candles c, ld
+      WHERE UPPER(c.symbol) = ${sym}
+        AND (ld.listing_date IS NULL OR c.date >= ld.listing_date)
+      ORDER BY c.date ASC LIMIT 40`) as Array<Record<string, unknown>>
     if (!rows.length) {
       return NextResponse.json({ ok: true, sym, hasData: false,
         note: "No candles yet — the journey begins once it lists and trades." })

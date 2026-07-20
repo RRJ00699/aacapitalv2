@@ -105,7 +105,7 @@ def main():
     ok &= (step("candles: in-window daily sync",  ["sync_inwindow_candles.py"]) if kite_ok else True)
     (step("candles: full NSE universe",     ["kite-sync-candles.py","--days","5"]) if kite_ok else None)
     ok &= (step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"]) if kite_ok else True)
-    ok &= (step("derive listing_open",         ["fill_listing_open_from_candles.py"]) if kite_ok else True)
+    ok &= (step("derive listing_open",         ["fill_listing_open_from_candles.py","--apply"]) if kite_ok else True)  # Phase-1 fix #2: was dry-run
     step("download SBI notes (new only)", ["download_sbi_notes.py","--out","data/research_notes"])
     step("parse SBI notes -> DB",         ["parse_sbi_notes.py","--dir","data/research_notes","--write-db"])
     step("ipo score v0 (derived)",       ["ipo_score.py","--apply"])
