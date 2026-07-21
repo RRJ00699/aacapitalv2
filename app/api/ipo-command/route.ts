@@ -160,6 +160,14 @@ export async function GET(req?: Request) {
                      'source', s.source_type, 'locator', s.source_locator))
                 FROM ipo_insights s
                WHERE s.ipo_id = ii.id AND s.is_current) AS insights,
+             g.isin, g.lot_size, g.face_value, g.allotment_date,
+             g.anchor_lock30_date AS lock30_date, g.anchor_lock90_date AS lock90_date,
+             g.mcap_cr, g.ronw, g.price_to_book, g.promoter_pre_pct, g.promoter_post_pct,
+             jsonb_array_length(g.candles_json) AS candle_days,
+             g.rhp_sonnet_json->>'one_line' AS sonnet_one_line,
+             (g.sbi_haiku_json IS NOT NULL) AS haiku_present,
+             g.street_headline AS g_street_headline, g.street_publisher AS g_street_publisher,
+             g.street_url AS g_street_url,
              (SELECT json_build_object('publisher', n.publisher, 'headline', n.headline,
                                        'url', n.url, 'published_at', n.published_at, 'snippet', n.snippet)
                 FROM ipo_news n
@@ -173,6 +181,8 @@ export async function GET(req?: Request) {
              c.profit_cagr_3y, c.debt_equity, c.ofs_pct, c.structure_type, c.return_listing_open,
              c.gmp_day_before_pct, c.gmp_max_pct, c.gmp_min_pct
       FROM ipo_consolidated c
+      LEFT JOIN ipo_golden g
+        ON g.company_key = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
       LEFT JOIN ipo_verdicts v ON v.company_name = c.company_name
       LEFT JOIN ipo_flags f ON f.company_name = c.company_name
       LEFT JOIN ipo_broker_consensus bc ON bc.company = c.company_name

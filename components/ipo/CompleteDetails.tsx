@@ -56,8 +56,9 @@ export default function CompleteDetails({ c }: { c: R }) {
       <Card><SectionHeader>Timeline</SectionHeader>
         <Row k="Subscription opens" v={D(c.open_date)} src="Chittorgarh" />
         <Row k="Subscription closes" v={D(c.close_date)} src="Chittorgarh" />
-        <Row k="Basis of allotment" v={null} src="NSE — not yet captured" />
+        <Row k="Basis of allotment" v={D(c.allotment_date)} src="NSE — not yet captured" />
         <Row k="Listing date" v={D(c.listing_date)} src="NSE" />
+        <Row k="Anchor lock-in (30d / 90d)" v={D(c.lock30_date) ? `${D(c.lock30_date)} / ${D(c.lock90_date) ?? "—"}` : null} src="anchor report" />
       </Card>
 
       {/* C · Issue structure */}
@@ -66,7 +67,9 @@ export default function CompleteDetails({ c }: { c: R }) {
         <Row k="Fresh issue" v={Cr(c.fresh_issue_cr)} src="RHP" />
         <Row k="Offer for sale" v={Cr(c.ofs_cr)} src="RHP" />
         <Row k="OFS share" v={P(c.ofs_pct)} src="RHP" />
-        <Row k="Lot size" v={null} src="Chittorgarh — not yet captured" />
+        <Row k="Lot size" v={N(c.lot_size) != null ? String(c.lot_size) : null} src="Chittorgarh — not yet captured" />
+        <Row k="Face value" v={Rs(c.face_value)} src="RHP" />
+        <Row k="ISIN" v={S(c.isin)} src="NSE" />
         <Row k="BRLMs" v={S(c.brlm_names)} src="Chittorgarh" />
       </Card>
 
@@ -88,12 +91,18 @@ export default function CompleteDetails({ c }: { c: R }) {
         <Row k="ROE" v={P(c.roe)} src="IPOMatrix" />
         <Row k="Debt / equity" v={S(c.debt_equity)} src="IPOMatrix" />
         <Row k="Revenue CAGR (3y)" v={P(c.revenue_cagr_3y)} src="RHP" />
+        <Row k="RoNW" v={P(c.ronw)} src="IPOMatrix" />
+        <Row k="Price / book" v={S(c.price_to_book)} src="IPOMatrix" />
+        <Row k="Market cap" v={Cr(c.mcap_cr)} src="IPOMatrix" />
+        <Row k="Promoter holding (pre → post)" v={N(c.promoter_pre_pct) != null ? `${c.promoter_pre_pct}% → ${c.promoter_post_pct ?? "—"}%` : null} src="RHP" />
+        <Row k="Price series captured" v={N(c.candle_days) != null && Number(c.candle_days) > 0 ? `${c.candle_days} sessions (listing → lock-in)` : null} src="Kite candles" />
         <Row k="3-line financial table" v={null} src="RHP tables — extraction not yet wired" />
       </Card>
 
       {/* F · Research & evidence */}
       <Card><SectionHeader>Research & evidence</SectionHeader>
         <Row k="RHP status" v={S((r as R).rhp_status)} />
+        {S(c.sonnet_one_line) ? <Row k="RHP one-line (Sonnet)" v={S(c.sonnet_one_line)} /> : null}
         <Row k="SBI status" v={S((r as R).sbi_status)} />
         {S(sbi.one_line) ? <Row k="SBI one-line" v={S(sbi.one_line)} /> : <Row k="SBI one-line" v={null} src="SBI note" />}
         {insights.length ? insights.slice(0, 6).map((ev, i) => (

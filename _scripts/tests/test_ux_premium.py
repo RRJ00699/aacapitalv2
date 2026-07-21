@@ -319,3 +319,18 @@ def test_consolidation_is_fill_empty_strong_key_and_automated():
     assert '"consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
     jr = _read("_scripts", "job_runner.py")
     assert '"consolidate"' in jr
+
+
+def test_golden_fields_flow_to_command_and_details():
+    """Screens read the golden object: cards query LEFT JOINs ipo_golden and
+    Complete Details binds the fields (candle sessions, ISIN, locks, Sonnet
+    one-line). Contract DBs execute the join, so a bad column fails here
+    first — the class that reached prod three times today."""
+    cc = _read("app", "api", "ipo-command", "route.ts")
+    assert "LEFT JOIN ipo_golden g" in cc
+    for f in ("g.isin", "jsonb_array_length(g.candles_json) AS candle_days",
+              "g.rhp_sonnet_json->>'one_line'", "g.street_headline"):
+        assert f in cc, f
+    det = _read("components", "ipo", "CompleteDetails.tsx")
+    for f in ("candle_days", "sonnet_one_line", "lock30_date", "ISIN"):
+        assert f in det, f
