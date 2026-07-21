@@ -7,7 +7,11 @@ import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth()
-  if (!session?.user) redirect("/login")
+  // UAT fixture mode: the fixture env replaces the DB entirely (lib/db), so
+  // opening the page gate here can never expose real data. Guard-tested.
+  if (!process.env.UAT_FIXTURE_JSON) {
+    const session = await auth()
+    if (!session?.user) redirect("/login")
+  }
   return <>{children}</>
 }

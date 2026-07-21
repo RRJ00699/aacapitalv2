@@ -152,6 +152,10 @@ def test_uat_framework_files_exist():
 def test_fixture_mode_is_the_only_auth_bypass_and_never_production():
     guard = _read("lib", "api-guard.ts")
     assert "process.env.UAT_FIXTURE_JSON" in guard
+    layout = _read("app", "dashboard", "layout.tsx")
+    assert "process.env.UAT_FIXTURE_JSON" in layout, \
+        "CI 2026-07-22: journeys all landed on /login — the PAGE gate must open in fixture mode too"
+    assert 'redirect("/login")' in layout, "the real gate stays for production"
     db = _read("lib", "db.ts")
     assert "UAT_FIXTURE_JSON" in db and "fixtureAwareNeon" in db, \
         "the same env replaces the DB — the bypass can never reach real data"
@@ -182,6 +186,8 @@ def test_u7_reit_invit_excluded_from_both_feeds():
     lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
     assert "AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)" in cc  # locked rule untouched
     assert cc.count("REIT|InvIT") == 1 and lp.count("REIT|InvIT") == 1
+    # U13 (CUBEINVIT): fused symbols have no word boundary — symbol guard too
+    assert cc.count("(INVIT|REIT)") == 1 and lp.count("(INVIT|REIT)") == 1
 
 
 def test_u8_ticker_falls_back_to_consolidated_strong_key():
@@ -225,3 +231,88 @@ def test_fetch_peer_pe_is_import_safe():
     src = _read("_scripts", "fetch_peer_pe.py")
     assert 'sys.exit("pip install requests' not in src.split("def ")[0], \
         "no sys.exit at import time — it aborts pytest collection"
+
+
+# ── UAT CI round 2 (owner's Actions log, 2026-07-22) ──────────────────────
+
+def test_playwright_projects_all_run_on_chromium():
+    """CI installs chromium only; iPad/iPhone device descriptors default to
+    webkit — tablet+mobile died with 'Executable doesn't exist'. Every
+    project pins browserName chromium (device viewport/UA still emulated)."""
+    cfg = _read("playwright.config.ts")
+    assert cfg.count('browserName: "chromium"') >= 2
+    assert 'outputDir: "uat-results"' in cfg, "artifacts must not nest inside the html reporter folder"
+
+
+def test_audit_is_information_schema_driven_two_table():
+    src = _read("_scripts", "data_quality_audit.py")
+    assert "information_schema.columns" in src, "never assume a column exists (final_qib crash)"
+    assert '("ipo_consolidated", "final_qib"' in src and '("ipo_intelligence", "nse_symbol"' in src
+    assert "serving table" in src, "owner design: consolidated serves, intelligence sources"
+
+
+def test_backfill_clamps_window_and_reads_aliases():
+    src = _read("_scripts", "backfill_listing_window_candles.py")
+    assert "INTERVAL '45 days'" in src, "one dirty lock date (FUSION) must not break a fetch"
+    assert "symbol_aliases" in src and 'aliases.get(sym, "")' in src
+    ddl = _read("_scripts", "schema_sync.py")
+    assert "CREATE TABLE IF NOT EXISTS symbol_aliases" in ddl
+
+
+def test_u12_details_view_renders_after_the_pills_row():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.index("pills.map") < page.index('view==="details"'), \
+        "details content must not push the nav to the page bottom"
+
+
+def test_u10_sticky_hero_has_no_stacking_blur():
+    css = _read("app", "globals.css")
+    sect = css.split(".aac-sticky-decision")[1][:400]
+    assert "backdrop-filter" not in sect, "blur painted over the markets/journey panels (U10)"
+    assert "z-index: 20" in sect and "max-height: 700px" in sect
+
+
+def test_ci_artifact_upload_yaml_is_valid_block_mapping():
+    """Owner CI 2026-07-22: 'Input required and not supplied: path' — the
+    upload step mixed a flow mapping with a block scalar. Pin the shape."""
+    ci = _read(".github", "workflows", "ci.yml")
+    assert "with: { name: uat-report" not in ci
+    assert "          path: |\n            uat-report/\n            uat-results/" in ci
+
+
+def test_news_feeds_reject_placeholder_rows():
+    """Owner pasted the manual-insert TEMPLATE verbatim and '<paste exact
+    headline>' rendered on the live site. Feeds require a real URL and a
+    headline that isn't template text."""
+    cc = _read("app", "api", "ipo-command", "route.ts")
+    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "n.url ~* '^https?://'" in cc and "n.headline NOT LIKE '<%'" in cc
+    assert "n2.url ~* '^https?://'" in lp and "n2.headline NOT LIKE '<%'" in lp
+
+
+# ── Golden table (owner architecture, 2026-07-22) ─────────────────────────
+
+def test_golden_table_is_durable_plus_one_object_view():
+    """ipo_consolidated is REBUILT each run (wiped-listing-tape incident), so
+    golden fields live in DURABLE ipo_golden and the VIEW ipo_master gives
+    the owner's one-object reads. No ALTERs on the rebuilt table."""
+    ddl = _read("_scripts", "schema_sync.py")
+    assert "CREATE TABLE IF NOT EXISTS ipo_golden" in ddl
+    assert "CREATE OR REPLACE VIEW ipo_master" in ddl
+    for col in ("candles_json JSONB", "rhp_sonnet_json JSONB", "sbi_haiku_json JSONB",
+                "lot_size INT", "anchor_lock90_date DATE", "street_url TEXT"):
+        assert col in ddl, col
+    assert "ALTER TABLE ipo_consolidated ADD COLUMN" not in ddl
+
+
+def test_consolidation_is_fill_empty_strong_key_and_automated():
+    src = _read("_scripts", "consolidate_master.py")
+    assert "COALESCE(g.{col}" in src and "WHERE g.{col} IS NULL" in src, "fill-empty-only"
+    assert "regexp_replace(lower(" in src and "symbol_final" in src, "strong keys only"
+    assert "json_agg(json_build_object('d', p.date" in src, "candles materialize into the golden table"
+    assert "json_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
+    assert "n.headline NOT LIKE '<%%'" in src, "placeholder rows never reach the golden table"
+    lean = _read("_scripts", "run_ipo_pipeline_lean.py")
+    assert '"consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
+    jr = _read("_scripts", "job_runner.py")
+    assert '"consolidate"' in jr

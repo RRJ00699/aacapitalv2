@@ -118,9 +118,13 @@ button:active, [role="button"]:active { transform: scale(.985); }
 .aac-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .aac-table-wrap table { min-width: 640px; }
 /* Sticky decision bar (Live screen) — always-visible primary answer. */
-.aac-sticky-decision { position: sticky; top: 0; z-index: 40;
-  backdrop-filter: blur(6px); background: color-mix(in srgb, var(--t-bg) 88%, transparent);
+/* U10 (2026-07-22): blur created a stacking context that painted over the
+   markets column and journey panel while scrolling. Solid bg, low z, and no
+   stickiness on short viewports where the hero would eat the screen. */
+.aac-sticky-decision { position: sticky; top: 0; z-index: 20;
+  background: var(--t-bg);
   border-bottom: 1px solid var(--t-border); }
+@media (max-height: 700px) { .aac-sticky-decision { position: static; } }
 /* Touch targets ≥44px on coarse pointers (WCAG 2.5.8). */
 @media (pointer: coarse) { button, [role="option"] { min-height: 44px; } }
 

@@ -57,12 +57,23 @@ def main() -> int:
     kite = KiteConnect(api_key=API_KEY)
     kite.set_access_token(row[0])
     imap = {i["tradingsymbol"]: i["instrument_token"] for i in kite.instruments("NSE")}
+    # symbol_aliases: renames/mergers (e.g. ZOMATO -> ETERNAL). Owner-curated
+    # rows; the run prints every unmapped symbol so the table fills over time.
+    aliases = {}
+    try:
+        cur.execute("SELECT old_symbol, new_symbol FROM symbol_aliases")
+        aliases = {str(o).upper(): str(nw).upper() for o, nw in cur.fetchall()}
+    except Exception:
+        conn.rollback()  # table may not exist yet — aliases stay empty
+    print(f"symbol aliases loaded: {len(aliases)}")
 
     # Eligible universe (LOCKED rule), window = listing -> lock-in.
     cur.execute("""
         SELECT UPPER(COALESCE(NULLIF(btrim(nse_symbol), ''), btrim(symbol))) AS sym,
                listing_date,
-               COALESCE(anchor_lock30_date, (listing_date + INTERVAL '30 days')::date) AS lock30
+               LEAST(COALESCE(anchor_lock30_date, (listing_date + INTERVAL '30 days')::date),
+                     (listing_date + INTERVAL '45 days')::date) AS lock30  -- clamp: one dirty
+                     -- lock date (FUSION, years off) must not break a fetch
         FROM ipo_intelligence
         WHERE COALESCE(is_sme, false) = false
           AND (issue_size_cr IS NULL OR issue_size_cr >= 200)
@@ -80,7 +91,7 @@ def main() -> int:
         if a.limit and fetched >= a.limit:
             print(f"--limit {a.limit} reached — rerun to continue")
             break
-        tok = imap.get(sym)
+        tok = imap.get(sym) or imap.get(aliases.get(sym, ""))
         if tok is None:
             missing_token += 1
             print(f"  ! {sym:14} not on NSE instrument list (delisted/renamed?) — needs manual map")
