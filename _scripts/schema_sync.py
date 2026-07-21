@@ -25,6 +25,18 @@ def _canon(col):
 
 
 DDL = [
+    # rule_validation_results (Phase 10, 2026-07-22): every backtest result
+    # with full provenance — dataset, filters, versions, timestamp. Durable.
+    """CREATE TABLE IF NOT EXISTS rule_validation_results (
+        id BIGSERIAL PRIMARY KEY,
+        rule_id TEXT NOT NULL, rule_version TEXT NOT NULL,
+        backtest_version TEXT NOT NULL, dataset TEXT NOT NULL,
+        sql_filter TEXT NOT NULL, rule_filter TEXT NOT NULL,
+        date_range TEXT, n INT NOT NULL,
+        win_rate NUMERIC, avg_return NUMERIC, median_return NUMERIC,
+        max_drawdown NUMERIC, expectancy NUMERIC, p_vs_baseline NUMERIC,
+        beats_baseline BOOLEAN, baseline_win_rate NUMERIC, universe_n INT,
+        run_at TIMESTAMPTZ NOT NULL)""",
     # symbol_aliases (2026-07-22): NSE renames/mergers for historical backfills
     # (e.g. ZOMATO -> ETERNAL). Owner-curated; backfill scripts consult it.
     """CREATE TABLE IF NOT EXISTS symbol_aliases (

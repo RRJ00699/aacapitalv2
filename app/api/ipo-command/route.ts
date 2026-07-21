@@ -164,6 +164,7 @@ export async function GET(req?: Request) {
              g.anchor_lock30_date AS lock30_date, g.anchor_lock90_date AS lock90_date,
              g.mcap_cr, g.ronw, g.price_to_book, g.promoter_pre_pct, g.promoter_post_pct,
              jsonb_array_length(g.candles_json) AS candle_days,
+             g.candles_json,
              g.rhp_sonnet_json->>'one_line' AS sonnet_one_line,
              (g.sbi_haiku_json IS NOT NULL) AS haiku_present,
              g.street_headline AS g_street_headline, g.street_publisher AS g_street_publisher,

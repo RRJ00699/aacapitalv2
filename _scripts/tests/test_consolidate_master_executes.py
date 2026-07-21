@@ -15,7 +15,9 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     import psycopg2
     conn = psycopg2.connect(pg_uri); conn.autocommit = True; cur = conn.cursor()
-    cur.execute("DROP VIEW IF EXISTS ipo_gold")
+    for stmt in ("DROP VIEW IF EXISTS ipo_gold", "DROP TABLE IF EXISTS ipo_gold"):
+        try: cur.execute(stmt)
+        except Exception: pass  # whichever form the previous test left
     cur.execute("""DROP TABLE IF EXISTS ipo_golden, ipo_consolidated, ipo_intelligence,
                    ipo_research_notes, ipo_news, price_candles CASCADE""")
     cur.execute("""CREATE TABLE ipo_consolidated (company_name TEXT, symbol_final TEXT,
