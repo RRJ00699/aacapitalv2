@@ -22,8 +22,8 @@ import os, re, io, sys, time, argparse
 
 try:
     import requests
-except ImportError:
-    sys.exit("pip install requests --break-system-packages")
+except ImportError:  # import-safe: fail at RUN time, not import time
+    requests = None  # type: ignore[assignment]
 try:
     import pandas as pd
 except ImportError:
@@ -101,7 +101,13 @@ def get_peer_median_pe(s, cid, symbol):
         return round(float(peer_vals.median()), 2), n_peers, "computed-median"
     return None, n_peers, "insufficient peer PEs"
 
+def _require_requests():
+    if requests is None:
+        sys.exit("pip install requests --break-system-packages")
+
+
 def main():
+    _require_requests()
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbols", nargs="*", help="test specific NSE symbols")
     ap.add_argument("--apply", action="store_true", help="write to DB (default is dry-run)")

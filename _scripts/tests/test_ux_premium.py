@@ -193,3 +193,35 @@ def test_u8_ticker_falls_back_to_consolidated_strong_key():
     assert "FROM ipo_consolidated" in src
     assert "COALESCE(NULLIF(btrim(symbol_final),''), NULLIF(btrim(nse_symbol),''), btrim(symbol))" in src
     assert "consolidated fallback unavailable" in src, "fallback must degrade gracefully"
+
+
+# ── Phase 10 slice 1: data foundation scripts ─────────────────────────────
+
+def test_phase10_backfill_is_fill_empty_only_and_gated():
+    src = _read("_scripts", "backfill_listing_window_candles.py")
+    assert "ON CONFLICT (symbol, date) DO NOTHING" in src, "fill-empty-only: never overwrite"
+    assert "h >= max(o, cl) and lo <= min(o, cl)" in src, "OHLC sanity gate before write"
+    assert "REIT|InvIT" in src and "issue_size_cr >= 200" in src, "eligible universe only"
+    assert "anchor_lock30_date" in src, "window ends at the anchor lock-in"
+    assert "time.sleep" in src, "rate-limited"
+    assert "--dry-run" in src and "--apply" in src
+
+
+def test_phase10_audit_is_read_only():
+    src = _read("_scripts", "data_quality_audit.py")
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "CREATE TABLE"):
+        assert verb not in src, f"audit must be read-only, found {verb}"
+    assert "99.9" in src and "blank BOTH symbol columns" in src
+
+
+def test_ci_uat_job_has_full_python_deps():
+    ci = _read(".github", "workflows", "ci.yml")
+    # regression: uat job installed only pytest+pg, import of fetch_peer_pe
+    # (requests) INTERNALERROR'd collection. Both jobs now share the dep set.
+    assert ci.count("requests pandas lxml") >= 2, "uat job needs the same deps as the test job"
+
+
+def test_fetch_peer_pe_is_import_safe():
+    src = _read("_scripts", "fetch_peer_pe.py")
+    assert 'sys.exit("pip install requests' not in src.split("def ")[0], \
+        "no sys.exit at import time — it aborts pytest collection"

@@ -60,7 +60,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: npm ci
-      - run: pip install pytest psycopg2-binary pgserver
+      - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml
       - run: npx playwright install --with-deps chromium
       - name: Full UAT (typecheck + build + pytest + browser journeys + a11y)
         run: npm run uat:all
