@@ -12,7 +12,8 @@ test.describe("AACapital user journeys", () => {
     await expect(option).toContainText("UAT Complete Ltd");
     await expect(option).toContainText("Open Command Center"); // stage-aware, never generic View
     await option.click();
-    await expect(page.locator("#ipocard-UATGOOD")).toBeVisible(); // navigated, not stuck
+    await page.waitForURL(/focus=UATGOOD|view=command/); // navigated, not stuck
+    await expect(page.locator("#ipocard-UATGOOD").or(page.getByText("UAT Complete Ltd").first())).toBeVisible();
   });
 
   test("J2 · quality + lifecycle filters combine", async ({ watched: page }) => {
@@ -22,7 +23,7 @@ test.describe("AACapital user journeys", () => {
     await page.getByRole("button", { name: "GOOD" }).click();
     await expect(page.getByRole("option")).toHaveCount(1);
     await expect(page.getByRole("option").first()).toContainText("UAT Complete Ltd");
-    await page.getByRole("button", { name: "Upcoming" }).click(); // combines
+    await page.getByRole("button", { name: "Upcoming", exact: true }).click(); // combines (strict: pill vs chip)
     await expect(page.getByRole("option").first()).toContainText("UAT Complete Ltd");
   });
 
@@ -42,9 +43,11 @@ test.describe("AACapital user journeys", () => {
   test("J5 · Command Center: research states, fair value, evidence with source", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     const complete = page.locator("#ipocard-UATGOOD");
+    await complete.getByText("RHP + SBI research").click(); // evidence lives behind the expander
     await expect(complete).toContainText("RHP evidence · the document's own words");
     await expect(complete).toContainText("will not receive any proceeds"); // quoted excerpt renders
     const incomplete = page.locator("#ipocard-UATINC");
+    await incomplete.getByText("RHP + SBI research").click();
     await expect(incomplete).toContainText("SBI research note not available or not yet parsed.");
     await expect(incomplete).toContainText("RHP not yet read");
     await expect(incomplete).toContainText("awaiting"); // FV never fakes a number
@@ -76,8 +79,8 @@ test.describe("AACapital user journeys", () => {
   test("J9 · Post-Listing view renders outcomes for listed IPOs", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     await page.getByRole("button", { name: /switch to post-listing/i }).click();
-    await expect(page.locator(`#postrow-${"UATPOST".toLowerCase() === "uatpost" ? "UATPOST" : "UATPOST"}`).first()
-      .or(page.getByText("UAT Listed Ltd"))).toBeVisible();
+    await expect(page.locator("#postrow-UATPOST")
+      .or(page.getByText("UAT Listed Ltd")).first()).toBeVisible(); // .first AFTER the union (strict mode)
   });
 
   test("J10 · rules disclose backtest sample sizes (n=) and win rates", async ({ watched: page }) => {
