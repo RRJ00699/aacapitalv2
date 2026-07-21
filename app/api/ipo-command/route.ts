@@ -193,6 +193,9 @@ export async function GET(req?: Request) {
         -- issue_size NULL (size-pending upcoming) stays visible.
         AND COALESCE(c.is_sme, false) = false
         AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)
+        -- U7 (2026-07-22, owner evidence): 'Bagmane Prime Office REIT' leaked
+        -- via size NULL + is_sme=false. REIT/InvIT units are not IPO equities.
+        AND c.company_name !~* '\\y(REIT|InvIT)\\y'
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;

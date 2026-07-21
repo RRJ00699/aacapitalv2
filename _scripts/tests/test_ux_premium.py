@@ -169,3 +169,27 @@ def test_smoke_is_read_only():
 def test_ci_blocks_on_uat():
     ci = _read(".github", "workflows", "ci.yml")
     assert "npm run uat:all" in ci and "playwright install" in ci
+
+
+# ── UAT round 2 (owner DB evidence, 2026-07-22) ───────────────────────────
+
+def test_u7_reit_invit_excluded_from_both_feeds():
+    """Owner evidence: 'Bagmane Prime Office REIT' (size NULL, is_sme=false)
+    leaked through the eligibility rule. REIT/InvIT units are not IPO
+    equities — excluded at ipo-command AND live-preopen, with the LOCKED
+    eligibility rule text left byte-identical."""
+    cc = _read("app", "api", "ipo-command", "route.ts")
+    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)" in cc  # locked rule untouched
+    assert cc.count("REIT|InvIT") == 1 and lp.count("REIT|InvIT") == 1
+
+
+def test_u8_ticker_falls_back_to_consolidated_strong_key():
+    """Owner evidence: SBIFUNDS listing morning — intelligence symbol columns
+    blank until the evening enrich, launcher tracked 5 names and missed the
+    one listing. Discovery now unions ipo_consolidated's strong key for the
+    same window."""
+    src = _read("_scripts", "ipo", "kite_ticker_ipo.py")
+    assert "FROM ipo_consolidated" in src
+    assert "COALESCE(NULLIF(btrim(symbol_final),''), NULLIF(btrim(nse_symbol),''), btrim(symbol))" in src
+    assert "consolidated fallback unavailable" in src, "fallback must degrade gracefully"
