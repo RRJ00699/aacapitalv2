@@ -59,7 +59,9 @@ DDL = [
     # each pipeline run (see test_no_columns_on_rebuilt_tables — the wiped
     # listing-tape incident), so durable fields live in ipo_golden (its OWN
     # table, keyed by normalized company name) and the VIEW ipo_master joins
-    # them: single-object reads, rebuild-proof storage.
+    # them: single-object reads, rebuild-proof storage. Named ipo_gold because
+    # ipo_master already exists in prod as a LEGACY v1 table with dependents
+    # (foundation engines) — never hijack a live name.
     """CREATE TABLE IF NOT EXISTS ipo_golden (
         company_key TEXT PRIMARY KEY,
         company_name TEXT NOT NULL,
@@ -79,7 +81,7 @@ DDL = [
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
         candles_json JSONB,
         golden_filled_at TIMESTAMPTZ)""",
-    """CREATE OR REPLACE VIEW ipo_master AS
+    """CREATE OR REPLACE VIEW ipo_gold AS
         SELECT c.*, g.isin, g.lot_size, g.face_value,
                g.allotment_date, g.refund_date, g.credit_date,
                g.anchor_amount_cr, g.anchor_lock90_date,
