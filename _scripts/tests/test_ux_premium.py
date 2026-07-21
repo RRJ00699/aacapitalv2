@@ -278,3 +278,13 @@ def test_ci_artifact_upload_yaml_is_valid_block_mapping():
     ci = _read(".github", "workflows", "ci.yml")
     assert "with: { name: uat-report" not in ci
     assert "          path: |\n            uat-report/\n            uat-results/" in ci
+
+
+def test_news_feeds_reject_placeholder_rows():
+    """Owner pasted the manual-insert TEMPLATE verbatim and '<paste exact
+    headline>' rendered on the live site. Feeds require a real URL and a
+    headline that isn't template text."""
+    cc = _read("app", "api", "ipo-command", "route.ts")
+    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "n.url ~* '^https?://'" in cc and "n.headline NOT LIKE '<%'" in cc
+    assert "n2.url ~* '^https?://'" in lp and "n2.headline NOT LIKE '<%'" in lp

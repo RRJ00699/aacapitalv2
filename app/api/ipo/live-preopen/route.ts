@@ -297,6 +297,7 @@ export async function GET() {
              (SELECT json_build_object('publisher', n2.publisher, 'headline', n2.headline, 'url', n2.url)
                 FROM ipo_news n2
                 WHERE n2.is_current AND n2.fetch_status = 'ok' AND n2.publisher <> '-'
+                  AND n2.url ~* '^https?://' AND n2.headline NOT LIKE '<%'
                   AND (UPPER(n2.nse_symbol) = UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol))
                        OR n2.company_name = ipo_consolidated.company_name)
                 ORDER BY (n2.source = 'manual') DESC, n2.created_at DESC LIMIT 1) AS news

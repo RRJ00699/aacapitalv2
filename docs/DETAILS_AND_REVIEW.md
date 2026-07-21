@@ -43,6 +43,25 @@ Last verified against code: 2026-07-22
 | News | ipo_news (this release) | — |
 | Listing review tape | journey candles (D0-D5 via /api/ipo/journey), listing fields | VWAP, delivery %, turnover (Kite/NSE bhavcopy — next) |
 
+## THE ONE-TABLE DECISION (owner, 2026-07-22 — architecture, locked)
+ipo_consolidated becomes the GOLDEN serving table: every field the UI shows
+lives there as a column — including rhp_sonnet_json + sbi_haiku_json copies.
+Source precedence per field: IPOMatrix (primary) -> NSE (fallback) ->
+Chittorgarh detail page; fill-empty-only; one consolidation job backfills.
+Other tables may live as raw sources but are NOT backfilled unless needed,
+and routes stop join-hunting across them. Column set from the SBIFUNDS
+golden reference: lot_size, face_value, isin, allotment_date, refund_date,
+credit_date, anchor_amount_cr, anchor_lock30_date, anchor_lock90_date,
+sub_day1_x, sub_day2_x, sub_day3_x, bnii_x, snii_x, total_applications,
+employee_discount, employee_quota_shares, shareholder_quota_shares,
+promoter_pre_pct, promoter_post_pct, mcap_cr, issue_expenses_cr,
+registrar_name, registrar_phone, registrar_email, ronw, ebitda_margin,
+price_to_book, gmp_history_json, financials_3y_json, rhp_sonnet_json,
+sbi_haiku_json. Implementation = next major commit on this PR: schema_sync
+DDL + consolidate_master.py (fill-empty, PC-runnable for the owner's local
+backfill) + routes simplified to single-table SELECTs + CompleteDetails
+binding every field.
+
 ## Next slices (in order)
 1. Listing Review view UI (state machine + outcome summary + observations
    are DONE in lib; wire the view like Details, feed the week tape from the

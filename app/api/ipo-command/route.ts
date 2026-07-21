@@ -164,6 +164,7 @@ export async function GET(req?: Request) {
                                        'url', n.url, 'published_at', n.published_at, 'snippet', n.snippet)
                 FROM ipo_news n
                 WHERE n.is_current AND n.fetch_status = 'ok' AND n.publisher <> '-'
+                  AND n.url ~* '^https?://' AND n.headline NOT LIKE '<%'
                   AND (UPPER(n.nse_symbol) = UPPER(COALESCE(c.symbol_final, c.nse_symbol, c.symbol)) OR n.company_name = c.company_name)
                 ORDER BY (n.source = 'manual') DESC, n.created_at DESC LIMIT 1) AS news,
              ii.price_band_low AS band_low, ii.chittorgarh_slug, ii.score_band, ii.score_expected_win, ii.quality_score, ii.quality_conf,
