@@ -40,6 +40,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""CREATE TABLE ipo_golden (company_key TEXT PRIMARY KEY, company_name TEXT,
         nse_symbol TEXT, isin TEXT, lot_size INT, allotment_date DATE, mcap_cr NUMERIC,
         price_to_book NUMERIC, promoter_post_pct NUMERIC, registrar_name TEXT,
+        anchor_lock30_date DATE, anchor_lock90_date DATE, ebitda_margin NUMERIC,
         ronw NUMERIC, sub_day3_x NUMERIC, total_applications BIGINT,
         rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
@@ -57,7 +58,8 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         ('SBI Funds Management Ltd.','<paste exact headline>','Reuters','<paste url>','manual')""")
     cur.execute("""INSERT INTO price_candles VALUES
         ('SBIFUNDS','2026-07-21',613.3,641,600,609.75,90000000),
-        ('SBIFUNDS','2026-07-22',610,615,601,604,30000000)""")
+        ('SBIFUNDS','2026-07-22',610,615,601,604,30000000),
+        ('SBIFUNDS','2026-07-23',700,600,650,900,1)""")  # impossible OHLC — must be excluded
     conn.close()
 
     monkeypatch.setenv("DATABASE_URL", pg_uri)
@@ -81,7 +83,11 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     assert float(ronw) == 43.02 and float(d3) == 41.66 and apps == 6380000
     assert sonnet == "clean" and haiku == "SUBSCRIBE"
     assert head == "SBI Funds debuts above issue", "placeholder row must lose to the real one"
-    assert days == 2, "candles_json materialized listing-window OHLCV"
+    assert days == 2, "impossible-OHLC row excluded; real sessions kept"
+    cur.execute("SELECT anchor_lock30_date, anchor_lock90_date FROM ipo_golden")
+    l30, l90 = cur.fetchone()
+    assert str(l30) == "2026-08-20" and str(l90) == "2026-10-19", \
+        "lock dates derived listing+30/90 when vendor never supplied them"
     # second run: idempotent, fill-empty (no duplicate seeding, values stable)
     importlib.reload(consolidate_master)
     assert consolidate_master.main() == 0
