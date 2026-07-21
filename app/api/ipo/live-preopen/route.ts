@@ -293,7 +293,13 @@ export async function GET() {
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol, ipo_consolidated.symbol))
                      OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
                         = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g'))
-              LIMIT 1) AS sbi_parsed
+              LIMIT 1) AS sbi_parsed,
+             (SELECT json_build_object('publisher', n2.publisher, 'headline', n2.headline, 'url', n2.url)
+                FROM ipo_news n2
+                WHERE n2.is_current AND n2.fetch_status = 'ok' AND n2.publisher <> '-'
+                  AND (UPPER(n2.nse_symbol) = UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol))
+                       OR n2.company_name = ipo_consolidated.company_name)
+                ORDER BY (n2.source = 'manual') DESC, n2.created_at DESC LIMIT 1) AS news
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'

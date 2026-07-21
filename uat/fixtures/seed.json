@@ -89,7 +89,14 @@
    "return_listing_open": null,
    "gmp_day_before_pct": null,
    "gmp_max_pct": null,
-   "gmp_min_pct": null
+   "gmp_min_pct": null,
+   "news": {
+    "publisher": "Reuters",
+    "headline": "UAT Complete debuts above expectations as analysts flag rich valuation",
+    "url": "https://www.reuters.com/markets/asia/uat",
+    "published_at": "2026-07-22",
+    "snippet": "Shares opened above the issue price..."
+   }
   },
   {
    "company_name": "UAT Incomplete Ltd",
@@ -163,7 +170,8 @@
    "return_listing_open": null,
    "gmp_day_before_pct": null,
    "gmp_max_pct": null,
-   "gmp_min_pct": null
+   "gmp_min_pct": null,
+   "news": null
   },
   {
    "company_name": "UAT Listing Ltd",
@@ -237,7 +245,8 @@
    "return_listing_open": null,
    "gmp_day_before_pct": null,
    "gmp_max_pct": null,
-   "gmp_min_pct": null
+   "gmp_min_pct": null,
+   "news": null
   },
   {
    "company_name": "UAT Listed Ltd",
@@ -311,7 +320,8 @@
    "return_listing_open": null,
    "gmp_day_before_pct": null,
    "gmp_max_pct": null,
-   "gmp_min_pct": null
+   "gmp_min_pct": null,
+   "news": null
   }
  ],
  "from ipo_consolidated\n": [
@@ -333,11 +343,17 @@
    "revenue_cagr_3y": null,
    "debt_equity": null,
    "rhp_gate": "some-concerns",
-   "sbi_parsed": true
+   "sbi_parsed": true,
+   "news": {
+    "publisher": "Reuters",
+    "headline": "UAT Listing opens higher in strong debut",
+    "url": "https://www.reuters.com/markets/asia/uat2"
+   }
   }
  ],
  "from ipo_daily_levels": [],
  "from price_candles": [],
  "from ipo_tick_feed": [],
- "from market_snapshot": []
+ "from market_snapshot": [],
+ "from ipo_news n": []
 }

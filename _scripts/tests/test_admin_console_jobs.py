@@ -110,13 +110,15 @@ def test_cards_query_survives_missing_insights_table(pg_uri):
     sys.path.insert(0, tests)
     from contract_schema import CONTRACT_DDL
     route = open(os.path.join(repo, "app", "api", "ipo-command", "route.ts"), encoding="utf-8").read()
-    heal = re.search(r"await sql`(CREATE TABLE IF NOT EXISTS ipo_insights .*?)`", route, re.S).group(1)
+    heals = re.findall(r"await sql`(CREATE TABLE IF NOT EXISTS [a-z_]+ .*?)`", route, re.S)
     cards_sql = re.search(r"const cards = await sql`\n(.*?)`;", route, re.S).group(1)
     cards_sql = re.sub(r"\$\{[^}]*\}", "NULL", cards_sql).replace("\\\\", "\\")
     c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
     cur.execute(CONTRACT_DDL)
     cur.execute("DROP TABLE IF EXISTS ipo_insights")          # the incident state
-    cur.execute(heal)                                          # route self-heal
+    cur.execute("DROP TABLE IF EXISTS ipo_news")
+    for heal in heals:
+        cur.execute(heal)                                      # route self-heals (insights + news)
     cur.execute(cards_sql)                                     # the real query
     cur.fetchall()                                             # no NeonDbError-equivalent
     c.close()

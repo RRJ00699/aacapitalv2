@@ -64,6 +64,12 @@ def api_db(pg_uri):
     import psycopg2
     c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
     cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
+      CREATE TABLE ipo_news (
+        id BIGSERIAL PRIMARY KEY, company_name TEXT NOT NULL, nse_symbol TEXT,
+        publisher TEXT NOT NULL, headline TEXT NOT NULL, url TEXT NOT NULL,
+        published_at TIMESTAMPTZ, snippet TEXT, selection_score INT,
+        source TEXT NOT NULL DEFAULT 'rss', fetch_status TEXT NOT NULL DEFAULT 'ok',
+        is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW());
       CREATE TABLE ipo_consolidated (
         company_name TEXT, listing_date DATE, ipo_open_date DATE, ipo_close_date DATE,
         issue_size_cr NUMERIC, issue_price NUMERIC, ipo_score INT, score_band TEXT,

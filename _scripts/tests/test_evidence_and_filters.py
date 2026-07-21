@@ -79,7 +79,7 @@ def test_api_ipo_hard_filter():
     assert FILTER.search(src) and SIZE.search(src)
 
 def test_cache_keys_bumped_for_filter_change():
-    assert "ipo-command:v3" in _read("app", "api", "ipo-command", "route.ts")
+    assert "ipo-command:v4" in _read("app", "api", "ipo-command", "route.ts")
     assert "live-preopen:rows:v2" in _read("app", "api", "ipo", "live-preopen", "route.ts")
 
 

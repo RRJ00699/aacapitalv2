@@ -11,6 +11,7 @@ import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
 import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
+import CompleteDetails from "@/components/ipo/CompleteDetails";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
   constructor(p: {children: React.ReactNode}) { super(p); this.state = { err: false }; }
@@ -616,6 +617,11 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
       {/* PR-D readiness gate: INCOMPLETE research is a first-class state —
           a go-signal with unread research is treated as WATCH, and we say
           exactly which inputs are missing (server-attested, never guessed). */}
+      {L && (L as R).news != null && (()=>{const n=(L as R).news as R;return (
+        <div style={{margin:"6px 0 8px",fontSize:11.5,color:C.sub}}>
+          <span style={{fontWeight:800,color:C.meta,fontSize:9.5,letterSpacing:.4,textTransform:"uppercase"}}>Street · {String(n.publisher)}</span>{" "}
+          <a href={String(n.url)} target="_blank" rel="noopener noreferrer" style={{color:C.blue,fontWeight:600}}>{String(n.headline)}</a>
+        </div>);})()}
       {L && L.research_ready === false && (
         <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: C.amberBg,
           border: `1px solid ${C.amberBd}`, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -970,8 +976,19 @@ function IpoCommand() {
     return Array.from(best.values()).map(e => e.c);
   })();
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["live","Live"],["command","Command"],["calc","Calculator"],["pb","Playbook"],
+  const pills: [string,string][] = [["live","Live"],["command","Command"],["details","Complete Details"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
+  // Deep links (2026-07-22): /dashboard/ipo2?view=details&ipo=SYM — exact
+  // symbol key (strong key; never fuzzy). Selection state for details view.
+  const [detailSym,setDetailSym]=useState<string>("");
+  useEffect(()=>{
+    try{
+      const sp=new URLSearchParams(window.location.search);
+      const v=sp.get("view"); const ipo=sp.get("ipo");
+      if(ipo) setDetailSym(ipo.toUpperCase());
+      if(v==="details") setView("details");
+    }catch{/* best-effort */}
+  },[]);
 
   return (
     <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
@@ -992,6 +1009,22 @@ function IpoCommand() {
         <ThemeToggle/>
       </div>
       {!d && <div style={{marginTop:12}}><Skeleton h={120} n={4}/></div>}
+      {view==="details" && d && (()=>{
+        const all=(d.cards||[]) as R[];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {all.map((c,i)=>(
+                <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
+                  aria-pressed={sel===c}
+                  style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
+                    border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
+                  {String(c.sym||c.company_name||"")}</button>))}
+            </div>
+            <CompleteDetails c={sel as R}/>
+          </div>
+        );})()}
 
       {/* engine strip — plain-English grades, rigor one line below */}
       <div style={{...card,marginTop:12}}>

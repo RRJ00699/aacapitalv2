@@ -93,3 +93,23 @@ test.describe("AACapital user journeys", () => {
     await noHorizontalOverflow(page);
   });
 });
+
+test.describe("Complete Details + street news (2026-07-22)", () => {
+  test("J11 · deep link opens details; missing fields render em-dash with source; news links out", async ({ watched: page }) => {
+    await page.goto("/dashboard/ipo2?view=details&ipo=UATGOOD");
+    await expect(page.getByText("Issue structure")).toBeVisible();
+    await expect(page.getByText("Lot size")).toBeVisible();
+    await expect(page.getByText(/pending \(Chittorgarh/).first()).toBeVisible(); // honest gap, named source
+    const link = page.getByRole("link", { name: /debuts above expectations/i });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", /reuters\.com/);
+    await expect(page.getByText("linked & summarized, never scraped")).toBeVisible();
+  });
+
+  test("J12 · details for the incomplete IPO invents nothing", async ({ watched: page }) => {
+    await page.goto("/dashboard/ipo2?view=details&ipo=UATINC");
+    await expect(page.getByText("QUALITY: INCOMPLETE")).toBeVisible();
+    await expect(page.getByText("No street report available yet")).toBeVisible();
+    await expect(page.getByText("pending analysis")).toBeVisible(); // evidence gap named
+  });
+});
