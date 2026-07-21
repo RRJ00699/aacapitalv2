@@ -294,11 +294,14 @@ def test_news_feeds_reject_placeholder_rows():
 
 def test_golden_table_is_durable_plus_one_object_view():
     """ipo_consolidated is REBUILT each run (wiped-listing-tape incident), so
-    golden fields live in DURABLE ipo_golden and the VIEW ipo_master gives
+    golden fields live in DURABLE ipo_golden and the VIEW ipo_gold gives
     the owner's one-object reads. No ALTERs on the rebuilt table."""
     ddl = _read("_scripts", "schema_sync.py")
     assert "CREATE TABLE IF NOT EXISTS ipo_golden" in ddl
-    assert "CREATE OR REPLACE VIEW ipo_master" in ddl
+    assert "CREATE OR REPLACE VIEW ipo_gold" in ddl
+    # prod incident 2026-07-22: ipo_master is a LEGACY v1 TABLE with
+    # dependents — the view must never try to take that name
+    assert "CREATE OR REPLACE VIEW ipo_master" not in ddl
     for col in ("candles_json JSONB", "rhp_sonnet_json JSONB", "sbi_haiku_json JSONB",
                 "lot_size INT", "anchor_lock90_date DATE", "street_url TEXT"):
         assert col in ddl, col
