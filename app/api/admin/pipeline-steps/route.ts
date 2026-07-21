@@ -23,7 +23,6 @@ export const EXPECTED_LEAN_STEPS: Array<{ step: string; weekly?: boolean }> = [
   { step: "delivery pct (NSE bhavcopy)" },
   { step: "market regime + VIX (today)" },
   { step: "candles: in-window daily sync" },
-  { step: "candles: full NSE universe" },
   { step: "listing-day fields (kite)" },
   { step: "derive listing_open" },
   { step: "download SBI notes (new only)" },

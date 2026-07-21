@@ -116,6 +116,18 @@ def test_kite_skips_are_recorded_not_silent():
     guarded = src.split("if kite_ok:")
     assert len(guarded) >= 3, "journal must sit behind its own kite_ok guard"
     assert "sync_trade_journal.py" in guarded[2] or "sync_trade_journal.py" in guarded[-1]
-    for nm in ("candles: in-window daily sync", "candles: full NSE universe",
+    for nm in ("candles: in-window daily sync",
                "listing-day fields (kite)", "derive listing_open"):
         assert src.count(f'"{nm}"') >= 2, f"skip row missing for {nm}"
+
+
+def test_core_ipo_scope_no_universe_candles():
+    """LOCKED scope (owner 2026-07-21): Core IPO platform — no 1400-stock
+    universe sync in the pipeline, no Admin button, no EXPECTED entry. The
+    in-window IPO sync remains the only candle producer."""
+    lean = open(os.path.join(ROOT, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
+    assert 'step("candles: full NSE universe"' not in lean
+    assert 'step("candles: in-window daily sync"' in lean
+    assert '"universe_candles"' not in open(os.path.join(ROOT, "job_runner.py"), encoding="utf-8").read()
+    route = open(os.path.join(REPO, "app", "api", "admin", "pipeline-steps", "route.ts"), encoding="utf-8").read()
+    assert "full NSE universe" not in route

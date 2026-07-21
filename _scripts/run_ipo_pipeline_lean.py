@@ -160,8 +160,12 @@ def main():
 
     # ── KITE PRICE DATA (skip cleanly if token stale) ──
     if kite_ok:
+        # 2026-07-21 (owner): Core IPO platform — the 1400-stock universe sync
+        # is equity-era scope. Its only market-wide consumer (regime breadth)
+        # reads LOCAL_DATABASE_URL, absent on the VM, so it has been falling
+        # back to 50%% neutral every run anyway. IPO symbols come from the
+        # in-window sync; post-window charts freeze — accepted trade-off.
         step("candles: in-window daily sync", ["sync_inwindow_candles.py"])
-        step("candles: full NSE universe",    ["kite-sync-candles.py"])
         step("listing-day fields (kite)",     ["ipo/backfill_ipo_ohlc.py"])
         step("derive listing_open",           ["fill_listing_open_from_candles.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     else:
@@ -171,7 +175,6 @@ def main():
         # token (refresh crons at 08:45). A deliberate skip is a green row
         # with the reason, not a silent hole.
         for _nm, _sc in (("candles: in-window daily sync", "sync_inwindow_candles.py"),
-                         ("candles: full NSE universe", "kite-sync-candles.py"),
                          ("listing-day fields (kite)", "ipo/backfill_ipo_ohlc.py"),
                          ("derive listing_open", "fill_listing_open_from_candles.py")):
             _log_step(_nm, _sc, True, "skipped — Kite token stale (expected on the 08:30 run)")

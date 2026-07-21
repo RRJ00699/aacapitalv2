@@ -30,7 +30,7 @@ const ALLOWED_JOBS = new Set([
   "gmp",                           // GMP scrape (IPO context)
   "sbi_download", "sbi_parse",     // SBI research notes (street view)
   // IPO daily levels
-  "universe_candles",              // candle sync (post-listing dashboard)
+  // candle sync (post-listing dashboard)
   "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)
   // Added 2026-07-18: these existed in job_runner.py AND had console buttons,

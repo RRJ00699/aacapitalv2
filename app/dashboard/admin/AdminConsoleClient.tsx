@@ -28,7 +28,6 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
-  { key: "universe_candles",label: "Sync candles",          desc: "NSE daily OHLCV, rolling 5 days (Kite) — feeds post-listing dashboard" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
   { key: "rhp_auto",        label: "RHP auto (new IPOs)",   desc: "SEBI download → Sonnet extract (mainboard, $1 cap) → ipo_rhp_intel → purge PDF after anchor lock-in", heavy: true },
