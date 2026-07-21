@@ -118,13 +118,11 @@ button:active, [role="button"]:active { transform: scale(.985); }
 .aac-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .aac-table-wrap table { min-width: 640px; }
 /* Sticky decision bar (Live screen) — always-visible primary answer. */
-/* U10 (2026-07-22): blur created a stacking context that painted over the
-   markets column and journey panel while scrolling. Solid bg, low z, and no
-   stickiness on short viewports where the hero would eat the screen. */
-.aac-sticky-decision { position: sticky; top: 0; z-index: 20;
-  background: var(--t-bg);
-  border-bottom: 1px solid var(--t-border); }
-@media (max-height: 700px) { .aac-sticky-decision { position: static; } }
+/* U10 REOPENED->CLOSED (2026-07-23, owner screenshots): the sticky element
+   is the ENTIRE ~600px rules card, so scrolling hid everything beneath it
+   (SBI title + HOLD chip buried). Sticky removed outright — a compact
+   decision BAR can earn stickiness later; a full card never can. */
+.aac-sticky-decision { position: static; }
 /* Touch targets ≥44px on coarse pointers (WCAG 2.5.8). */
 @media (pointer: coarse) { button, [role="option"] { min-height: 44px; } }
 

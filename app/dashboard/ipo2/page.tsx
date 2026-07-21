@@ -982,6 +982,7 @@ function IpoCommand() {
   // Deep links (2026-07-22): /dashboard/ipo2?view=details&ipo=SYM — exact
   // symbol key (strong key; never fuzzy). Selection state for details view.
   const [detailSym,setDetailSym]=useState<string>("");
+  const [detailQ,setDetailQ]=useState<string>("");
   useEffect(()=>{
     try{
       const sp=new URLSearchParams(window.location.search);
@@ -1053,8 +1054,16 @@ function IpoCommand() {
         const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
         return (
           <div style={{marginTop:12}}>
+            <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
+              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
+              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+                border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.map((c,i)=>(
+              {all.filter(c=>{
+                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+                return String(c.sym||"").toLowerCase().includes(q) ||
+                       String(c.company_name||"").toLowerCase().includes(q);
+              }).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
@@ -1074,8 +1083,16 @@ function IpoCommand() {
         const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
         return (
           <div style={{marginTop:12}}>
+            <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
+              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
+              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+                border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.map((c,i)=>(
+              {all.filter(c=>{
+                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+                return String(c.sym||"").toLowerCase().includes(q) ||
+                       String(c.company_name||"").toLowerCase().includes(q);
+              }).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",

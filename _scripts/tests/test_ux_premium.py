@@ -265,11 +265,12 @@ def test_u12_details_view_renders_after_the_pills_row():
         "details content must not push the nav to the page bottom"
 
 
-def test_u10_sticky_hero_has_no_stacking_blur():
+def test_u10_hero_is_not_sticky():
+    """Owner screenshots 2026-07-23: the sticky element was the ENTIRE 600px
+    rules card — scrolling buried everything beneath it. Sticky removed."""
     css = _read("app", "globals.css")
-    sect = css.split(".aac-sticky-decision")[1][:400]
-    assert "backdrop-filter" not in sect, "blur painted over the markets/journey panels (U10)"
-    assert "z-index: 20" in sect and "max-height: 700px" in sect
+    sect = css.split(".aac-sticky-decision")[1][:200]
+    assert "position: static" in sect and "position: sticky" not in sect
 
 
 def test_ci_artifact_upload_yaml_is_valid_block_mapping():
@@ -334,3 +335,17 @@ def test_golden_fields_flow_to_command_and_details():
     det = _read("components", "ipo", "CompleteDetails.tsx")
     for f in ("candle_days", "sonnet_one_line", "lock30_date", "ISIN"):
         assert f in det, f
+
+
+def test_live_serves_listing_day_only():
+    """Stale day-old SBIFUNDS card (frozen pre-open book, eternal 'awaiting')
+    was served at 03:32 IST via the old 7-day window. Live = IST-today only;
+    D1..D5 belong to Listing Review."""
+    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "listing_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" in lp
+    assert "INTERVAL '7 days'" not in lp
+
+
+def test_details_and_review_selectors_are_searchable():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.count("Search IPO by name or symbol") == 2, "hardcoded button rows gained a search filter (owner ask)"

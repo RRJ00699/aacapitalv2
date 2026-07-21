@@ -303,8 +303,11 @@ export async function GET() {
                 ORDER BY (n2.source = 'manual') DESC, n2.created_at DESC LIMIT 1) AS news
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
-        AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
-        AND listing_date <= CURRENT_DATE + INTERVAL '1 day'
+        -- UAT 2026-07-23: a day-old SBIFUNDS card (stale pre-open book,
+        -- volume 'awaiting' forever) was still served at 03:32 IST — the old
+        -- 7-day window. Live is the LISTING-DAY engine: IST-today ONLY;
+        -- D1..D5 live in the Listing Review view.
+        AND listing_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
         -- HARD FILTER (audit #6): SME + confirmed <Rs.200cr never reach the
         -- listing-day decision surface (LOCKED rule); NULL size stays.
         AND COALESCE(is_sme, false) = false
