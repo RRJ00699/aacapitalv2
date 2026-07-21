@@ -365,3 +365,9 @@ def test_ingest_maps_discovery_keys():
     for k in ('"ronw"', '"roce"', '"eps_pre"', '"eps_post"', '"ebitda_margin"',
               '"peer_json"', '"kpi_as_of"', 'ronw_2'):
         assert k in ing, k
+
+
+def test_intraday_panel_retires_after_listing_day_ist():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert "listedIst < istToday" in page and "5.5*3600_000" in page, \
+        "owner 2026-07-23: the intraday panel comes down after listing day, IST-clocked"

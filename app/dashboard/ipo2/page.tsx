@@ -1217,10 +1217,16 @@ function IpoCommand() {
                     <b style={{fontFamily:"var(--f-display)",fontSize:16,letterSpacing:-0.2}}>{String(wc.company_name||sym)}</b>
                     <span style={{...num,fontSize:11,color:C.meta}}>listed {D(wc.listing_date)}</span>
                   </div>
+                  {(()=>{ // owner 2026-07-23: intraday panel comes DOWN after
+                    // listing day — IST clock, not server TZ.
+                    const istToday=new Date(Date.now()+5.5*3600_000).toISOString().slice(0,10);
+                    const listedIst=String(wc.listing_date||"").slice(0,10);
+                    if(!listedIst || listedIst < istToday) return null; // D1+: panel gone; Review owns it
+                    return (
                   <div style={{border:`1px dashed ${C.border}`,borderRadius:11,padding:"12px 13px",marginTop:10}}>
-                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Daily closes (EOD)</div>
-                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Intraday ticks capture only on listing morning. From D1 the exit engine runs on daily closes — full session table in Listing Review.</div>
-                  </div>
+                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Intraday capture</div>
+                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Ticks capture during listing-morning market hours. From tomorrow this panel retires — daily closes live in Listing Review.</div>
+                  </div>); })()}
                 </div>
               )}
 
