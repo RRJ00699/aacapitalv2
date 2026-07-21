@@ -23,8 +23,10 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""CREATE TABLE ipo_intelligence (company_name TEXT, isin TEXT,
         lot_size INT, allotment_date DATE, mcap_cr NUMERIC, ronw NUMERIC,
         sub_day3_x NUMERIC, total_applications BIGINT)""")
+    # PROD TRUTH: ipo_research_notes has NO stored_at (predates it) — id SERIAL
+    # is the only recency column (see schema_sync's 2026-07-18 note).
     cur.execute("""CREATE TABLE ipo_research_notes (company TEXT, source TEXT,
-        full_json JSONB, stored_at TIMESTAMPTZ DEFAULT NOW())""")
+        full_json JSONB, id SERIAL)""")
     cur.execute("""CREATE TABLE ipo_news (company_name TEXT, headline TEXT, publisher TEXT,
         url TEXT, source TEXT DEFAULT 'rss', fetch_status TEXT DEFAULT 'ok',
         is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())""")
@@ -40,6 +42,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""INSERT INTO ipo_intelligence VALUES
         ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116900,43.02,41.66,6380000)""")
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
+        ('SBI Funds Management Ltd.','RHP_SONNET','{"one_line":"stale"}'),
         ('SBI Funds Management Ltd.','RHP_SONNET','{"one_line":"clean"}'),
         ('SBI Funds Management Ltd.','SBI','{"rating":"SUBSCRIBE"}')""")
     cur.execute("""INSERT INTO ipo_news (company_name, headline, publisher, url, source) VALUES
