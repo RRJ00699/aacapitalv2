@@ -151,12 +151,30 @@ def extract(js):
       "listing_open":num(lo),"listing_high":num(lh),"listing_low":num(ll),"listing_close":num(lc),
       "mcap_offer":num(mc.get("at_offer_price")),
       "promoter_holding_post":num(pph.get("promoter_shareholding_post_issue")),
+      # [discovery] keys from the owner's --raw evidence (2026-07-23). The
+      # *_2 variants are the later-period restatement — prefer plain, fall
+      # back to _2. peer_analysis is stored whole (dated peer table).
+      "ronw":num(kpi.get("ronw") if kpi.get("ronw") is not None else kpi.get("ronw_2")),
+      "roce":num(kpi.get("roce") if kpi.get("roce") is not None else kpi.get("roce_2")),
+      "eps_pre":num(kpi.get("eps_pre")),
+      "eps_post":num(kpi.get("eps_post")),
+      "ebitda_margin":num(kpi.get("ebitda_margin") if kpi.get("ebitda_margin") is not None else kpi.get("ebitda_margin_2")),
+      "pat_margin":num(kpi.get("pat_margin") if kpi.get("pat_margin") is not None else kpi.get("pat_margin_2")),
+      "nav_per_share":num(kpi.get("nav") if kpi.get("nav") is not None else kpi.get("nav_2")),
+      "post_pe_ratio":num(kpi.get("post_pe_ratio")),
+      "market_cap_kpi_cr":num(kpi.get("market_cap_cr")),
+      "kpi_as_of":(kpi.get("latest_fy_dt") or kpi.get("latest_financial_dt") or kpi.get("as_of_date")),
+      "peer_json":json.dumps(d.get("peer_analysis")) if isinstance(d.get("peer_analysis"),dict) and d.get("peer_analysis",{}).get("data") else None,
     }
     return {k:v for k,v in out.items() if v is not None}
 
 NEW_COLS={  # column: sql type — added if missing
   "anchor_pct_issue":"NUMERIC","registrar":"TEXT","rii_subscription":"NUMERIC",
   "listing_close":"NUMERIC","mcap_offer":"NUMERIC","anchor_total_cr":"NUMERIC",
+  "ronw":"NUMERIC","roce":"NUMERIC","eps_pre":"NUMERIC","eps_post":"NUMERIC",
+  "ebitda_margin":"NUMERIC","pat_margin":"NUMERIC","nav_per_share":"NUMERIC",
+  "post_pe_ratio":"NUMERIC","market_cap_kpi_cr":"NUMERIC","kpi_as_of":"TEXT",
+  "peer_json":"JSONB",
 }
 
 def resolve_ids(jwt):

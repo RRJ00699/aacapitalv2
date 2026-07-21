@@ -32,7 +32,7 @@ COLTYPE = {
     "sub_day1_x": "numeric", "sub_day2_x": "numeric", "sub_day3_x": "numeric",
     "total_applications": "bigint", "promoter_pre_pct": "numeric",
     "promoter_post_pct": "numeric", "mcap_cr": "numeric", "ronw": "numeric",
-    "price_to_book": "numeric", "registrar_name": "text",
+    "price_to_book": "numeric", "registrar_name": "text", "ebitda_margin": "numeric",
 }
 
 # scalar fills: golden column -> intelligence expression (fill-empty-only)
@@ -56,6 +56,7 @@ SCALARS = {
     "ronw": "i.ronw",
     "price_to_book": "i.ipo_pb",
     "registrar_name": "i.registrar",
+    "ebitda_margin": "i.ebitda_margin",
 }
 
 STRONG = "UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol)))"

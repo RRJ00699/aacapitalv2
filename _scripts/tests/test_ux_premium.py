@@ -356,3 +356,12 @@ def test_search_card_offers_complete_details_and_default_is_closest_listed():
     assert "view=details&ipo=" in search and "Complete Details" in search
     page = _read("app", "dashboard", "ipo2", "page.tsx")
     assert page.count("closestListed") >= 4, "Details+Review default to the most recently listed IPO"
+
+
+def test_ingest_maps_discovery_keys():
+    """Owner --raw [discovery] evidence 2026-07-23: unmapped kpi keys wired
+    (plain-over-_2 fallback) + peer_analysis stored whole with as-of date."""
+    ing = _read("_scripts", "ipomatrix_ingest.py")
+    for k in ('"ronw"', '"roce"', '"eps_pre"', '"eps_post"', '"ebitda_margin"',
+              '"peer_json"', '"kpi_as_of"', 'ronw_2'):
+        assert k in ing, k
