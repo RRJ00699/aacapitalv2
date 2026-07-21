@@ -186,6 +186,8 @@ def test_u7_reit_invit_excluded_from_both_feeds():
     lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
     assert "AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)" in cc  # locked rule untouched
     assert cc.count("REIT|InvIT") == 1 and lp.count("REIT|InvIT") == 1
+    # U13 (CUBEINVIT): fused symbols have no word boundary — symbol guard too
+    assert cc.count("(INVIT|REIT)") == 1 and lp.count("(INVIT|REIT)") == 1
 
 
 def test_u8_ticker_falls_back_to_consolidated_strong_key():
@@ -255,3 +257,16 @@ def test_backfill_clamps_window_and_reads_aliases():
     assert "symbol_aliases" in src and 'aliases.get(sym, "")' in src
     ddl = _read("_scripts", "schema_sync.py")
     assert "CREATE TABLE IF NOT EXISTS symbol_aliases" in ddl
+
+
+def test_u12_details_view_renders_after_the_pills_row():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.index("pills.map") < page.index('view==="details"'), \
+        "details content must not push the nav to the page bottom"
+
+
+def test_u10_sticky_hero_has_no_stacking_blur():
+    css = _read("app", "globals.css")
+    sect = css.split(".aac-sticky-decision")[1][:400]
+    assert "backdrop-filter" not in sect, "blur painted over the markets/journey panels (U10)"
+    assert "z-index: 20" in sect and "max-height: 700px" in sect

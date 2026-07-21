@@ -1009,22 +1009,6 @@ function IpoCommand() {
         <ThemeToggle/>
       </div>
       {!d && <div style={{marginTop:12}}><Skeleton h={120} n={4}/></div>}
-      {view==="details" && d && (()=>{
-        const all=(d.cards||[]) as R[];
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
-        return (
-          <div style={{marginTop:12}}>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.map((c,i)=>(
-                <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
-                  aria-pressed={sel===c}
-                  style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
-                    border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
-                  {String(c.sym||c.company_name||"")}</button>))}
-            </div>
-            <CompleteDetails c={sel as R}/>
-          </div>
-        );})()}
 
       {/* engine strip — plain-English grades, rigor one line below */}
       <div style={{...card,marginTop:12}}>
@@ -1058,6 +1042,28 @@ function IpoCommand() {
             transition:"all .2s var(--ease)"}}>{k==="live" && liveSyms.length>0 ? <><span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>{l}</> : l}</span>))}
       </div>
       {err && <div style={{margin:"6px 0"}}><ErrorState title="API error" detail={String(err)} onRetry={()=>window.location.reload()}/></div>}
+      {view==="details" && d && (()=>{
+        // U11 partial: cards + post rows; a full-universe index endpoint is
+        // the follow-up (docs/UAT_TRACKER.md) so EVERY historical IPO appears.
+        const seen=new Set<string>();
+        const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
+          const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
+          if(!k||seen.has(k))return false; seen.add(k); return true;});
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {all.map((c,i)=>(
+                <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
+                  aria-pressed={sel===c}
+                  style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
+                    border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
+                  {String(c.sym||c.company_name||"")}</button>))}
+            </div>
+            <CompleteDetails c={sel as R}/>
+          </div>
+        );})()}
+
 
       {/* LIVE — the trading surface: live panel + exit engine side-by-side */}
       {view==="live" && <>

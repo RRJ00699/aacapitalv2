@@ -196,6 +196,7 @@ export async function GET(req?: Request) {
         -- U7 (2026-07-22, owner evidence): 'Bagmane Prime Office REIT' leaked
         -- via size NULL + is_sme=false. REIT/InvIT units are not IPO equities.
         AND c.company_name !~* '\\y(REIT|InvIT)\\y'
+        AND COALESCE(c.symbol_final, c.nse_symbol, c.symbol, '') !~* '(INVIT|REIT)'
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;

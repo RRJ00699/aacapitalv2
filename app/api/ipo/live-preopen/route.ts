@@ -309,6 +309,7 @@ export async function GET() {
         AND COALESCE(is_sme, false) = false
         AND (issue_size_cr IS NULL OR issue_size_cr >= 200)
         AND company_name !~* '\\y(REIT|InvIT)\\y'  -- U7: instrument guard
+        AND COALESCE(symbol_final, nse_symbol, symbol, '') !~* '(INVIT|REIT)'  -- U13: fused symbols (CUBEINVIT)
       ORDER BY listing_date ASC, issue_size_cr DESC NULLS LAST
     `), 3600)) as Array<Record<string, unknown>>;
 

@@ -23,4 +23,10 @@ that's been the whole pattern of this codebase's regressions.
 | D1 | Complete Details view v1 shipped (payload-complete, honest gaps) | DONE this branch | see docs/DETAILS_AND_REVIEW.md matrix | J11/J12 + test_listing_review |
 | D2 | Listing Review view UI (derivations shipped in lib; UI next slice) | OPEN (next) | reviewState/observations pure + tested | executed tests exist |
 | D3 | Street news: table+discovery+manual override+Command/Live/Details surfacing | DONE this branch | Reuters preferred; linked never scraped; VM runtime pending first pipeline run | test_news_module_contracts |
+| U10 | Live: markets column + journey panel vanish while scrolling; bottom scroll unfriendly | FIXED this branch (sticky hero blur removed — stacking context painted over siblings; z 40→20; static on short viewports). Owner to re-verify on device | css pinned |
+| U11 | Complete Details must cover ALL IPOs, not the command window | PARTIAL this branch (selector = cards+post union); FULL universe index endpoint is the next slice | selector code pinned |
+| U12 | Details view rendered nav pills at page bottom | FIXED this branch (view block moved after the pills row like every other view) | order test |
+| U13 | CUBEINVIT leaked past the REIT/InvIT guard | FIXED this branch (fused symbols carry no word boundary — symbol-pattern guard added to both feeds) | test updated |
+| U14 | Live page missing journey section for SBIFUNDS (other IPO shows chart) | OPEN (evidence) | need: which section is absent vs the IPO that shows it — screenshot of both cards or the payload row | — |
+| D2 | LISTING REVIEW UI (the 5-session after-listing screen) | NEXT — priority 1 | derivations shipped+tested in lib/listing-review.ts; UI wiring is the next commit | executed tests exist |
 | F2 | Listing circuit band (5/10/20%) on Live + Journey at ~09:55 | OPEN (feature) | NSE publishes the band pre-open; needs a capture source (nse_preopen_capture likely sees it) | — |
