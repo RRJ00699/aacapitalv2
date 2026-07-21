@@ -131,3 +131,49 @@ def test_core_ipo_scope_no_universe_candles():
     assert '"universe_candles"' not in open(os.path.join(ROOT, "job_runner.py"), encoding="utf-8").read()
     route = open(os.path.join(REPO, "app", "api", "admin", "pipeline-steps", "route.ts"), encoding="utf-8").read()
     assert "full NSE universe" not in route
+
+
+def test_ticker_targets_use_strong_symbol_key(pg_uri):
+    """Volume-confirm silent failure: the ticker's auto-today read only
+    `symbol`. EXECUTED: a row with empty symbol + real nse_symbol must
+    resolve; SME and small issues stay excluded."""
+    import importlib.util
+    import psycopg2
+    spec = importlib.util.spec_from_file_location("kt", os.path.join(ROOT, "ipo", "kite_ticker_ipo.py"))
+    kt = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(kt)
+    except SystemExit:
+        pass
+    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
+    cur.execute("DROP TABLE IF EXISTS ipo_intelligence CASCADE")
+    cur.execute("""CREATE TABLE ipo_intelligence (id SERIAL PRIMARY KEY, company_name TEXT,
+        symbol TEXT, nse_symbol TEXT, is_sme BOOLEAN, issue_size_cr NUMERIC,
+        listing_date DATE, anchor_lock30_date DATE)""")
+    cur.execute("""INSERT INTO ipo_intelligence
+        (company_name, symbol, nse_symbol, is_sme, issue_size_cr, listing_date) VALUES
+        ('SBI Funds Management Ltd.', '', 'SBIFUNDS', false, 11692.91, CURRENT_DATE),
+        ('Legacy Sym Ltd', 'LEGACY', NULL, false, 500, CURRENT_DATE),
+        ('Tiny Ltd', 'TINY', 'TINY', false, 126, CURRENT_DATE),
+        ('SME Corp', 'SMEC', 'SMEC', true, 300, CURRENT_DATE)""")
+    syms = kt.resolve_auto_today_symbols(c)
+    assert syms == ["SBIFUNDS", "LEGACY"], f"strong-key resolution broken: {syms}"
+    c.close()
+
+
+def test_listed_past_compares_utc_parts():
+    src = open(os.path.join(REPO, "app", "dashboard", "ipo2", "page.tsx"), encoding="utf-8").read()
+    assert "ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate()" in src, \
+        "listing date must be read in UTC parts — browser-local shifted US viewers a day back"
+    assert "const l0 = new Date(ld.getFullYear()" not in src
+
+
+def test_search_click_navigates_and_handoff_exists():
+    search = open(os.path.join(REPO, "components", "features", "ipo-search.tsx"), encoding="utf-8").read()
+    row_start = search.index('role="option"')
+    row = search[row_start:row_start + 400]
+    assert "onClick={() => pick(c)}" in row, "row click must NAVIGATE, not just expand"
+    shell = open(os.path.join(REPO, "components", "app-shell", "AppShell.tsx"), encoding="utf-8").read()
+    assert "aac:pending-focus" in shell and "/dashboard/ipo2" in shell
+    page = open(os.path.join(REPO, "app", "dashboard", "ipo2", "page.tsx"), encoding="utf-8").read()
+    assert 'sessionStorage.getItem("aac:pending-focus")' in page
