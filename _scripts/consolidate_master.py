@@ -70,6 +70,9 @@ def main() -> int:
     conn = psycopg2.connect(db, connect_timeout=25)
     conn.autocommit = False
     cur = conn.cursor()
+    # bounded worst-case: no statement may hold Neon compute > 3 minutes;
+    # a timeout fails the step loudly and the next run resumes (fill-empty).
+    cur.execute("SET statement_timeout = '180s'")
 
     # seed golden rows for every consolidated company (idempotent)
     cur.execute("""INSERT INTO ipo_golden (company_key, company_name, nse_symbol)

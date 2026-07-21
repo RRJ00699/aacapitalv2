@@ -81,23 +81,7 @@ DDL = [
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
         candles_json JSONB,
         golden_filled_at TIMESTAMPTZ)""",
-    """CREATE OR REPLACE VIEW ipo_gold AS
-        SELECT c.*, g.isin, g.lot_size, g.face_value,
-               g.allotment_date, g.refund_date, g.credit_date,
-               g.anchor_amount_cr, g.anchor_lock90_date,
-               g.sub_day1_x, g.sub_day2_x, g.sub_day3_x, g.bnii_x, g.snii_x,
-               g.total_applications, g.employee_discount, g.employee_quota_shares,
-               g.shareholder_quota_shares, g.promoter_pre_pct, g.promoter_post_pct,
-               g.mcap_cr, g.issue_expenses_cr,
-               g.registrar_name, g.registrar_phone, g.registrar_email,
-               g.ronw, g.ebitda_margin, g.price_to_book,
-               g.gmp_history_json, g.financials_3y_json,
-               g.rhp_sonnet_json, g.sbi_haiku_json,
-               g.street_headline, g.street_publisher, g.street_url,
-               g.candles_json, g.golden_filled_at
-        FROM ipo_consolidated c
-        LEFT JOIN ipo_golden g
-          ON g.company_key = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')""",
+    "__IPO_GOLD_VIEW__",  # generated dynamically — see build_ipo_gold_view()
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS is_sme BOOLEAN",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS issue_size_cr NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS eps_source TEXT",
@@ -282,6 +266,46 @@ DDL = [
         finished_at TIMESTAMPTZ, exit_code INT, error TEXT, log_tail TEXT)""",
 ]
 
+
+
+# Golden-only columns (must mirror the ipo_golden CREATE above, minus keys).
+GOLD_COLS = ["isin", "lot_size", "face_value", "allotment_date", "refund_date",
+    "credit_date", "anchor_amount_cr", "anchor_lock30_date", "anchor_lock90_date",
+    "sub_day1_x", "sub_day2_x", "sub_day3_x", "bnii_x", "snii_x",
+    "total_applications", "employee_discount", "employee_quota_shares",
+    "shareholder_quota_shares", "promoter_pre_pct", "promoter_post_pct",
+    "mcap_cr", "issue_expenses_cr", "registrar_name", "registrar_phone",
+    "registrar_email", "ronw", "ebitda_margin", "price_to_book",
+    "gmp_history_json", "financials_3y_json", "rhp_sonnet_json",
+    "sbi_haiku_json", "street_headline", "street_publisher", "street_url",
+    "candles_json", "golden_filled_at"]
+
+
+def build_ipo_gold_view(cur):
+    """ipo_consolidated is REBUILT per run and its column set can change
+    (prod already carries e.g. isin), so the one-object view is GENERATED
+    from information_schema each sync: overlapping names become
+    COALESCE(consolidated, golden); golden-only columns come from g."""
+    cur.execute("""SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'ipo_consolidated' ORDER BY ordinal_position""")
+    cons = [r[0] for r in cur.fetchall()]
+    cur.execute("""SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'ipo_golden'""")
+    gold_actual = {r[0] for r in cur.fetchall()}
+    gold = [c for c in GOLD_COLS if c in gold_actual]  # only columns that exist
+    gold_only = [c for c in gold if c not in cons]
+    sel = []
+    for c in cons:
+        if c in gold:
+            sel.append(f'COALESCE(c."{c}", g."{c}") AS "{c}"')
+        else:
+            sel.append(f'c."{c}"')
+    sel += [f'g."{c}"' for c in gold_only]
+    return ("CREATE OR REPLACE VIEW ipo_gold AS SELECT " + ", ".join(sel) +
+            " FROM ipo_consolidated c LEFT JOIN ipo_golden g ON g.company_key = "
+            "regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')")
+
+
 def main():
     # PER-STATEMENT ISOLATION (Rakesh 2026-07-17): each DDL commits on its own so
     # ONE failure (e.g. a UNIQUE index blocked by existing dupes) can never roll
@@ -293,6 +317,20 @@ def main():
     ok = 0; failed = []
     for ddl in DDL:
         try:
+            if ddl == "__IPO_GOLD_VIEW__":
+                # view shape changes need DROP first (CREATE OR REPLACE can't
+                # reorder/remove columns). DROP+CREATE run in ONE explicit
+                # transaction so readers never observe a missing view, even
+                # mid-sync under traffic (autocommit would commit each alone).
+                cur.execute("BEGIN")
+                try:
+                    cur.execute("DROP VIEW IF EXISTS ipo_gold")
+                    cur.execute(build_ipo_gold_view(cur))
+                    cur.execute("COMMIT")
+                except Exception:
+                    cur.execute("ROLLBACK"); raise
+                ok += 1
+                continue
             cur.execute(ddl); ok += 1
         except Exception as e:
             label = " ".join(ddl.split()[:6])
