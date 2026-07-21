@@ -96,3 +96,12 @@ def test_haiku_gate_excludes_sme_and_small_on_real_postgres(pg_uri):
     names = sorted(r[1] for r in cur.fetchall())
     assert names == ["Mainboard Null Size Ltd"], f"gate leaked: {names}"
     c.close()
+
+
+def test_rhp_auto_final_line_names_failed_substep():
+    """The board truncates step output; rhp_auto's LAST line must name the
+    failing substep + real stderr so reds are diagnosable from the phone."""
+    src = open(os.path.join(ROOT, "rhp_auto.py"), encoding="utf-8").read()
+    assert 'LAST_ERR["label"] = label' in src
+    assert 'FAILED substep [' in src
+    assert src.index("FAILED substep [") > src.index("def run(label, args):")

@@ -64,6 +64,9 @@ def spent_today(conn):
         return float(cur.fetchone()[0] or 0)
 
 
+LAST_ERR = {"label": None, "tail": ""}
+
+
 def run(label, args):
     print(f"\n[{label}] {' '.join(args)}")
     r = subprocess.run([sys.executable] + args, cwd=REPO,
@@ -71,6 +74,11 @@ def run(label, args):
     for l in (r.stdout or "").strip().splitlines()[-8:]: print("   " + l)
     if r.returncode != 0:
         for l in (r.stderr or "").strip().splitlines()[-4:]: print("   ! " + l)
+        # 2026-07-21: the pipeline board truncates output — remember the real
+        # cause so the FINAL line (which survives truncation-from-the-end)
+        # names the failing substep + stderr.
+        LAST_ERR["label"] = label
+        LAST_ERR["tail"] = " | ".join((r.stderr or r.stdout or "").strip().splitlines()[-3:])[:200]
     return r.returncode == 0
 
 
@@ -189,6 +197,8 @@ def main():
         print("\n[purge] PDFs past anchor lock-in")
         purge_after_lockin(apply=True)
     finally:
+        if LAST_ERR["label"]:
+            print(f"\nFAILED substep [{LAST_ERR['label']}]: {LAST_ERR['tail']}")
         # Always compute + record spend, even if a step above threw — fault-proof budget.
         processed, deferred, spent = summarize_spend_and_queue()
         if deferred and not cap_hit:
