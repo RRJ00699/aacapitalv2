@@ -312,8 +312,8 @@ def test_consolidation_is_fill_empty_strong_key_and_automated():
     src = _read("_scripts", "consolidate_master.py")
     assert "COALESCE(g.{col}" in src and "WHERE g.{col} IS NULL" in src, "fill-empty-only"
     assert "regexp_replace(lower(" in src and "symbol_final" in src, "strong keys only"
-    assert "json_agg(json_build_object('d', p.date" in src, "candles materialize into the golden table"
-    assert "json_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
+    assert "jsonb_agg(jsonb_build_object('d', p.date" in src, "candles materialize into the golden table"
+    assert "jsonb_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
     assert "n.headline NOT LIKE '<%%'" in src, "placeholder rows never reach the golden table"
     lean = _read("_scripts", "run_ipo_pipeline_lean.py")
     assert '"consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
