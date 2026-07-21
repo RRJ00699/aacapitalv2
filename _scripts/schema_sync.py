@@ -25,6 +25,23 @@ def _canon(col):
 
 
 DDL = [
+    # ── ipo_news (2026-07-22): one selected street article per IPO. Discovery
+    # via whitelisted Google News RSS (free) + manual admin override. Metadata
+    # + short snippet ONLY — never full article text (copyright + licensing).
+    """CREATE TABLE IF NOT EXISTS ipo_news (
+        id BIGSERIAL PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        nse_symbol TEXT,
+        publisher TEXT NOT NULL,
+        headline TEXT NOT NULL,
+        url TEXT NOT NULL,
+        published_at TIMESTAMPTZ,
+        snippet TEXT,
+        selection_score INT,
+        source TEXT NOT NULL DEFAULT 'rss',
+        fetch_status TEXT NOT NULL DEFAULT 'ok',
+        is_current BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW())""",
     # ── ipo_intelligence: derived/score/quality columns ──
     # 2026-07-21: eligibility columns — production has them from the scraper
     # era, but the DDL owner never declared them; a fresh DB crashed the

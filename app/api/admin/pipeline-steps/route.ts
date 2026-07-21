@@ -27,6 +27,7 @@ export const EXPECTED_LEAN_STEPS: Array<{ step: string; weekly?: boolean }> = [
   { step: "derive listing_open" },
   { step: "download SBI notes (new only)" },
   { step: "parse SBI notes -> DB" },
+  { step: "street news discovery (free RSS)" },
   { step: "SBI Haiku extract ($0.50 cap)" },
   { step: "RHP forensic (Sonnet, $3/day cap)" },
   { step: "ipo score v0 (derived)" },

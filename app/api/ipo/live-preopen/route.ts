@@ -26,7 +26,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
-function db() { return neon(process.env.DATABASE_URL!); }
+import { fixtureAwareNeon } from "@/lib/db";
+function db() { return fixtureAwareNeon(process.env.DATABASE_URL!); }
 
 // ── KV cache (ledger #13) — 60s TTL, HARD BYPASS during the official NSE
 // special pre-open window (this file's timing model, corrected 2026-07-16):
@@ -251,7 +252,12 @@ function confidence(all: Rule[], rhpReject: boolean, ofsPeReject: boolean, anyAv
   if (!passed.length) return 0;
   // weighted average of passed rules' win rates, penalised for avoid flags
   const avg = passed.reduce((s, r) => s + (r.win as number), 0) / passed.length;
-  let conf = avg;
+  // UAT bug 2026-07-21: avg-of-passed ONLY meant 2/9 elite passes (avg 89)
+  // outranked 4/9 (avg 84) — coverage never entered. Blend: half the score
+  // is the quality of what passed, half scales with HOW MUCH of the rulebook
+  // passed. Deterministic, uses only existing backtested win rates.
+  const scoreable = all.filter(r => r.win != null).length || 1;
+  let conf = avg * (0.5 + 0.5 * (passed.length / scoreable));
   if (ofsPeReject) conf -= 20;
   else if (anyAvoid) conf -= 10;
   return Math.max(0, Math.min(100, Math.round(conf)));
@@ -287,7 +293,13 @@ export async function GET() {
                 AND (UPPER(n.nse_symbol)=UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol, ipo_consolidated.symbol))
                      OR regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')
                         = regexp_replace(lower(ipo_consolidated.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g'))
-              LIMIT 1) AS sbi_parsed
+              LIMIT 1) AS sbi_parsed,
+             (SELECT json_build_object('publisher', n2.publisher, 'headline', n2.headline, 'url', n2.url)
+                FROM ipo_news n2
+                WHERE n2.is_current AND n2.fetch_status = 'ok' AND n2.publisher <> '-'
+                  AND (UPPER(n2.nse_symbol) = UPPER(COALESCE(ipo_consolidated.symbol_final, ipo_consolidated.nse_symbol))
+                       OR n2.company_name = ipo_consolidated.company_name)
+                ORDER BY (n2.source = 'manual') DESC, n2.created_at DESC LIMIT 1) AS news
       FROM ipo_consolidated
       WHERE listing_date IS NOT NULL
         AND listing_date >= CURRENT_DATE - INTERVAL '7 days'
@@ -296,6 +308,7 @@ export async function GET() {
         -- listing-day decision surface (LOCKED rule); NULL size stays.
         AND COALESCE(is_sme, false) = false
         AND (issue_size_cr IS NULL OR issue_size_cr >= 200)
+        AND company_name !~* '\\y(REIT|InvIT)\\y'  -- U7: instrument guard
       ORDER BY listing_date ASC, issue_size_cr DESC NULLS LAST
     `), 3600)) as Array<Record<string, unknown>>;
 

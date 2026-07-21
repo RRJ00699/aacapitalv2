@@ -62,3 +62,80 @@ input, button, textarea, select { outline: none; font-family: inherit; }
 .live-split > .rp { flex: 1 1 34%; min-width: 280px; display: flex; flex-direction: column; }
 .live-split > .rp > div { margin-top: 0 !important; }
 @media (max-width: 768px) { .live-split { flex-direction: column; } .live-split > .rp { min-width: 0; } }
+
+/* ═══ UX system (feat/ux-premium, 2026-07-21) ═══════════════════════════
+   Semantic status tokens — ONE meaning per color, app-wide. These alias the
+   base palette so light/dark themes keep working automatically. */
+:root {
+  /* company quality + live decision + research states */
+  --s-good: var(--t-green);   --s-good-bg: var(--t-greenBg);   --s-good-bd: var(--t-greenBd);
+  --s-watch: var(--t-amber);  --s-watch-bg: var(--t-amberBg);  --s-watch-bd: var(--t-amberBd);
+  --s-junk: var(--t-red);     --s-junk-bg: var(--t-redBg);     --s-junk-bd: var(--t-redBd);
+  --s-info: var(--t-blue);    --s-info-bg: var(--t-blueBg);    --s-info-bd: var(--t-blueBd);
+  --s-neutral: var(--t-sub);  --s-neutral-bg: var(--t-grayBg); --s-neutral-bd: var(--t-border);
+  /* motion (150–250ms band) + focus */
+  --m-fast: 150ms; --m-base: 200ms; --m-slow: 250ms;
+  --m-ease: cubic-bezier(.2,.8,.3,1);
+  --focus-ring: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-blue);
+  /* spacing scale */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  --radius-1: 8px; --radius-2: 10px; --radius-3: 14px;
+}
+
+/* Accessibility: visible keyboard focus everywhere; never on mouse click. */
+:focus { outline: none; }
+:focus-visible { box-shadow: var(--focus-ring); border-radius: 6px; }
+
+/* Motion discipline: micro-interactions on interactive elements only, and
+   fully off for users who ask for reduced motion (WCAG 2.3.3). */
+button, a, [role="option"], [role="button"], .aac-card {
+  transition: background var(--m-fast) var(--m-ease), border-color var(--m-fast) var(--m-ease),
+              box-shadow var(--m-base) var(--m-ease), transform var(--m-fast) var(--m-ease),
+              opacity var(--m-base) var(--m-ease);
+}
+button:active, [role="button"]:active { transform: scale(.985); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* Skeleton shimmer (shared by every loading state) */
+@keyframes aac-shimmer { from { opacity: .45; } to { opacity: .9; } }
+.aac-skeleton { background: var(--t-surface2); border-radius: var(--radius-1);
+  animation: aac-shimmer .9s ease-in-out infinite alternate; }
+
+/* Responsive utilities — inline styles can't media-query, these can.
+   Metric tiles: 6-up desktop → 3-up tablet → 2-up phone. */
+.aac-tiles { display: grid; gap: var(--sp-2); grid-template-columns: repeat(6, minmax(0,1fr)); }
+@media (max-width: 900px) { .aac-tiles { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+@media (max-width: 560px) { .aac-tiles { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+.aac-cols-2 { display: grid; gap: var(--sp-3); grid-template-columns: repeat(2, minmax(0,1fr)); }
+.aac-cols-3 { display: grid; gap: var(--sp-3); grid-template-columns: repeat(3, minmax(0,1fr)); }
+@media (max-width: 900px) { .aac-cols-3 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (max-width: 640px) { .aac-cols-2, .aac-cols-3 { grid-template-columns: 1fr; } }
+.aac-hide-mobile { display: initial; }
+@media (max-width: 640px) { .aac-hide-mobile { display: none !important; } }
+/* Wide tables scroll instead of crushing the layout on phones. */
+.aac-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.aac-table-wrap table { min-width: 640px; }
+/* Sticky decision bar (Live screen) — always-visible primary answer. */
+.aac-sticky-decision { position: sticky; top: 0; z-index: 40;
+  backdrop-filter: blur(6px); background: color-mix(in srgb, var(--t-bg) 88%, transparent);
+  border-bottom: 1px solid var(--t-border); }
+/* Touch targets ≥44px on coarse pointers (WCAG 2.5.8). */
+@media (pointer: coarse) { button, [role="option"] { min-height: 44px; } }
+
+/* P4: 4-up stat mini-grids collapse to 2-up on phones. */
+.aac-cols-4 { display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0,1fr)); }
+@media (max-width: 640px) { .aac-cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+/* P4: view-switch transition (uses the shell's fade keyframes; motion tokens). */
+.aac-view { animation: fade var(--m-slow) var(--m-ease); }
+
+/* UAT bug 5 (2026-07-21): on phones the 64px single-row app bar crushed the
+   search input to an untappable sliver. Wrap to two rows; search goes
+   full-width with a 44px target. */
+@media (max-width: 640px) {
+  .aac-appbar { flex-wrap: wrap; height: auto !important; padding: 8px 12px !important; row-gap: 8px; }
+  .aac-appbar input[role="combobox"] { min-height: 44px; font-size: 16px; }
+  .aac-appbar > div:has(input[role="combobox"]),
+  .aac-appbar [class*="search"], .aac-appbar form { flex: 1 1 100%; order: 9; max-width: 100% !important; }
+}

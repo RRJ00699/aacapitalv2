@@ -1,3 +1,4 @@
+import { fixtureAwareNeon } from "@/lib/db";
 // deploy: retrigger 2026-07-11b
 // app/api/ipo-command/route.ts
 // Single feed for the redesigned IPO page (/dashboard/ipo2). Read-only.
@@ -12,7 +13,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // KV cache helper — serves the IPO feed from Cloudflare KV so Neon isn't hit on
 // every page load. Data only changes nightly (cron), so a short TTL is safe.
-const CACHE_KEY = "ipo-command:v3"; // v3 2026-07-21: structured research block (Phase 9)
+const CACHE_KEY = "ipo-command:v4"; // v4 2026-07-22: street-news join (details/review release)
 const CACHE_TTL_S = 43200; // 12h — pipeline warms it 2x/day; page loads never hit Neon between runs
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null; }
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
 // runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
 let _neonSql: NeonQueryFunction<false, false> | null = null;
 const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  if (!_neonSql) _neonSql = fixtureAwareNeon();
   return _neonSql(strings, ...values);
 }) as NeonQueryFunction<false, false>;
 
@@ -85,6 +86,20 @@ export async function GET(req?: Request) {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         source_published_at TIMESTAMPTZ, source_downloaded_at TIMESTAMPTZ,
         is_current BOOLEAN DEFAULT TRUE)`;
+    await sql`CREATE TABLE IF NOT EXISTS ipo_news (
+        id BIGSERIAL PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        nse_symbol TEXT,
+        publisher TEXT NOT NULL,
+        headline TEXT NOT NULL,
+        url TEXT NOT NULL,
+        published_at TIMESTAMPTZ,
+        snippet TEXT,
+        selection_score INT,
+        source TEXT NOT NULL DEFAULT 'rss',
+        fetch_status TEXT NOT NULL DEFAULT 'ok',
+        is_current BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW())`;
     const cards = await sql`
       SELECT c.company_name, c.listing_date, c.ipo_open_date AS open_date, c.ipo_close_date AS close_date, c.issue_size_cr,
              c.issue_price, c.ipo_score, c.score_band, c.score_evidence, c.gap_bucket,
@@ -145,6 +160,12 @@ export async function GET(req?: Request) {
                      'source', s.source_type, 'locator', s.source_locator))
                 FROM ipo_insights s
                WHERE s.ipo_id = ii.id AND s.is_current) AS insights,
+             (SELECT json_build_object('publisher', n.publisher, 'headline', n.headline,
+                                       'url', n.url, 'published_at', n.published_at, 'snippet', n.snippet)
+                FROM ipo_news n
+                WHERE n.is_current AND n.fetch_status = 'ok' AND n.publisher <> '-'
+                  AND (UPPER(n.nse_symbol) = UPPER(COALESCE(c.symbol_final, c.nse_symbol, c.symbol)) OR n.company_name = c.company_name)
+                ORDER BY (n.source = 'manual') DESC, n.created_at DESC LIMIT 1) AS news,
              ii.price_band_low AS band_low, ii.chittorgarh_slug, ii.score_band, ii.score_expected_win, ii.quality_score, ii.quality_conf,
              ri.rhp_url,
              c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,
@@ -172,6 +193,9 @@ export async function GET(req?: Request) {
         -- issue_size NULL (size-pending upcoming) stays visible.
         AND COALESCE(c.is_sme, false) = false
         AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)
+        -- U7 (2026-07-22, owner evidence): 'Bagmane Prime Office REIT' leaked
+        -- via size NULL + is_sme=false. REIT/InvIT units are not IPO equities.
+        AND c.company_name !~* '\\y(REIT|InvIT)\\y'
       ORDER BY
         CASE WHEN c.listing_date >= CURRENT_DATE OR c.ipo_close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
         COALESCE(c.listing_date, c.ipo_open_date) DESC`;

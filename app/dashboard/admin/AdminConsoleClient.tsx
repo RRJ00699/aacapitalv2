@@ -23,6 +23,7 @@ const C = {
 const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }[] = [
   { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → SBI → Haiku/Sonnet → score → verdicts → consolidated → gates", heavy: true },
   { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Lean pipeline plus the post-lock candle purge", heavy: true },
+  { key: "news",            label: "Street news discovery", desc: "Whitelisted RSS (Reuters preferred, ET/MC/BS/Mint fallback) → one article per IPO; manual override wins" },
   { key: "peer_pe_notes",   label: "Peer P/E from SBI notes", desc: "Median of the Haiku-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
   { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
   { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },

@@ -33,7 +33,33 @@ function getClient() {
   return _client
 }
 
+// ── UAT fixture mode (feat/ux-premium) ────────────────────────────────────
+// When UAT_FIXTURE_JSON points at a JSON file mapping a lowercase SQL
+// substring -> rows, every query is served from that file: deterministic,
+// zero Neon, zero paid APIs. Used ONLY by `npm run uat:all` and the route
+// harness — the env var is never set in production. Unmatched queries
+// return [] (routes already handle empty sets).
+let _fixture: Record<string, any[]> | null | undefined
+function fixtureRows(q: string): any[] | null {
+  if (_fixture === undefined) {
+    const path = process.env.UAT_FIXTURE_JSON
+    if (!path) { _fixture = null } else {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        _fixture = JSON.parse(require("fs").readFileSync(path, "utf8"))
+        console.warn(`[db] UAT FIXTURE MODE — serving queries from ${path} (no Neon)`) 
+      } catch { _fixture = null }
+    }
+  }
+  if (!_fixture) return null
+  const lower = q.toLowerCase()
+  for (const k of Object.keys(_fixture)) if (lower.includes(k)) return JSON.parse(JSON.stringify(_fixture[k]))
+  return []
+}
+
 async function runQuery(strings: TemplateStringsArray, values: QueryValue[]): Promise<any[]> {
+  const fx = fixtureRows(strings.join(" "))
+  if (fx !== null) return fx
   // neon supports tagged-template queries with the same $1..$n semantics.
   return (await (getClient() as any)(strings, ...values)) as any[]
 }
@@ -58,4 +84,16 @@ export function ok(data: unknown, init?: ResponseInit) {
 
 export function fail(message: string, status = 500, details?: unknown) {
   return Response.json({ success: false, error: message, details }, { status })
+}
+
+// UAT: drop-in replacement for private route-level neon(url) factories so
+// fixture mode reaches EVERY route (several kept their own clients).
+export function fixtureAwareNeon(url?: string) {
+  let _r: ReturnType<typeof neon> | null = null
+  return (async (strings: TemplateStringsArray, ...values: QueryValue[]) => {
+    const fx = fixtureRows(strings.join(" "))
+    if (fx !== null) return fx
+    if (!_r) _r = neon(url || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!)
+    return (await (_r as any)(strings, ...values)) as any[]
+  }) as unknown as ReturnType<typeof neon<false, false>>
 }

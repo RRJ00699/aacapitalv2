@@ -10,6 +10,8 @@ import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
+import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
+import CompleteDetails from "@/components/ipo/CompleteDetails";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
   constructor(p: {children: React.ReactNode}) { super(p); this.state = { err: false }; }
@@ -581,8 +583,9 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
   const await2 = (note: string) => (
     <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 4 }}>awaiting<span style={{ fontWeight: 400 }}> · {note}</span></div>);
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
-      {/* HERO: the deadline */}
+    <div className="aac-sticky-decision" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
+      {/* HERO: the deadline — sticky (feat/ux-premium): the primary answer
+          stays visible while rules/evidence scroll underneath. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>
           {listedPast ? "Decision window (archived)" : phase === "entry" ? "Order entry closes 9:43" : phase === "discovery" ? "Price discovery 9:45–9:55" : `Decision deadline ${String(L?.deadline_ist ?? "09:58")} IST`}</span>
@@ -614,6 +617,11 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
       {/* PR-D readiness gate: INCOMPLETE research is a first-class state —
           a go-signal with unread research is treated as WATCH, and we say
           exactly which inputs are missing (server-attested, never guessed). */}
+      {L && (L as R).news != null && (()=>{const n=(L as R).news as R;return (
+        <div style={{margin:"6px 0 8px",fontSize:11.5,color:C.sub}}>
+          <span style={{fontWeight:800,color:C.meta,fontSize:9.5,letterSpacing:.4,textTransform:"uppercase"}}>Street · {String(n.publisher)}</span>{" "}
+          <a href={String(n.url)} target="_blank" rel="noopener noreferrer" style={{color:C.blue,fontWeight:600}}>{String(n.headline)}</a>
+        </div>);})()}
       {L && L.research_ready === false && (
         <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: C.amberBg,
           border: `1px solid ${C.amberBd}`, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -878,6 +886,15 @@ function IpoCommand() {
         window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
       }
     } catch { /* best-effort */ }
+    const onSetView = (e: Event) => {
+      const v = String((e as CustomEvent).detail?.view || "");
+      if (v === "live" || v === "command" || v === "post") { setView(v); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    };
+    window.addEventListener("aac:set-view", onSetView);
+    try {
+      const pv = sessionStorage.getItem("aac:pending-view");
+      if (pv) { sessionStorage.removeItem("aac:pending-view"); onSetView(new CustomEvent("x", { detail: { view: pv } })); }
+    } catch { /* best-effort */ }
     const onFocus = (e: Event) => {
       const company = String((e as CustomEvent).detail?.company || "");
       const target = String((e as CustomEvent).detail?.target || "");
@@ -910,7 +927,7 @@ function IpoCommand() {
         document.getElementById(`ipocard-${hit.sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
     };
     window.addEventListener("aac:focus-ipo", onFocus);
-    return () => window.removeEventListener("aac:focus-ipo", onFocus);
+    return () => { window.removeEventListener("aac:focus-ipo", onFocus); window.removeEventListener("aac:set-view", onSetView); };
   }, [d]);
   const autoLive = useRef(false);
   useEffect(() => {
@@ -959,27 +976,55 @@ function IpoCommand() {
     return Array.from(best.values()).map(e => e.c);
   })();
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["live","Live"],["command","Command"],["calc","Calculator"],["pb","Playbook"],
+  const pills: [string,string][] = [["live","Live"],["command","Command"],["details","Complete Details"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
+  // Deep links (2026-07-22): /dashboard/ipo2?view=details&ipo=SYM — exact
+  // symbol key (strong key; never fuzzy). Selection state for details view.
+  const [detailSym,setDetailSym]=useState<string>("");
+  useEffect(()=>{
+    try{
+      const sp=new URLSearchParams(window.location.search);
+      const v=sp.get("view"); const ipo=sp.get("ipo");
+      if(ipo) setDetailSym(ipo.toUpperCase());
+      if(v==="details") setView("details");
+    }catch{/* best-effort */}
+  },[]);
 
   return (
     <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text,
       alignItems:"start"}} className="ipo-shell">
-      {degraded && <div style={{background:"#FFFAEB",border:"1px solid #FEDF89",color:"#B54708",
-        borderRadius:10,padding:"10px 14px",margin:"10px 0",fontSize:12.5,fontWeight:600}}>
-        Data engine degraded — showing what we can. <span style={{fontFamily:"var(--f-mono)",fontSize:10.5,fontWeight:400}}>{degraded}</span></div>}
+      {degraded && <div style={{margin:"10px 0"}}>
+        <ErrorState title="Data engine degraded — showing what we can."
+          detail={String(degraded)} onRetry={()=>window.location.reload()}/></div>}
       <style>{`
         .ipo-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
         @media (max-width:900px){.ipo-shell{grid-template-columns:1fr}.ipo-shell aside{order:-1}}
       `}</style>
-      <div style={{minWidth:0}}>
+      <div key={view} className="aac-view" style={{minWidth:0}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontFamily:"var(--f-display)",fontSize:20,fontWeight:800,margin:0,letterSpacing:-0.3}}>IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
             {d ? ` refreshed ${new Date().toLocaleTimeString()}` : " loading…"}</div></div>
         <ThemeToggle/>
       </div>
+      {!d && <div style={{marginTop:12}}><Skeleton h={120} n={4}/></div>}
+      {view==="details" && d && (()=>{
+        const all=(d.cards||[]) as R[];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {all.map((c,i)=>(
+                <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
+                  aria-pressed={sel===c}
+                  style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
+                    border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
+                  {String(c.sym||c.company_name||"")}</button>))}
+            </div>
+            <CompleteDetails c={sel as R}/>
+          </div>
+        );})()}
 
       {/* engine strip — plain-English grades, rigor one line below */}
       <div style={{...card,marginTop:12}}>
@@ -1005,12 +1050,14 @@ function IpoCommand() {
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>
         {pills.map(([k,l])=>(
-          <span key={k} onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
+          <span key={k} role="button" tabIndex={0} aria-pressed={view===k} aria-label={`Switch to ${l}`}
+            onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setView(k);}}}
+            onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
             border:`1px solid ${view===k?C.amberBd:C.border}`,background:view===k?C.amberBg:C.surface,
             color:view===k?C.gold:C.meta,borderRadius:20,padding:"7px 14px",fontSize:12.5,fontWeight:view===k?700:500,
             transition:"all .2s var(--ease)"}}>{k==="live" && liveSyms.length>0 ? <><span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>{l}</> : l}</span>))}
       </div>
-      {err && <div style={{...card,borderColor:C.redBd,color:C.red,fontSize:13}}>API error: {err}</div>}
+      {err && <div style={{margin:"6px 0"}}><ErrorState title="API error" detail={String(err)} onRetry={()=>window.location.reload()}/></div>}
 
       {/* LIVE — the trading surface: live panel + exit engine side-by-side */}
       {view==="live" && <>
@@ -1090,7 +1137,7 @@ function IpoCommand() {
                   </div>
                   {(()=>{const L=(d?.dl||[]).find(x=>x.sym===sym);
                     return <Spark ticks={ticks} floor={N(L?.floor) ?? N(lv.floor_price)} ceil={N(L?.ceiling) ?? N(lv.ceiling_price)}/>;})()}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:8}}>
+                  <div className="aac-cols-4" style={{marginTop:8}}>
                     {[["OBIR",N(last.obir)==null?"—":N(last.obir)!.toFixed(2),N(last.obir)!=null&&N(last.obir)!>=1?C.green:C.red],
                       ["Momentum",last.momentum,C.text],["Signal",last.signal,C.text],
                       ["Floor defenses",lv.floor_defenses,C.text]].map((t,i)=>(
@@ -1144,7 +1191,9 @@ function IpoCommand() {
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"2px 0 10px"}}>
           {["ALL","TRADE","WATCH","CAUTION","AVOID"].map(k=>(
-            <span key={k} onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
+            <span key={k} role="button" tabIndex={0} aria-pressed={vFilter===k}
+              onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setVFilter(k);}}}
+              onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
               padding:"4px 12px",borderRadius:999,letterSpacing:.3,
               border:`1px solid ${vFilter===k?C.blueBd:C.border}`,
               background:vFilter===k?C.blueBg:C.surface,color:vFilter===k?C.blue:C.meta}}>
@@ -1160,7 +1209,11 @@ function IpoCommand() {
           </div>;
         })}
         {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveCanon.includes(canonSym(String(c.sym)))).length===0 &&
-          <div style={card}><span style={{fontSize:13,color:C.meta}}>No {vFilter} verdicts in the current window.</span></div>}
+          <EmptyState title={`No ${vFilter} verdicts in the current window.`}
+            hint="Verdicts update after each pipeline run.">
+            <button onClick={()=>setVFilter("ALL")} style={{fontSize:11,fontWeight:700,padding:"6px 12px",
+              borderRadius:999,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,cursor:"pointer"}}>Show all</button>
+          </EmptyState>}
       </>}
 
       {/* PLAYBOOK */}
@@ -1271,7 +1324,19 @@ function IpoCommand() {
       {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>GMP d-1</th><th style={th}>Anchors</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
-          <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>{
+          <tbody>{cards.filter(c=>{
+            if (c.state!=="UPCOMING" && c.state!=="LISTING") return false;
+            // UAT bug 2026-07-21: SBIFUNDS stayed on Upcoming AFTER listing —
+            // state flips only at the next pipeline run. Drop rows whose
+            // listing date (UTC parts) is before IST-today.
+            if (c.listing_date) {
+              const ld = new Date(String(c.listing_date));
+              const ist = new Date(Date.now() + 5.5*3600_000);
+              if (Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate())
+                  < Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate())) return false;
+            }
+            return true;
+          }).map((c,i)=>{
             const istT=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
             const od=c.open_date?String(c.open_date).slice(0,10):null;
             const cd=c.close_date?String(c.close_date).slice(0,10):null;

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 // Self-contained: fetches /api/market/global + /api/market/snapshot (same as Today).
 // Styled to match the ipo2 palette.
 
-type GRow = { label: string; value: string; change: number | null };
+type GRow = { label: string; value: string; change: number | null; isPct?: boolean };
 const C = { surface:"var(--t-surface)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
   sub:"var(--t-sub)", meta:"var(--t-meta)", green:"var(--t-green)", red:"var(--t-red)" };
 
@@ -14,7 +14,11 @@ const num = (v: unknown) => (has(v) ? Number(v) : NaN);
 const first = (...vals: unknown[]) => vals.find(has);
 const fmt = (v: unknown, d = 0) => (has(v) ? Number(v).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—");
 const cr = (v: unknown) => { if(!has(v)) return "—"; const n=Number(v); return `${n>=0?"+":""}${n.toLocaleString("en-IN",{maximumFractionDigits:0})}`; };
-const sgn = (n: number | null) => (n==null?"—":`${n>=0?"+":""}${n.toFixed(2)}%`);
+const sgn = (n: number | null, isPct = true) =>
+  // UAT bug U4 (2026-07-21): absolute point changes were rendered with a %
+  // suffix (^DJI +594.83 pts shown as +594.83%). Percent suffix ONLY when the
+  // value IS a percent; bare points otherwise.
+  (n==null?"—":`${n>=0?"+":""}${n.toFixed(2)}${isPct?"%":""}`);
 
 function Tile({ label, value, sub, tone }: { label:string; value:string; sub?:string; tone?:"up"|"down"|null }) {
   const col = tone==="up"?C.green:tone==="down"?C.red:C.text;
@@ -57,8 +61,9 @@ export default function MarketsSidebar() {
       const mk = (k:string,label:string) => {
         const row = gm[k]; if(!row) return null;
         const val = first(row.value, row.price, row.last);
-        const chg = first(row.change, row.changePct, row.change_pct);
-        return { label, value: fmt(val, 2), change: has(chg)?num(chg):null } as GRow;
+        const pct = first(row.changePct, row.change_pct);
+        const chg = has(pct) ? pct : row.change;
+        return { label, value: fmt(val, 2), change: has(chg)?num(chg):null, isPct: has(pct) } as GRow;
       };
       const rows = [
         mk("dowjones","🇺🇸 Dow"), mk("nasdaq","🇺🇸 Nasdaq"), mk("sp500","🇺🇸 S&P 500"),
@@ -70,8 +75,9 @@ export default function MarketsSidebar() {
       if (!rows.length && gm && typeof gm === "object") {
         for (const [k,v] of Object.entries<any>(gm)) {
           const val = first(v?.value, v?.price, v?.last);
-          const chg = first(v?.change, v?.changePct);
-          if (has(val)) rows.push({ label:k, value:fmt(val,2), change:has(chg)?num(chg):null });
+          const pct = v?.changePct;
+          const chg = has(pct) ? pct : v?.change;
+          if (has(val)) rows.push({ label:k, value:fmt(val,2), change:has(chg)?num(chg):null, isPct:has(pct) });
         }
       }
       setGlob(rows);
@@ -103,7 +109,7 @@ export default function MarketsSidebar() {
               <div key={g.label} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:"var(--t-surface2)", border:`1px solid ${C.line}`, borderRadius:8 }}>
                 <span style={{ fontSize:11.5, color:C.sub, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{g.label}</span>
                 <span style={{ fontSize:12, fontWeight:700, color:C.text, fontFamily:"ui-monospace,monospace", minWidth:66, textAlign:"right" }}>{g.value}</span>
-                <span style={{ fontSize:11, fontWeight:700, fontFamily:"ui-monospace,monospace", minWidth:52, textAlign:"right", color:(g.change??0)>=0?C.green:C.red }}>{sgn(g.change)}</span>
+                <span style={{ fontSize:11, fontWeight:700, fontFamily:"ui-monospace,monospace", minWidth:52, textAlign:"right", color:(g.change??0)>=0?C.green:C.red }}>{sgn(g.change, g.isPct !== false)}</span>
               </div>
             )) : <div style={{ fontSize:12, color:C.meta }}>Markets data unavailable.</div>}
           </div>

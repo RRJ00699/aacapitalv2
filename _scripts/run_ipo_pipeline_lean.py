@@ -182,6 +182,7 @@ def main():
     # ── SBI RESEARCH NOTES (structured scrape/parse — NOT sent to Sonnet) ──
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
     step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
+    step("street news discovery (free RSS)", ["fetch_ipo_news.py", "--apply"])
     step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
 
     # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──

@@ -79,3 +79,39 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 // pages use: const C = useTheme()  — returns the active palette
 export function useTheme(): Palette { return useContext(ThemeCtx).pal }
 export function useThemeControls() { return useContext(ThemeCtx) }
+
+// ═══ UX system additions (feat/ux-premium 2026-07-21) ════════════════════
+// Static CSS-var tokens for non-hook contexts + the ONE status-color map.
+
+export const VARS = {
+  bg: "var(--t-bg)", surface: "var(--t-surface)", surface2: "var(--t-surface2)",
+  border: "var(--t-border)", line: "var(--t-line)",
+  text: "var(--t-text)", sub: "var(--t-sub)", meta: "var(--t-meta)", dim: "var(--t-dim)",
+  green: "var(--t-green)", greenBg: "var(--t-greenBg)", greenBd: "var(--t-greenBd)",
+  blue: "var(--t-blue)", blueBg: "var(--t-blueBg)", blueBd: "var(--t-blueBd)",
+  amber: "var(--t-amber)", amberBg: "var(--t-amberBg)", amberBd: "var(--t-amberBd)",
+  red: "var(--t-red)", redBg: "var(--t-redBg)", redBd: "var(--t-redBd)",
+  grayBg: "var(--t-grayBg)", gold: "var(--t-gold)",
+} as const
+
+export const FONT = { display: "var(--f-display)", mono: "var(--f-mono)" } as const
+export const MOTION = { fast: "var(--m-fast)", base: "var(--m-base)", slow: "var(--m-slow)", ease: "var(--m-ease)" } as const
+
+export type Tone = "good" | "watch" | "junk" | "info" | "neutral"
+export const TONE: Record<Tone, { fg: string; bg: string; bd: string }> = {
+  good: { fg: "var(--s-good)", bg: "var(--s-good-bg)", bd: "var(--s-good-bd)" },
+  watch: { fg: "var(--s-watch)", bg: "var(--s-watch-bg)", bd: "var(--s-watch-bd)" },
+  junk: { fg: "var(--s-junk)", bg: "var(--s-junk-bg)", bd: "var(--s-junk-bd)" },
+  info: { fg: "var(--s-info)", bg: "var(--s-info-bg)", bd: "var(--s-info-bd)" },
+  neutral: { fg: "var(--s-neutral)", bg: "var(--s-neutral-bg)", bd: "var(--s-neutral-bd)" },
+}
+
+// Status vocabulary → tone: the UI never picks ad-hoc colors for these words.
+export const toneFor = (s: string | null | undefined): Tone => {
+  const k = String(s ?? "").toUpperCase()
+  if (["GOOD", "CONFIRMED", "BUY", "TRADE", "READY", "RESEARCH COMPLETE", "STRONG", "FAVORABLE", "OK"].includes(k)) return "good"
+  if (["WATCH", "PARTIAL", "PENDING", "INCOMPLETE", "CAUTION", "AWAITING", "RESEARCH PARTIAL", "RESEARCH PENDING", "NEUTRAL"].includes(k)) return "watch"
+  if (["JUNK", "FAILED", "SKIP", "AVOID", "MISSED", "ERROR"].includes(k)) return "junk"
+  if (["UPCOMING", "OPEN", "LISTING", "LISTING TODAY", "INFO"].includes(k)) return "info"
+  return "neutral"
+}

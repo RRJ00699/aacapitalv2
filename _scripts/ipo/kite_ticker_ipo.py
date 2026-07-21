@@ -137,7 +137,30 @@ def resolve_auto_today_symbols(conn):
         ORDER BY listing_date DESC
         LIMIT 6
     """)
-    rows = cur.fetchall(); cur.close()
+    rows = cur.fetchall()
+    # U8 (2026-07-22, owner evidence): on SBIFUNDS listing morning the
+    # ipo_intelligence row's symbol columns were still blank (filled by the
+    # evening enrich), so the launcher tracked 5 in-window names and MISSED
+    # the one actually listing — volume-confirm stayed 'awaiting' all day.
+    # ipo_consolidated already carried the strong key (the UI showed it), so
+    # fall back to its symbols for the same window and union.
+    try:
+        cur.execute("""
+            SELECT DISTINCT COALESCE(NULLIF(btrim(symbol_final),''), NULLIF(btrim(nse_symbol),''), btrim(symbol))
+            FROM ipo_consolidated
+            WHERE COALESCE(is_sme, false) = false
+              AND issue_size_cr >= 200 AND issue_size_cr < 100000
+              AND listing_date IS NOT NULL
+              AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
+              AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date <= (listing_date + INTERVAL '30 days')::date
+        """)
+        have = {str(r[0]).upper() for r in rows if r and r[0]}
+        for (sym2,) in cur.fetchall():
+            if sym2 and str(sym2).upper() not in have:
+                rows.append((sym2, None, None, None, None))
+    except Exception as e:
+        print(f"  consolidated fallback unavailable ({e}) — intelligence set only")
+    cur.close()
     out = []
     for sym, name, size, ld, lock in rows:
         out.append(sym.strip().upper())

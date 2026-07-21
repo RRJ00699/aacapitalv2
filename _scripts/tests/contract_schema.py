@@ -7,6 +7,7 @@ _scripts/triage_known_gaps.sql and updating the lists in the generator
 """
 
 CONTRACT_DDL = """
+
 DROP SCHEMA public CASCADE; CREATE SCHEMA public;
 CREATE TABLE ipo_consolidated (
     company_name TEXT,
@@ -556,4 +557,11 @@ CREATE TABLE pipeline_steps (id SERIAL, run_date DATE, step TEXT, script TEXT,
     ok BOOLEAN, error TEXT, ran_at TIMESTAMPTZ);
 CREATE TABLE pipeline_failures (id SERIAL, step TEXT, script TEXT,
     stderr_tail TEXT, failed_at TIMESTAMPTZ);
+
+CREATE TABLE IF NOT EXISTS ipo_news (
+  id BIGSERIAL PRIMARY KEY, company_name TEXT NOT NULL, nse_symbol TEXT,
+  publisher TEXT NOT NULL, headline TEXT NOT NULL, url TEXT NOT NULL,
+  published_at TIMESTAMPTZ, snippet TEXT, selection_score INT,
+  source TEXT NOT NULL DEFAULT 'rss', fetch_status TEXT NOT NULL DEFAULT 'ok',
+  is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW());
 """
