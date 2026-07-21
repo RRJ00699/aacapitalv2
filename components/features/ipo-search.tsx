@@ -156,6 +156,9 @@ export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try:
                   {c.sym ? <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>{String(c.sym)}</span> : null}
                   <Badge t={stage === "LISTING" ? "LISTING TODAY" : stage} fg={fg} bg={bg} />
                   <span style={{ marginLeft: "auto" }} />
+                  <button onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/ipo2?view=details&ipo=${encodeURIComponent(String(c.sym ?? ""))}`; }}
+                    style={{ fontSize: 11, color: C.text, background: C.surface, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: "4px 9px", cursor: "pointer" }}>Complete Details</button>
                   <button onClick={(e) => { e.stopPropagation(); setPreview(preview === c ? null : c); }}
                     aria-expanded={preview === c} aria-label="Toggle quick preview"
                     style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: C.bg,

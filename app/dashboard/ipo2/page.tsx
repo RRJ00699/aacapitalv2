@@ -1051,7 +1051,10 @@ function IpoCommand() {
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
           if(!k||seen.has(k))return false; seen.add(k); return true;});
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        const today=new Date().toISOString().slice(0,10);
+        const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
+          .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
         return (
           <div style={{marginTop:12}}>
             <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
@@ -1080,7 +1083,10 @@ function IpoCommand() {
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
           if(!k||seen.has(k))return false; seen.add(k); return true;});
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        const today=new Date().toISOString().slice(0,10);
+        const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
+          .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
         return (
           <div style={{marginTop:12}}>
             <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}

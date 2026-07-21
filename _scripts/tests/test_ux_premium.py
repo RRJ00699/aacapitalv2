@@ -349,3 +349,10 @@ def test_live_serves_listing_day_only():
 def test_details_and_review_selectors_are_searchable():
     page = _read("app", "dashboard", "ipo2", "page.tsx")
     assert page.count("Search IPO by name or symbol") == 2, "hardcoded button rows gained a search filter (owner ask)"
+
+
+def test_search_card_offers_complete_details_and_default_is_closest_listed():
+    search = _read("components", "features", "ipo-search.tsx")
+    assert "view=details&ipo=" in search and "Complete Details" in search
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.count("closestListed") >= 4, "Details+Review default to the most recently listed IPO"
