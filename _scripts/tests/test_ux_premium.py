@@ -270,3 +270,11 @@ def test_u10_sticky_hero_has_no_stacking_blur():
     sect = css.split(".aac-sticky-decision")[1][:400]
     assert "backdrop-filter" not in sect, "blur painted over the markets/journey panels (U10)"
     assert "z-index: 20" in sect and "max-height: 700px" in sect
+
+
+def test_ci_artifact_upload_yaml_is_valid_block_mapping():
+    """Owner CI 2026-07-22: 'Input required and not supplied: path' — the
+    upload step mixed a flow mapping with a block scalar. Pin the shape."""
+    ci = _read(".github", "workflows", "ci.yml")
+    assert "with: { name: uat-report" not in ci
+    assert "          path: |\n            uat-report/\n            uat-results/" in ci
