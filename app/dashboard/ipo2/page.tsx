@@ -12,6 +12,7 @@ import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
 import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
 import CompleteDetails from "@/components/ipo/CompleteDetails";
+import ListingReview from "@/components/ipo/ListingReview";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
   constructor(p: {children: React.ReactNode}) { super(p); this.state = { err: false }; }
@@ -976,7 +977,7 @@ function IpoCommand() {
     return Array.from(best.values()).map(e => e.c);
   })();
   const next = cards.find(c=>c.state==="UPCOMING");
-  const pills: [string,string][] = [["live","Live"],["command","Command"],["details","Complete Details"],["calc","Calculator"],["pb","Playbook"],
+  const pills: [string,string][] = [["live","Live"],["command","Command"],["details","Complete Details"],["review","Listing Review"],["calc","Calculator"],["pb","Playbook"],
     ["open","Open Now"],["upcoming","Upcoming"],["post","Post-Listing"],["brlm","BRLM"]];
   // Deep links (2026-07-22): /dashboard/ipo2?view=details&ipo=SYM — exact
   // symbol key (strong key; never fuzzy). Selection state for details view.
@@ -1061,6 +1062,27 @@ function IpoCommand() {
                   {String(c.sym||c.company_name||"")}</button>))}
             </div>
             <CompleteDetails c={sel as R}/>
+          </div>
+        );})()}
+      {view==="review" && d && (()=>{
+        // U11 partial: cards + post rows; a full-universe index endpoint is
+        // the follow-up (docs/UAT_TRACKER.md) so EVERY historical IPO appears.
+        const seen=new Set<string>();
+        const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
+          const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
+          if(!k||seen.has(k))return false; seen.add(k); return true;});
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        return (
+          <div style={{marginTop:12}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {all.map((c,i)=>(
+                <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
+                  aria-pressed={sel===c}
+                  style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
+                    border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
+                  {String(c.sym||c.company_name||"")}</button>))}
+            </div>
+            <ListingReview c={sel as R}/>
           </div>
         );})()}
 

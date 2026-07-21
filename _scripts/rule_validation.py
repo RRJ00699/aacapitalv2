@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""rule_validation.py — Phase 10 Rule Validation Engine v1 (2026-07-22).
+
+Validates every static rule against the GOLDEN OBJECT (ipo_gold: one table,
+inputs + candles_json together). Nothing is a black box: every result row
+carries the dataset, SQL inputs, filters, date range, n, win rate, average/
+median return, max drawdown, expectancy, a binomial significance check vs
+baseline, and the backtest + rule versions with a timestamp.
+
+Definitions (spec §2A, unchanged from production):
+  outcome return = best close within the captured window vs LISTING OPEN
+                   (a CEILING measure — not an executable exit)
+  win            = that return > 0
+  baseline       = the same measure over the whole eligible universe
+
+Run:  python _scripts/rule_validation.py            # report only
+      python _scripts/rule_validation.py --store    # + persist results
+Reads ipo_gold only. --store writes rule_validation_results (durable,
+schema_sync-owned DDL). PC-runnable (DATABASE_URL = Neon).
+"""
+import argparse
+import json
+import math
+import os
+import statistics
+import sys
+from datetime import datetime, timezone
+
+BACKTEST_VERSION = "rv1-2026-07-22"
+DATASET = "ipo_gold (VIEW: ipo_consolidated ⟕ ipo_golden) · candles_json listing→lock-in"
+ELIGIBILITY = ("COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200) "
+               "AND company_name !~* '\\y(REIT|InvIT)\\y' AND candles_json IS NOT NULL "
+               "AND issue_price > 0")
+
+# rule_id -> (version, human filter, python predicate on row dict)
+RULES = {
+    "anchors_30plus": ("v1", "anchor_count >= 30", lambda r: (r["anchor_count"] or 0) >= 30),
+    "anchors_50plus": ("v1", "anchor_count >= 50", lambda r: (r["anchor_count"] or 0) >= 50),
+    "mega_issue_2000cr": ("v1", "issue_size_cr >= 2000", lambda r: (r["issue_size_cr"] or 0) >= 2000),
+    "reasonable_pe_70": ("v1", "ipo_pe > 0 AND ipo_pe <= 70", lambda r: r["ipo_pe"] is not None and 0 < r["ipo_pe"] <= 70),
+    "qib_50x": ("v1", "final_qib >= 50", lambda r: (r["final_qib"] or 0) >= 50),
+    "band_strong": ("v1", "score_band = 'STRONG'", lambda r: r["score_band"] == "STRONG"),
+    "band_favorable": ("v1", "score_band = 'FAVORABLE'", lambda r: r["score_band"] == "FAVORABLE"),
+    "band_avoid_skip": ("v1", "score_band = 'AVOID' (expect LOW win rate)", lambda r: r["score_band"] == "AVOID"),
+}
+
+
+def outcome(row):
+    """(win, best_return_pct, max_drawdown_pct) from candles vs listing open."""
+    candles = row["candles_json"]
+    if isinstance(candles, str):
+        candles = json.loads(candles)
+    if not candles:
+        return None
+    open_px = float(candles[0]["o"])
+    if open_px <= 0:
+        return None
+    closes = [float(k["c"]) for k in candles]
+    lows = [float(k["l"]) for k in candles]
+    best = max(closes)
+    ret = (best - open_px) / open_px * 100
+    dd = (min(lows) - open_px) / open_px * 100
+    return (ret > 0, ret, dd)
+
+
+def binom_p_greater(k, n, p0):
+    """one-sided P(X >= k | n, p0) — normal approx above n=30, exact below."""
+    if n == 0:
+        return 1.0
+    if n <= 30:
+        from math import comb
+        return sum(comb(n, i) * p0**i * (1 - p0)**(n - i) for i in range(k, n + 1))
+    mu, sd = n * p0, math.sqrt(n * p0 * (1 - p0)) or 1e-9
+    z = (k - 0.5 - mu) / sd
+    return 0.5 * math.erfc(z / math.sqrt(2))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--store", action="store_true")
+    a = ap.parse_args()
+    import psycopg2
+    import psycopg2.extras
+    db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+    if not db:
+        sys.exit("DATABASE_URL not set")
+    conn = psycopg2.connect(db, connect_timeout=25)
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SET statement_timeout = '120s'")
+    q = f"""SELECT company_name, listing_date, anchor_count, issue_size_cr, ipo_pe,
+                   final_qib, score_band, issue_price, candles_json
+            FROM ipo_gold WHERE {ELIGIBILITY}"""
+    cur.execute(q)
+    rows = []
+    for r in cur.fetchall():
+        r = dict(r)
+        for k in ("anchor_count", "issue_size_cr", "ipo_pe", "final_qib", "issue_price"):
+            r[k] = float(r[k]) if r[k] is not None else None
+        o = outcome(r)
+        if o:
+            r["_outcome"] = o
+            rows.append(r)
+    n_all = len(rows)
+    if not n_all:
+        sys.exit("no scoreable rows — run consolidate first")
+    base_wins = sum(1 for r in rows if r["_outcome"][0])
+    base_rate = base_wins / n_all
+    dates = sorted(str(r["listing_date"]) for r in rows if r["listing_date"])
+    date_range = f"{dates[0]}..{dates[-1]}" if dates else "n/a"
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    print(f"RULE VALIDATION · {BACKTEST_VERSION} · {ts}")
+    print(f"dataset: {DATASET}")
+    print(f"filters: {ELIGIBILITY}")
+    print(f"universe n={n_all} · date range {date_range} · BASELINE win {base_rate*100:.1f}%")
+    print(f"{'rule':20} {'n':>4} {'win%':>6} {'avg%':>7} {'med%':>7} {'maxDD%':>7} {'expct%':>7} {'p-vs-base':>9}  beats?")
+    results = []
+    for rid, (rver, human, pred) in RULES.items():
+        sub = [r for r in rows if pred(r)]
+        n = len(sub)
+        if n == 0:
+            print(f"{rid:20} {0:>4}  — no qualifying IPOs in the golden universe")
+            continue
+        rets = [r["_outcome"][1] for r in sub]
+        wins = sum(1 for r in sub if r["_outcome"][0])
+        dds = [r["_outcome"][2] for r in sub]
+        win = wins / n
+        avg, med = statistics.mean(rets), statistics.median(rets)
+        maxdd = min(dds)
+        expct = win * avg + (1 - win) * statistics.mean([x for x in rets if x <= 0] or [0])
+        p = binom_p_greater(wins, n, base_rate)
+        beats = win > base_rate and p < 0.10
+        print(f"{rid:20} {n:>4} {win*100:>5.1f}% {avg:>6.1f}% {med:>6.1f}% {maxdd:>6.1f}% {expct:>6.1f}% {p:>9.3f}  {'YES' if beats else 'no'}")
+        results.append((rid, rver, human, n, win, avg, med, maxdd, expct, p, beats))
+
+    if a.store and results:
+        cur2 = conn.cursor()
+        for rid, rver, human, n, win, avg, med, maxdd, expct, p, beats in results:
+            cur2.execute("""INSERT INTO rule_validation_results
+                (rule_id, rule_version, backtest_version, dataset, sql_filter, rule_filter,
+                 date_range, n, win_rate, avg_return, median_return, max_drawdown,
+                 expectancy, p_vs_baseline, beats_baseline, baseline_win_rate, universe_n, run_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (rid, rver, BACKTEST_VERSION, DATASET, ELIGIBILITY, human, date_range,
+                 n, win, avg, med, maxdd, expct, p, beats, base_rate, n_all, ts))
+        conn.commit()
+        print(f"STORED {len(results)} rows -> rule_validation_results ({BACKTEST_VERSION})")
+    conn.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

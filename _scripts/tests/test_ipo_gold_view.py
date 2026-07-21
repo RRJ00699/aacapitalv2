@@ -14,7 +14,9 @@ def test_generator_handles_overlap_and_serves_one_object(pg_uri):
     import psycopg2
     from schema_sync import build_ipo_gold_view, GOLD_COLS
     conn = psycopg2.connect(pg_uri); conn.autocommit = True; cur = conn.cursor()
-    cur.execute("DROP VIEW IF EXISTS ipo_gold")
+    for stmt in ("DROP VIEW IF EXISTS ipo_gold", "DROP TABLE IF EXISTS ipo_gold"):
+        try: cur.execute(stmt)
+        except Exception: pass  # whichever form the previous test left
     cur.execute("DROP TABLE IF EXISTS ipo_consolidated, ipo_golden CASCADE")
     # prod shape: consolidated ALREADY has isin (the 84/85 failure) + own cols
     cur.execute("""CREATE TABLE ipo_consolidated (

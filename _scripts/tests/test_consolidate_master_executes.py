@@ -15,7 +15,9 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     import psycopg2
     conn = psycopg2.connect(pg_uri); conn.autocommit = True; cur = conn.cursor()
-    cur.execute("DROP VIEW IF EXISTS ipo_gold")
+    for stmt in ("DROP VIEW IF EXISTS ipo_gold", "DROP TABLE IF EXISTS ipo_gold"):
+        try: cur.execute(stmt)
+        except Exception: pass  # whichever form the previous test left
     cur.execute("""DROP TABLE IF EXISTS ipo_golden, ipo_consolidated, ipo_intelligence,
                    ipo_research_notes, ipo_news, price_candles CASCADE""")
     cur.execute("""CREATE TABLE ipo_consolidated (company_name TEXT, symbol_final TEXT,
@@ -27,6 +29,9 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     # is the only recency column (see schema_sync's 2026-07-18 note).
     cur.execute("""CREATE TABLE ipo_research_notes (company TEXT, source TEXT,
         full_json JSONB, id SERIAL)""")
+    # RHP Sonnet's REAL home (owner evidence: research_notes has zero RHP rows)
+    cur.execute("""CREATE TABLE ipo_rhp_intel (company_name TEXT PRIMARY KEY,
+        full_json JSONB, stored_at TIMESTAMPTZ DEFAULT NOW())""")
     cur.execute("""CREATE TABLE ipo_news (company_name TEXT, headline TEXT, publisher TEXT,
         url TEXT, source TEXT DEFAULT 'rss', fetch_status TEXT DEFAULT 'ok',
         is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())""")
@@ -42,9 +47,9 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""INSERT INTO ipo_intelligence VALUES
         ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116900,43.02,41.66,6380000)""")
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
-        ('SBI Funds Management Ltd.','RHP_SONNET','{"one_line":"stale"}'),
-        ('SBI Funds Management Ltd.','RHP_SONNET','{"one_line":"clean"}'),
         ('SBI Funds Management Ltd.','SBI','{"rating":"SUBSCRIBE"}')""")
+    cur.execute("""INSERT INTO ipo_rhp_intel (company_name, full_json)
+        VALUES ('SBI Funds Management Ltd.', '{"one_line":"clean"}')""")
     cur.execute("""INSERT INTO ipo_news (company_name, headline, publisher, url, source) VALUES
         ('SBI Funds Management Ltd.','SBI Funds debuts above issue','Reuters','https://reuters.com/x','manual'),
         ('SBI Funds Management Ltd.','<paste exact headline>','Reuters','<paste url>','manual')""")

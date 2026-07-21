@@ -564,4 +564,13 @@ CREATE TABLE IF NOT EXISTS ipo_news (
   published_at TIMESTAMPTZ, snippet TEXT, selection_score INT,
   source TEXT NOT NULL DEFAULT 'rss', fetch_status TEXT NOT NULL DEFAULT 'ok',
   is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS ipo_golden (company_key TEXT PRIMARY KEY,
+  company_name TEXT, nse_symbol TEXT, isin TEXT, lot_size INT,
+  face_value NUMERIC, allotment_date DATE, anchor_lock30_date DATE,
+  anchor_lock90_date DATE, mcap_cr NUMERIC, ronw NUMERIC,
+  price_to_book NUMERIC, promoter_pre_pct NUMERIC, promoter_post_pct NUMERIC,
+  candles_json JSONB, rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
+  street_headline TEXT, street_publisher TEXT, street_url TEXT,
+  golden_filled_at TIMESTAMPTZ);
 """
