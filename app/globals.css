@@ -129,3 +129,13 @@ button:active, [role="button"]:active { transform: scale(.985); }
 @media (max-width: 640px) { .aac-cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 /* P4: view-switch transition (uses the shell's fade keyframes; motion tokens). */
 .aac-view { animation: fade var(--m-slow) var(--m-ease); }
+
+/* UAT bug 5 (2026-07-21): on phones the 64px single-row app bar crushed the
+   search input to an untappable sliver. Wrap to two rows; search goes
+   full-width with a 44px target. */
+@media (max-width: 640px) {
+  .aac-appbar { flex-wrap: wrap; height: auto !important; padding: 8px 12px !important; row-gap: 8px; }
+  .aac-appbar input[role="combobox"] { min-height: 44px; font-size: 16px; }
+  .aac-appbar > div:has(input[role="combobox"]),
+  .aac-appbar [class*="search"], .aac-appbar form { flex: 1 1 100%; order: 9; max-width: 100% !important; }
+}

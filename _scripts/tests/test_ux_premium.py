@@ -99,3 +99,37 @@ def test_p4_loading_states_use_shared_skeleton():
     assert "<Skeleton" in st and "loading…</div>" not in st
     page = _read("app", "dashboard", "ipo2", "page.tsx")
     assert "ErrorState" in page and page.count("onRetry") >= 2, "both error banners offer retry"
+
+
+# ── UAT round 1 (SBIFUNDS listing 2026-07-21) — guards so bugs stay dead ──
+
+def test_u1_confidence_scales_with_rule_coverage():
+    src = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "0.5 + 0.5 * (passed.length / scoreable)" in src, \
+        "confidence must blend pass-quality WITH coverage — 2/9 elite passes must not outrank 4/9"
+
+
+def test_u4_point_changes_never_wear_percent_suffix():
+    src = _read("components", "ipo", "MarketsSidebar.tsx")
+    assert 'isPct?"%":""' in src.replace(" ", "") or 'isPct ? "%" : ""' in src
+    assert "const pct = first(row.changePct, row.change_pct);" in src, "percent fields must be preferred"
+
+
+def test_u5_mobile_appbar_wraps_and_search_is_tappable():
+    css = _read("app", "globals.css")
+    assert ".aac-appbar" in css and "flex-wrap: wrap" in css
+    assert "font-size: 16px" in css, "16px input font prevents iOS zoom-on-focus"
+    nav = _read("components", "app-shell", "AppNav.tsx")
+    assert 'className="aac-appbar"' in nav
+
+
+def test_u6_upcoming_drops_already_listed():
+    src = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert "SBIFUNDS stayed on Upcoming AFTER listing" in src
+    assert src.count("Date.UTC(ld.getUTCFullYear()") >= 2, "UTC-parts comparison (same rule as the phase fix)"
+
+
+def test_uat_tracker_is_the_single_registry():
+    doc = _read("docs", "UAT_TRACKER.md")
+    for item in ("U1", "U8", "F2", "no more zombies"):
+        assert item in doc

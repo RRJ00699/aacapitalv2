@@ -48,7 +48,7 @@ export default function AppNav({
   });
 
   return (
-    <div style={{ background: "var(--t-header)", borderBottom: "1px solid var(--t-border)", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
+    <div className="aac-appbar" style={{ background: "var(--t-header)", borderBottom: "1px solid var(--t-border)", padding: "0 16px", display: "flex", alignItems: "center", gap: 12, height: 64, position: "sticky", top: 0, zIndex: 300, overflow: "visible" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
           <img src="/aa-logo-full.png" alt="AA Capital" style={{ height: 40, width: "auto", objectFit: "contain", flexShrink: 0 }} />

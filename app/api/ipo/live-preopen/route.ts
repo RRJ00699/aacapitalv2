@@ -251,7 +251,12 @@ function confidence(all: Rule[], rhpReject: boolean, ofsPeReject: boolean, anyAv
   if (!passed.length) return 0;
   // weighted average of passed rules' win rates, penalised for avoid flags
   const avg = passed.reduce((s, r) => s + (r.win as number), 0) / passed.length;
-  let conf = avg;
+  // UAT bug 2026-07-21: avg-of-passed ONLY meant 2/9 elite passes (avg 89)
+  // outranked 4/9 (avg 84) — coverage never entered. Blend: half the score
+  // is the quality of what passed, half scales with HOW MUCH of the rulebook
+  // passed. Deterministic, uses only existing backtested win rates.
+  const scoreable = all.filter(r => r.win != null).length || 1;
+  let conf = avg * (0.5 + 0.5 * (passed.length / scoreable));
   if (ofsPeReject) conf -= 20;
   else if (anyAvoid) conf -= 10;
   return Math.max(0, Math.min(100, Math.round(conf)));

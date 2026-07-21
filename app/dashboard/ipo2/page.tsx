@@ -1291,7 +1291,19 @@ function IpoCommand() {
       {view==="upcoming" && <div style={{...card,overflowX:"auto"}}>
         <table style={{minWidth:560,width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>Lists</th><th style={th}>Company</th><th style={th}>Size</th><th style={th}>GMP d-1</th><th style={th}>Anchors</th><th style={th}>Verdict</th><th style={th}>Why</th></tr></thead>
-          <tbody>{cards.filter(c=>c.state==="UPCOMING"||c.state==="LISTING").map((c,i)=>{
+          <tbody>{cards.filter(c=>{
+            if (c.state!=="UPCOMING" && c.state!=="LISTING") return false;
+            // UAT bug 2026-07-21: SBIFUNDS stayed on Upcoming AFTER listing —
+            // state flips only at the next pipeline run. Drop rows whose
+            // listing date (UTC parts) is before IST-today.
+            if (c.listing_date) {
+              const ld = new Date(String(c.listing_date));
+              const ist = new Date(Date.now() + 5.5*3600_000);
+              if (Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate())
+                  < Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate())) return false;
+            }
+            return true;
+          }).map((c,i)=>{
             const istT=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
             const od=c.open_date?String(c.open_date).slice(0,10):null;
             const cd=c.close_date?String(c.close_date).slice(0,10):null;
