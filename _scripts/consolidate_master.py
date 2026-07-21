@@ -32,7 +32,7 @@ COLTYPE = {
     "sub_day1_x": "numeric", "sub_day2_x": "numeric", "sub_day3_x": "numeric",
     "total_applications": "bigint", "promoter_pre_pct": "numeric",
     "promoter_post_pct": "numeric", "mcap_cr": "numeric", "ronw": "numeric",
-    "price_to_book": "numeric", "final_retail": "numeric", "debt_equity": "numeric",
+    "price_to_book": "numeric", "registrar_name": "text",
 }
 
 # scalar fills: golden column -> intelligence expression (fill-empty-only)
@@ -49,10 +49,13 @@ SCALARS = {
     "sub_day3_x": "i.sub_day3_x",
     "total_applications": "i.total_applications",
     "promoter_pre_pct": "i.promoter_pre_pct",
-    "promoter_post_pct": "i.promoter_post_pct",
-    "mcap_cr": "i.mcap_cr",
+    # names below are the REAL ipo_intelligence columns (owner --raw evidence
+    # 2026-07-23: mapped-field list) — not the golden names.
+    "promoter_post_pct": "i.promoter_holding_post",
+    "mcap_cr": "i.mcap_offer",
     "ronw": "i.ronw",
-    "price_to_book": "i.price_to_book",
+    "price_to_book": "i.ipo_pb",
+    "registrar_name": "i.registrar",
 }
 
 STRONG = "UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol)))"

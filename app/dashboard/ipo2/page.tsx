@@ -1218,8 +1218,8 @@ function IpoCommand() {
                     <span style={{...num,fontSize:11,color:C.meta}}>listed {D(wc.listing_date)}</span>
                   </div>
                   <div style={{border:`1px dashed ${C.border}`,borderRadius:11,padding:"12px 13px",marginTop:10}}>
-                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Feed idle</div>
-                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Market closed or capture not running — the exit engine on the right tracks daily closes meanwhile.</div>
+                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Daily closes (EOD)</div>
+                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Intraday ticks capture only on listing morning. From D1 the exit engine runs on daily closes — full session table in Listing Review.</div>
                   </div>
                 </div>
               )}
