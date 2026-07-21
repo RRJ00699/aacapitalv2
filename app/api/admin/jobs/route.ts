@@ -25,7 +25,7 @@ const ALLOWED_JOBS = new Set([
   // IPO Power House — IPO-focused jobs only. Non-IPO jobs (screener, old backtests,
   // theses, coverage, backfills) removed to keep the daily pipeline IPO-only.
   "pipeline", "pipeline_weekly",   // main IPO pipeline (lean — 2026-07-21)
-  "peer_pe", "peer_pe_notes", "news", "vm_verify",          // fair-value input fetch · reality report
+  "peer_pe", "peer_pe_notes", "news", "consolidate", "vm_verify",          // fair-value input fetch · reality report
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
   "sbi_download", "sbi_parse",     // SBI research notes (street view)

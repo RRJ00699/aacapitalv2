@@ -288,3 +288,31 @@ def test_news_feeds_reject_placeholder_rows():
     lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
     assert "n.url ~* '^https?://'" in cc and "n.headline NOT LIKE '<%'" in cc
     assert "n2.url ~* '^https?://'" in lp and "n2.headline NOT LIKE '<%'" in lp
+
+
+# ── Golden table (owner architecture, 2026-07-22) ─────────────────────────
+
+def test_golden_table_is_durable_plus_one_object_view():
+    """ipo_consolidated is REBUILT each run (wiped-listing-tape incident), so
+    golden fields live in DURABLE ipo_golden and the VIEW ipo_master gives
+    the owner's one-object reads. No ALTERs on the rebuilt table."""
+    ddl = _read("_scripts", "schema_sync.py")
+    assert "CREATE TABLE IF NOT EXISTS ipo_golden" in ddl
+    assert "CREATE OR REPLACE VIEW ipo_master" in ddl
+    for col in ("candles_json JSONB", "rhp_sonnet_json JSONB", "sbi_haiku_json JSONB",
+                "lot_size INT", "anchor_lock90_date DATE", "street_url TEXT"):
+        assert col in ddl, col
+    assert "ALTER TABLE ipo_consolidated ADD COLUMN" not in ddl
+
+
+def test_consolidation_is_fill_empty_strong_key_and_automated():
+    src = _read("_scripts", "consolidate_master.py")
+    assert "COALESCE(g.{col}" in src and "WHERE g.{col} IS NULL" in src, "fill-empty-only"
+    assert "regexp_replace(lower(" in src and "symbol_final" in src, "strong keys only"
+    assert "json_agg(json_build_object('d', p.date" in src, "candles materialize into the golden table"
+    assert "json_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
+    assert "n.headline NOT LIKE '<%%'" in src, "placeholder rows never reach the golden table"
+    lean = _read("_scripts", "run_ipo_pipeline_lean.py")
+    assert '"consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
+    jr = _read("_scripts", "job_runner.py")
+    assert '"consolidate"' in jr

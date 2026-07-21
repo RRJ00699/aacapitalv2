@@ -57,10 +57,20 @@ employee_discount, employee_quota_shares, shareholder_quota_shares,
 promoter_pre_pct, promoter_post_pct, mcap_cr, issue_expenses_cr,
 registrar_name, registrar_phone, registrar_email, ronw, ebitda_margin,
 price_to_book, gmp_history_json, financials_3y_json, rhp_sonnet_json,
-sbi_haiku_json. Implementation = next major commit on this PR: schema_sync
-DDL + consolidate_master.py (fill-empty, PC-runnable for the owner's local
-backfill) + routes simplified to single-table SELECTs + CompleteDetails
-binding every field.
+sbi_haiku_json. IMPLEMENTED (this PR): schema_sync creates DURABLE ipo_golden + the VIEW
+ipo_master (= consolidated LEFT JOIN golden) — one object for every read.
+Why not columns on ipo_consolidated directly: that table is REBUILT every
+pipeline run (build_ipo_consolidated_v2), and the wiped-listing-tape
+incident test blocks exactly that hazard — the guard caught this design
+before it shipped and would have wiped the owner's hand-backfilled data
+nightly. consolidate_master.py (--apply; PC-runnable with Neon
+DATABASE_URL) fills ipo_golden: intelligence scalars, RHP Sonnet + SBI
+Haiku full_json copies, street article (sanity-guarded), and candles_json
+(listing→lock-in daily OHLCV, grows daily, never shrinks). AUTOMATED: runs
+every lean-pipeline cycle + admin job 'consolidate'. Remaining slices:
+routes/UI read ipo_master; Chittorgarh detail-page scrape feeds the fields
+intelligence lacks (lot size, timetable, day-wise subscription, expenses,
+registrar, GMP history); NSE fallback per precedence.
 
 ## Next slices (in order)
 1. Listing Review view UI (state machine + outcome summary + observations

@@ -53,6 +53,49 @@ DDL = [
     # 2026-07-21: eligibility columns — production has them from the scraper
     # era, but the DDL owner never declared them; a fresh DB crashed the
     # Haiku spend-gate (caught by test_sbi_haiku_finds_work).
+
+    # ── GOLDEN TABLE (owner decision 2026-07-22): every field the UI +
+    # backtests read, in ONE readable object. ipo_consolidated is REBUILT
+    # each pipeline run (see test_no_columns_on_rebuilt_tables — the wiped
+    # listing-tape incident), so durable fields live in ipo_golden (its OWN
+    # table, keyed by normalized company name) and the VIEW ipo_master joins
+    # them: single-object reads, rebuild-proof storage.
+    """CREATE TABLE IF NOT EXISTS ipo_golden (
+        company_key TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        nse_symbol TEXT,
+        isin TEXT, lot_size INT, face_value NUMERIC,
+        allotment_date DATE, refund_date DATE, credit_date DATE,
+        anchor_amount_cr NUMERIC, anchor_lock30_date DATE, anchor_lock90_date DATE,
+        sub_day1_x NUMERIC, sub_day2_x NUMERIC, sub_day3_x NUMERIC,
+        bnii_x NUMERIC, snii_x NUMERIC, total_applications BIGINT,
+        employee_discount NUMERIC, employee_quota_shares BIGINT, shareholder_quota_shares BIGINT,
+        promoter_pre_pct NUMERIC, promoter_post_pct NUMERIC,
+        mcap_cr NUMERIC, issue_expenses_cr NUMERIC,
+        registrar_name TEXT, registrar_phone TEXT, registrar_email TEXT,
+        ronw NUMERIC, ebitda_margin NUMERIC, price_to_book NUMERIC,
+        gmp_history_json JSONB, financials_3y_json JSONB,
+        rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
+        street_headline TEXT, street_publisher TEXT, street_url TEXT,
+        candles_json JSONB,
+        golden_filled_at TIMESTAMPTZ)""",
+    """CREATE OR REPLACE VIEW ipo_master AS
+        SELECT c.*, g.isin, g.lot_size, g.face_value,
+               g.allotment_date, g.refund_date, g.credit_date,
+               g.anchor_amount_cr, g.anchor_lock90_date,
+               g.sub_day1_x, g.sub_day2_x, g.sub_day3_x, g.bnii_x, g.snii_x,
+               g.total_applications, g.employee_discount, g.employee_quota_shares,
+               g.shareholder_quota_shares, g.promoter_pre_pct, g.promoter_post_pct,
+               g.mcap_cr, g.issue_expenses_cr,
+               g.registrar_name, g.registrar_phone, g.registrar_email,
+               g.ronw, g.ebitda_margin, g.price_to_book,
+               g.gmp_history_json, g.financials_3y_json,
+               g.rhp_sonnet_json, g.sbi_haiku_json,
+               g.street_headline, g.street_publisher, g.street_url,
+               g.candles_json, g.golden_filled_at
+        FROM ipo_consolidated c
+        LEFT JOIN ipo_golden g
+          ON g.company_key = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')""",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS is_sme BOOLEAN",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS issue_size_cr NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS eps_source TEXT",
