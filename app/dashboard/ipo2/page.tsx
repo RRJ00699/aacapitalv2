@@ -984,7 +984,7 @@ function IpoCommand() {
         .ipo-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
         @media (max-width:900px){.ipo-shell{grid-template-columns:1fr}.ipo-shell aside{order:-1}}
       `}</style>
-      <div style={{minWidth:0}}>
+      <div key={view} className="aac-view" style={{minWidth:0}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
         <div><h1 style={{fontFamily:"var(--f-display)",fontSize:20,fontWeight:800,margin:0,letterSpacing:-0.3}}>IPO Command Center</h1>
           <div style={{fontSize:12,color:C.meta}}>Nightly pipeline · Chittorgarh + SBI + NSE + Kite ·
@@ -1017,12 +1017,14 @@ function IpoCommand() {
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>
         {pills.map(([k,l])=>(
-          <span key={k} onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
+          <span key={k} role="button" tabIndex={0} aria-pressed={view===k} aria-label={`Switch to ${l}`}
+            onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setView(k);}}}
+            onClick={()=>setView(k)} style={{cursor:"pointer",userSelect:"none",
             border:`1px solid ${view===k?C.amberBd:C.border}`,background:view===k?C.amberBg:C.surface,
             color:view===k?C.gold:C.meta,borderRadius:20,padding:"7px 14px",fontSize:12.5,fontWeight:view===k?700:500,
             transition:"all .2s var(--ease)"}}>{k==="live" && liveSyms.length>0 ? <><span className="livedot" style={{width:5,height:5,marginRight:5,verticalAlign:"middle"}}/>{l}</> : l}</span>))}
       </div>
-      {err && <div style={{...card,borderColor:C.redBd,color:C.red,fontSize:13}}>API error: {err}</div>}
+      {err && <div style={{margin:"6px 0"}}><ErrorState title="API error" detail={String(err)} onRetry={()=>window.location.reload()}/></div>}
 
       {/* LIVE — the trading surface: live panel + exit engine side-by-side */}
       {view==="live" && <>
@@ -1102,7 +1104,7 @@ function IpoCommand() {
                   </div>
                   {(()=>{const L=(d?.dl||[]).find(x=>x.sym===sym);
                     return <Spark ticks={ticks} floor={N(L?.floor) ?? N(lv.floor_price)} ceil={N(L?.ceiling) ?? N(lv.ceiling_price)}/>;})()}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:8}}>
+                  <div className="aac-cols-4" style={{marginTop:8}}>
                     {[["OBIR",N(last.obir)==null?"—":N(last.obir)!.toFixed(2),N(last.obir)!=null&&N(last.obir)!>=1?C.green:C.red],
                       ["Momentum",last.momentum,C.text],["Signal",last.signal,C.text],
                       ["Floor defenses",lv.floor_defenses,C.text]].map((t,i)=>(
@@ -1156,7 +1158,9 @@ function IpoCommand() {
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"2px 0 10px"}}>
           {["ALL","TRADE","WATCH","CAUTION","AVOID"].map(k=>(
-            <span key={k} onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
+            <span key={k} role="button" tabIndex={0} aria-pressed={vFilter===k}
+              onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setVFilter(k);}}}
+              onClick={()=>setVFilter(k)} style={{cursor:"pointer",userSelect:"none",fontSize:11.5,fontWeight:700,
               padding:"4px 12px",borderRadius:999,letterSpacing:.3,
               border:`1px solid ${vFilter===k?C.blueBd:C.border}`,
               background:vFilter===k?C.blueBg:C.surface,color:vFilter===k?C.blue:C.meta}}>

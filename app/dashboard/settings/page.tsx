@@ -1,5 +1,6 @@
 "use client";
 // app/dashboard/settings/page.tsx — set service secrets from the phone.
+import { Skeleton } from "@/components/ui/primitives";
 import AppShell from "@/components/app-shell/AppShell";
 import { useEffect, useState } from "react";
 const C={bg:"var(--t-bg)",s:"var(--t-surface)",bd:"var(--t-border)",tx:"var(--t-text)",mt:"var(--t-meta)",gr:"var(--t-green)",grB:"var(--t-greenBg)",grD:"var(--t-greenBd)"};
@@ -86,7 +87,7 @@ function StepBoard(){
   const [expected,setExpected]=useState<Array<{step:string;weekly?:boolean}>>([]);
   useEffect(()=>{fetch("/api/admin/pipeline-steps").then(r=>r.json())
     .then(j=>{setSteps(j.steps||[]);setExpected(j.expected||[]);}).catch(()=>setSteps([]));},[]);
-  if(steps===null)return <div style={{fontSize:12,color:C.mt}}>loading…</div>;
+  if(steps===null)return <Skeleton h={30} n={6}/>;
   if(!steps.length)return <div style={{fontSize:12,color:C.mt}}>No step log yet — populates from the next pipeline run.</div>;
   const fails=steps.filter(s=>!s.ok).length;
   // 2026-07-21: steps that SHOULD have run but left no row (the peer-PE ghost
@@ -124,7 +125,7 @@ function Failures(){
   const [rows,setRows]=useState<Array<{step:string;script:string;stderr_tail:string;failed_at:string}>|null>(null);
   useEffect(()=>{fetch("/api/admin/pipeline-failures").then(r=>r.json())
     .then(j=>setRows(j.failures||[])).catch(()=>setRows([]));},[]);
-  if(rows===null)return <div style={{fontSize:12,color:C.mt}}>loading…</div>;
+  if(rows===null)return <Skeleton h={54} n={2}/>;
   if(!rows.length)return <div style={{background:C.grB,border:`1px solid ${C.grD}`,color:C.gr,
     borderRadius:10,padding:"10px 12px",fontSize:12.5,fontWeight:600}}>No failures in the last 7 days ✓</div>;
   return <div>{rows.map((f,i)=>(

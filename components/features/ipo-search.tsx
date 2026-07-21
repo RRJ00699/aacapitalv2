@@ -70,7 +70,11 @@ export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try:
   const results = useMemo(
     () => (cards ? runSearch(cards, post, deb, chips) : []),
     [cards, post, deb, chips]);
-  useEffect(() => setSel(0), [deb, chips]);
+  // reset selection when the query/filters change — derived during render
+  // (not in an effect) so keyboard state can't lag a frame behind results.
+  const selKey = `${deb}|${chips.join(",")}`;
+  const lastKey = useRef(selKey);
+  if (lastKey.current !== selKey) { lastKey.current = selKey; if (sel !== 0) setSel(0); }
 
   function pick(c: Row) {
     const name = String(c.company_name ?? "");
@@ -91,14 +95,14 @@ export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try:
 
   return (
     <div ref={ref} style={{ position: "relative", width: "100%", maxWidth: 460 }}>
-      <input role="combobox" aria-expanded={open} aria-label="Search IPOs by name, symbol or status"
+      <input role="combobox" aria-expanded={open} aria-controls="aac-search-listbox" aria-label="Search IPOs by name, symbol or status"
         value={query} placeholder={placeholder}
         onFocus={() => setOpen(true)} onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onKeyDown={onKey}
         style={{ width: "100%", padding: "9px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
           fontSize: 13, color: C.text, background: C.surface }} />
       {open && (
-        <div role="listbox" aria-label="IPO search results"
+        <div id="aac-search-listbox" role="listbox" aria-label="IPO search results"
           style={{ position: "absolute", top: "110%", left: 0, right: 0, zIndex: 60, background: C.surface,
             border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 34px rgba(20,30,60,.14)",
             maxHeight: 480, overflowY: "auto" }}>

@@ -123,3 +123,9 @@ button:active, [role="button"]:active { transform: scale(.985); }
   border-bottom: 1px solid var(--t-border); }
 /* Touch targets ≥44px on coarse pointers (WCAG 2.5.8). */
 @media (pointer: coarse) { button, [role="option"] { min-height: 44px; } }
+
+/* P4: 4-up stat mini-grids collapse to 2-up on phones. */
+.aac-cols-4 { display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0,1fr)); }
+@media (max-width: 640px) { .aac-cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+/* P4: view-switch transition (uses the shell's fade keyframes; motion tokens). */
+.aac-view { animation: fade var(--m-slow) var(--m-ease); }

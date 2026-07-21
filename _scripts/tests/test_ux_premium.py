@@ -77,3 +77,25 @@ def test_no_behavior_regressions_in_pinned_strings():
     assert "pending RHP analysis" in card
     page = _read("app", "dashboard", "ipo2", "page.tsx")
     assert "WATCH, not BUY" in page
+
+
+def test_p4_transitions_and_responsive_grids():
+    css = _read("app", "globals.css")
+    assert ".aac-cols-4" in css and ".aac-view" in css
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert 'className="aac-cols-4"' in page, "4-col stat grid must collapse on phones"
+    assert 'key={view} className="aac-view"' in page, "view switches must animate (motion tokens)"
+
+
+def test_p4_interactive_spans_are_keyboard_operable():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.count('role="button"') >= 2, "view pills + verdict chips need button semantics"
+    assert 'aria-pressed={view===k}' in page and 'aria-pressed={vFilter===k}' in page
+    assert page.count('e.key==="Enter"||e.key===" "') >= 2, "Enter/Space must activate"
+
+
+def test_p4_loading_states_use_shared_skeleton():
+    st = _read("app", "dashboard", "settings", "page.tsx")
+    assert "<Skeleton" in st and "loading…</div>" not in st
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert "ErrorState" in page and page.count("onRetry") >= 2, "both error banners offer retry"
