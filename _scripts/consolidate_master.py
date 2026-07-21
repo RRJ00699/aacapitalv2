@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """consolidate_master.py — THE golden-table job (owner architecture 2026-07-22).
 
-ipo_master (VIEW) is the ONE object every screen and backtest reads:
+ipo_gold (VIEW) is the ONE object every screen and backtest reads:
 ipo_consolidated (rebuilt each run) LEFT JOIN ipo_golden (durable — this
 table survives rebuilds; see test_no_columns_on_rebuilt_tables for the
 incident that mandates it). This job fills ipo_golden, fill-empty-only
