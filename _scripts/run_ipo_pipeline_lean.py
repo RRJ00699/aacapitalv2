@@ -55,6 +55,23 @@ def _log_step(name, script, ok, err=""):
     except Exception:
         pass
 
+def notify(title, body, ok=True):
+    """ntfy push on every pipeline run (owner 2026-07-23). Set NTFY_TOPIC in
+    .env (e.g. aacapital-rakesh-7x2). No topic -> silent no-op. Never fatal."""
+    topic = os.environ.get("NTFY_TOPIC")
+    if not topic:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}", data=body.encode()[:900],
+            headers={"Title": title, "Priority": "default" if ok else "high",
+                     "Tags": "white_check_mark" if ok else "rotating_light"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
 def log(m):
     line=f"[{datetime.datetime.now():%H:%M:%S}] {m}"
     print(line)
