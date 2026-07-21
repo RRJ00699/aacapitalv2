@@ -25,6 +25,13 @@ def _canon(col):
 
 
 DDL = [
+    # symbol_aliases (2026-07-22): NSE renames/mergers for historical backfills
+    # (e.g. ZOMATO -> ETERNAL). Owner-curated; backfill scripts consult it.
+    """CREATE TABLE IF NOT EXISTS symbol_aliases (
+        old_symbol TEXT PRIMARY KEY,
+        new_symbol TEXT NOT NULL,
+        note TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW())""",
     # ── ipo_news (2026-07-22): one selected street article per IPO. Discovery
     # via whitelisted Google News RSS (free) + manual admin override. Metadata
     # + short snippet ONLY — never full article text (copyright + licensing).

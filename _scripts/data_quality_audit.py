@@ -15,17 +15,23 @@ import os
 import sys
 
 
-CRITICAL = [  # column -> why the backtest needs it
-    ("company_name", "identity"),
-    ("nse_symbol", "strong key (ticker/candles)"),
-    ("listing_date", "window anchor"),
-    ("issue_price", "return base"),
-    ("listing_open", "gap rule / entry"),
-    ("issue_size_cr", "eligibility + mega rule"),
-    ("anchor_count", "anchor rules"),
-    ("final_qib", "demand rules"),
-    ("ipo_pe", "valuation rules"),
-    ("anchor_lock30_date", "exit window bound"),
+# Two-table design (owner, 2026-07-22): ipo_consolidated = THE serving table
+# (UI/routes read it, jobs backfill it); ipo_intelligence = the source table.
+# Each field is scored against the table that owns it; existence is verified
+# via information_schema first — the audit never assumes a column.
+CRITICAL = [  # (table, column, why the backtest needs it)
+    ("ipo_intelligence", "company_name", "identity"),
+    ("ipo_intelligence", "nse_symbol", "strong key (ticker/candles)"),
+    ("ipo_intelligence", "listing_date", "window anchor"),
+    ("ipo_intelligence", "issue_price", "return base"),
+    ("ipo_intelligence", "listing_open", "gap rule / entry"),
+    ("ipo_intelligence", "issue_size_cr", "eligibility + mega rule"),
+    ("ipo_intelligence", "anchor_count", "anchor rules"),
+    ("ipo_intelligence", "anchor_lock30_date", "exit window bound"),
+    ("ipo_consolidated", "final_qib", "demand rules (serving)"),
+    ("ipo_consolidated", "final_total", "demand rules (serving)"),
+    ("ipo_consolidated", "ipo_pe", "valuation rules (serving)"),
+    ("ipo_consolidated", "listing_gap_pct", "outcome label (serving)"),
 ]
 
 
@@ -42,18 +48,34 @@ def main() -> int:
           AND company_name !~* '\\y(REIT|InvIT)\\y'""")
     n = cur.fetchone()[0]
     print(f"ELIGIBLE UNIVERSE (intelligence): {n} IPOs\n")
-    print(f"{'field':22} {'coverage':>10}  purpose")
+    # column existence from information_schema — never assume
+    cur.execute("""SELECT table_name, column_name FROM information_schema.columns
+                   WHERE table_name IN ('ipo_intelligence','ipo_consolidated')""")
+    have = {(t, c) for t, c in cur.fetchall()}
+    denom = {}
+    for tbl in ("ipo_intelligence", "ipo_consolidated"):
+        cur.execute(f"""SELECT COUNT(*) FROM {tbl}
+            WHERE COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200)
+              AND company_name !~* '\\y(REIT|InvIT)\\y'""")
+        denom[tbl] = cur.fetchone()[0]
+    print(f"{'table.field':40} {'coverage':>10}  purpose")
     worst = []
-    for col, why in CRITICAL:
-        cur.execute(f"""SELECT COUNT(*) FROM ipo_intelligence
+    for tbl, col, why in CRITICAL:
+        label = f"{tbl}.{col}"
+        if (tbl, col) not in have:
+            print(f"{label:40} {'ABSENT':>10}  {why} — column not in information_schema")
+            worst.append((0.0, label))
+            continue
+        cur.execute(f"""SELECT COUNT(*) FROM {tbl}
             WHERE COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200)
               AND company_name !~* '\\y(REIT|InvIT)\\y'
               AND {col} IS NOT NULL AND btrim({col}::text) <> ''""")
         c = cur.fetchone()[0]
-        pctv = 100.0 * c / n if n else 0
-        print(f"{col:22} {pctv:9.1f}%  {why}")
+        d = denom[tbl] or 1
+        pctv = 100.0 * c / d
+        print(f"{label:40} {pctv:9.1f}%  {why}")
         if pctv < 99.9:
-            worst.append((pctv, col))
+            worst.append((pctv, label))
 
     print("\nANOMALY CLASSES (each burned us once):")
     checks = [
@@ -83,8 +105,8 @@ def main() -> int:
 
     if worst:
         print("\nBACKFILL PRIORITY (worst coverage first):")
-        for pctv, col in sorted(worst):
-            print(f"  {col}: {pctv:.1f}% -> NSE archive / official docs (see docs/DETAILS_AND_REVIEW.md matrix)")
+        for pctv, label in sorted(worst):
+            print(f"  {label}: {pctv:.1f}% -> NSE archive / official docs (see docs/DETAILS_AND_REVIEW.md matrix)")
     print("\nCandle gaps -> run: venv/bin/python _scripts/backfill_listing_window_candles.py --apply")
     conn.close()
     return 0

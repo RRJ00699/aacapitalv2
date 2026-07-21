@@ -8,11 +8,12 @@ const isSmoke = !!process.env.UAT_BASE_URL; // smoke = external URL, read-only
 
 export default defineConfig({
   testDir: "uat/tests",
-  outputDir: "uat-report/artifacts",
+  outputDir: "uat-results",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["html", { outputFolder: "uat-report", open: "never" }], ["list"]],
+  // NOTE: uat-results/ (artifacts) is a SIBLING of uat-report/ (html) — same-folder nesting made the reporter clear artifacts.
   use: {
     baseURL: BASE,
     trace: "retain-on-failure",
@@ -29,7 +30,7 @@ export default defineConfig({
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
-    { name: "tablet", use: { ...devices["iPad (gen 7)"] } },
-    { name: "mobile", use: { ...devices["iPhone 13"] } },
+    { name: "tablet", use: { ...devices["iPad (gen 7)"], browserName: "chromium" } },
+    { name: "mobile", use: { ...devices["iPhone 13"], browserName: "chromium" } },
   ],
 });

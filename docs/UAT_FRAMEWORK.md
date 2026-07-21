@@ -37,6 +37,16 @@ work any day. DATABASE_URL points at .invalid; Kite/LLM never touched.
 - `npm run uat:smoke -- --base-url=https://…` — post-deploy, READ-ONLY
 - Visual baselines: `UAT_VISUAL=1 npx playwright test uat/tests/visual --update-snapshots`, commit; PRs then fail on >2% drift
 
+## CI round-2 fixes (2026-07-22, from the first real Actions run)
+- All journeys had landed on /login: the PAGE gate (app/dashboard/layout.tsx)
+  redirected logged-out visitors; only the API gate was fixture-aware. Both
+  now open under UAT_FIXTURE_JSON (which also replaces the DB — guard-tested).
+- tablet/mobile died on missing webkit: device profiles default to webkit but
+  CI installs chromium only. Every project pins browserName chromium.
+- Reporter clash: artifacts moved to sibling uat-results/ (CI uploads both).
+- The color-contrast a11y finding was measured on the LOGIN page; the gate
+  stays strict — the next run scores the real dashboard.
+
 ## Environment honesty
 The dev sandbox has no browser binary (Playwright CDN off-network) — browser
 execution is CI-verified. Everything below the browser was proven here by

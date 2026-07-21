@@ -64,3 +64,4 @@ cf-secrets.json
 .wrangler/
 uat-report/artifacts/
 uat-report/index.html
+uat-results/
