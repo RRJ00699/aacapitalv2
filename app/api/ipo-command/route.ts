@@ -1,3 +1,4 @@
+import { fixtureAwareNeon } from "@/lib/db";
 // deploy: retrigger 2026-07-11b
 // app/api/ipo-command/route.ts
 // Single feed for the redesigned IPO page (/dashboard/ipo2). Read-only.
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
 // runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
 let _neonSql: NeonQueryFunction<false, false> | null = null;
 const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  if (!_neonSql) _neonSql = fixtureAwareNeon();
   return _neonSql(strings, ...values);
 }) as NeonQueryFunction<false, false>;
 

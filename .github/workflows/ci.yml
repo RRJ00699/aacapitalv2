@@ -50,3 +50,20 @@ jobs:
              | grep -vE "environ|getenv|process\.env|headers|KEYNAME|x-aac|placeholder"; then
             echo "::error::Possible hardcoded secret"; exit 1
           fi
+
+  uat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: npm ci
+      - run: pip install pytest psycopg2-binary pgserver
+      - run: npx playwright install --with-deps chromium
+      - name: Full UAT (typecheck + build + pytest + browser journeys + a11y)
+        run: npm run uat:all
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: uat-report, path: uat-report/ }

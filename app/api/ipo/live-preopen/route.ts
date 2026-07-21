@@ -26,7 +26,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
-function db() { return neon(process.env.DATABASE_URL!); }
+import { fixtureAwareNeon } from "@/lib/db";
+function db() { return fixtureAwareNeon(process.env.DATABASE_URL!); }
 
 // ── KV cache (ledger #13) — 60s TTL, HARD BYPASS during the official NSE
 // special pre-open window (this file's timing model, corrected 2026-07-16):

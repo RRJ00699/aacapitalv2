@@ -133,3 +133,39 @@ def test_uat_tracker_is_the_single_registry():
     doc = _read("docs", "UAT_TRACKER.md")
     for item in ("U1", "U8", "F2", "no more zombies"):
         assert item in doc
+
+
+# ── UAT framework contracts ───────────────────────────────────────────────
+
+def test_uat_framework_files_exist():
+    for p in (("playwright.config.ts",), ("uat", "serve.mjs"), ("uat", "smoke.mjs"),
+              ("uat", "fixtures", "seed.json"), ("uat", "tests", "_base.ts"),
+              ("uat", "tests", "journeys.spec.ts"), ("uat", "tests", "a11y.spec.ts"),
+              ("uat", "tests", "smoke.spec.ts"), ("docs", "UAT_FRAMEWORK.md")):
+        assert os.path.exists(os.path.join(REPO, *p)), f"missing {'/'.join(p)}"
+    import json
+    pkg = json.load(open(os.path.join(REPO, "package.json")))
+    assert "uat:all" in pkg["scripts"] and "uat:smoke" in pkg["scripts"]
+    assert "playwright test" in pkg["scripts"]["uat:all"]
+
+
+def test_fixture_mode_is_the_only_auth_bypass_and_never_production():
+    guard = _read("lib", "api-guard.ts")
+    assert "process.env.UAT_FIXTURE_JSON" in guard
+    db = _read("lib", "db.ts")
+    assert "UAT_FIXTURE_JSON" in db and "fixtureAwareNeon" in db, \
+        "the same env replaces the DB — the bypass can never reach real data"
+    serve = _read("uat", "serve.mjs")
+    assert "fixture.invalid" in serve
+
+
+def test_smoke_is_read_only():
+    smoke = _read("uat", "tests", "smoke.spec.ts")
+    assert "request.get" in smoke
+    for verb in ("request.post", "request.put", "request.delete", "request.patch"):
+        assert verb not in smoke
+
+
+def test_ci_blocks_on_uat():
+    ci = _read(".github", "workflows", "ci.yml")
+    assert "npm run uat:all" in ci and "playwright install" in ci

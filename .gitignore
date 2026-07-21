@@ -62,3 +62,5 @@ cf-secrets.json
 
 # local wrangler/miniflare state (never commit)
 .wrangler/
+uat-report/artifacts/
+uat-report/index.html
