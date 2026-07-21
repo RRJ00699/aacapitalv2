@@ -95,12 +95,11 @@ def main() -> int:
         if ("ipo_golden", col) not in have or ("ipo_intelligence", src) not in have:
             filled[col] = "skip (column absent)"
             continue
+        cast = COLTYPE.get(col, "text")  # text->typed from the MAX(text) funnel
         q = f"""UPDATE ipo_golden g SET {col} = COALESCE(g.{col}, sub.v::{cast})
                 FROM (SELECT {NORM.format('i.company_name')} AS k, MAX({expr}::text) AS v
                       FROM ipo_intelligence i WHERE {expr} IS NOT NULL GROUP BY 1) sub
                 WHERE g.{col} IS NULL AND sub.v IS NOT NULL AND g.company_key = sub.k"""
-        # cast back from the MAX(text) funnel to the column's own type
-        q = q.replace("{cast}", COLTYPE.get(col, "text"))
         cur.execute(q)
         filled[col] = cur.rowcount
 
@@ -133,7 +132,7 @@ def main() -> int:
         SET candles_json = sub.cj, golden_filled_at = NOW()
         FROM (
           SELECT {STRONG} AS k,
-                 json_agg(json_build_object('d', p.date, 'o', p.open, 'h', p.high,
+                 jsonb_agg(jsonb_build_object('d', p.date, 'o', p.open, 'h', p.high,
                                             'l', p.low, 'c', p.close, 'v', p.volume)
                           ORDER BY p.date) AS cj,
                  COUNT(*) AS n
@@ -147,7 +146,7 @@ def main() -> int:
           GROUP BY 1
         ) sub
         WHERE UPPER(COALESCE(g.nse_symbol, '')) = sub.k
-          AND COALESCE(json_array_length(g.candles_json), 0) < sub.n""")
+          AND COALESCE(jsonb_array_length(g.candles_json), 0) < sub.n""")
     filled["candles_json"] = cur.rowcount
 
     filled["golden rows seeded"] = seeded
