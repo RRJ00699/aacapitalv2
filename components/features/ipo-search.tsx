@@ -7,15 +7,22 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { FILTER_CHIPS, type Chip, type Row, runSearch, stageOf, primaryAction } from "@/lib/search-intent";
 
-const C = { surface: "#FFFFFF", border: "#E2E8F2", text: "#1A2438", sub: "#68738C",
-  bg: "#F4F6FA", dim: "#9AA3B8", green: "#0E7A4D", greenBg: "#EAF6F0", red: "#C4443A",
-  redBg: "#FBEFED", amber: "#B6700E", amberBg: "#FBF3E6", blue: "#2E5A9E", blueBg: "#EDF2FA" };
+import { VARS, TONE, toneFor } from "@/lib/theme";
+// Token-converged (feat/ux-premium): same keys, CSS-var values — dark mode
+// and palette changes now propagate here automatically.
+const C = { surface: VARS.surface, border: VARS.border, text: VARS.text, sub: VARS.sub,
+  bg: VARS.surface2, dim: VARS.dim, green: VARS.green, greenBg: VARS.greenBg, red: VARS.red,
+  redBg: VARS.redBg, amber: VARS.amber, amberBg: VARS.amberBg, blue: VARS.blue, blueBg: VARS.blueBg };
 
 interface Props { onSelect: (company: string, target?: string) => void; placeholder?: string }
 
+// Stage colors ride the ONE tone system (LISTING = urgent-red is a deliberate
+// exception for the decision window; the rest map through toneFor).
 const STAGE_STYLE: Record<string, [string, string]> = {
-  LISTING: [C.red, C.redBg], OPEN: [C.green, C.greenBg], UPCOMING: [C.blue, C.blueBg],
-  LISTED: [C.sub, C.bg], CLOSED: [C.amber, C.amberBg] };
+  LISTING: [C.red, C.redBg],
+  OPEN: [TONE[toneFor("OPEN")].fg, TONE[toneFor("OPEN")].bg],
+  UPCOMING: [TONE[toneFor("UPCOMING")].fg, TONE[toneFor("UPCOMING")].bg],
+  LISTED: [TONE.neutral.fg, TONE.neutral.bg], CLOSED: [TONE.watch.fg, TONE.watch.bg] };
 const D = (v: unknown) => (v ? String(v).slice(5, 10) : "—");
 
 function Badge({ t, fg, bg }: { t: string; fg: string; bg: string }) {
@@ -24,9 +31,8 @@ function Badge({ t, fg, bg }: { t: string; fg: string; bg: string }) {
 }
 
 function Skeleton() {
-  return <div aria-hidden style={{ padding: "10px 12px" }}>
-    {[0, 1, 2].map((i) => <div key={i} style={{ height: 44, borderRadius: 9, background: C.bg,
-      marginBottom: 8, animation: "fade 1s ease infinite alternate" }} />)}
+  return <div aria-hidden style={{ padding: "10px 12px", display: "grid", gap: 8 }}>
+    {[0, 1, 2].map((i) => <div key={i} className="aac-skeleton" style={{ height: 44 }} />)}
   </div>;
 }
 

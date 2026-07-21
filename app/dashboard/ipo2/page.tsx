@@ -10,6 +10,7 @@ import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
+import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
   constructor(p: {children: React.ReactNode}) { super(p); this.state = { err: false }; }
@@ -581,8 +582,9 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
   const await2 = (note: string) => (
     <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginTop: 4 }}>awaiting<span style={{ fontWeight: 400 }}> · {note}</span></div>);
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
-      {/* HERO: the deadline */}
+    <div className="aac-sticky-decision" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 15px", marginBottom: 14 }}>
+      {/* HERO: the deadline — sticky (feat/ux-premium): the primary answer
+          stays visible while rules/evidence scroll underneath. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, color: C.meta, letterSpacing: .6, textTransform: "uppercase", fontWeight: 700 }}>
           {listedPast ? "Decision window (archived)" : phase === "entry" ? "Order entry closes 9:43" : phase === "discovery" ? "Price discovery 9:45–9:55" : `Decision deadline ${String(L?.deadline_ist ?? "09:58")} IST`}</span>
@@ -878,6 +880,15 @@ function IpoCommand() {
         window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
       }
     } catch { /* best-effort */ }
+    const onSetView = (e: Event) => {
+      const v = String((e as CustomEvent).detail?.view || "");
+      if (v === "live" || v === "command" || v === "post") { setView(v); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    };
+    window.addEventListener("aac:set-view", onSetView);
+    try {
+      const pv = sessionStorage.getItem("aac:pending-view");
+      if (pv) { sessionStorage.removeItem("aac:pending-view"); onSetView(new CustomEvent("x", { detail: { view: pv } })); }
+    } catch { /* best-effort */ }
     const onFocus = (e: Event) => {
       const company = String((e as CustomEvent).detail?.company || "");
       const target = String((e as CustomEvent).detail?.target || "");
@@ -910,7 +921,7 @@ function IpoCommand() {
         document.getElementById(`ipocard-${hit.sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
     };
     window.addEventListener("aac:focus-ipo", onFocus);
-    return () => window.removeEventListener("aac:focus-ipo", onFocus);
+    return () => { window.removeEventListener("aac:focus-ipo", onFocus); window.removeEventListener("aac:set-view", onSetView); };
   }, [d]);
   const autoLive = useRef(false);
   useEffect(() => {
@@ -966,9 +977,9 @@ function IpoCommand() {
     <div style={{padding:"16px 20px",background:"transparent",minHeight:"100vh",maxWidth:1500,margin:"auto",
       font:'14px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif',color:C.text,
       alignItems:"start"}} className="ipo-shell">
-      {degraded && <div style={{background:"#FFFAEB",border:"1px solid #FEDF89",color:"#B54708",
-        borderRadius:10,padding:"10px 14px",margin:"10px 0",fontSize:12.5,fontWeight:600}}>
-        Data engine degraded — showing what we can. <span style={{fontFamily:"var(--f-mono)",fontSize:10.5,fontWeight:400}}>{degraded}</span></div>}
+      {degraded && <div style={{margin:"10px 0"}}>
+        <ErrorState title="Data engine degraded — showing what we can."
+          detail={String(degraded)} onRetry={()=>window.location.reload()}/></div>}
       <style>{`
         .ipo-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}
         @media (max-width:900px){.ipo-shell{grid-template-columns:1fr}.ipo-shell aside{order:-1}}
@@ -980,6 +991,7 @@ function IpoCommand() {
             {d ? ` refreshed ${new Date().toLocaleTimeString()}` : " loading…"}</div></div>
         <ThemeToggle/>
       </div>
+      {!d && <div style={{marginTop:12}}><Skeleton h={120} n={4}/></div>}
 
       {/* engine strip — plain-English grades, rigor one line below */}
       <div style={{...card,marginTop:12}}>
@@ -1160,7 +1172,11 @@ function IpoCommand() {
           </div>;
         })}
         {vFilter!=="ALL" && cards.filter(c=>String(c.verdict||"")===vFilter && !liveCanon.includes(canonSym(String(c.sym)))).length===0 &&
-          <div style={card}><span style={{fontSize:13,color:C.meta}}>No {vFilter} verdicts in the current window.</span></div>}
+          <EmptyState title={`No ${vFilter} verdicts in the current window.`}
+            hint="Verdicts update after each pipeline run.">
+            <button onClick={()=>setVFilter("ALL")} style={{fontSize:11,fontWeight:700,padding:"6px 12px",
+              borderRadius:999,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,cursor:"pointer"}}>Show all</button>
+          </EmptyState>}
       </>}
 
       {/* PLAYBOOK */}
