@@ -49,6 +49,11 @@ TODO_SQL = r"""
       ON regexp_replace(lower(i.company_name), '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
        = regexp_replace(lower(n.company),      '\y(ltd|limited|pvt|private|ipo|and)\y|&|[^a-z0-9]', '', 'g')
     WHERE n.source = 'SBI' AND n.pdf_path IS NOT NULL AND n.full_json IS NULL
+      -- LOCKED eligibility (2026-07-21): SBI publishes notes for SME/small
+      -- names too; we paid to read five of them. The <200cr/SME rule now
+      -- gates the SPEND, not just the feeds. NULL size stays eligible.
+      AND COALESCE(i.is_sme, false) = false
+      AND (i.issue_size_cr IS NULL OR i.issue_size_cr >= 200)
       AND (i.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - 30
            OR i.close_date  >= (now() AT TIME ZONE 'Asia/Kolkata')::date
            OR i.listing_date IS NULL)
