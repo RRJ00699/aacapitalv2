@@ -112,14 +112,34 @@ def main() -> int:
     note_cols = {r[0] for r in cur.fetchall()}
     recency = next((c for c in ("stored_at", "created_at", "updated_at", "id") if c in note_cols), None)
     order_tail = f", n.{recency} DESC NULLS LAST" if recency else ""
-    for col, source in (("rhp_sonnet_json", "RHP_SONNET"), ("sbi_haiku_json", "SBI")):
-        cur.execute(f"""UPDATE ipo_golden g SET {col} = sub.fj
-            FROM (SELECT DISTINCT ON ({NORM.format('n.company')}) {NORM.format('n.company')} AS k, n.full_json AS fj
-                  FROM ipo_research_notes n
-                  WHERE n.source = %s AND n.full_json IS NOT NULL
-                  ORDER BY {NORM.format('n.company')}{order_tail}) sub
-            WHERE g.{col} IS NULL AND g.company_key = sub.k""", (source,))
-        filled[col] = cur.rowcount
+    # SBI Haiku lives in ipo_research_notes (source='SBI'); RHP Sonnet lives in
+    # its OWN table ipo_rhp_intel (rhp_sonnet_store.py) — owner evidence
+    # 2026-07-22: research_notes contains only SBI/Hem, zero RHP_SONNET rows.
+    cur.execute(f"""UPDATE ipo_golden g SET sbi_haiku_json = sub.fj
+        FROM (SELECT DISTINCT ON ({NORM.format('n.company')}) {NORM.format('n.company')} AS k, n.full_json AS fj
+              FROM ipo_research_notes n
+              WHERE n.source = 'SBI' AND n.full_json IS NOT NULL
+              ORDER BY {NORM.format('n.company')}{order_tail}) sub
+        WHERE g.sbi_haiku_json IS NULL AND g.company_key = sub.k""")
+    filled["sbi_haiku_json"] = cur.rowcount
+    cur.execute("""SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'ipo_rhp_intel'""")
+    rhp_cols = {r[0] for r in cur.fetchall()}
+    if "full_json" in rhp_cols:
+        name_col = next((c for c in ("company_name", "company", "name") if c in rhp_cols), None)
+        rec2 = next((c for c in ("stored_at", "created_at", "updated_at", "id") if c in rhp_cols), None)
+        tail2 = f", r.{rec2} DESC NULLS LAST" if rec2 else ""
+        if name_col:
+            cur.execute(f"""UPDATE ipo_golden g SET rhp_sonnet_json = sub.fj
+                FROM (SELECT DISTINCT ON ({NORM.format('r.'+name_col)}) {NORM.format('r.'+name_col)} AS k, r.full_json AS fj
+                      FROM ipo_rhp_intel r WHERE r.full_json IS NOT NULL
+                      ORDER BY {NORM.format('r.'+name_col)}{tail2}) sub
+                WHERE g.rhp_sonnet_json IS NULL AND g.company_key = sub.k""")
+            filled["rhp_sonnet_json"] = cur.rowcount
+        else:
+            filled["rhp_sonnet_json"] = "skip (no name column in ipo_rhp_intel)"
+    else:
+        filled["rhp_sonnet_json"] = "skip (ipo_rhp_intel absent/legacy shape)"
 
     # 3) street article (sanity-guarded rows only; manual wins upstream)
     cur.execute(f"""UPDATE ipo_golden g
