@@ -93,10 +93,15 @@ function StepBoard(){
   // was invisible for weeks). Weekly-only steps excluded unless a weekly ran.
   const ranNames=new Set(steps.map(s=>s.step));
   const weeklyRan=expected.some(e=>e.weekly&&ranNames.has(e.step));
-  const missed=expected.filter(e=>!ranNames.has(e.step)&&(!e.weekly||weeklyRan));
+  // 2026-07-21: comparing a HALF-FINISHED run against the full list showed
+  // "26 MISSED" mid-run. If the newest row is fresh, the run is in progress —
+  // suppress the missed lane until it settles.
+  const lastMs=Date.parse(String(steps[steps.length-1]?.ran_at||0));
+  const inProgress=Number.isFinite(lastMs)&&(Date.now()-lastMs)<15*60*1000;
+  const missed=inProgress?[]:expected.filter(e=>!ranNames.has(e.step)&&(!e.weekly||weeklyRan));
   return (<div>
     <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:fails||missed.length?"#B42318":C.gr}}>
-      {steps.length} steps · {steps.length-fails} ✓ · {fails} ✕{missed.length?` · ${missed.length} MISSED`:""} · {String(steps[steps.length-1]?.ran_at).slice(0,16).replace("T"," ")}</div>
+      {steps.length} steps · {steps.length-fails} ✓ · {fails} ✕{missed.length?` · ${missed.length} MISSED`:""}{inProgress?" · RUN IN PROGRESS":""} · {String(steps[steps.length-1]?.ran_at).slice(0,16).replace("T"," ")}</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr",gap:3}}>
       {steps.map((s2,i)=>(
         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 10px",

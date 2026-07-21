@@ -26,6 +26,11 @@ def _canon(col):
 
 DDL = [
     # ── ipo_intelligence: derived/score/quality columns ──
+    # 2026-07-21: eligibility columns — production has them from the scraper
+    # era, but the DDL owner never declared them; a fresh DB crashed the
+    # Haiku spend-gate (caught by test_sbi_haiku_finds_work).
+    "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS is_sme BOOLEAN",
+    "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS issue_size_cr NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS eps_source TEXT",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS quality_score NUMERIC",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS quality_conf NUMERIC",

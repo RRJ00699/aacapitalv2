@@ -90,7 +90,6 @@ JOBS = {
     "gmp":             ["_scripts/scrape_investorgain_gmp.py", "--write-db"],
     "sbi_download":    ["_scripts/download_sbi_notes.py", "--out", "data/research_notes"],
     "sbi_parse":       ["_scripts/parse_sbi_notes.py", "--dir", "data/research_notes", "--write-db"],
-    "universe_candles": ["_scripts/kite-sync-candles.py", "--days", "5"],
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
     "sync":            ["_scripts/git_sync.py"],

@@ -17,11 +17,17 @@ export default function AppShell({
 }) {
   // IPO search selection → broadcast so the IPO page can scroll to / highlight it.
   const handleSearchSelect = (company: string, target?: string) => {
-    if (typeof window !== "undefined") {
-      // Phase 9: stage-aware navigation — the search hub says WHERE to land
-      // (command / subscription / live / journey), the page obeys.
-      window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
+    if (typeof window === "undefined") return;
+    // 2026-07-21 ('search doesn't take me anywhere'): the dashboard is the
+    // ONLY listener for aac:focus-ipo — a select made from Admin/Settings
+    // dispatched into the void. Off-dashboard: hand off via sessionStorage
+    // and route there; the dashboard replays it once data loads.
+    if (!window.location.pathname.startsWith("/dashboard/ipo2")) {
+      try { sessionStorage.setItem("aac:pending-focus", JSON.stringify({ company, target })); } catch { /* best-effort */ }
+      window.location.assign("/dashboard/ipo2");
+      return;
     }
+    window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
   };
 
   return (

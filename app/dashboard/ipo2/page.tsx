@@ -566,9 +566,14 @@ function LiveDecisionPanel({ L }: { L: R | null }) {
   const listedPast = (() => {
     const ld = L?.listing_date ? new Date(String(L.listing_date)) : null;
     if (!ld || isNaN(+ld)) return false;
-    const t0 = new Date(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate());
-    const l0 = new Date(ld.getFullYear(), ld.getMonth(), ld.getDate());
-    return +t0 > +l0;
+    // 2026-07-21 (owner screenshot): 'DECISION WINDOW (ARCHIVED) · listed'
+    // before the open. listing_date arrives midnight-UTC; parsing it with
+    // browser-LOCAL getters shifts it to Jul-20 in US-Central, so IST-today
+    // (Jul-21) > local-listing (Jul-20) => 'archived' on every listing
+    // morning viewed from the US. Compare UTC parts to UTC parts.
+    const t0 = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate());
+    const l0 = Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth(), ld.getUTCDate());
+    return t0 > l0;
   })();
   const showSecs = phase === "entry" ? Math.max(0, secsEntry) : Math.max(0, secsLeft);
   const mm = Math.floor(showSecs / 60), ss = showSecs % 60;
@@ -864,6 +869,15 @@ function IpoCommand() {
   // BUG F: the global search dispatches aac:focus-ipo but NOTHING listened —
   // clicking a result did nothing. Wire it: switch to Command + scroll to card.
   useEffect(() => {
+    // replay a search selection made on another page (see AppShell handoff)
+    try {
+      const pend = sessionStorage.getItem("aac:pending-focus");
+      if (pend && d) {
+        sessionStorage.removeItem("aac:pending-focus");
+        const { company, target } = JSON.parse(pend);
+        window.dispatchEvent(new CustomEvent("aac:focus-ipo", { detail: { company, target } }));
+      }
+    } catch { /* best-effort */ }
     const onFocus = (e: Event) => {
       const company = String((e as CustomEvent).detail?.company || "");
       const target = String((e as CustomEvent).detail?.target || "");

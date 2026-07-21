@@ -95,3 +95,11 @@ Locking/overlap: the lean pipeline is sequential within one cron line; the
 job console self-throttles. Formal cross-run locking is part of the state-
 machine PR (see `docs/PROVENANCE_DESIGN.md` §5) — until then, do not run the
 pipeline by hand during the 08:30/17:00 windows.
+
+## Kite nightly maintenance (why late-night manual runs show a red step)
+
+Kite's historical-data API has a nightly maintenance window (~23:30–01:00
+IST). A manual pipeline run inside it fails 'market regime + VIX' with
+"No NIFTY candles returned" — that is the vendor, not the code. The
+08:30/17:00 IST cron runs never touch the window. Trigger manual runs in
+daytime IST, or ignore that one red at night.

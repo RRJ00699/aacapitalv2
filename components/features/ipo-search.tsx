@@ -138,7 +138,7 @@ export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try:
             return (
               <div key={i} role="option" aria-selected={active}
                 onMouseEnter={() => setSel(i)}
-                onClick={() => setPreview(preview === c ? null : c)}
+                onClick={() => pick(c)}
                 style={{ padding: "9px 12px", borderTop: `1px solid ${C.border}`, cursor: "pointer",
                   background: active ? C.bg : C.surface }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -146,6 +146,11 @@ export function IpoSearch({ onSelect, placeholder = "Search IPO, symbol, or try:
                   {c.sym ? <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>{String(c.sym)}</span> : null}
                   <Badge t={stage === "LISTING" ? "LISTING TODAY" : stage} fg={fg} bg={bg} />
                   <span style={{ marginLeft: "auto" }} />
+                  <button onClick={(e) => { e.stopPropagation(); setPreview(preview === c ? null : c); }}
+                    aria-expanded={preview === c} aria-label="Toggle quick preview"
+                    style={{ fontSize: 10, fontWeight: 800, color: C.sub, background: C.bg,
+                      border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer" }}>
+                    {preview === c ? "hide" : "info"}</button>
                   <button onClick={(e) => { e.stopPropagation(); pick(c); }}
                     aria-label={`${act.label} for ${String(c.company_name ?? "")}`}
                     style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: C.blue, border: "none",

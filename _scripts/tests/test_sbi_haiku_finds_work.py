@@ -36,8 +36,15 @@ def _prod_db(uri):
 def _apply_schema_sync(cur):
     sync = _load("sync", "schema_sync.py")
     for stmt in sync.DDL:
-        if "ipo_research_notes" in stmt:
-            cur.execute(stmt)
+        # 2026-07-21: was ipo_research_notes-only; the Haiku work query now
+        # also reads ipo_intelligence eligibility columns (spend gate), so
+        # apply that table's column DDL too — same as production schema runs.
+        if "ipo_research_notes" in stmt or "ipo_intelligence ADD COLUMN" in stmt:
+            try:
+                cur.execute(stmt)
+            except Exception:
+                pass  # unrelated column on the minimal fixture table
+    cur.connection.commit()
 
 def test_query_fails_on_production_schema(clean_db):
     """REGRESSION: on the raw production shape the query MUST raise — this is the

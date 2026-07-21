@@ -116,12 +116,19 @@ def resolve_auto_today_symbols(conn):
     """
     cur = conn.cursor()
     cur.execute("""
-        SELECT symbol, company_name, issue_size_cr, listing_date, anchor_lock30_date
+        -- 2026-07-21 (volume-confirm silently failing): this read ONLY
+        -- `symbol`, which the scraper often leaves stale/empty while the real
+        -- NSE symbol sits in `nse_symbol`. Wrong symbol -> Kite LTP fails ->
+        -- zero ticks -> the Live volume window 'awaiting' forever. Use the
+        -- same strong key every other consumer uses.
+        SELECT COALESCE(NULLIF(btrim(nse_symbol), ''), btrim(symbol)) AS symbol,
+               company_name, issue_size_cr, listing_date, anchor_lock30_date
         FROM ipo_intelligence
         WHERE COALESCE(is_sme, false) = false
           -- mainboard, total issue SIZE >= Rs200cr (skip junk/operator small issues); upper bound drops malformed sizes
           AND issue_size_cr >= 200 AND issue_size_cr < 100000
-          AND symbol IS NOT NULL AND btrim(symbol) <> ''
+          AND COALESCE(NULLIF(btrim(nse_symbol), ''), btrim(symbol)) IS NOT NULL
+          AND COALESCE(NULLIF(btrim(nse_symbol), ''), btrim(symbol)) <> ''
           AND listing_date IS NOT NULL
           AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date >= listing_date
           -- capture runs to the ANCHOR FIRST LOCK-IN, not a guessed listing+30d
