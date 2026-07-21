@@ -64,7 +64,7 @@ def test_kite_stale_skips_kite_steps_runs_rest(orch):
     for kite_only in ("sync_inwindow_candles.py", "kite-sync-candles.py",
                       "fill_listing_open_from_candles.py"):
         assert kite_only not in ran
-    assert "scrape_chittorgarh.py" in ran            # non-Kite work still runs
+    assert "ipomatrix_ingest.py" in ran              # non-Kite work still runs (Chittorgarh steps removed 2026-07-23)
     assert "Kite token stale" in (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
 
 def test_weekly_flag_adds_purges(orch):

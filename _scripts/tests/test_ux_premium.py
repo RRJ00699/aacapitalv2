@@ -371,3 +371,14 @@ def test_intraday_panel_retires_after_listing_day_ist():
     page = _read("app", "dashboard", "ipo2", "page.tsx")
     assert "listedIst < istToday" in page and "5.5*3600_000" in page, \
         "owner 2026-07-23: the intraday panel comes down after listing day, IST-clocked"
+
+
+def test_chittorgarh_steps_removed_from_pipeline():
+    """Owner 2026-07-23: Chittorgarh = IPOMatrix's sibling product — one
+    vendor, one feed. Both steps removed; NSE discovery + IPOMatrix remain."""
+    lean = _read("_scripts", "run_ipo_pipeline_lean.py")
+    assert 'step("scrape IPO calendar + details"' not in lean.replace("# step(", "STEP_OFF(")
+    assert 'step("anchor + subscription enrich"' not in lean.replace("# step(", "STEP_OFF(")
+    assert '"ipomatrix_ingest.py","--only-null"' in lean and '"ipo/fetch_nse_ipos.py"' in lean
+    mirror = _read("app", "api", "admin", "pipeline-steps", "route.ts")
+    assert "scrape IPO calendar" not in mirror and "anchor + subscription enrich" not in mirror
