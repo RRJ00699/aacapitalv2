@@ -166,6 +166,15 @@ def main():
         step("derive listing_open",           ["fill_listing_open_from_candles.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     else:
         log("   ⏭  Kite steps skipped (stale token)")
+        # 2026-07-21: record the skips — the health board's missed-lane flags
+        # expected steps with NO row, and the 08:30 run ALWAYS has a stale
+        # token (refresh crons at 08:45). A deliberate skip is a green row
+        # with the reason, not a silent hole.
+        for _nm, _sc in (("candles: in-window daily sync", "sync_inwindow_candles.py"),
+                         ("candles: full NSE universe", "kite-sync-candles.py"),
+                         ("listing-day fields (kite)", "ipo/backfill_ipo_ohlc.py"),
+                         ("derive listing_open", "fill_listing_open_from_candles.py")):
+            _log_step(_nm, _sc, True, "skipped — Kite token stale (expected on the 08:30 run)")
 
     # ── SBI RESEARCH NOTES (structured scrape/parse — NOT sent to Sonnet) ──
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
@@ -206,7 +215,14 @@ def main():
     step("Quality score (pre-list)",      ["compute_quality_score.py","--apply"])
 
     # ── JOURNAL + MAINTENANCE ──
-    step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
+    if kite_ok:
+        step("sync trade journal (kite orders)", ["sync_trade_journal.py"])
+    else:
+        # 2026-07-21: this Kite consumer was NOT in the skip set — it crashed
+        # with a traceback on every stale-token run instead of skipping.
+        log("   ⏭  trade journal skipped (stale Kite token)")
+        _log_step("sync trade journal (kite orders)", "sync_trade_journal.py", True,
+                  "skipped — Kite token stale (expected on the 08:30 run)")
     step("compute journal outcomes",         ["compute_journal_outcomes.py","--apply"])
     step("backup critical tables",           ["backup_critical_tables.py"])
     if a.weekly:

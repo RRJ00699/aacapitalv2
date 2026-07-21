@@ -105,3 +105,17 @@ def test_rhp_auto_final_line_names_failed_substep():
     assert 'LAST_ERR["label"] = label' in src
     assert 'FAILED substep [' in src
     assert src.index("FAILED substep [") > src.index("def run(label, args):")
+
+
+def test_kite_skips_are_recorded_not_silent():
+    """08:30 runs always have a stale token (refresh crons at 08:45): the
+    four candle steps AND sync_trade_journal must record green skip rows —
+    no false MISSED, no traceback."""
+    src = open(os.path.join(ROOT, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
+    assert src.count("skipped — Kite token stale (expected on the 08:30 run)") >= 2
+    guarded = src.split("if kite_ok:")
+    assert len(guarded) >= 3, "journal must sit behind its own kite_ok guard"
+    assert "sync_trade_journal.py" in guarded[2] or "sync_trade_journal.py" in guarded[-1]
+    for nm in ("candles: in-window daily sync", "candles: full NSE universe",
+               "listing-day fields (kite)", "derive listing_open"):
+        assert src.count(f'"{nm}"') >= 2, f"skip row missing for {nm}"
