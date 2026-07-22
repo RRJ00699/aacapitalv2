@@ -68,8 +68,9 @@ def notify(title, body, ok=True):
             headers={"Title": title, "Priority": "default" if ok else "high",
                      "Tags": "white_check_mark" if ok else "rotating_light"})
         urllib.request.urlopen(req, timeout=10)
-    except Exception:
-        pass
+        print(f"    ntfy sent -> {topic[:12]}…")
+    except Exception as e:
+        print(f"    ! ntfy failed: {type(e).__name__}: {str(e)[:120]}")
 
 
 def log(m):

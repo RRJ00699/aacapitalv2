@@ -208,6 +208,12 @@ def main() -> int:
     import json as _json
     import re as _re
     RX2 = _re.compile(r"Anchor[^\d]{0,60}?([\d,]{6,})\s+Equity", _re.I)
+    # Owner crash 2026-07-22: running the miner before Schema sync hit
+    # UndefinedColumn. Introspect ipo_golden and only fill columns that
+    # exist — the job degrades with a printed skip, never a traceback.
+    cur.execute("""SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'ipo_golden'""")
+    gcols = {r[0] for r in cur.fetchall()}
     cur.execute("""SELECT n.symbol, n.raw_json, n.anchor_portion_shares
                    FROM nse_issue_info n JOIN ipo_golden g ON g.nse_symbol = n.symbol
                    WHERE n.raw_json IS NOT NULL""")
@@ -221,7 +227,7 @@ def main() -> int:
         upd, args = [], []
         for col, val in (("isin", meta.get("isin")), ("industry", meta.get("industry")),
                          ("nse_listing_date", meta.get("listingDate"))):
-            if val:
+            if val and col in gcols:
                 upd.append(f"{col} = COALESCE(g.{col}, %s)"); args.append(val)
         cats = {str(r.get("srNo", "")).strip(): r
                 for r in ((d.get("activeCat") or {}).get("dataList") or []) if isinstance(r, dict)}
@@ -234,16 +240,16 @@ def main() -> int:
         for col, key in (("final_qib", "1"), ("final_nii", "2"), ("bnii_x", "2.1"),
                          ("snii_x", "2.2"), ("final_retail", "3")):
             v = x(key)
-            if v is not None:
+            if v is not None and col in gcols:
                 upd.append(f"{col} = COALESCE(g.{col}, %s)"); args.append(v)
         tot = x("Total") or x("total")
-        if tot is not None:
+        if tot is not None and "final_total" in gcols:
             upd.append("final_total = COALESCE(g.final_total, %s)"); args.append(tot)
         if not shares:
             m = RX2.search(_json.dumps(d))
             if m:
                 shares = int(m.group(1).replace(",", ""))
-        if shares:
+        if shares and "anchor_amount_cr" in gcols:
             upd.append("""anchor_amount_cr = COALESCE(g.anchor_amount_cr,
                 (SELECT ROUND(%s * c.issue_price / 1e7, 2) FROM ipo_consolidated c
                  WHERE UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol))) = g.nse_symbol
@@ -256,6 +262,9 @@ def main() -> int:
                 mined["nse_finals"] += 1
             if any("anchor_amount" in u for u in upd):
                 mined["nse_anchor_amount"] += 1
+    missing_g = [c for c in ("final_qib", "final_total", "industry", "nse_listing_date") if c not in gcols]
+    if missing_g:
+        mined["nse SKIPPED cols (run Schema sync)"] = ",".join(missing_g)
     filled.update(mined)
 
     filled["golden rows seeded"] = seeded
