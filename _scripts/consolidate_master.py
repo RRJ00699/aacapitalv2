@@ -265,6 +265,19 @@ def main() -> int:
     missing_g = [c for c in ("final_qib", "final_total", "industry", "nse_listing_date") if c not in gcols]
     if missing_g:
         mined["nse SKIPPED cols (run Schema sync)"] = ",".join(missing_g)
+    # 6) DATE CORRECTION (the 4 close_after_listing contradictions the date
+    #    gate flags every run — NMDC/Mazagon/Fusion/Star Health class): where
+    #    NSE's authoritative listing date exists and the vendor listing date
+    #    contradicts the close date, NSE wins. Targeted: only contradictions.
+    if "nse_listing_date" in gcols:
+        cur.execute("""UPDATE ipo_intelligence i SET listing_date = g.nse_listing_date
+            FROM ipo_golden g
+            WHERE g.nse_listing_date IS NOT NULL
+              AND UPPER(COALESCE(NULLIF(btrim(i.nse_symbol),''), btrim(i.symbol))) = g.nse_symbol
+              AND i.ipo_close_date IS NOT NULL AND i.listing_date IS NOT NULL
+              AND i.listing_date < i.ipo_close_date
+              AND g.nse_listing_date >= i.ipo_close_date""")
+        mined["listing_date corrected (NSE)"] = cur.rowcount
     filled.update(mined)
 
     filled["golden rows seeded"] = seeded

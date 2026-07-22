@@ -3,7 +3,6 @@
 // India data: Zerodha live quote (fixes 24,400 stale bug) with Neon snapshot fallback.
 
 import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
 import { getBroker } from "@/lib/brokers"
 
 const YF = "https://query1.finance.yahoo.com"
@@ -46,21 +45,39 @@ const META: Record<string, { label: string; region: string; flag: string }> = {
   "^FCHI":     { label: "CAC 40",     region: "europe",    flag: "🇫🇷" },
 }
 
-function db() { return neon(process.env.DATABASE_URL!) }
+import { fixtureAwareNeon } from "@/lib/db"
+import { cached } from "@/lib/kv-cache"
+function db() { return fixtureAwareNeon() }
 
 export async function GET() {
   try {
-    const [yahooRes, snapRows, indiaLive, flowRows] = await Promise.allSettled([
-      // Single batch call — all 20 assets
-      fetch(
-        `${YF}/v7/finance/quote?symbols=${SYMBOLS.join(",")}`,
-        { headers: YF_HEADERS, next: { revalidate: 60 } }
-      ).then(r => r.json()),
+    // KV-FIRST (owner 2026-07-22: "DB must not wake for market data"). The
+    // whole payload lives in KV for 5 min; Neon is read only inside the
+    // builder on a cold miss. Zerodha (broker) + Yahoo v8 are the live
+    // sources and cost no DB at all.
+    const body = await cached("market:global:v2", async () => {
+    const [yahooRes, snapRows, indiaLive, flowRows, breadthRows] = await Promise.allSettled([
+      // v8 chart per symbol — v7 batch quote requires a crumb since 2023 and
+      // fails unauthenticated, which sent every request to the stale cache
+      // (owner screenshot 2026-07-22: +0.00% everywhere). v8 needs no auth.
+      Promise.all(SYMBOLS.map(sym =>
+        fetch(`${YF}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=15m`,
+              { headers: YF_HEADERS, next: { revalidate: 300 } })
+          .then(r => r.json())
+          .then(j => {
+            const m = j?.chart?.result?.[0]?.meta
+            if (!m?.regularMarketPrice) return null
+            const prev = m.chartPreviousClose || m.previousClose || m.regularMarketPrice
+            return { symbol: sym, regularMarketPrice: m.regularMarketPrice,
+                     regularMarketChangePercent: prev ? ((m.regularMarketPrice - prev) / prev) * 100 : 0 }
+          }).catch(() => null))
+      ).then(rows => ({ quoteResponse: { result: rows.filter(Boolean) } })),
 
       // Latest India snapshot from Neon
       db()`SELECT * FROM market_snapshot ORDER BY created_at DESC LIMIT 1`,
       // FII/DII from daily flows (most recent)
       db()`SELECT fii_net, dii_net, trade_date FROM daily_institutional_flows ORDER BY trade_date DESC LIMIT 1`.catch(() => []),
+      db()`SELECT value FROM platform_config WHERE key = 'india_breadth' LIMIT 1`.catch(() => []),
 
       // Live Nifty/BankNifty/VIX from Zerodha (most accurate)
       (async () => {
@@ -152,13 +169,20 @@ export async function GET() {
                         : riskOnSignal  ? "Risk-On → Equities + Crypto"
                         : "Mixed — no clear directional signal"
 
-    return NextResponse.json({
+    return JSON.stringify({
+      as_of: new Date().toISOString(),
+      breadth: (() => { try {
+        const r = breadthRows.status === "fulfilled" ? (breadthRows.value as { value?: string }[]) : []
+        return r?.length && r[0].value ? JSON.parse(r[0].value) : null
+      } catch { return null } })(),
       ok: true,
       global,
       india,
       composite: { usAvg, asiaAvg, euroAvg, capitalFlow, riskOffSignal, riskOnSignal },
       fetchedAt: new Date().toISOString(),
     })
+    }, 300)
+    return new NextResponse(body, { headers: { "content-type": "application/json" } })
   } catch (err: any) {
     console.error("Global market error:", err)
     return NextResponse.json({ ok: false, global: {}, india: {}, error: err.message }, { status: 200 })

@@ -94,6 +94,7 @@ JOBS = {
     "sbi_parse":       ["_scripts/parse_sbi_notes.py", "--dir", "data/research_notes", "--write-db"],
     "rhp_auto":         ["_scripts/rhp_auto.py", "--apply"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
+    "breadth":         ["_scripts/market_breadth.py", "--apply"],
     "sync":            ["_scripts/git_sync.py"],
     # Mobile-first ops (2026-07-18): the derived layer could only be recomputed
     # by running the WHOLE pipeline. These let the phone re-run one stage after a

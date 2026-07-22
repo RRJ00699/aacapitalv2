@@ -35,6 +35,8 @@ export default function MarketsSidebar() {
   const [dom, setDom] = useState<{nifty:string;niftyChg:number|null;bn:string;bnChg:number|null;vix:string;fii:string;dii:string;pcr:string}>(
     { nifty:"—",niftyChg:null,bn:"—",bnChg:null,vix:"—",fii:"—",dii:"—",pcr:"—" });
   const [glob, setGlob] = useState<GRow[]>([]);
+  const [breadth, setBreadth] = useState<{adv?:number;dec?:number;unch?:number;asof?:string}|null>(null);
+  const [asOf, setAsOf] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,6 +60,8 @@ export default function MarketsSidebar() {
       });
       // global rows — the API returns a global map; build labeled rows
       const gm = (gg?.global) || {};
+      setBreadth(gg?.breadth || null);
+      if (gg?.as_of) setAsOf(new Date(gg.as_of).toLocaleTimeString());
       const mk = (k:string,label:string) => {
         const row = gm[k]; if(!row) return null;
         const val = first(row.value, row.price, row.last);
@@ -100,6 +104,11 @@ export default function MarketsSidebar() {
           <Tile label="DII" value={dom.dii} tone={dom.dii.startsWith("+")?"up":dom.dii.startsWith("-")?"down":null}/>
         </div>
       </div>
+      {breadth ? (<div style={{fontSize:11.5,margin:"2px 2px 8px",color:C.sub}}>
+        <b style={{color:C.green}}>Adv {breadth.adv ?? "—"}</b>{" · "}
+        <b style={{color:C.red}}>Dec {breadth.dec ?? "—"}</b>{" · unch "}{breadth.unch ?? "—"}
+        <span style={{color:C.meta}}> · {breadth.asof || ""}</span></div>) : null}
+      {asOf ? (<div style={{fontSize:10.5,color:C.meta,margin:"0 2px 8px"}}>quotes as of {asOf}</div>) : null}
       {/* Global */}
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 13px" }}>
         <div style={{ fontSize:11, fontWeight:800, letterSpacing:.5, textTransform:"uppercase", color:C.sub, marginBottom:9 }}>Global Markets</div>

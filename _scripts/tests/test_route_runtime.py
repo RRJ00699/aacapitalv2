@@ -141,7 +141,7 @@ QUERY_CEILING = {
     "app/api/ipo/route.ts": 1,
     "app/api/ipo/tick-feed/route.ts": 0,
     "app/api/market-regime/route.ts": 2,
-    "app/api/market/global/route.ts": 4,
+    "app/api/market/global/route.ts": 5,  # +1: india_breadth read (U16, 2026-07-22)
     "app/api/market/snapshot/route.ts": 2,
     "app/api/post-listing/route.ts": 0,
     "app/api/settings/route.ts": 2,

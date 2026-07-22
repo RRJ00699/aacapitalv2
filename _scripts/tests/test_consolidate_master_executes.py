@@ -24,6 +24,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         nse_symbol TEXT, symbol TEXT, listing_date DATE, anchor_lock30_date DATE,
         issue_price NUMERIC)""")
     cur.execute("""CREATE TABLE ipo_intelligence (company_name TEXT, isin TEXT,
+        nse_symbol TEXT, symbol TEXT, ipo_close_date DATE, listing_date DATE,
         lot_size INT, allotment_date DATE, mcap_offer NUMERIC, ronw NUMERIC,
         ipo_pb NUMERIC, promoter_holding_post NUMERIC, registrar TEXT,
         sub_day3_x NUMERIC, total_applications BIGINT)""")
@@ -53,7 +54,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""INSERT INTO ipo_consolidated VALUES
         ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-21',NULL,574)""")
     cur.execute("""INSERT INTO ipo_intelligence VALUES
-        ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116913.9,43.02,19.6,88.0,'Kfin Technologies',41.66,6380000)""")
+        ('SBI Funds Management Ltd.','INE640G01020','SBIFUNDS','SBIFUNDS','2026-07-16','2026-07-10',26,'2026-07-17',116913.9,43.02,19.6,88.0,'Kfin Technologies',41.66,6380000)""")  # listing 07-10 < close 07-16 = the contradiction class; NSE corrects to 07-21
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
         ('SBI Funds Management Ltd.','SBI','{"rating":"SUBSCRIBE"}')""")
     cur.execute("""INSERT INTO ipo_rhp_intel (company_name, full_json)
@@ -109,6 +110,9 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     assert float(fq) == 140.11 and float(fr) == 3.59 and float(ft) == 41.66, "activeCat finals mined"
     assert float(bn) == 26.01 and float(sn) == 15.51, "bNII/sNII sub-rows mined"
     assert ind == "Asset Management" and str(nld) == "2026-07-21", "metaInfo mined"
+    cur.execute("SELECT listing_date FROM ipo_intelligence")
+    assert str(cur.fetchone()[0]) == "2026-07-21", \
+        "close_after_listing contradiction corrected from NSE listing date"
     assert aac is not None and abs(float(aac) - round(46393095 * 574 / 1e7, 2)) < 0.01, \
         "broadened anchor regex + amount derived from shares * issue_price"
     cur.execute("SELECT anchor_lock30_date, anchor_lock90_date FROM ipo_golden")
