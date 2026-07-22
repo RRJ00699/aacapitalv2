@@ -261,7 +261,7 @@ def test_backfill_clamps_window_and_reads_aliases():
 
 def test_u12_details_view_renders_after_the_pills_row():
     page = _read("app", "dashboard", "ipo2", "page.tsx")
-    assert page.index("pills.map") < page.index('view==="details"'), \
+    assert page.index("pills.map") < page.index('{view==="details" && d &&'), \
         "details content must not push the nav to the page bottom"
 
 

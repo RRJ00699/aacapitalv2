@@ -59,7 +59,7 @@ def test_news_module_contracts():
     assert "source='manual'" in src and "manual override" in src.lower()
     assert "snippet" in src and "never article text" in src.lower() or "never full" in src.lower()
     cc = open(os.path.join(REPO, "app", "api", "ipo-command", "route.ts"), encoding="utf-8").read()
-    assert "ipo_news n" in cc and "(n.source = 'manual') DESC" in cc, "manual wins in the feed too"
+    assert "ipo_news n" in cc and "(nw.source = 'manual') DESC" in cc, "manual wins in the feed too"
     assert "ipo-command:v4" in cc
     lp = open(os.path.join(REPO, "app", "api", "ipo", "live-preopen", "route.ts"), encoding="utf-8").read()
     assert "ipo_news n" in lp
