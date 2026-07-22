@@ -287,7 +287,7 @@ def test_news_feeds_reject_placeholder_rows():
     headline that isn't template text."""
     cc = _read("app", "api", "ipo-command", "route.ts")
     lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
-    assert "n.url ~* '^https?://'" in cc and "n.headline NOT LIKE '<%'" in cc
+    assert "nw.url ~* '^https?://'" in cc and "nw.headline NOT LIKE '<%'" in cc  # alias nw: smoke maps n->research_notes
     assert "n2.url ~* '^https?://'" in lp and "n2.headline NOT LIKE '<%'" in lp
 
 
@@ -396,3 +396,16 @@ def test_nse_anchor_backfill_reuses_proven_session_and_lands_durably():
     assert "DISTINCT ON (g.nse_symbol)" in src, "dedup + recency sort must be legal SQL together"
     ddl = _read("_scripts", "schema_sync.py")
     assert "CREATE TABLE IF NOT EXISTS nse_issue_info" in ddl
+
+
+def test_smoke_contract_never_misattributes_news_columns():
+    """Prod smoke FAIL 2026-07-25: ipo_news subselect used alias n, which the
+    smoke parser maps to ipo_research_notes -> 'company_name does not exist'.
+    News aliases must never be bare n in ipo-command."""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(__file__), ".."))
+    from smoke_probe import contract_from_route
+    found = contract_from_route()
+    notes = found.get("ipo_research_notes", set())
+    assert "company_name" not in notes and "headline" not in notes, \
+        f"news columns misattributed to research_notes: {sorted(notes)}"
