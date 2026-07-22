@@ -59,6 +59,15 @@ RULES = {
     "gap_pos_hold": ("v1", "listing_gap_pct > 0", lambda r: r.get("listing_gap_pct") is not None and float(r["listing_gap_pct"]) > 0),
     "pb_high_7": ("v1", "price_to_book >= 7", lambda r: r.get("price_to_book") is not None and float(r["price_to_book"]) >= 7),
     "ofs_nonzero": ("v1", "ofs_pct > 0 (ARTIFACT TEST)", lambda r: r.get("ofs_pct") is not None and float(r["ofs_pct"]) > 0),
+    # DISCOVERED RULES (owner scenario session 2026-07-22 — the first rules
+    # the platform found rather than inherited; template result: 76.2% held
+    # vs 60.1% base, n=42, p~.018):
+    "stability_stack": ("v1", "price_to_book >= 7 AND anchor_count >= 30",
+        lambda r: r.get("price_to_book") is not None and float(r["price_to_book"]) >= 7
+                  and (r.get("anchor_count") or 0) >= 30),
+    "avoid_cold_skip": ("v1", "score_band = AVOID AND final_total < 5 (SKIP signal)",
+        lambda r: (r.get("score_band") == "AVOID") and r.get("final_total") is not None
+                  and float(r["final_total"]) < 5),
     "mega_issue_2000cr": ("v1", "issue_size_cr >= 2000", lambda r: (r["issue_size_cr"] or 0) >= 2000),
     "reasonable_pe_70": ("v1", "ipo_pe > 0 AND ipo_pe <= 70", lambda r: r["ipo_pe"] is not None and 0 < r["ipo_pe"] <= 70),
     "qib_50x": ("v1", "final_qib >= 50", lambda r: (r["final_qib"] or 0) >= 50),
@@ -101,12 +110,22 @@ def binom_p_greater(k, n, p0):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", action="store_true")
-    ap.add_argument("--outcome", choices=["ceiling", "hold"], default="ceiling",
+    ap.add_argument("--outcome", choices=["ceiling", "hold", "both"], default="ceiling",
         help="ceiling = best close in window vs open (did a profitable exit EXIST); "
              "hold = LAST close vs open (did it STAY positive to the lock)")
     ap.add_argument("--since", type=int, default=2016,
         help="listing-date floor year (default 2016 = DECADE LOCK; e.g. --since 2000 for an inception COMPARISON run — the doctrine stays 2016)")
     a = ap.parse_args()
+    if a.outcome == "both":  # ONE RUN (owner 2026-07-22): both yardsticks, back to back
+        import subprocess
+        for oc in ("ceiling", "hold"):
+            print(f"\n{'='*78}\n  OUTCOME: {oc.upper()}\n{'='*78}")
+            r = subprocess.run([sys.executable, os.path.abspath(__file__),
+                                "--outcome", oc, "--since", str(a.since)]
+                               + (["--store"] if a.store else []))
+            if r.returncode != 0:
+                return r.returncode
+        return 0
     ELIG = ELIGIBILITY.replace("{SINCE}", str(a.since))
     global OUTCOME, BACKTEST_VERSION
     OUTCOME = a.outcome
