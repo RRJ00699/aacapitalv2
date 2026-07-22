@@ -86,8 +86,8 @@ def test_pattern_mining_runs_and_reports(tmp_path, monkeypatch):
         industry TEXT, structure_type TEXT, score_band TEXT, issue_price NUMERIC,
         is_sme BOOLEAN, candles_json JSONB)""")
     import json as _j
-    up = _j.dumps([{"date": "2025-01-02", "open": 100, "high": 112, "low": 99, "close": 111, "volume": 1}])
-    dn = _j.dumps([{"date": "2025-01-02", "open": 100, "high": 101, "low": 88, "close": 90, "volume": 1}])
+    up = _j.dumps([{"d": "2025-01-02", "o": 100, "h": 112, "l": 99, "c": 111, "v": 1}])  # prod short keys
+    dn = _j.dumps([{"d": "2025-01-02", "o": 100, "h": 101, "l": 88, "c": 90, "v": 1}])
     for i in range(35):
         cur.execute("""INSERT INTO ipo_gold (company_name, listing_date, anchor_count,
             anchor_amount_cr, issue_size_cr, final_qib, ipo_pe, industry, issue_price,

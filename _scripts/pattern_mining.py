@@ -106,8 +106,11 @@ def main() -> int:
                 candles = json.loads(candles)
             if not candles:
                 continue
-            last_close = float(candles[-1]["close"] if isinstance(candles[-1], dict)
-                               else candles[-1][4])
+            lastc = candles[-1]
+            # golden candles use SHORT keys (consolidate_master line ~182:
+            # jsonb_build_object('d','o','h','l','c','v')) — read 'c' first.
+            last_close = float(lastc.get("c", lastc.get("close")) if isinstance(lastc, dict)
+                               else lastc[4])
             ip = float(r["issue_price"])
             r = dict(r)
             r["_ret"] = (last_close - ip) / ip * 100
