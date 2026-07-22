@@ -12,8 +12,11 @@ test.describe("AACapital user journeys", () => {
     await expect(option).toContainText("UAT Complete Ltd");
     await expect(option).toContainText("Open Command Center"); // stage-aware, never generic View
     await option.click();
-    await page.waitForURL(/focus=UATGOOD|view=command/); // navigated, not stuck
-    await expect(page.locator("#ipocard-UATGOOD").or(page.getByText("UAT Complete Ltd").first())).toBeVisible();
+    // pick() navigates via the aac:focus-ipo custom event — the URL NEVER
+    // changes (components/features/ipo-search.tsx pick -> onSelect -> event).
+    // Assert the outcome: the command card (or its title) becomes visible.
+    await expect(page.locator("#ipocard-UATGOOD")
+      .or(page.getByText("UAT Complete Ltd").first())).toBeVisible({ timeout: 10_000 });
   });
 
   test("J2 · quality + lifecycle filters combine", async ({ watched: page }) => {
@@ -43,11 +46,11 @@ test.describe("AACapital user journeys", () => {
   test("J5 · Command Center: research states, fair value, evidence with source", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     const complete = page.locator("#ipocard-UATGOOD");
-    await complete.getByText("RHP + SBI research").click(); // evidence lives behind the expander
+    await complete.getByText("RHP + SBI research").first().click(); // expander (first: summary + span both match)
     await expect(complete).toContainText("RHP evidence · the document's own words");
     await expect(complete).toContainText("will not receive any proceeds"); // quoted excerpt renders
     const incomplete = page.locator("#ipocard-UATINC");
-    await incomplete.getByText("RHP + SBI research").click();
+    await incomplete.getByText("RHP + SBI research").first().click();
     await expect(incomplete).toContainText("SBI research note not available or not yet parsed.");
     await expect(incomplete).toContainText("RHP not yet read");
     await expect(incomplete).toContainText("awaiting"); // FV never fakes a number
@@ -72,6 +75,10 @@ test.describe("AACapital user journeys", () => {
     expect(l.mos.pct).toBeNull(); // labeled floor, never a margin
     await page.goto("/dashboard/ipo2");
     await page.getByRole("button", { name: /switch to live/i }).click();
+    // stage 1: does fixture-Live serve the listing at all?
+    await expect(page.getByText("UAT Live Ltd").first(), "fixture-Live must serve the IST-today listing")
+      .toBeVisible({ timeout: 10_000 });
+    // stage 2: the safety banner on that listing
     await expect(page.getByText("Research incomplete")).toBeVisible();
     await expect(page.getByText("WATCH, not BUY")).toBeVisible();
   });
