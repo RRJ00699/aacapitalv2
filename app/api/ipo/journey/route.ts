@@ -4,10 +4,13 @@
 // fires INTRADAY — not at EOD close. Rakesh's rule: if the floor breaks at 11am,
 // exit at the floor, don't ride it down to close.
 import { NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
 import { kvStore } from "@/lib/kv-cache"
+import { fixtureAwareNeon } from "@/lib/db"
 
-function db() { return neon(process.env.DATABASE_URL!) }
+// UAT 2026-07-24: this route kept a RAW neon() client — the one route that
+// bypassed fixture mode, so it dialed fixture.invalid and 500'd (J7's 5xx
+// tripwire caught it). fixtureAwareNeon = same client in prod, fixture-safe.
+function db() { return fixtureAwareNeon() }
 
 // IST calendar day — candles only change on EOD sync, so one KV key per day.
 function istDate(): string {

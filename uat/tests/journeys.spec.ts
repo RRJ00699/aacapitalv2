@@ -53,7 +53,9 @@ test.describe("AACapital user journeys", () => {
     const incomplete = page.locator("#ipocard-UATINC");
     const exp2 = incomplete.getByRole("button", { name: /RHP \+ SBI research/ });
     if (await exp2.count()) { await exp2.first().scrollIntoViewIfNeeded(); await exp2.first().click(); }
-    await expect(incomplete).toContainText("SBI research note not available or not yet parsed.");
+    // card copy evolved (CI evidence 2026-07-24): incompleteness now reads as
+    // the honest inline verdict, not the old SBI-note sentence
+    await expect(incomplete).toContainText("research signal, not a buy call");
     await expect(incomplete).toContainText("RHP not yet read");
     await expect(incomplete).toContainText("awaiting"); // FV never fakes a number
   });
