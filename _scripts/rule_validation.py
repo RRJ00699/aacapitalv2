@@ -48,6 +48,16 @@ RULES = {
     "anchor_amt_30pct": ("v1", "anchor_amount_cr/issue_size_cr >= 0.30",
         lambda r: (r.get("anchor_amount_cr") or 0) > 0 and (r.get("issue_size_cr") or 0) > 0
                   and float(r["anchor_amount_cr"]) / float(r["issue_size_cr"]) >= 0.30),
+    # CANDIDATE PACK (pattern-mining 2026-07-22; thresholds from the table's
+    # own medians). Promotion bar unchanged: beat baseline here or stay off
+    # the card. gap rule is tradeable (the open prints before the hold).
+    "qib_15x": ("v1", "final_qib >= 15", lambda r: r.get("final_qib") is not None and float(r["final_qib"]) >= 15),
+    "qib_25x": ("v1", "final_qib >= 25", lambda r: r.get("final_qib") is not None and float(r["final_qib"]) >= 25),
+    "total_10x": ("v1", "final_total >= 10", lambda r: r.get("final_total") is not None and float(r["final_total"]) >= 10),
+    "bnii_20x": ("v1", "bnii_x >= 20", lambda r: r.get("bnii_x") is not None and float(r["bnii_x"]) >= 20),
+    "gap_pos_hold": ("v1", "listing_gap_pct > 0", lambda r: r.get("listing_gap_pct") is not None and float(r["listing_gap_pct"]) > 0),
+    "pb_high_7": ("v1", "price_to_book >= 7", lambda r: r.get("price_to_book") is not None and float(r["price_to_book"]) >= 7),
+    "ofs_nonzero": ("v1", "ofs_pct > 0 (ARTIFACT TEST)", lambda r: r.get("ofs_pct") is not None and float(r["ofs_pct"]) > 0),
     "mega_issue_2000cr": ("v1", "issue_size_cr >= 2000", lambda r: (r["issue_size_cr"] or 0) >= 2000),
     "reasonable_pe_70": ("v1", "ipo_pe > 0 AND ipo_pe <= 70", lambda r: r["ipo_pe"] is not None and 0 < r["ipo_pe"] <= 70),
     "qib_50x": ("v1", "final_qib >= 50", lambda r: (r["final_qib"] or 0) >= 50),
@@ -106,7 +116,8 @@ def main() -> int:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SET statement_timeout = '120s'")
     q = f"""SELECT company_name, listing_date, anchor_count, anchor_amount_cr, issue_size_cr, ipo_pe,
-                   final_qib, score_band, issue_price, candles_json
+                   final_qib, final_total, bnii_x, listing_gap_pct, price_to_book,
+                   ofs_pct, score_band, issue_price, candles_json
             FROM ipo_gold WHERE {ELIG}"""
     cur.execute(q)
     rows = []

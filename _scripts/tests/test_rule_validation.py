@@ -26,6 +26,7 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
     # engine reads the one object; a TABLE named ipo_gold works identically
     cur.execute("""CREATE TABLE ipo_gold (company_name TEXT, listing_date DATE,
         anchor_count INT, anchor_amount_cr NUMERIC, issue_size_cr NUMERIC, ipo_pe NUMERIC, final_qib NUMERIC,
+        final_total NUMERIC, bnii_x NUMERIC, listing_gap_pct NUMERIC, price_to_book NUMERIC, ofs_pct NUMERIC,
         score_band TEXT, issue_price NUMERIC, is_sme BOOLEAN, candles_json JSONB)""")
     cur.execute("""CREATE TABLE rule_validation_results (id BIGSERIAL PRIMARY KEY,
         rule_id TEXT, rule_version TEXT, backtest_version TEXT, dataset TEXT,
@@ -36,10 +37,10 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
     # 40 IPOs: 30 with >=50 anchors ALL winners (+10%); 10 with 5 anchors ALL
     # losers (-8%) -> anchors rules must beat the 75% baseline; AVOID band = losers.
     for i in range(30):
-        cur.execute("INSERT INTO ipo_gold VALUES (%s,'2025-01-01',60,900,3000,25,80,'STRONG',100,false,%s)",
+        cur.execute("INSERT INTO ipo_gold VALUES (%s,'2025-01-01',60,900,3000,25,80,50,45,22,9,0.4,'STRONG',100,false,%s)",
                     (f"W{i}", _candles(100, 110, 98)))
     for i in range(10):
-        cur.execute("INSERT INTO ipo_gold VALUES (%s,'2025-06-01',5,30,300,90,2,'AVOID',100,false,%s)",
+        cur.execute("INSERT INTO ipo_gold VALUES (%s,'2025-06-01',5,30,300,90,2,3,2,-4,3,0,'AVOID',100,false,%s)",
                     (f"L{i}", _candles(100, 92, 88)))
     conn.close()
 
