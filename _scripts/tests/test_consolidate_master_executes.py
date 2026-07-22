@@ -22,7 +22,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
                    ipo_research_notes, ipo_news, price_candles CASCADE""")
     cur.execute("""CREATE TABLE ipo_consolidated (company_name TEXT, symbol_final TEXT,
         nse_symbol TEXT, symbol TEXT, listing_date DATE, anchor_lock30_date DATE,
-        issue_price NUMERIC)""")
+        issue_price NUMERIC, ipo_close_date DATE)""")
     cur.execute("""CREATE TABLE ipo_intelligence (company_name TEXT, isin TEXT,
         nse_symbol TEXT, symbol TEXT, ipo_close_date DATE, listing_date DATE,
         lot_size INT, allotment_date DATE, mcap_offer NUMERIC, ronw NUMERIC,
@@ -52,7 +52,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
         candles_json JSONB, golden_filled_at TIMESTAMPTZ)""")
     cur.execute("""INSERT INTO ipo_consolidated VALUES
-        ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-21',NULL,574)""")
+        ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-10',NULL,574,'2026-07-16')""")
     cur.execute("""INSERT INTO ipo_intelligence VALUES
         ('SBI Funds Management Ltd.','INE640G01020','SBIFUNDS','SBIFUNDS','2026-07-16','2026-07-10',26,'2026-07-17',116913.9,43.02,19.6,88.0,'Kfin Technologies',41.66,6380000)""")  # listing 07-10 < close 07-16 = the contradiction class; NSE corrects to 07-21
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
@@ -117,7 +117,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         "broadened anchor regex + amount derived from shares * issue_price"
     cur.execute("SELECT anchor_lock30_date, anchor_lock90_date FROM ipo_golden")
     l30, l90 = cur.fetchone()
-    assert str(l30) == "2026-08-20" and str(l90) == "2026-10-19", \
+    assert str(l30) == "2026-08-09" and str(l90) == "2026-10-08", \
         "lock dates derived listing+30/90 when vendor never supplied them"
     # second run: idempotent, fill-empty (no duplicate seeding, values stable)
     importlib.reload(consolidate_master)
