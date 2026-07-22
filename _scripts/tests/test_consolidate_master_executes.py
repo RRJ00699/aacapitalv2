@@ -21,7 +21,8 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""DROP TABLE IF EXISTS ipo_golden, ipo_consolidated, ipo_intelligence,
                    ipo_research_notes, ipo_news, price_candles CASCADE""")
     cur.execute("""CREATE TABLE ipo_consolidated (company_name TEXT, symbol_final TEXT,
-        nse_symbol TEXT, symbol TEXT, listing_date DATE, anchor_lock30_date DATE)""")
+        nse_symbol TEXT, symbol TEXT, listing_date DATE, anchor_lock30_date DATE,
+        issue_price NUMERIC)""")
     cur.execute("""CREATE TABLE ipo_intelligence (company_name TEXT, isin TEXT,
         lot_size INT, allotment_date DATE, mcap_offer NUMERIC, ronw NUMERIC,
         ipo_pb NUMERIC, promoter_holding_post NUMERIC, registrar TEXT,
@@ -37,16 +38,20 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         url TEXT, source TEXT DEFAULT 'rss', fetch_status TEXT DEFAULT 'ok',
         is_current BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())""")
     cur.execute("CREATE TABLE price_candles (symbol TEXT, date DATE, open NUMERIC, high NUMERIC, low NUMERIC, close NUMERIC, volume BIGINT)")
+    cur.execute("CREATE TABLE nse_issue_info (symbol TEXT PRIMARY KEY, raw_json JSONB, anchor_portion_shares BIGINT, fetched_at TIMESTAMPTZ)")
     cur.execute("""CREATE TABLE ipo_golden (company_key TEXT PRIMARY KEY, company_name TEXT,
         nse_symbol TEXT, isin TEXT, lot_size INT, allotment_date DATE, mcap_cr NUMERIC,
         price_to_book NUMERIC, promoter_post_pct NUMERIC, registrar_name TEXT,
         anchor_lock30_date DATE, anchor_lock90_date DATE, ebitda_margin NUMERIC,
+        bnii_x NUMERIC, snii_x NUMERIC, anchor_amount_cr NUMERIC,
+        final_qib NUMERIC, final_nii NUMERIC, final_retail NUMERIC, final_total NUMERIC,
+        industry TEXT, nse_listing_date DATE,
         ronw NUMERIC, sub_day3_x NUMERIC, total_applications BIGINT,
         rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
         candles_json JSONB, golden_filled_at TIMESTAMPTZ)""")
     cur.execute("""INSERT INTO ipo_consolidated VALUES
-        ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-21',NULL)""")
+        ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-21',NULL,574)""")
     cur.execute("""INSERT INTO ipo_intelligence VALUES
         ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116913.9,43.02,19.6,88.0,'Kfin Technologies',41.66,6380000)""")
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
@@ -60,6 +65,20 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         ('SBIFUNDS','2026-07-21',613.3,641,600,609.75,90000000),
         ('SBIFUNDS','2026-07-22',610,615,601,604,30000000),
         ('SBIFUNDS','2026-07-23',700,600,650,900,1)""")  # impossible OHLC — must be excluded
+    # REAL payload shape from the owner's banked LASERPOWER/FEDFINA slices
+    import json as _j
+    payload = {"metaInfo": {"isin": "INE640G01020", "industry": "Asset Management",
+                            "listingDate": "2026-07-21"},
+               "issueInfo": {"issueSize": "Offer including Anchor investor portion of 4,63,93,095 Equity Shares"},
+               "activeCat": {"dataList": [
+                 {"srNo": "Sr.No.", "category": "Category", "noOfTotalMeant": "No. of times"},
+                 {"srNo": "1", "category": "QIB", "noOfTotalMeant": "140.11"},
+                 {"srNo": "2", "category": "NII", "noOfTotalMeant": "22.51"},
+                 {"srNo": "2.1", "category": "bNII", "noOfTotalMeant": "26.01"},
+                 {"srNo": "2.2", "category": "sNII", "noOfTotalMeant": "15.51"},
+                 {"srNo": "3", "category": "Retail", "noOfTotalMeant": "3.59"},
+                 {"srNo": "Total", "category": "Total", "noOfTotalMeant": "41.66"}]}}
+    cur.execute("INSERT INTO nse_issue_info VALUES ('SBIFUNDS', %s, NULL, NOW())", (_j.dumps(payload),))
     conn.close()
 
     monkeypatch.setenv("DATABASE_URL", pg_uri)
@@ -84,6 +103,14 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     assert sonnet == "clean" and haiku == "SUBSCRIBE"
     assert head == "SBI Funds debuts above issue", "placeholder row must lose to the real one"
     assert days == 2, "impossible-OHLC row excluded; real sessions kept"
+    cur.execute("""SELECT final_qib, final_retail, final_total, bnii_x, snii_x,
+                          industry, nse_listing_date, anchor_amount_cr FROM ipo_golden""")
+    (fq, fr, ft, bn, sn, ind, nld, aac) = cur.fetchone()
+    assert float(fq) == 140.11 and float(fr) == 3.59 and float(ft) == 41.66, "activeCat finals mined"
+    assert float(bn) == 26.01 and float(sn) == 15.51, "bNII/sNII sub-rows mined"
+    assert ind == "Asset Management" and str(nld) == "2026-07-21", "metaInfo mined"
+    assert aac is not None and abs(float(aac) - round(46393095 * 574 / 1e7, 2)) < 0.01, \
+        "broadened anchor regex + amount derived from shares * issue_price"
     cur.execute("SELECT anchor_lock30_date, anchor_lock90_date FROM ipo_golden")
     l30, l90 = cur.fetchone()
     assert str(l30) == "2026-08-20" and str(l90) == "2026-10-19", \
