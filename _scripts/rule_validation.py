@@ -28,9 +28,11 @@ from datetime import datetime, timezone
 
 BACKTEST_VERSION = "rv1-2026-07-22"
 DATASET = "ipo_gold (VIEW: ipo_consolidated ⟕ ipo_golden) · candles_json listing→lock-in"
+# DECADE LOCK (owner, 2026-07-24): the accurate dataset + ALL backtests
+# cover 2016-2026. Older rows may exist but earn no effort and no weight.
 ELIGIBILITY = ("COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200) "
                "AND company_name !~* '\\y(REIT|InvIT)\\y' AND candles_json IS NOT NULL "
-               "AND issue_price > 0")
+               "AND issue_price > 0 AND listing_date >= DATE '2016-01-01'")
 
 # rule_id -> (version, human filter, python predicate on row dict)
 RULES = {

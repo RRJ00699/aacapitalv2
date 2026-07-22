@@ -61,5 +61,6 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
     assert got["band_avoid_skip"][1] == 10 and float(got["band_avoid_skip"][2]) == 0.0
     assert got["band_avoid_skip"][3] is False
     assert "REIT|InvIT" in got["anchors_50plus"][4], "filters recorded verbatim"
+    assert "2016-01-01" in got["anchors_50plus"][4], "DECADE LOCK rides in provenance (owner 2026-07-24)"
     assert got["anchors_50plus"][5] == "rv1-2026-07-22"
     conn.close()
