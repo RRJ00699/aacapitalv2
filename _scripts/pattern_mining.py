@@ -74,12 +74,24 @@ def main() -> int:
     conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SET statement_timeout = '120s'")
+    # INTROSPECT the view first (owner crash 2026-07-22: quality_score lives
+    # on the insights table, not ipo_gold) — profile only what exists; name
+    # what doesn't. View drift can never crash this again.
+    cur.execute("""SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'ipo_gold'""")
+    have = {r["column_name"] for r in cur.fetchall()}
+    wanted = ["anchor_count", "anchor_amount_cr", "final_qib", "final_nii",
+              "final_retail", "final_total", "bnii_x", "snii_x", "ipo_pe",
+              "peer_median_pe", "ronw", "roe", "revenue_cagr_3y",
+              "profit_cagr_3y", "debt_equity", "ebitda_margin",
+              "promoter_post_pct", "ofs_pct", "issue_size_cr",
+              "listing_gap_pct", "price_to_book", "quality_score", "industry"]
+    missing = [c for c in wanted if c not in have]
+    cols = ", ".join(c for c in wanted if c in have)
+    if missing:
+        print(f"not in ipo_gold (skipped): {', '.join(missing)}")
     cur.execute(f"""SELECT company_name, listing_date, issue_price, candles_json,
-            anchor_count, anchor_amount_cr, final_qib, final_nii, final_retail,
-            final_total, bnii_x, snii_x, ipo_pe, peer_median_pe, ronw, roe,
-            revenue_cagr_3y, profit_cagr_3y, debt_equity, ebitda_margin,
-            promoter_post_pct, ofs_pct, issue_size_cr, listing_gap_pct,
-            price_to_book, quality_score, industry, structure_type
+            {cols}
         FROM ipo_gold WHERE {ELIG.replace('{SINCE}', str(a.since))}""")
     rows = cur.fetchall()
     conn.close()
