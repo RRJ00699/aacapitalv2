@@ -32,7 +32,7 @@ DATASET = "ipo_gold (VIEW: ipo_consolidated ⟕ ipo_golden) · candles_json list
 # cover 2016-2026. Older rows may exist but earn no effort and no weight.
 ELIGIBILITY = ("COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200) "
                "AND company_name !~* '\\y(REIT|InvIT)\\y' AND candles_json IS NOT NULL "
-               "AND issue_price > 0 AND listing_date >= DATE '2016-01-01'")
+               "AND issue_price > 0 AND listing_date >= DATE '{SINCE}-01-01'")
 
 # rule_id -> (version, human filter, python predicate on row dict)
 RULES = {
@@ -90,7 +90,10 @@ def binom_p_greater(k, n, p0):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", action="store_true")
+    ap.add_argument("--since", type=int, default=2016,
+        help="listing-date floor year (default 2016 = DECADE LOCK; e.g. --since 2000 for an inception COMPARISON run — the doctrine stays 2016)")
     a = ap.parse_args()
+    ELIG = ELIGIBILITY.replace("{SINCE}", str(a.since))
     import psycopg2
     import psycopg2.extras
     db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
@@ -101,7 +104,7 @@ def main() -> int:
     cur.execute("SET statement_timeout = '120s'")
     q = f"""SELECT company_name, listing_date, anchor_count, anchor_amount_cr, issue_size_cr, ipo_pe,
                    final_qib, score_band, issue_price, candles_json
-            FROM ipo_gold WHERE {ELIGIBILITY}"""
+            FROM ipo_gold WHERE {ELIG}"""
     cur.execute(q)
     rows = []
     for r in cur.fetchall():
@@ -123,7 +126,7 @@ def main() -> int:
 
     print(f"RULE VALIDATION · {BACKTEST_VERSION} · {ts}")
     print(f"dataset: {DATASET}")
-    print(f"filters: {ELIGIBILITY}")
+    print(f"filters: {ELIG}")
     print(f"universe n={n_all} · date range {date_range} · BASELINE win {base_rate*100:.1f}%")
     print(f"{'rule':20} {'n':>4} {'win%':>6} {'avg%':>7} {'med%':>7} {'maxDD%':>7} {'expct%':>7} {'p-vs-base':>9}  beats?")
     results = []
@@ -153,7 +156,7 @@ def main() -> int:
                  date_range, n, win_rate, avg_return, median_return, max_drawdown,
                  expectancy, p_vs_baseline, beats_baseline, baseline_win_rate, universe_n, run_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (rid, rver, BACKTEST_VERSION, DATASET, ELIGIBILITY, human, date_range,
+                (rid, rver, BACKTEST_VERSION, DATASET, ELIG, human, date_range,
                  n, win, avg, med, maxdd, expct, p, beats, base_rate, n_all, ts))
         conn.commit()
         print(f"STORED {len(results)} rows -> rule_validation_results ({BACKTEST_VERSION})")
