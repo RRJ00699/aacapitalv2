@@ -27,12 +27,13 @@ import sys
 from datetime import datetime, timezone
 
 BACKTEST_VERSION = "rv1-2026-07-22"
+OUTCOME = "ceiling"  # set from --outcome at runtime
 DATASET = "ipo_gold (VIEW: ipo_consolidated ⟕ ipo_golden) · candles_json listing→lock-in"
 # DECADE LOCK (owner, 2026-07-24): the accurate dataset + ALL backtests
 # cover 2016-2026. Older rows may exist but earn no effort and no weight.
 ELIGIBILITY = ("COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue_size_cr>=200) "
                "AND company_name !~* '\\y(REIT|InvIT)\\y' AND candles_json IS NOT NULL "
-               "AND issue_price > 0 AND listing_date >= DATE '2016-01-01'")
+               "AND issue_price > 0 AND listing_date >= DATE '{SINCE}-01-01'")
 
 # rule_id -> (version, human filter, python predicate on row dict)
 RULES = {
@@ -48,6 +49,25 @@ RULES = {
     "anchor_amt_30pct": ("v1", "anchor_amount_cr/issue_size_cr >= 0.30",
         lambda r: (r.get("anchor_amount_cr") or 0) > 0 and (r.get("issue_size_cr") or 0) > 0
                   and float(r["anchor_amount_cr"]) / float(r["issue_size_cr"]) >= 0.30),
+    # CANDIDATE PACK (pattern-mining 2026-07-22; thresholds from the table's
+    # own medians). Promotion bar unchanged: beat baseline here or stay off
+    # the card. gap rule is tradeable (the open prints before the hold).
+    "qib_15x": ("v1", "final_qib >= 15", lambda r: r.get("final_qib") is not None and float(r["final_qib"]) >= 15),
+    "qib_25x": ("v1", "final_qib >= 25", lambda r: r.get("final_qib") is not None and float(r["final_qib"]) >= 25),
+    "total_10x": ("v1", "final_total >= 10", lambda r: r.get("final_total") is not None and float(r["final_total"]) >= 10),
+    "bnii_20x": ("v1", "bnii_x >= 20", lambda r: r.get("bnii_x") is not None and float(r["bnii_x"]) >= 20),
+    "gap_pos_hold": ("v1", "listing_gap_pct > 0", lambda r: r.get("listing_gap_pct") is not None and float(r["listing_gap_pct"]) > 0),
+    "pb_high_7": ("v1", "price_to_book >= 7", lambda r: r.get("price_to_book") is not None and float(r["price_to_book"]) >= 7),
+    "ofs_nonzero": ("v1", "ofs_pct > 0 (ARTIFACT TEST)", lambda r: r.get("ofs_pct") is not None and float(r["ofs_pct"]) > 0),
+    # DISCOVERED RULES (owner scenario session 2026-07-22 — the first rules
+    # the platform found rather than inherited; template result: 76.2% held
+    # vs 60.1% base, n=42, p~.018):
+    "stability_stack": ("v1", "price_to_book >= 7 AND anchor_count >= 30",
+        lambda r: r.get("price_to_book") is not None and float(r["price_to_book"]) >= 7
+                  and (r.get("anchor_count") or 0) >= 30),
+    "avoid_cold_skip": ("v1", "score_band = AVOID AND final_total < 5 (SKIP signal)",
+        lambda r: (r.get("score_band") == "AVOID") and r.get("final_total") is not None
+                  and float(r["final_total"]) < 5),
     "mega_issue_2000cr": ("v1", "issue_size_cr >= 2000", lambda r: (r["issue_size_cr"] or 0) >= 2000),
     "reasonable_pe_70": ("v1", "ipo_pe > 0 AND ipo_pe <= 70", lambda r: r["ipo_pe"] is not None and 0 < r["ipo_pe"] <= 70),
     "qib_50x": ("v1", "final_qib >= 50", lambda r: (r["final_qib"] or 0) >= 50),
@@ -69,7 +89,7 @@ def outcome(row):
         return None
     closes = [float(k["c"]) for k in candles]
     lows = [float(k["l"]) for k in candles]
-    best = max(closes)
+    best = max(closes) if OUTCOME == "ceiling" else closes[-1]
     ret = (best - open_px) / open_px * 100
     dd = (min(lows) - open_px) / open_px * 100
     return (ret > 0, ret, dd)
@@ -90,7 +110,29 @@ def binom_p_greater(k, n, p0):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", action="store_true")
+    ap.add_argument("--outcome", choices=["ceiling", "hold", "both"], default="ceiling",
+        help="ceiling = best close in window vs open (did a profitable exit EXIST); "
+             "hold = LAST close vs open (did it STAY positive to the lock)")
+    ap.add_argument("--since", type=int, default=2016,
+        help="listing-date floor year (default 2016 = DECADE LOCK; e.g. --since 2000 for an inception COMPARISON run — the doctrine stays 2016)")
     a = ap.parse_args()
+    if a.outcome == "both":  # ONE RUN (owner 2026-07-22): both yardsticks, back to back
+        import subprocess
+        for oc in ("ceiling", "hold"):
+            print(f"\n{'='*78}\n  OUTCOME: {oc.upper()}\n{'='*78}")
+            r = subprocess.run([sys.executable, os.path.abspath(__file__),
+                                "--outcome", oc, "--since", str(a.since)]
+                               + (["--store"] if a.store else []))
+            if r.returncode != 0:
+                return r.returncode
+        return 0
+    ELIG = ELIGIBILITY.replace("{SINCE}", str(a.since))
+    global OUTCOME, BACKTEST_VERSION
+    OUTCOME = a.outcome
+    if a.outcome != "ceiling":
+        BACKTEST_VERSION = f"{BACKTEST_VERSION}-hold"
+    if a.since != 2016:
+        BACKTEST_VERSION = f"{BACKTEST_VERSION}-since{a.since}"
     import psycopg2
     import psycopg2.extras
     db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
@@ -100,8 +142,9 @@ def main() -> int:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SET statement_timeout = '120s'")
     q = f"""SELECT company_name, listing_date, anchor_count, anchor_amount_cr, issue_size_cr, ipo_pe,
-                   final_qib, score_band, issue_price, candles_json
-            FROM ipo_gold WHERE {ELIGIBILITY}"""
+                   final_qib, final_total, bnii_x, listing_gap_pct, price_to_book,
+                   ofs_pct, score_band, issue_price, candles_json
+            FROM ipo_gold WHERE {ELIG}"""
     cur.execute(q)
     rows = []
     for r in cur.fetchall():
@@ -123,7 +166,8 @@ def main() -> int:
 
     print(f"RULE VALIDATION · {BACKTEST_VERSION} · {ts}")
     print(f"dataset: {DATASET}")
-    print(f"filters: {ELIGIBILITY}")
+    print(f"filters: {ELIG}")
+    print(f"outcome = {a.outcome} ({'best close in window' if a.outcome=='ceiling' else 'LAST close — stayed positive to lock'} vs listing open)")
     print(f"universe n={n_all} · date range {date_range} · BASELINE win {base_rate*100:.1f}%")
     print(f"{'rule':20} {'n':>4} {'win%':>6} {'avg%':>7} {'med%':>7} {'maxDD%':>7} {'expct%':>7} {'p-vs-base':>9}  beats?")
     results = []
@@ -153,7 +197,7 @@ def main() -> int:
                  date_range, n, win_rate, avg_return, median_return, max_drawdown,
                  expectancy, p_vs_baseline, beats_baseline, baseline_win_rate, universe_n, run_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (rid, rver, BACKTEST_VERSION, DATASET, ELIGIBILITY, human, date_range,
+                (rid, rver, BACKTEST_VERSION, DATASET, ELIG, human, date_range,
                  n, win, avg, med, maxdd, expct, p, beats, base_rate, n_all, ts))
         conn.commit()
         print(f"STORED {len(results)} rows -> rule_validation_results ({BACKTEST_VERSION})")
