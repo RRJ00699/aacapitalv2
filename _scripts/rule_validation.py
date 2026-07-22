@@ -94,6 +94,9 @@ def main() -> int:
         help="listing-date floor year (default 2016 = DECADE LOCK; e.g. --since 2000 for an inception COMPARISON run — the doctrine stays 2016)")
     a = ap.parse_args()
     ELIG = ELIGIBILITY.replace("{SINCE}", str(a.since))
+    global BACKTEST_VERSION
+    if a.since != 2016:
+        BACKTEST_VERSION = f"{BACKTEST_VERSION}-since{a.since}"
     import psycopg2
     import psycopg2.extras
     db = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
