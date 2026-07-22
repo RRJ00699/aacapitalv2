@@ -382,3 +382,13 @@ def test_chittorgarh_steps_removed_from_pipeline():
     assert '"ipomatrix_ingest.py","--only-null"' in lean and '"ipo/fetch_nse_ipos.py"' in lean
     mirror = _read("app", "api", "admin", "pipeline-steps", "route.ts")
     assert "scrape IPO calendar" not in mirror and "anchor + subscription enrich" not in mirror
+
+
+def test_nse_anchor_backfill_reuses_proven_session_and_lands_durably():
+    src = _read("_scripts", "nse_anchor_backfill.py")
+    assert 'impersonate="chrome124"' in src and "all-upcoming-issues-ipo" in src, \
+        "reuses nse_preopen_capture's proven priming pattern (owner directive)"
+    assert "Anchor\\s+investor\\s+portion" in src and "ON CONFLICT (symbol)" in src
+    assert "fails >= 3" in src, "NSE throttle discipline"
+    ddl = _read("_scripts", "schema_sync.py")
+    assert "CREATE TABLE IF NOT EXISTS nse_issue_info" in ddl
