@@ -27,6 +27,7 @@ import sys
 from datetime import datetime, timezone
 
 BACKTEST_VERSION = "rv1-2026-07-22"
+OUTCOME = "ceiling"  # set from --outcome at runtime
 DATASET = "ipo_gold (VIEW: ipo_consolidated ⟕ ipo_golden) · candles_json listing→lock-in"
 # DECADE LOCK (owner, 2026-07-24): the accurate dataset + ALL backtests
 # cover 2016-2026. Older rows may exist but earn no effort and no weight.
@@ -79,7 +80,7 @@ def outcome(row):
         return None
     closes = [float(k["c"]) for k in candles]
     lows = [float(k["l"]) for k in candles]
-    best = max(closes)
+    best = max(closes) if OUTCOME == "ceiling" else closes[-1]
     ret = (best - open_px) / open_px * 100
     dd = (min(lows) - open_px) / open_px * 100
     return (ret > 0, ret, dd)
@@ -100,11 +101,17 @@ def binom_p_greater(k, n, p0):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", action="store_true")
+    ap.add_argument("--outcome", choices=["ceiling", "hold"], default="ceiling",
+        help="ceiling = best close in window vs open (did a profitable exit EXIST); "
+             "hold = LAST close vs open (did it STAY positive to the lock)")
     ap.add_argument("--since", type=int, default=2016,
         help="listing-date floor year (default 2016 = DECADE LOCK; e.g. --since 2000 for an inception COMPARISON run — the doctrine stays 2016)")
     a = ap.parse_args()
     ELIG = ELIGIBILITY.replace("{SINCE}", str(a.since))
-    global BACKTEST_VERSION
+    global OUTCOME, BACKTEST_VERSION
+    OUTCOME = a.outcome
+    if a.outcome != "ceiling":
+        BACKTEST_VERSION = f"{BACKTEST_VERSION}-hold"
     if a.since != 2016:
         BACKTEST_VERSION = f"{BACKTEST_VERSION}-since{a.since}"
     import psycopg2
@@ -141,6 +148,7 @@ def main() -> int:
     print(f"RULE VALIDATION · {BACKTEST_VERSION} · {ts}")
     print(f"dataset: {DATASET}")
     print(f"filters: {ELIG}")
+    print(f"outcome = {a.outcome} ({'best close in window' if a.outcome=='ceiling' else 'LAST close — stayed positive to lock'} vs listing open)")
     print(f"universe n={n_all} · date range {date_range} · BASELINE win {base_rate*100:.1f}%")
     print(f"{'rule':20} {'n':>4} {'win%':>6} {'avg%':>7} {'med%':>7} {'maxDD%':>7} {'expct%':>7} {'p-vs-base':>9}  beats?")
     results = []
