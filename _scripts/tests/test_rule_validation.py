@@ -33,7 +33,11 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
         sql_filter TEXT, rule_filter TEXT, date_range TEXT, n INT, win_rate NUMERIC,
         avg_return NUMERIC, median_return NUMERIC, max_drawdown NUMERIC,
         expectancy NUMERIC, p_vs_baseline NUMERIC, beats_baseline BOOLEAN,
-        baseline_win_rate NUMERIC, universe_n INT, run_at TIMESTAMPTZ)""")
+        baseline_win_rate NUMERIC, universe_n INT, run_at TIMESTAMPTZ,
+        ci95_low NUMERIC, ci95_high NUMERIC, odds_ratio NUMERIC,
+        abs_lift NUMERIC, rel_lift NUMERIC, test_name TEXT,
+        q_bh NUMERIC, beats_fdr BOOLEAN, power NUMERIC,
+        git_hash TEXT, exclusion_ledger JSONB, finding_status TEXT)""")
     # 40 IPOs: 30 with >=50 anchors ALL winners (+10%); 10 with 5 anchors ALL
     # losers (-8%) -> anchors rules must beat the 75% baseline; AVOID band = losers.
     for i in range(30):
@@ -51,19 +55,36 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
     assert rule_validation.main() == 0
     out = capsys.readouterr().out
     assert "BASELINE win 75.0%" in out
-    assert "rv1-2026-07-22" in out and "ipo_gold" in out, "provenance printed"
+    assert "rv2-2026-07-22" in out and "ipo_gold" in out, "provenance printed"
+    assert "git " in out and "ledger:" in out, "rv2 header prints git hash + exclusion ledger"
+    assert "DISCOVERY" in out, "finding status label printed (mandate §3)"
 
     conn = psycopg2.connect(pg_uri); cur = conn.cursor()
-    cur.execute("""SELECT rule_id, n, win_rate, beats_baseline, sql_filter, backtest_version
+    cur.execute("""SELECT rule_id, n, win_rate, beats_baseline, sql_filter, backtest_version,
+                          ci95_low, ci95_high, odds_ratio, abs_lift, test_name,
+                          q_bh, beats_fdr, power, git_hash, exclusion_ledger, finding_status
                    FROM rule_validation_results""")
     got = {r[0]: r for r in cur.fetchall()}
-    assert got["anchors_50plus"][1] == 30 and float(got["anchors_50plus"][2]) == 1.0
-    assert got["anchors_50plus"][3] is True, "100% win over 75% baseline (n=30) must beat"
+    a50 = got["anchors_50plus"]
+    assert a50[1] == 30 and float(a50[2]) == 1.0
+    assert a50[3] is True, "100% win over 75% baseline (n=30) must beat"
     assert got["band_avoid_skip"][1] == 10 and float(got["band_avoid_skip"][2]) == 0.0
     assert got["band_avoid_skip"][3] is False
-    assert "REIT|InvIT" in got["anchors_50plus"][4], "filters recorded verbatim"
-    assert "2016-01-01" in got["anchors_50plus"][4], "DECADE LOCK rides in provenance (owner 2026-07-24)"
-    assert got["anchors_50plus"][5] == "rv1-2026-07-22"
+    assert "REIT|InvIT" in a50[4], "filters recorded verbatim"
+    assert "2016-01-01" in a50[4], "DECADE LOCK rides in provenance"
+    assert a50[5] == "rv2-2026-07-22"
+    # ── rv2 statistics block (research-governance mandate §1-§3) ──
+    assert 0.85 <= float(a50[6]) < 1.0 and float(a50[7]) > 0.999, "Wilson CI95 for 30/30 wins"
+    assert float(a50[8]) > 1.0, "odds ratio vs rest of universe > 1 for the winner rule"
+    assert abs(float(a50[9]) - 0.25) < 1e-9, "abs lift = 100% - 75% baseline"
+    assert "binomial exact" in a50[10], "test name recorded"
+    assert 0.0 <= float(a50[11]) <= 1.0 and a50[12] is True, "q(BH) sane; 30/30 vs 75% survives FDR"
+    assert got["band_avoid_skip"][12] is False, "0% win rule must not pass FDR"
+    assert 0.0 <= float(a50[13]) <= 1.0, "power in [0,1]"
+    assert a50[14] and a50[14] != "", "git hash stored"
+    ledger = a50[15]
+    assert ledger["rows_available"] == 40 and ledger["scoreable"] == 40, "exclusion ledger stored"
+    assert "DISCOVERY" in a50[16], "finding_status label stored (mandate §3)"
     conn.close()
 
 

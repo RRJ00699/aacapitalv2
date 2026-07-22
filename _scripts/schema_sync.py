@@ -41,7 +41,26 @@ DDL = [
         win_rate NUMERIC, avg_return NUMERIC, median_return NUMERIC,
         max_drawdown NUMERIC, expectancy NUMERIC, p_vs_baseline NUMERIC,
         beats_baseline BOOLEAN, baseline_win_rate NUMERIC, universe_n INT,
-        run_at TIMESTAMPTZ NOT NULL)""",
+        run_at TIMESTAMPTZ NOT NULL,
+        ci95_low NUMERIC, ci95_high NUMERIC, odds_ratio NUMERIC,
+        abs_lift NUMERIC, rel_lift NUMERIC, test_name TEXT,
+        q_bh NUMERIC, beats_fdr BOOLEAN, power NUMERIC,
+        git_hash TEXT, exclusion_ledger JSONB, finding_status TEXT)""",
+    # rv2 stats columns (research-governance mandate 2026-07-22). Top-level
+    # ALTERs — the CREATE above is a no-op on existing DBs (owner receipts:
+    # 87/87 applied, zero columns created).
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS ci95_low NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS ci95_high NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS odds_ratio NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS abs_lift NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS rel_lift NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS test_name TEXT",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS q_bh NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS beats_fdr BOOLEAN",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS power NUMERIC",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS git_hash TEXT",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS exclusion_ledger JSONB",
+    "ALTER TABLE rule_validation_results ADD COLUMN IF NOT EXISTS finding_status TEXT",
     # symbol_aliases (2026-07-22): NSE renames/mergers for historical backfills
     # (e.g. ZOMATO -> ETERNAL). Owner-curated; backfill scripts consult it.
     """CREATE TABLE IF NOT EXISTS symbol_aliases (
