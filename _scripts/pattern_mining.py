@@ -97,6 +97,8 @@ def main() -> int:
     conn.close()
 
     data = []
+    first_err = None
+    skipped = 0
     for r in rows:
         try:
             candles = r["candles_json"]
@@ -115,15 +117,25 @@ def main() -> int:
             pe, ppe = r.get("ipo_pe"), r.get("peer_median_pe")
             r["pe_vs_peers"] = float(pe) / float(ppe) if pe and ppe and float(ppe) > 0 else None
             data.append(r)
-        except Exception:
+        except Exception as e:
+            skipped += 1
+            if first_err is None:
+                first_err = f"{type(e).__name__}: {e} · row={r.get('company_name')}"
             continue
+    if skipped:
+        print(f"! rows skipped during parse: {skipped} · first error: {first_err}")
 
     W = [d for d in data if d["_win"]]
     L = [d for d in data if not d["_win"]]
     print(f"PATTERN MINING · winners = last lock-window close > issue price · since {a.since}")
+    wm, lm = med([d["_ret"] for d in W]), med([d["_ret"] for d in L])
     print(f"universe n={len(data)} · WINNERS {len(W)} ({len(W)/max(len(data),1)*100:.1f}%) · "
-          f"LOSERS {len(L)} · winner median hold-return {med([d['_ret'] for d in W]):+.1f}% · "
-          f"loser {med([d['_ret'] for d in L]):+.1f}%")
+          f"LOSERS {len(L)} · winner median hold-return "
+          f"{(f'{wm:+.1f}%' if wm is not None else '—')} · loser "
+          f"{(f'{lm:+.1f}%' if lm is not None else '—')}")
+    if not data:
+        print("universe parsed to ZERO rows — the first error above is the cause; fix and rerun.")
+        return 1
     print(f"{'factor':26} {'n':>4} {'win-med':>9} {'lose-med':>9} {'top½win%':>9} {'bot½win%':>9} {'p':>7}  read")
     for col, label in NUMERIC:
         vals = [(float(d[col]), d["_win"]) for d in data if d.get(col) is not None]
