@@ -54,19 +54,34 @@ def main() -> int:
     a = ap.parse_args()
     import psycopg2
     from curl_cffi import requests as cffi
-    conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25)
-    conn.autocommit = False
-    cur = conn.cursor()
-    cur.execute("SET statement_timeout = '60s'")
+
+    # Neon closes idle connections while NSE stalls (owner run 2026-07-24:
+    # a 92s hang killed the conn and the single end-of-run commit lost an
+    # entire 700-symbol pass). Keepalives + reconnect-on-demand.
+    def connect():
+        c = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25,
+                             keepalives=1, keepalives_idle=30,
+                             keepalives_interval=10, keepalives_count=3)
+        c.autocommit = False
+        k = c.cursor(); k.execute("SET statement_timeout = '60s'")
+        return c, k
+    conn, cur = connect()
     if a.symbol:
         targets = [a.symbol.upper()]
     else:
         # golden rows missing anchor evidence, newest listings first
-        cur.execute("""SELECT g.nse_symbol FROM ipo_golden g
-            LEFT JOIN nse_issue_info n ON n.symbol = g.nse_symbol
-            WHERE g.nse_symbol IS NOT NULL AND n.symbol IS NULL
-              AND g.anchor_amount_cr IS NULL
-            ORDER BY g.golden_filled_at DESC NULLS LAST LIMIT %s""", (a.limit,))
+        # DISTINCT ON keeps one row per symbol AND permits the recency sort
+        # (plain DISTINCT + ORDER BY non-selected column is invalid SQL —
+        # owner hit InvalidColumnReference 2026-07-24).
+        cur.execute("""SELECT sym FROM (
+              SELECT DISTINCT ON (g.nse_symbol) g.nse_symbol AS sym,
+                     g.golden_filled_at AS gf
+              FROM ipo_golden g
+              LEFT JOIN nse_issue_info n ON n.symbol = g.nse_symbol
+              WHERE g.nse_symbol IS NOT NULL AND n.symbol IS NULL
+                AND g.anchor_amount_cr IS NULL
+              ORDER BY g.nse_symbol, g.golden_filled_at DESC NULLS LAST) t
+            ORDER BY t.gf DESC NULLS LAST LIMIT %s""", (a.limit,))
         targets = [r[0] for r in cur.fetchall()]
     if not targets:
         print("nothing to fetch — coverage complete for current targets")
@@ -81,11 +96,17 @@ def main() -> int:
             issue_txt = json.dumps(payload)  # anchor line may sit at any depth
             m = ANCHOR_RX.search(issue_txt)
             shares = int(m.group(1).replace(",", "")) if m else None
+            try:
+                cur.execute("SELECT 1")  # liveness probe
+            except Exception:
+                conn, cur = connect()  # Neon dropped us mid-run — resume
             cur.execute("""INSERT INTO nse_issue_info (symbol, raw_json, anchor_portion_shares, fetched_at)
                 VALUES (%s, %s::jsonb, %s, NOW())
                 ON CONFLICT (symbol) DO UPDATE SET raw_json = EXCLUDED.raw_json,
                   anchor_portion_shares = COALESCE(nse_issue_info.anchor_portion_shares, EXCLUDED.anchor_portion_shares),
                   fetched_at = NOW()""", (sym, raw, shares))
+            if a.apply:
+                conn.commit()  # PER-SYMBOL: a crash can never lose banked work
             print(f"  {sym:14} anchor_shares={shares if shares else '—'}  bytes={len(raw)}")
             ok += 1; fails = 0
         except Exception as e:  # timeouts/blocks: the preopen script's discipline
@@ -95,11 +116,14 @@ def main() -> int:
                 print("  3 straight failures — NSE throttling; stop, resume later")
                 break
         time.sleep(2.5)
-    if a.apply:
-        conn.commit(); print(f"COMMITTED ({ok} symbols)")
-    else:
-        conn.rollback(); print(f"dry-run rolled back ({ok} fetched) — rerun with --apply")
-    conn.close()
+    try:
+        if a.apply:
+            conn.commit(); print(f"DONE — {ok} symbols banked (committed per symbol)")
+        else:
+            conn.rollback(); print(f"dry-run rolled back ({ok} fetched) — rerun with --apply")
+        conn.close()
+    except Exception:
+        print(f"DONE — {ok} symbols banked (final conn already closed; per-symbol commits held)")
     return 0
 
 

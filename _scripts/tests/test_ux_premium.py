@@ -390,5 +390,9 @@ def test_nse_anchor_backfill_reuses_proven_session_and_lands_durably():
         "reuses nse_preopen_capture's proven priming pattern (owner directive)"
     assert "Anchor\\s+investor\\s+portion" in src and "ON CONFLICT (symbol)" in src
     assert "fails >= 3" in src, "NSE throttle discipline"
+    # owner run 2026-07-24: 92s NSE hang -> Neon dropped the conn -> the
+    # single end-of-run commit lost a whole 700-symbol pass. Never again:
+    assert "PER-SYMBOL" in src and "keepalives=1" in src and "liveness probe" in src
+    assert "DISTINCT ON (g.nse_symbol)" in src, "dedup + recency sort must be legal SQL together"
     ddl = _read("_scripts", "schema_sync.py")
     assert "CREATE TABLE IF NOT EXISTS nse_issue_info" in ddl
