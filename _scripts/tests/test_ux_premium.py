@@ -299,6 +299,10 @@ def test_golden_table_is_durable_plus_one_object_view():
     the owner's one-object reads. No ALTERs on the rebuilt table."""
     ddl = _read("_scripts", "schema_sync.py")
     assert "CREATE TABLE IF NOT EXISTS ipo_golden" in ddl
+    # 2026-07-22: new durable-table fields MUST be ALTERs — CREATE IF NOT
+    # EXISTS silently no-ops on the existing prod table
+    for col in ("final_qib NUMERIC", "final_total NUMERIC", "industry TEXT", "nse_listing_date DATE"):
+        assert f"ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS {col}" in ddl, col
     assert "CREATE OR REPLACE VIEW ipo_gold" in ddl
     # prod incident 2026-07-22: ipo_master is a LEGACY v1 TABLE with
     # dependents — the view must never try to take that name

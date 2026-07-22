@@ -100,6 +100,15 @@ DDL = [
         final_qib NUMERIC, final_nii NUMERIC, final_retail NUMERIC, final_total NUMERIC,
         industry TEXT, nse_listing_date DATE,
         golden_filled_at TIMESTAMPTZ)""",
+    # ipo_golden is DURABLE and already exists in prod - new fields must be
+    # ALTERs; putting them only inside CREATE IF NOT EXISTS no-ops forever
+    # (owner receipts 2026-07-22: 87/87 applied, zero columns created).
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_qib NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_nii NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_retail NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_total NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS industry TEXT",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS nse_listing_date DATE",
     "__IPO_GOLD_VIEW__",  # generated dynamically — see build_ipo_gold_view()
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS is_sme BOOLEAN",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS issue_size_cr NUMERIC",
