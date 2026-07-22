@@ -199,6 +199,65 @@ def main() -> int:
           AND COALESCE(jsonb_array_length(g.candles_json), 0) < sub.n""")
     filled["candles_json"] = cur.rowcount
 
+    # 5) NSE MINING (source doctrine 2026-07-23: NSE = every IPO detail;
+    #    DECADE LOCK: 2016+). Parses banked nse_issue_info payloads:
+    #    metaInfo (isin/listingDate/industry) + activeCat category table
+    #    (QIB '1', NII '2', bNII '2.1', sNII '2.2', Retail '3', Total) +
+    #    broadened anchor extraction. Fill-empty; anchor_amount_cr derived
+    #    from shares * issue_price.
+    import json as _json
+    import re as _re
+    RX2 = _re.compile(r"Anchor[^\d]{0,60}?([\d,]{6,})\s+Equity", _re.I)
+    cur.execute("""SELECT n.symbol, n.raw_json, n.anchor_portion_shares
+                   FROM nse_issue_info n JOIN ipo_golden g ON g.nse_symbol = n.symbol
+                   WHERE n.raw_json IS NOT NULL""")
+    mined = {"nse_meta": 0, "nse_finals": 0, "nse_anchor_amount": 0}
+    for sym, raw, shares in cur.fetchall():
+        try:
+            d = raw if isinstance(raw, dict) else _json.loads(raw)
+        except Exception:
+            continue
+        meta = d.get("metaInfo") or {}
+        upd, args = [], []
+        for col, val in (("isin", meta.get("isin")), ("industry", meta.get("industry")),
+                         ("nse_listing_date", meta.get("listingDate"))):
+            if val:
+                upd.append(f"{col} = COALESCE(g.{col}, %s)"); args.append(val)
+        cats = {str(r.get("srNo", "")).strip(): r
+                for r in ((d.get("activeCat") or {}).get("dataList") or []) if isinstance(r, dict)}
+        def x(key):
+            v = (cats.get(key) or {}).get("noOfTotalMeant") or ""
+            try:
+                return round(float(v), 4)
+            except Exception:
+                return None
+        for col, key in (("final_qib", "1"), ("final_nii", "2"), ("bnii_x", "2.1"),
+                         ("snii_x", "2.2"), ("final_retail", "3")):
+            v = x(key)
+            if v is not None:
+                upd.append(f"{col} = COALESCE(g.{col}, %s)"); args.append(v)
+        tot = x("Total") or x("total")
+        if tot is not None:
+            upd.append("final_total = COALESCE(g.final_total, %s)"); args.append(tot)
+        if not shares:
+            m = RX2.search(_json.dumps(d))
+            if m:
+                shares = int(m.group(1).replace(",", ""))
+        if shares:
+            upd.append("""anchor_amount_cr = COALESCE(g.anchor_amount_cr,
+                (SELECT ROUND(%s * c.issue_price / 1e7, 2) FROM ipo_consolidated c
+                 WHERE UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol))) = g.nse_symbol
+                   AND c.issue_price > 0 LIMIT 1))""")
+            args.append(shares)
+        if upd:
+            cur.execute(f"UPDATE ipo_golden g SET {', '.join(upd)} WHERE g.nse_symbol = %s", (*args, sym))
+            mined["nse_meta"] += 1
+            if any("final_" in u or "nii_x" in u for u in upd):
+                mined["nse_finals"] += 1
+            if any("anchor_amount" in u for u in upd):
+                mined["nse_anchor_amount"] += 1
+    filled.update(mined)
+
     filled["golden rows seeded"] = seeded
     width = max(len(k) for k in filled)
     print(f"GOLDEN TABLE CONSOLIDATION ({'APPLY' if a.apply else 'DRY-RUN'})")
