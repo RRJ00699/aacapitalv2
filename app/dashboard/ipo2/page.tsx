@@ -982,6 +982,7 @@ function IpoCommand() {
   // Deep links (2026-07-22): /dashboard/ipo2?view=details&ipo=SYM — exact
   // symbol key (strong key; never fuzzy). Selection state for details view.
   const [detailSym,setDetailSym]=useState<string>("");
+  const [detailQ,setDetailQ]=useState<string>("");
   useEffect(()=>{
     try{
       const sp=new URLSearchParams(window.location.search);
@@ -1050,11 +1051,22 @@ function IpoCommand() {
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
           if(!k||seen.has(k))return false; seen.add(k); return true;});
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        const today=new Date().toISOString().slice(0,10);
+        const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
+          .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
         return (
           <div style={{marginTop:12}}>
+            <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
+              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
+              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+                border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.map((c,i)=>(
+              {all.filter(c=>{
+                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+                return String(c.sym||"").toLowerCase().includes(q) ||
+                       String(c.company_name||"").toLowerCase().includes(q);
+              }).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
@@ -1071,11 +1083,22 @@ function IpoCommand() {
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
           if(!k||seen.has(k))return false; seen.add(k); return true;});
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? all[0];
+        const today=new Date().toISOString().slice(0,10);
+        const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
+          .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
+        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
         return (
           <div style={{marginTop:12}}>
+            <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
+              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
+              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+                border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.map((c,i)=>(
+              {all.filter(c=>{
+                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+                return String(c.sym||"").toLowerCase().includes(q) ||
+                       String(c.company_name||"").toLowerCase().includes(q);
+              }).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
@@ -1194,10 +1217,16 @@ function IpoCommand() {
                     <b style={{fontFamily:"var(--f-display)",fontSize:16,letterSpacing:-0.2}}>{String(wc.company_name||sym)}</b>
                     <span style={{...num,fontSize:11,color:C.meta}}>listed {D(wc.listing_date)}</span>
                   </div>
+                  {(()=>{ // owner 2026-07-23: intraday panel comes DOWN after
+                    // listing day — IST clock, not server TZ.
+                    const istToday=new Date(Date.now()+5.5*3600_000).toISOString().slice(0,10);
+                    const listedIst=String(wc.listing_date||"").slice(0,10);
+                    if(!listedIst || listedIst < istToday) return null; // D1+: panel gone; Review owns it
+                    return (
                   <div style={{border:`1px dashed ${C.border}`,borderRadius:11,padding:"12px 13px",marginTop:10}}>
-                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Feed idle</div>
-                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Market closed or capture not running — the exit engine on the right tracks daily closes meanwhile.</div>
-                  </div>
+                    <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Intraday capture</div>
+                    <div style={{fontSize:12,color:C.meta,marginTop:5,lineHeight:1.5}}>Ticks capture during listing-morning market hours. From tomorrow this panel retires — daily closes live in Listing Review.</div>
+                  </div>); })()}
                 </div>
               )}
 

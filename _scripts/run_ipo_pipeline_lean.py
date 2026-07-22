@@ -55,6 +55,23 @@ def _log_step(name, script, ok, err=""):
     except Exception:
         pass
 
+def notify(title, body, ok=True):
+    """ntfy push on every pipeline run (owner 2026-07-23). Set NTFY_TOPIC in
+    .env (e.g. aacapital-rakesh-7x2). No topic -> silent no-op. Never fatal."""
+    topic = os.environ.get("NTFY_TOPIC")
+    if not topic:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}", data=body.encode()[:900],
+            headers={"Title": title, "Priority": "default" if ok else "high",
+                     "Tags": "white_check_mark" if ok else "rotating_light"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
 def log(m):
     line=f"[{datetime.datetime.now():%H:%M:%S}] {m}"
     print(line)
@@ -143,8 +160,14 @@ def main():
     step("write-constraint guard (A)",      ["check_write_constraints.py"])
     step("lineage registry (P2)",          ["lineage_registry.py"])
     step("NSE discovery (new IPOs)",        ["ipo/fetch_nse_ipos.py"])
-    step("scrape IPO calendar + details",   ["scrape_chittorgarh.py","--write-db"])
-    step("anchor + subscription enrich",    ["ipo/enrich_ipo_chittorgarh.py","--auto","--apply"])
+    # REMOVED 2026-07-23 (owner): Chittorgarh and IPOMatrix are the SAME
+    # vendor's products — one feed. These two steps duplicated the IPOMatrix
+    # enrich (and produced the wrong-anchor-lock-date class, e.g. FUSION).
+    # New-IPO detection stays with "NSE discovery"; enrichment is IPOMatrix
+    # (new + upcoming drip). Scripts kept on disk; re-enable is one line if
+    # a field gap appears in the audit.
+    #   (removed) scrape IPO calendar + details -> scrape_chittorgarh.py --write-db
+    #   (removed) anchor + subscription enrich -> ipo/enrich_ipo_chittorgarh.py --auto --apply
     step("IPOMatrix enrich (new IPOs)",     ["ipomatrix_ingest.py","--only-null","--apply"])
     step("IPOMatrix refresh (upcoming drip-feed)", ["ipomatrix_ingest.py","--upcoming","--apply"])
     step("EPS backfill (caution-marked)",   ["backfill_eps_post.py","--apply"])

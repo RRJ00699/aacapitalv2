@@ -14,8 +14,6 @@ export const EXPECTED_LEAN_STEPS: Array<{ step: string; weekly?: boolean }> = [
   { step: "write-constraint guard (A)" },
   { step: "lineage registry (P2)" },
   { step: "NSE discovery (new IPOs)" },
-  { step: "scrape IPO calendar + details" },
-  { step: "anchor + subscription enrich" },
   { step: "IPOMatrix enrich (new IPOs)" },
   { step: "IPOMatrix refresh (upcoming drip-feed)" },
   { step: "EPS backfill (caution-marked)" },

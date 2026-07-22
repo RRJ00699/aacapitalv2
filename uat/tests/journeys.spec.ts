@@ -12,7 +12,11 @@ test.describe("AACapital user journeys", () => {
     await expect(option).toContainText("UAT Complete Ltd");
     await expect(option).toContainText("Open Command Center"); // stage-aware, never generic View
     await option.click();
-    await expect(page.locator("#ipocard-UATGOOD")).toBeVisible(); // navigated, not stuck
+    // pick() navigates via the aac:focus-ipo custom event — the URL NEVER
+    // changes (components/features/ipo-search.tsx pick -> onSelect -> event).
+    // Assert the outcome: the command card (or its title) becomes visible.
+    await expect(page.locator("#ipocard-UATGOOD")
+      .or(page.getByText("UAT Complete Ltd").first())).toBeVisible({ timeout: 10_000 });
   });
 
   test("J2 · quality + lifecycle filters combine", async ({ watched: page }) => {
@@ -22,7 +26,7 @@ test.describe("AACapital user journeys", () => {
     await page.getByRole("button", { name: "GOOD" }).click();
     await expect(page.getByRole("option")).toHaveCount(1);
     await expect(page.getByRole("option").first()).toContainText("UAT Complete Ltd");
-    await page.getByRole("button", { name: "Upcoming" }).click(); // combines
+    await page.getByRole("button", { name: "Upcoming", exact: true }).click(); // combines (strict: pill vs chip)
     await expect(page.getByRole("option").first()).toContainText("UAT Complete Ltd");
   });
 
@@ -42,10 +46,16 @@ test.describe("AACapital user journeys", () => {
   test("J5 · Command Center: research states, fair value, evidence with source", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     const complete = page.locator("#ipocard-UATGOOD");
+    const exp1 = complete.getByRole("button", { name: /RHP \+ SBI research/ });
+    if (await exp1.count()) { await exp1.first().scrollIntoViewIfNeeded(); await exp1.first().click(); } // expander (skip if already open)
     await expect(complete).toContainText("RHP evidence · the document's own words");
     await expect(complete).toContainText("will not receive any proceeds"); // quoted excerpt renders
     const incomplete = page.locator("#ipocard-UATINC");
-    await expect(incomplete).toContainText("SBI research note not available or not yet parsed.");
+    const exp2 = incomplete.getByRole("button", { name: /RHP \+ SBI research/ });
+    if (await exp2.count()) { await exp2.first().scrollIntoViewIfNeeded(); await exp2.first().click(); }
+    // card copy evolved (CI evidence 2026-07-24): incompleteness now reads as
+    // the honest inline verdict, not the old SBI-note sentence
+    await expect(incomplete).toContainText("research signal, not a buy call");
     await expect(incomplete).toContainText("RHP not yet read");
     await expect(incomplete).toContainText("awaiting"); // FV never fakes a number
   });
@@ -69,6 +79,10 @@ test.describe("AACapital user journeys", () => {
     expect(l.mos.pct).toBeNull(); // labeled floor, never a margin
     await page.goto("/dashboard/ipo2");
     await page.getByRole("button", { name: /switch to live/i }).click();
+    // stage 1: does fixture-Live serve the listing at all?
+    await expect(page.getByText("UAT Listing Ltd").first(), "fixture-Live must serve the IST-today listing")
+      .toBeVisible({ timeout: 10_000 });
+    // stage 2: the safety banner on that listing
     await expect(page.getByText("Research incomplete")).toBeVisible();
     await expect(page.getByText("WATCH, not BUY")).toBeVisible();
   });
@@ -76,8 +90,8 @@ test.describe("AACapital user journeys", () => {
   test("J9 · Post-Listing view renders outcomes for listed IPOs", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     await page.getByRole("button", { name: /switch to post-listing/i }).click();
-    await expect(page.locator(`#postrow-${"UATPOST".toLowerCase() === "uatpost" ? "UATPOST" : "UATPOST"}`).first()
-      .or(page.getByText("UAT Listed Ltd"))).toBeVisible();
+    await expect(page.locator("#postrow-UATPOST")
+      .or(page.getByText("UAT Listed Ltd")).first()).toBeVisible(); // .first AFTER the union (strict mode)
   });
 
   test("J10 · rules disclose backtest sample sizes (n=) and win rates", async ({ watched: page }) => {

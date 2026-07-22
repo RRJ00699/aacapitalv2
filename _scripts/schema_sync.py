@@ -25,6 +25,11 @@ def _canon(col):
 
 
 DDL = [
+    # nse_issue_info (2026-07-23): raw NSE issue-information API payloads —
+    # anchor evidence landing zone (owner URL pattern). Durable; fill-empty.
+    """CREATE TABLE IF NOT EXISTS nse_issue_info (
+        symbol TEXT PRIMARY KEY, raw_json JSONB,
+        anchor_portion_shares BIGINT, fetched_at TIMESTAMPTZ)""",
     # rule_validation_results (Phase 10, 2026-07-22): every backtest result
     # with full provenance — dataset, filters, versions, timestamp. Durable.
     """CREATE TABLE IF NOT EXISTS rule_validation_results (

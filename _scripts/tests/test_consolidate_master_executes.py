@@ -23,7 +23,8 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""CREATE TABLE ipo_consolidated (company_name TEXT, symbol_final TEXT,
         nse_symbol TEXT, symbol TEXT, listing_date DATE, anchor_lock30_date DATE)""")
     cur.execute("""CREATE TABLE ipo_intelligence (company_name TEXT, isin TEXT,
-        lot_size INT, allotment_date DATE, mcap_cr NUMERIC, ronw NUMERIC,
+        lot_size INT, allotment_date DATE, mcap_offer NUMERIC, ronw NUMERIC,
+        ipo_pb NUMERIC, promoter_holding_post NUMERIC, registrar TEXT,
         sub_day3_x NUMERIC, total_applications BIGINT)""")
     # PROD TRUTH: ipo_research_notes has NO stored_at (predates it) — id SERIAL
     # is the only recency column (see schema_sync's 2026-07-18 note).
@@ -38,6 +39,8 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("CREATE TABLE price_candles (symbol TEXT, date DATE, open NUMERIC, high NUMERIC, low NUMERIC, close NUMERIC, volume BIGINT)")
     cur.execute("""CREATE TABLE ipo_golden (company_key TEXT PRIMARY KEY, company_name TEXT,
         nse_symbol TEXT, isin TEXT, lot_size INT, allotment_date DATE, mcap_cr NUMERIC,
+        price_to_book NUMERIC, promoter_post_pct NUMERIC, registrar_name TEXT,
+        anchor_lock30_date DATE, anchor_lock90_date DATE, ebitda_margin NUMERIC,
         ronw NUMERIC, sub_day3_x NUMERIC, total_applications BIGINT,
         rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
@@ -45,7 +48,7 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
     cur.execute("""INSERT INTO ipo_consolidated VALUES
         ('SBI Funds Management Ltd.','SBIFUNDS',NULL,'SBIFUNDS','2026-07-21',NULL)""")
     cur.execute("""INSERT INTO ipo_intelligence VALUES
-        ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116900,43.02,41.66,6380000)""")
+        ('SBI Funds Management Ltd.','INE640G01020',26,'2026-07-17',116913.9,43.02,19.6,88.0,'Kfin Technologies',41.66,6380000)""")
     cur.execute("""INSERT INTO ipo_research_notes (company, source, full_json) VALUES
         ('SBI Funds Management Ltd.','SBI','{"rating":"SUBSCRIBE"}')""")
     cur.execute("""INSERT INTO ipo_rhp_intel (company_name, full_json)
@@ -55,7 +58,8 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
         ('SBI Funds Management Ltd.','<paste exact headline>','Reuters','<paste url>','manual')""")
     cur.execute("""INSERT INTO price_candles VALUES
         ('SBIFUNDS','2026-07-21',613.3,641,600,609.75,90000000),
-        ('SBIFUNDS','2026-07-22',610,615,601,604,30000000)""")
+        ('SBIFUNDS','2026-07-22',610,615,601,604,30000000),
+        ('SBIFUNDS','2026-07-23',700,600,650,900,1)""")  # impossible OHLC — must be excluded
     conn.close()
 
     monkeypatch.setenv("DATABASE_URL", pg_uri)
@@ -68,15 +72,22 @@ def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):
 
     conn = psycopg2.connect(pg_uri); cur = conn.cursor()
     cur.execute("""SELECT isin, lot_size, mcap_cr, ronw, sub_day3_x, total_applications,
+                          price_to_book, promoter_post_pct, registrar_name,
                           rhp_sonnet_json->>'one_line', sbi_haiku_json->>'rating',
                           street_headline, json_array_length(candles_json::json)
                    FROM ipo_golden""")
-    (isin, lot, mcap, ronw, d3, apps, sonnet, haiku, head, days) = cur.fetchone()
-    assert isin == "INE640G01020" and lot == 26 and float(mcap) == 116900
+    (isin, lot, mcap, ronw, d3, apps, pb, ppost, reg, sonnet, haiku, head, days) = cur.fetchone()
+    assert isin == "INE640G01020" and lot == 26 and float(mcap) == 116913.9
+    assert float(pb) == 19.6 and float(ppost) == 88.0 and reg == "Kfin Technologies", \
+        "REAL intelligence column names (mcap_offer/ipo_pb/promoter_holding_post/registrar) feed golden"
     assert float(ronw) == 43.02 and float(d3) == 41.66 and apps == 6380000
     assert sonnet == "clean" and haiku == "SUBSCRIBE"
     assert head == "SBI Funds debuts above issue", "placeholder row must lose to the real one"
-    assert days == 2, "candles_json materialized listing-window OHLCV"
+    assert days == 2, "impossible-OHLC row excluded; real sessions kept"
+    cur.execute("SELECT anchor_lock30_date, anchor_lock90_date FROM ipo_golden")
+    l30, l90 = cur.fetchone()
+    assert str(l30) == "2026-08-20" and str(l90) == "2026-10-19", \
+        "lock dates derived listing+30/90 when vendor never supplied them"
     # second run: idempotent, fill-empty (no duplicate seeding, values stable)
     importlib.reload(consolidate_master)
     assert consolidate_master.main() == 0

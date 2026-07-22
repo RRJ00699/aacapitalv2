@@ -10,11 +10,11 @@
    Bloomberg/Stripe/Linear-inspired. Text darkened for 8-hour readability. */
 :root, [data-theme="light"] {
   --t-bg:#F4F1EB; --t-surface:#FAF8F4; --t-surface2:#EFEBE3; --t-border:#DDD4C6; --t-line:#E6DFD3;
-  --t-text:#111827; --t-sub:#334155; --t-meta:#475569; --t-dim:#6B7280;
+  --t-text:#111827; --t-sub:#334155; --t-meta:#475569; --t-dim:#565E6C;
   --t-green:#15803D; --t-greenBg:#E7F3EA; --t-greenBd:#BBE0C4;
   --t-blue:#1D4ED8; --t-blueBg:#E8EFFC; --t-blueBd:#C0D3F5;
-  --t-amber:#92600A; --t-amberBg:#FBF1DC; --t-amberBd:#EAD3A0;
-  --t-red:#B91C1C; --t-redBg:#FCEBEA; --t-redBd:#F2C7C2; --t-grayBg:#EDE8E0; --t-gold:#B8860B;
+  --t-amber:#8A5A08; --t-amberBg:#FBF1DC; --t-amberBd:#EAD3A0;
+  --t-red:#B91C1C; --t-redBg:#FCEBEA; --t-redBd:#F2C7C2; --t-grayBg:#EDE8E0; --t-gold:#7C5E06;
   --t-header:#E9E2D8; --t-headerText:#111827;
 }
 /* ── premium institutional (dark) — deep navy, gold accent, crisp light text ── */
@@ -118,13 +118,11 @@ button:active, [role="button"]:active { transform: scale(.985); }
 .aac-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .aac-table-wrap table { min-width: 640px; }
 /* Sticky decision bar (Live screen) — always-visible primary answer. */
-/* U10 (2026-07-22): blur created a stacking context that painted over the
-   markets column and journey panel while scrolling. Solid bg, low z, and no
-   stickiness on short viewports where the hero would eat the screen. */
-.aac-sticky-decision { position: sticky; top: 0; z-index: 20;
-  background: var(--t-bg);
-  border-bottom: 1px solid var(--t-border); }
-@media (max-height: 700px) { .aac-sticky-decision { position: static; } }
+/* U10 REOPENED->CLOSED (2026-07-23, owner screenshots): the sticky element
+   is the ENTIRE ~600px rules card, so scrolling hid everything beneath it
+   (SBI title + HOLD chip buried). Sticky removed outright — a compact
+   decision BAR can earn stickiness later; a full card never can. */
+.aac-sticky-decision { position: static; }
 /* Touch targets ≥44px on coarse pointers (WCAG 2.5.8). */
 @media (pointer: coarse) { button, [role="option"] { min-height: 44px; } }
 

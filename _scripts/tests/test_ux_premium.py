@@ -265,11 +265,12 @@ def test_u12_details_view_renders_after_the_pills_row():
         "details content must not push the nav to the page bottom"
 
 
-def test_u10_sticky_hero_has_no_stacking_blur():
+def test_u10_hero_is_not_sticky():
+    """Owner screenshots 2026-07-23: the sticky element was the ENTIRE 600px
+    rules card — scrolling buried everything beneath it. Sticky removed."""
     css = _read("app", "globals.css")
-    sect = css.split(".aac-sticky-decision")[1][:400]
-    assert "backdrop-filter" not in sect, "blur painted over the markets/journey panels (U10)"
-    assert "z-index: 20" in sect and "max-height: 700px" in sect
+    sect = css.split(".aac-sticky-decision")[1][:200]
+    assert "position: static" in sect and "position: sticky" not in sect
 
 
 def test_ci_artifact_upload_yaml_is_valid_block_mapping():
@@ -334,3 +335,64 @@ def test_golden_fields_flow_to_command_and_details():
     det = _read("components", "ipo", "CompleteDetails.tsx")
     for f in ("candle_days", "sonnet_one_line", "lock30_date", "ISIN"):
         assert f in det, f
+
+
+def test_live_serves_listing_day_only():
+    """Stale day-old SBIFUNDS card (frozen pre-open book, eternal 'awaiting')
+    was served at 03:32 IST via the old 7-day window. Live = IST-today only;
+    D1..D5 belong to Listing Review."""
+    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "listing_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" in lp
+    assert "INTERVAL '7 days'" not in lp
+
+
+def test_details_and_review_selectors_are_searchable():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.count("Search IPO by name or symbol") == 2, "hardcoded button rows gained a search filter (owner ask)"
+
+
+def test_search_card_offers_complete_details_and_default_is_closest_listed():
+    search = _read("components", "features", "ipo-search.tsx")
+    assert "view=details&ipo=" in search and "Complete Details" in search
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert page.count("closestListed") >= 4, "Details+Review default to the most recently listed IPO"
+
+
+def test_ingest_maps_discovery_keys():
+    """Owner --raw [discovery] evidence 2026-07-23: unmapped kpi keys wired
+    (plain-over-_2 fallback) + peer_analysis stored whole with as-of date."""
+    ing = _read("_scripts", "ipomatrix_ingest.py")
+    for k in ('"ronw"', '"roce"', '"eps_pre"', '"eps_post"', '"ebitda_margin"',
+              '"peer_json"', '"kpi_as_of"', 'ronw_2'):
+        assert k in ing, k
+
+
+def test_intraday_panel_retires_after_listing_day_ist():
+    page = _read("app", "dashboard", "ipo2", "page.tsx")
+    assert "listedIst < istToday" in page and "5.5*3600_000" in page, \
+        "owner 2026-07-23: the intraday panel comes down after listing day, IST-clocked"
+
+
+def test_chittorgarh_steps_removed_from_pipeline():
+    """Owner 2026-07-23: Chittorgarh = IPOMatrix's sibling product — one
+    vendor, one feed. Both steps removed; NSE discovery + IPOMatrix remain."""
+    lean = _read("_scripts", "run_ipo_pipeline_lean.py")
+    assert 'step("scrape IPO calendar + details"' not in lean.replace("# step(", "STEP_OFF(")
+    assert 'step("anchor + subscription enrich"' not in lean.replace("# step(", "STEP_OFF(")
+    assert '"ipomatrix_ingest.py","--only-null"' in lean and '"ipo/fetch_nse_ipos.py"' in lean
+    mirror = _read("app", "api", "admin", "pipeline-steps", "route.ts")
+    assert "scrape IPO calendar" not in mirror and "anchor + subscription enrich" not in mirror
+
+
+def test_nse_anchor_backfill_reuses_proven_session_and_lands_durably():
+    src = _read("_scripts", "nse_anchor_backfill.py")
+    assert 'impersonate="chrome124"' in src and "all-upcoming-issues-ipo" in src, \
+        "reuses nse_preopen_capture's proven priming pattern (owner directive)"
+    assert "Anchor\\s+investor\\s+portion" in src and "ON CONFLICT (symbol)" in src
+    assert "fails >= 3" in src, "NSE throttle discipline"
+    # owner run 2026-07-24: 92s NSE hang -> Neon dropped the conn -> the
+    # single end-of-run commit lost a whole 700-symbol pass. Never again:
+    assert "PER-SYMBOL" in src and "keepalives=1" in src and "liveness probe" in src
+    assert "DISTINCT ON (g.nse_symbol)" in src, "dedup + recency sort must be legal SQL together"
+    ddl = _read("_scripts", "schema_sync.py")
+    assert "CREATE TABLE IF NOT EXISTS nse_issue_info" in ddl

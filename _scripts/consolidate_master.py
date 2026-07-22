@@ -32,7 +32,7 @@ COLTYPE = {
     "sub_day1_x": "numeric", "sub_day2_x": "numeric", "sub_day3_x": "numeric",
     "total_applications": "bigint", "promoter_pre_pct": "numeric",
     "promoter_post_pct": "numeric", "mcap_cr": "numeric", "ronw": "numeric",
-    "price_to_book": "numeric", "final_retail": "numeric", "debt_equity": "numeric",
+    "price_to_book": "numeric", "registrar_name": "text", "ebitda_margin": "numeric",
 }
 
 # scalar fills: golden column -> intelligence expression (fill-empty-only)
@@ -49,10 +49,14 @@ SCALARS = {
     "sub_day3_x": "i.sub_day3_x",
     "total_applications": "i.total_applications",
     "promoter_pre_pct": "i.promoter_pre_pct",
-    "promoter_post_pct": "i.promoter_post_pct",
-    "mcap_cr": "i.mcap_cr",
+    # names below are the REAL ipo_intelligence columns (owner --raw evidence
+    # 2026-07-23: mapped-field list) — not the golden names.
+    "promoter_post_pct": "i.promoter_holding_post",
+    "mcap_cr": "i.mcap_offer",
     "ronw": "i.ronw",
-    "price_to_book": "i.price_to_book",
+    "price_to_book": "i.ipo_pb",
+    "registrar_name": "i.registrar",
+    "ebitda_margin": "i.ebitda_margin",
 }
 
 STRONG = "UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol)))"
@@ -153,6 +157,21 @@ def main() -> int:
           AND g.company_key = regexp_replace(lower(sub.k),'(ltd|limited|and|&)|[^a-z0-9]','','g')""")
     filled["street_*"] = cur.rowcount
 
+    # 3b) DERIVED lock dates (audit 2026-07-23: 44.2% coverage was the worst
+    #     row). SEBI anchor lock-in = 30/90 days; where the vendor never
+    #     supplied a date, derive from listing_date. Fill-empty only, and the
+    #     45d candle clamp already bounds any approximation error.
+    cur.execute("""UPDATE ipo_golden g SET anchor_lock30_date = (c.listing_date + INTERVAL '30 days')::date
+        FROM ipo_consolidated c
+        WHERE g.anchor_lock30_date IS NULL AND c.listing_date IS NOT NULL
+          AND g.company_key = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')""")
+    filled["anchor_lock30_date (derived)"] = cur.rowcount
+    cur.execute("""UPDATE ipo_golden g SET anchor_lock90_date = (c.listing_date + INTERVAL '90 days')::date
+        FROM ipo_consolidated c
+        WHERE g.anchor_lock90_date IS NULL AND c.listing_date IS NOT NULL
+          AND g.company_key = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')""")
+    filled["anchor_lock90_date (derived)"] = cur.rowcount
+
     # 4) CANDLES -> candles_json: listing .. lock-in (45d clamp), ordered OHLCV.
     #    Refreshes whenever the window gains rows (candle count differs) so the
     #    listing week auto-materialises day by day; never shrinks a series.
@@ -170,6 +189,9 @@ def main() -> int:
            AND p.date >= c.listing_date
            AND p.date <= LEAST(COALESCE(c.anchor_lock30_date, (c.listing_date + INTERVAL '30 days')::date),
                                (c.listing_date + INTERVAL '45 days')::date)
+           -- audit anomaly class: impossible OHLC (8 rows) never enters golden
+           AND p.high >= p.low AND p.open BETWEEN p.low AND p.high
+           AND p.close BETWEEN p.low AND p.high AND p.low > 0
           WHERE c.listing_date IS NOT NULL
           GROUP BY 1
         ) sub
