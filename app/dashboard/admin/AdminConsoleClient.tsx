@@ -80,6 +80,35 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+
+function FrustrationTracker() {
+  // docs/FRUSTRATION_TRACKER.md is the source of truth; latest entries
+  // mirrored here so the log is one click away in Admin (owner ask
+  // 2026-07-22). Newest first.
+  const entries: { d: string; items: string[] }[] = [
+    { d: "2026-07-22 (Wed)", items: [
+      "Assistant claimed 'Saturday' on a Wednesday — fabricated weekday theory for the missed 17:00 ntfy ping; real cron miss still to diagnose. Dates now come from the machine, never narrative memory.",
+      "smoke ipo_research_notes.company_name fix landed a cycle late after the owner flagged it (alias nw + parser regression test now in branch).",
+      "Local consolidate crashed pre-Schema-sync (UndefinedColumn) — jobs now introspect and degrade instead of tracebacking.",
+      "Cumulative patch conflicted with the owner's already-pushed branch; the missing commit was the crash fix itself. Patches now state their base; ntfy result now printed in the log.",
+    ]},
+  ];
+  return (
+    <div style={{ border: "1px solid var(--t-border)", borderRadius: 12, padding: "12px 14px", marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", color: "var(--t-red)" }}>Frustration tracker</div>
+      {entries.map(e => (
+        <div key={e.d} style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--t-text)" }}>{e.d}</div>
+          <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+            {e.items.map((it, i) => <li key={i} style={{ fontSize: 11.5, color: "var(--t-sub)", marginTop: 3 }}>{it}</li>)}
+          </ul>
+        </div>
+      ))}
+      <div style={{ fontSize: 10.5, color: "var(--t-dim)", marginTop: 8 }}>Full log: docs/FRUSTRATION_TRACKER.md</div>
+    </div>
+  );
+}
+
 export default function AdminConsoleClient({ adminEmail }: { adminEmail: string }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
@@ -297,6 +326,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
           {toast}
         </div>
       )}
+      <FrustrationTracker />
     </div>
   );
 }
