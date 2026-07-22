@@ -46,11 +46,13 @@ test.describe("AACapital user journeys", () => {
   test("J5 · Command Center: research states, fair value, evidence with source", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
     const complete = page.locator("#ipocard-UATGOOD");
-    await complete.getByText("RHP + SBI research").first().click(); // expander (first: summary + span both match)
+    const exp1 = complete.getByRole("button", { name: /RHP \+ SBI research/ });
+    if (await exp1.count()) { await exp1.first().scrollIntoViewIfNeeded(); await exp1.first().click(); } // expander (skip if already open)
     await expect(complete).toContainText("RHP evidence · the document's own words");
     await expect(complete).toContainText("will not receive any proceeds"); // quoted excerpt renders
     const incomplete = page.locator("#ipocard-UATINC");
-    await incomplete.getByText("RHP + SBI research").first().click();
+    const exp2 = incomplete.getByRole("button", { name: /RHP \+ SBI research/ });
+    if (await exp2.count()) { await exp2.first().scrollIntoViewIfNeeded(); await exp2.first().click(); }
     await expect(incomplete).toContainText("SBI research note not available or not yet parsed.");
     await expect(incomplete).toContainText("RHP not yet read");
     await expect(incomplete).toContainText("awaiting"); // FV never fakes a number
@@ -76,7 +78,7 @@ test.describe("AACapital user journeys", () => {
     await page.goto("/dashboard/ipo2");
     await page.getByRole("button", { name: /switch to live/i }).click();
     // stage 1: does fixture-Live serve the listing at all?
-    await expect(page.getByText("UAT Live Ltd").first(), "fixture-Live must serve the IST-today listing")
+    await expect(page.getByText("UAT Listing Ltd").first(), "fixture-Live must serve the IST-today listing")
       .toBeVisible({ timeout: 10_000 });
     // stage 2: the safety banner on that listing
     await expect(page.getByText("Research incomplete")).toBeVisible();
