@@ -97,7 +97,18 @@ DDL = [
         rhp_sonnet_json JSONB, sbi_haiku_json JSONB,
         street_headline TEXT, street_publisher TEXT, street_url TEXT,
         candles_json JSONB,
+        final_qib NUMERIC, final_nii NUMERIC, final_retail NUMERIC, final_total NUMERIC,
+        industry TEXT, nse_listing_date DATE,
         golden_filled_at TIMESTAMPTZ)""",
+    # ipo_golden is DURABLE and already exists in prod - new fields must be
+    # ALTERs; putting them only inside CREATE IF NOT EXISTS no-ops forever
+    # (owner receipts 2026-07-22: 87/87 applied, zero columns created).
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_qib NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_nii NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_retail NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS final_total NUMERIC",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS industry TEXT",
+    "ALTER TABLE ipo_golden ADD COLUMN IF NOT EXISTS nse_listing_date DATE",
     "__IPO_GOLD_VIEW__",  # generated dynamically — see build_ipo_gold_view()
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS is_sme BOOLEAN",
     "ALTER TABLE ipo_intelligence ADD COLUMN IF NOT EXISTS issue_size_cr NUMERIC",
@@ -287,6 +298,7 @@ DDL = [
 
 # Golden-only columns (must mirror the ipo_golden CREATE above, minus keys).
 GOLD_COLS = ["isin", "lot_size", "face_value", "allotment_date", "refund_date",
+    "final_qib", "final_nii", "final_retail", "final_total", "industry", "nse_listing_date",
     "credit_date", "anchor_amount_cr", "anchor_lock30_date", "anchor_lock90_date",
     "sub_day1_x", "sub_day2_x", "sub_day3_x", "bnii_x", "snii_x",
     "total_applications", "employee_discount", "employee_quota_shares",

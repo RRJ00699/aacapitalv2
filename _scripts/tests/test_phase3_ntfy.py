@@ -86,10 +86,13 @@ def test_notify_never_raises(notify_mod, monkeypatch):
 # ── B. pipeline integration ─────────────────────────────────────────────────
 def test_lean_pipeline_alerts():
     src = _read("run_ipo_pipeline_lean.py")
-    assert "from lib.notify import notify" in src
+    # step alerts import lib.notify ALIASED (step_alert): the bare name
+    # shadowed the module-level notify() and made every non-failure exit
+    # silently skip its ping (owner receipts 2026-07-22 17:29).
+    assert "from lib.notify import notify as step_alert" in src
     # failure sink push sits with the pipeline_failures insert
     sink = src[src.index("INSERT INTO pipeline_failures"):]
-    assert "notify(" in sink[:900], "failure sink must push to the phone"
+    assert "step_alert(" in sink[:900], "failure sink must push to the phone"
     assert 'priority="high"' in src
     # stale Kite token at pipeline time -> push
     assert "Kite token STALE" in src

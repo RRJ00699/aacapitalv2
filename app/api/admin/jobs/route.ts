@@ -37,7 +37,7 @@ const ALLOWED_JOBS = new Set([
   // but this route rejected them with "unknown job '<name>'" — a THIRD
   // definition of the job list that nobody kept in sync.
   "schema", "verdicts", "score", "quality", "smoke", "sbi_haiku",
-  "ipomatrix",   // had a button + runner entry but the API rejected it too
+  "ipomatrix", "breadth",   // had a button + runner entry but the API rejected it too
 ]);
 
 // Same DDL job_runner.py uses, so the first enqueue works even before the VM

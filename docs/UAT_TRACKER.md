@@ -29,4 +29,7 @@ that's been the whole pattern of this codebase's regressions.
 | U13 | CUBEINVIT leaked past the REIT/InvIT guard | FIXED this branch (fused symbols carry no word boundary — symbol-pattern guard added to both feeds) | test updated |
 | U14 | Live page missing journey section for SBIFUNDS (other IPO shows chart) | OPEN (evidence) | need: which section is absent vs the IPO that shows it — screenshot of both cards or the payload row | — |
 | D2 | LISTING REVIEW UI (the 5-session after-listing screen) | NEXT — priority 1 | derivations shipped+tested in lib/listing-review.ts; UI wiring is the next commit | executed tests exist |
+| U15 | Global + Domestic market values wrong/stale (Nifty +0.00%, BTC 62k, FII/DII +0) | OPEN — snapshot refreshes only 2x/day with the pipeline; fix = intraday refresh lane (Kite quotes for domestic) + honest as-of stamp; merges with U3 | screenshot 07-25 |
+| U16 | Domestic panel must include ADVANCES / DECLINES | OPEN — needs an NSE breadth source; part of the U3/U15 markets-feed slice | owner ask 07-25 |
+| D5 | Details/Review: DROP symbol chip buttons entirely — search-only, over the FULL IPO universe (index endpoint) | QUEUED into today's redesign commit | owner ask 07-25 + screenshot |
 | F2 | Listing circuit band (5/10/20%) on Live + Journey at ~09:55 | OPEN (feature) | NSE publishes the band pre-open; needs a capture source (nse_preopen_capture likely sees it) | — |

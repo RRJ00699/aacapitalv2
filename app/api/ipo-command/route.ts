@@ -169,13 +169,13 @@ export async function GET(req?: Request) {
              (g.sbi_haiku_json IS NOT NULL) AS haiku_present,
              g.street_headline AS g_street_headline, g.street_publisher AS g_street_publisher,
              g.street_url AS g_street_url,
-             (SELECT json_build_object('publisher', n.publisher, 'headline', n.headline,
-                                       'url', n.url, 'published_at', n.published_at, 'snippet', n.snippet)
-                FROM ipo_news n
-                WHERE n.is_current AND n.fetch_status = 'ok' AND n.publisher <> '-'
-                  AND n.url ~* '^https?://' AND n.headline NOT LIKE '<%'
-                  AND (UPPER(n.nse_symbol) = UPPER(COALESCE(c.symbol_final, c.nse_symbol, c.symbol)) OR n.company_name = c.company_name)
-                ORDER BY (n.source = 'manual') DESC, n.created_at DESC LIMIT 1) AS news,
+             (SELECT json_build_object('publisher', nw.publisher, 'headline', nw.headline,
+                                       'url', nw.url, 'published_at', nw.published_at, 'snippet', nw.snippet)
+                FROM ipo_news nw
+                WHERE nw.is_current AND nw.fetch_status = 'ok' AND nw.publisher <> '-'
+                  AND nw.url ~* '^https?://' AND nw.headline NOT LIKE '<%'
+                  AND (UPPER(nw.nse_symbol) = UPPER(COALESCE(c.symbol_final, c.nse_symbol, c.symbol)) OR nw.company_name = c.company_name)
+                ORDER BY (nw.source = 'manual') DESC, nw.created_at DESC LIMIT 1) AS news,
              ii.price_band_low AS band_low, ii.chittorgarh_slug, ii.score_band, ii.score_expected_win, ii.quality_score, ii.quality_conf,
              ri.rhp_url,
              c.ipo_pe, c.eps_post, c.peer_median_pe, c.roe, c.revenue_cagr_3y,

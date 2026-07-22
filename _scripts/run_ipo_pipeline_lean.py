@@ -68,8 +68,9 @@ def notify(title, body, ok=True):
             headers={"Title": title, "Priority": "default" if ok else "high",
                      "Tags": "white_check_mark" if ok else "rotating_light"})
         urllib.request.urlopen(req, timeout=10)
-    except Exception:
-        pass
+        print(f"    ntfy sent -> {topic[:12]}…")
+    except Exception as e:
+        print(f"    ! ntfy failed: {type(e).__name__}: {str(e)[:120]}")
 
 
 def log(m):
@@ -113,8 +114,8 @@ def step(name, args, hard=False):
             pass
         try:
             # Phase-3: mirror every failure-sink event to the phone (ntfy).
-            from lib.notify import notify
-            notify(f"Pipeline step FAILED: {name}",
+            from lib.notify import notify as step_alert
+            step_alert(f"Pipeline step FAILED: {name}",
                    f"{script} exited {r.returncode}\n{(r.stderr or r.stdout or '')[-300:]}",
                    priority="high", tags=["warning"])
         except Exception:
@@ -144,8 +145,8 @@ def main():
             "All non-Kite work (scrape, GMP, SBI, score, consolidated, verdicts) still runs.")
         try:
             # Phase-3: this means candles/OHLC silently stop updating — tell the phone.
-            from lib.notify import notify
-            notify("Pipeline: Kite token STALE",
+            from lib.notify import notify as step_alert
+            step_alert("Pipeline: Kite token STALE",
                    "Preflight failed — candles/OHLC/listing-day fields will be SKIPPED "
                    "this run. Re-run refresh_kite_token or rotate creds in Settings.",
                    priority="high", tags=["warning"])
@@ -270,7 +271,14 @@ def main():
         try: _warm_command_cache()
         except Exception as _e: log(f"cache warm skipped: {_e}")
 
-    log(f"=== LEAN PIPELINE {'OK' if ok and gate else 'COMPLETED WITH WARNINGS — check log'} ===")
+    verdict = "OK" if ok and gate else "COMPLETED WITH WARNINGS — check log"
+    log(f"=== LEAN PIPELINE {verdict} ===")
+    # Owner receipts 2026-07-22 17:29: this third exit path (warnings) had NO
+    # notify hook — runs completed silently while smoke warned. Every exit
+    # pings now.
+    if not (ok and gate):
+        notify("AACapital pipeline WARNINGS",
+               f"{datetime.datetime.now().strftime('%H:%M IST')} · completed with warnings — check pipeline.log", ok=False)
     if ok and gate:
         url = os.environ.get("HEALTHCHECK_URL", "").strip()
         if url:

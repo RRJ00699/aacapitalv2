@@ -983,6 +983,10 @@ function IpoCommand() {
   // symbol key (strong key; never fuzzy). Selection state for details view.
   const [detailSym,setDetailSym]=useState<string>("");
   const [detailQ,setDetailQ]=useState<string>("");
+  const [idx,setIdx]=useState<R[]>([]);
+  useEffect(()=>{ if(view==="details"||view==="review"){
+    fetch("/api/ipo/index").then(r=>r.json()).then(j=>setIdx((j.rows||[]) as R[])).catch(()=>{});
+  }},[view]);
   useEffect(()=>{
     try{
       const sp=new URLSearchParams(window.location.search);
@@ -1054,19 +1058,22 @@ function IpoCommand() {
         const today=new Date().toISOString().slice(0,10);
         const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
           .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
+        const idxSel=idx.find(c=>String(c.sym||"").toUpperCase()===detailSym);
+        const sel=(all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? (detailSym&&idxSel?{...idxSel,_identity_only:true}:undefined) ?? closestListed ?? all[0]) as R;
         return (
           <div style={{marginTop:12}}>
             <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
-              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
-              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+              placeholder="Search IPO by name or symbol…" aria-label="Search all IPOs"
+              style={{width:"100%",maxWidth:420,fontSize:13,padding:"10px 13px",marginBottom:8,
                 border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
+            {/* D5 (owner 2026-07-25): chips dropped — search-only over the FULL
+                universe (/api/ipo/index); results render only while typing. */}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.filter(c=>{
-                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+              {(detailQ.trim()? (idx.length?idx:all) : []).filter(c=>{
+                const q=detailQ.trim().toLowerCase();
                 return String(c.sym||"").toLowerCase().includes(q) ||
                        String(c.company_name||"").toLowerCase().includes(q);
-              }).map((c,i)=>(
+              }).slice(0,12).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",
@@ -1086,19 +1093,22 @@ function IpoCommand() {
         const today=new Date().toISOString().slice(0,10);
         const closestListed=[...all].filter(c=>String(c.listing_date||"").slice(0,10)<=today && c.listing_date)
           .sort((a,b)=>String(b.listing_date).localeCompare(String(a.listing_date)))[0];
-        const sel=all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? closestListed ?? all[0];
+        const idxSel=idx.find(c=>String(c.sym||"").toUpperCase()===detailSym);
+        const sel=(all.find(c=>String(c.sym||"").toUpperCase()===detailSym) ?? (detailSym&&idxSel?{...idxSel,_identity_only:true}:undefined) ?? closestListed ?? all[0]) as R;
         return (
           <div style={{marginTop:12}}>
             <input value={detailQ} onChange={e=>setDetailQ(e.target.value)}
-              placeholder="Search IPO by name or symbol…" aria-label="Filter IPO list"
-              style={{width:"100%",maxWidth:380,fontSize:13,padding:"9px 12px",marginBottom:8,
+              placeholder="Search IPO by name or symbol…" aria-label="Search all IPOs"
+              style={{width:"100%",maxWidth:420,fontSize:13,padding:"10px 13px",marginBottom:8,
                 border:`1px solid ${C.border}`,borderRadius:10,background:C.surface,color:C.text}}/>
+            {/* D5 (owner 2026-07-25): chips dropped — search-only over the FULL
+                universe (/api/ipo/index); results render only while typing. */}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-              {all.filter(c=>{
-                const q=detailQ.trim().toLowerCase(); if(!q) return true;
+              {(detailQ.trim()? (idx.length?idx:all) : []).filter(c=>{
+                const q=detailQ.trim().toLowerCase();
                 return String(c.sym||"").toLowerCase().includes(q) ||
                        String(c.company_name||"").toLowerCase().includes(q);
-              }).map((c,i)=>(
+              }).slice(0,12).map((c,i)=>(
                 <button key={i} onClick={()=>setDetailSym(String(c.sym||"").toUpperCase())}
                   aria-pressed={sel===c}
                   style={{fontSize:10.5,fontWeight:700,padding:"5px 11px",borderRadius:999,cursor:"pointer",

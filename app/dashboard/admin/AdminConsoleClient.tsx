@@ -29,6 +29,7 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
   { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
+  { key: "breadth",         label: "Market breadth",        desc: "NIFTY advances/declines from NSE → Domestic panel (U16)" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
@@ -77,6 +78,35 @@ function StatusPill({ status }: { status: string }) {
     }}>
       <span>{s.icon}</span>{s.label}
     </span>
+  );
+}
+
+
+function FrustrationTracker() {
+  // docs/FRUSTRATION_TRACKER.md is the source of truth; latest entries
+  // mirrored here so the log is one click away in Admin (owner ask
+  // 2026-07-22). Newest first.
+  const entries: { d: string; items: string[] }[] = [
+    { d: "2026-07-22 (Wed)", items: [
+      "Assistant claimed 'Saturday' on a Wednesday — fabricated weekday theory for the missed 17:00 ntfy ping; real cron miss still to diagnose. Dates now come from the machine, never narrative memory.",
+      "smoke ipo_research_notes.company_name fix landed a cycle late after the owner flagged it (alias nw + parser regression test now in branch).",
+      "Local consolidate crashed pre-Schema-sync (UndefinedColumn) — jobs now introspect and degrade instead of tracebacking.",
+      "Cumulative patch conflicted with the owner's already-pushed branch; the missing commit was the crash fix itself. Patches now state their base; ntfy result now printed in the log.",
+    ]},
+  ];
+  return (
+    <div style={{ border: "1px solid var(--t-border)", borderRadius: 12, padding: "12px 14px", marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", color: "var(--t-red)" }}>Frustration tracker</div>
+      {entries.map(e => (
+        <div key={e.d} style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--t-text)" }}>{e.d}</div>
+          <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+            {e.items.map((it, i) => <li key={i} style={{ fontSize: 11.5, color: "var(--t-sub)", marginTop: 3 }}>{it}</li>)}
+          </ul>
+        </div>
+      ))}
+      <div style={{ fontSize: 10.5, color: "var(--t-dim)", marginTop: 8 }}>Full log: docs/FRUSTRATION_TRACKER.md</div>
+    </div>
   );
 }
 
@@ -297,6 +327,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
           {toast}
         </div>
       )}
+      <FrustrationTracker />
     </div>
   );
 }
