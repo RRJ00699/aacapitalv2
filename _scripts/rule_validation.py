@@ -38,6 +38,16 @@ ELIGIBILITY = ("COALESCE(is_sme,false)=false AND (issue_size_cr IS NULL OR issue
 RULES = {
     "anchors_30plus": ("v1", "anchor_count >= 30", lambda r: (r["anchor_count"] or 0) >= 30),
     "anchors_50plus": ("v1", "anchor_count >= 50", lambda r: (r["anchor_count"] or 0) >= 50),
+    # AMOUNT variants (2026-07-22): NSE mining yields anchor AMOUNT not
+    # investor count — 433 IPOs carry anchor_amount_cr. SEBI caps the anchor
+    # book at 60% of QIB (~30% of a 50%-QIB issue): 20%/30% of issue size
+    # are the natural strength thresholds.
+    "anchor_amt_20pct": ("v1", "anchor_amount_cr/issue_size_cr >= 0.20",
+        lambda r: (r.get("anchor_amount_cr") or 0) > 0 and (r.get("issue_size_cr") or 0) > 0
+                  and float(r["anchor_amount_cr"]) / float(r["issue_size_cr"]) >= 0.20),
+    "anchor_amt_30pct": ("v1", "anchor_amount_cr/issue_size_cr >= 0.30",
+        lambda r: (r.get("anchor_amount_cr") or 0) > 0 and (r.get("issue_size_cr") or 0) > 0
+                  and float(r["anchor_amount_cr"]) / float(r["issue_size_cr"]) >= 0.30),
     "mega_issue_2000cr": ("v1", "issue_size_cr >= 2000", lambda r: (r["issue_size_cr"] or 0) >= 2000),
     "reasonable_pe_70": ("v1", "ipo_pe > 0 AND ipo_pe <= 70", lambda r: r["ipo_pe"] is not None and 0 < r["ipo_pe"] <= 70),
     "qib_50x": ("v1", "final_qib >= 50", lambda r: (r["final_qib"] or 0) >= 50),
@@ -89,7 +99,7 @@ def main() -> int:
     conn = psycopg2.connect(db, connect_timeout=25)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SET statement_timeout = '120s'")
-    q = f"""SELECT company_name, listing_date, anchor_count, issue_size_cr, ipo_pe,
+    q = f"""SELECT company_name, listing_date, anchor_count, anchor_amount_cr, issue_size_cr, ipo_pe,
                    final_qib, score_band, issue_price, candles_json
             FROM ipo_gold WHERE {ELIGIBILITY}"""
     cur.execute(q)

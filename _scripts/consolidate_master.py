@@ -265,18 +265,21 @@ def main() -> int:
     missing_g = [c for c in ("final_qib", "final_total", "industry", "nse_listing_date") if c not in gcols]
     if missing_g:
         mined["nse SKIPPED cols (run Schema sync)"] = ",".join(missing_g)
-    # 6) DATE CORRECTION (the 4 close_after_listing contradictions the date
-    #    gate flags every run — NMDC/Mazagon/Fusion/Star Health class): where
-    #    NSE's authoritative listing date exists and the vendor listing date
-    #    contradicts the close date, NSE wins. Targeted: only contradictions.
+    # 6) DATE CORRECTION (close_after_listing contradictions — NMDC/Mazagon/
+    #    Fusion/Star class). REPO TRUTH (owner crash 2026-07-22): ipo_close_date
+    #    lives on ipo_consolidated (check_date_sanity queries it there), NOT on
+    #    intelligence. Detect the contradiction on consolidated; correct the
+    #    DURABLE source (intelligence.listing_date) from NSE's date.
     if "nse_listing_date" in gcols:
         cur.execute("""UPDATE ipo_intelligence i SET listing_date = g.nse_listing_date
-            FROM ipo_golden g
+            FROM ipo_golden g, ipo_consolidated c
             WHERE g.nse_listing_date IS NOT NULL
-              AND UPPER(COALESCE(NULLIF(btrim(i.nse_symbol),''), btrim(i.symbol))) = g.nse_symbol
-              AND i.ipo_close_date IS NOT NULL AND i.listing_date IS NOT NULL
-              AND i.listing_date < i.ipo_close_date
-              AND g.nse_listing_date >= i.ipo_close_date""")
+              AND UPPER(COALESCE(NULLIF(btrim(c.symbol_final),''), NULLIF(btrim(c.nse_symbol),''), btrim(c.symbol))) = g.nse_symbol
+              AND regexp_replace(lower(i.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+                  = regexp_replace(lower(c.company_name),'(ltd|limited|and|&)|[^a-z0-9]','','g')
+              AND c.ipo_close_date IS NOT NULL AND c.listing_date IS NOT NULL
+              AND c.listing_date < c.ipo_close_date
+              AND g.nse_listing_date >= c.ipo_close_date""")
         mined["listing_date corrected (NSE)"] = cur.rowcount
     filled.update(mined)
 
