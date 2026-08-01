@@ -1,17 +1,21 @@
-# Documents are TRANSIENT. RHPs are 8-20MB and are purged after extraction; git keeps
-# every blob forever, so a committed PDF is permanent weight a later delete never
-# reclaims. The data lives in the DB, provenance in documents.sha256 + url.
+﻿# DOCUMENTS LIVE ON THE LOCAL MACHINE, NEVER IN GIT.
+# Git keeps every blob forever, so a committed PDF is permanent repo weight that no
+# later delete reclaims. Both RHPs and SBI notes stay on the laptop; the DB holds the
+# extracted data and documents.sha256 + url hold the provenance.
 rhps/
+data/research_notes/
 *.pdf
-!data/research_notes/*.pdf      # SBI notes ARE kept — the UI displays them
+*.PDF
 
-# Secrets — never committed. Local runs read .env; Actions reads repo secrets.
+# Secrets
 .env
 .env.local
 
 # Run state
 drive_manifest.json
 download_manifest.json
+rhp_map.json
+failures.log
 rhp_v2full/
 rhp_summaries/
 __pycache__/
