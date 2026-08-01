@@ -9,7 +9,7 @@ ORDER (each step is skipped-with-a-reason, never half-done):
   1. Kite token refresh      _scripts/refresh_kite_token.py   (TOTP, existing)
   2a. Download RHPs         _scripts/download_sebi_rhps_playwright.py (existing, SEBI)
   2b. Download SBI notes    _scripts/download_sbi_notes.py           (existing)
-  2c. Parse SBI notes -> DB _scripts/parse_sbi_notes.py --write-db   (existing)
+  (SBI note CONTENT extraction goes through Sonnet, not the old regex parser)
   3. NSE issue/subscription  nse_fetch.py                     (tested 35 PASS)
   4. RHP extraction          drive.py --rhp                   (tested, PAID)
   5. Vendor fallback         ipomatrix_fallback.py            (tested, fills nulls only)
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "cron 2026-08-01i — UTF-8 child env, longer SBI parse window"
+FILE_BUILD = "cron 2026-08-01j — dropped the V1 SBI regex parser"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
 # RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
@@ -287,10 +287,11 @@ def main():
         steps.append(run("2b. download SBI notes",
                          [py, os.path.join("_scripts", "download_sbi_notes.py"),
                           "--out", "data/research_notes"], dry, 1200))
-        steps.append(run("2c. parse SBI notes -> DB",
-                         [py, os.path.join("_scripts", "parse_sbi_notes.py"),
-                          "--dir", "data/research_notes"] + ([] if dry else ["--write-db"]),
-                         dry, 3600))
+        # 2c REMOVED 08-01. parse_sbi_notes.py is a V1 regex/pdfplumber parser that
+        # re-derives PE and peer names from the PDFs. Sonnet already reads documents far
+        # more reliably, and this was the ONLY step failing on every run. SBI notes are
+        # downloaded and kept for the UI; their CONTENT will be extracted the same way
+        # RHPs are, not by regex.
 
     # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
     cap = with_db(get_cap)

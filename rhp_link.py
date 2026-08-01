@@ -35,7 +35,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "rhp_link 2026-08-01a — ISIN-first, Sonnet identity fallback"
+FILE_BUILD = "rhp_link 2026-08-01d — free folder-slug match before any paid call"
 RHP_DIR = "rhps"
 MAP = "rhp_map.json"
 COVER_PAGES = 10
@@ -43,6 +43,31 @@ IDENTIFY_COST = 0.012          # cover pages only: ~3K in + ~100 out
 
 ISIN_RX = re.compile(r"\b(IN[A-Z0-9]{10})\b")
 ISIN_LABELLED = re.compile(r"ISIN[^A-Z0-9]{0,25}(IN[A-Z0-9]{10})", re.I)
+
+
+# Order matters: longer forms first, so "limited" is stripped before "ltd" can't match.
+CORP_SUFFIXES = ["privatelimited", "pvtlimited", "corporation", "incorporated",
+                 "enterprises", "industries", "company", "limited", "private",
+                 "public", "corp", "pvt", "ltd", "inc", "co"]
+
+def canon(name):
+    """Company name -> comparable form.
+
+    Separators are removed FIRST, then corporate suffixes are stripped repeatedly from
+    the end. A word-boundary regex cannot work here: the spine stores 'lohiacorpltd'
+    with no separators at all, so \bcorp\b never matches. Both 'LOHIA CORP LIMITED'
+    and 'lohiacorpltd' must reduce to 'lohia', or the model's correct answer can never
+    join the spine — which is why 5 correctly-identified issuers all reported as NEW."""
+    if not name:
+        return ""
+    s = re.sub(r"[^a-z0-9]", "", str(name).lower())
+    changed = True
+    while changed and len(s) > 3:
+        changed = False
+        for suf in CORP_SUFFIXES:
+            if s.endswith(suf) and len(s) - len(suf) >= 3:
+                s = s[: -len(suf)]; changed = True; break
+    return s
 
 
 def valid_isin(code):
@@ -99,7 +124,9 @@ def identify_with_sonnet(text, api_key):
     try:
         d = rhp_sonnet.parse_json(out)
     except Exception:
-        return None, None, cost
+        # 4-tuple on EVERY path — the caller unpacks four, and returning three here
+        # crashed the run after the call had already been paid for.
+        return None, None, cost, None
     isin = (d.get("isin") or "").strip().upper() or None
     return (d.get("issuer_name") or None,
             isin if valid_isin(isin) else None,
@@ -146,6 +173,29 @@ def main():
         except Exception as e:
             print(f"  [FAIL]   {folder:32} {type(e).__name__}"); continue
 
+        # ---- Tier 0: FREE canonical match on the FOLDER SLUG ----
+        # The downloader names the folder after the company, so "lohia-corp" canonicalises
+        # to "lohia" and joins id 42 with no API call at all. This runs FIRST because the
+        # paid identity call is non-deterministic — Lohia identified correctly on one run
+        # and returned null on the next, at $0.015 a time.
+        # Safe because the rule is canonical EQUALITY, not containment: the earlier
+        # containment version matched "mv-electrosystems" to "EMS Limited" and created
+        # junk rows. Canonically, mvelectrosystems != ems, so it correctly refuses.
+        slug_want = canon(folder.replace("-", " "))
+        cur.execute("SELECT id, name_display, name_norm FROM ipo")
+        all_rows = cur.fetchall()
+        slug_hits = [r for r in all_rows
+                     if slug_want and (canon(r[1]) == slug_want or canon(r[2]) == slug_want)]
+        if len(slug_hits) == 1:
+            h = slug_hits[0]
+            print(f"  [LINK]   {folder:32} -> id={h[0]:<5} {str(h[1])[:32]:34} "
+                  f"(folder slug '{slug_want}', FREE)")
+            mapping[str(h[0])] = folder; linked += 1; continue
+        if len(slug_hits) > 1:
+            print(f"  [AMBIG]  {folder:32} {len(slug_hits)} rows match '{slug_want}' "
+                  f"— left alone")
+            unresolved += 1; continue
+
         # ---- Tier 1: free ISIN match ----
         isin, how = find_isin(text)
         row = None
@@ -182,9 +232,22 @@ def main():
             cur.execute("SELECT id, name_display FROM ipo WHERE isin=%s", (sisin,))
             row = cur.fetchone()
         if not row:
-            from fill_ipo import _norm
-            cur.execute("SELECT id, name_display FROM ipo WHERE name_norm=%s", (_norm(name),))
-            row = cur.fetchone()
+            # CANONICAL-FORM MATCH. Exact name_norm equality cannot work here: the model
+            # returns "LOHIA CORP LIMITED" while the spine stores "lohiacorpltd" (id 42)
+            # — different spacing AND Limited vs Ltd. Both collapse to "lohiacorp" once
+            # corporate suffixes and all separators are stripped. Requires a UNIQUE hit;
+            # ambiguity is reported, never guessed.
+            want = canon(name)
+            cur.execute("SELECT id, name_display, name_norm FROM ipo")
+            hits = [r for r in cur.fetchall()
+                    if want and (canon(r[1]) == want or canon(r[2]) == want)]
+            if len(hits) == 1:
+                row = (hits[0][0], hits[0][1])
+                print(f"           canonical name match: {canon(name)!r}")
+            elif len(hits) > 1:
+                print(f"           AMBIGUOUS — {len(hits)} rows match {want!r}: "
+                      f"{[(h[0], str(h[1])[:28]) for h in hits[:4]]} — left alone")
+                unresolved += 1; continue
         if row:
             print(f"           -> id={row[0]} {str(row[1])[:34]}")
             mapping[str(row[0])] = folder; linked += 1; continue
