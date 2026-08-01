@@ -43,7 +43,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "cron 2026-08-01h — documents KEPT locally, never committed"
+FILE_BUILD = "cron 2026-08-01i — UTF-8 child env, longer SBI parse window"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
 # RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
@@ -172,7 +172,13 @@ def run(step, cmd, dry, timeout=1800):
         return {"step": step, "status": "dry"}
     t0 = time.time()
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # Child processes inherit a cp1252 console on Windows, so a single unicode
+        # character in a progress line raises UnicodeEncodeError and fails a step that
+        # actually succeeded — download_sbi_notes.py died on its "→" summary line after
+        # downloading every note. Forcing UTF-8 makes local behave like the runner.
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                           env=env, errors="replace")
         out = (p.stdout or "")[-1500:]
         err = (p.stderr or "")[-400:]
         for line in out.splitlines()[-25:]:
@@ -284,7 +290,7 @@ def main():
         steps.append(run("2c. parse SBI notes -> DB",
                          [py, os.path.join("_scripts", "parse_sbi_notes.py"),
                           "--dir", "data/research_notes"] + ([] if dry else ["--write-db"]),
-                         dry, 900))
+                         dry, 3600))
 
     # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
     cap = with_db(get_cap)
