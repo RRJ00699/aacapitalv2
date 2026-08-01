@@ -43,7 +43,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "cron 2026-08-01e — active window fixed (no created_at proxy)"
+FILE_BUILD = "cron 2026-08-01h — documents KEPT locally, never committed"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
 # RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
@@ -70,14 +70,21 @@ def select_active(conn, limit, backfill=False):
     cur = conn.cursor()
     if backfill:
         cur.execute("""SELECT id, name_display, listing_date FROM ipo
-                        WHERE in_backtest_universe=TRUE
+                        WHERE in_backtest_universe=TRUE AND COALESCE(is_mainboard,TRUE)=TRUE
                         ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
         return cur.fetchall(), "BACKFILL (most recently listed)"
     cur.execute("""
         SELECT i.id, i.name_display, i.listing_date
           FROM ipo i
           LEFT JOIN ipo_issue ii ON ii.ipo_id = i.id
-         WHERE (
+         WHERE
+               -- MAINBOARD ONLY. The 08-01 run pulled in Propshop, Vinit Mobile, Metalic
+               -- Technoforge, Teja and IC Electricals — all SME. They are not tradable
+               -- under the house rules and every one of them costs a paid extraction.
+               -- Size floor mirrors verdict_engine's JUNK line (issue_size_cr < 150).
+               COALESCE(i.is_mainboard, TRUE) = TRUE
+           AND COALESCE(ii.issue_size_cr, 999999) >= 150
+           AND (
                  -- listed inside the active window: candles/outcomes still filling
                  (i.listing_date IS NOT NULL AND i.listing_date >= current_date - %s)
                  OR
@@ -108,7 +115,27 @@ def where_am_i():
 
 
 def db():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    """A SHORT-LIVED connection, opened per use and closed immediately.
+
+    Never hold one across the run. Steps 2a/2b take 5-8 minutes of pure download with no
+    DB activity, and Neon closes idle connections — on the 08-01 Actions run that killed
+    the single long-lived connection and the final spend query died with InterfaceError,
+    exiting 1 after every step had actually succeeded. The old repo hit the same thing
+    (nse_anchor_backfill.py:58, a 92s stall losing a 700-symbol pass).
+    Keepalives are set too, for the calls that do take a while."""
+    return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25,
+                            keepalives=1, keepalives_idle=30,
+                            keepalives_interval=10, keepalives_count=3)
+
+
+def with_db(fn, *args, **kwargs):
+    """Run one DB operation on a fresh connection, always closing it."""
+    conn = db()
+    try:
+        return fn(conn, *args, **kwargs)
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 
 def get_cap(conn):
@@ -215,39 +242,69 @@ def main():
     ap.add_argument("--backfill", action="store_true",
                     help="process the most recently LISTED IPOs instead of the active "
                          "window. For one-off history work, never for the schedule.")
-    ap.add_argument("--skip-download", action="store_true")
+    ap.add_argument("--skip-download", action="store_true", help="skip ALL downloads")
+    ap.add_argument("--skip-rhp-download", action="store_true",
+                    help="skip only the SEBI RHP download. Until rhp_map.json maps the "
+                         "downloaded folders to ipo ids, those PDFs are fetched and then "
+                         "purged unextracted — pure waste on every run.")
     ap.add_argument("--skip-kite", action="store_true")
     ap.add_argument("--max-rhps", type=int, default=4,
                     help="cap RHP downloads per run — each is 8-20MB and each costs an "
                          "extraction; 1-4/day is the real arrival rate")
     ap.add_argument("--purge-pdfs", action="store_true",
-                    help="delete ALL downloaded PDFs at the end of the run. Use on "
-                         "ephemeral runners where nothing should persist anyway.")
+                    help="delete downloaded RHP PDFs at the end of the run. OFF by "
+                         "default — documents are kept locally.")
+    ap.add_argument("--cleanup-lockin", action="store_true",
+                    help="prune documents whose anchor lock-in has passed. OFF by "
+                         "default.")
     a = ap.parse_args()
     if not (a.run or a.dry_run):
         sys.exit("choose --run or --dry-run")
     dry = a.dry_run
     py = sys.executable
 
-    conn = db()
-    cap = get_cap(conn)
-    already = spent_today(conn)
+    # ========== PHASE A: DOWNLOADS. NO DB CONTACT AT ALL. ==========
+    # These take 5-10 minutes. Running them BEFORE the DB work means the database is
+    # never left awake across a long idle gap — on the 08-01 run the downloads sat
+    # BETWEEN DB steps, holding the connection open (and Neon awake) for the full 15
+    # minutes, then dropping it. Downloads first = one short contiguous DB window.
+    steps = []
+    if not (a.skip_download or a.skip_rhp_download):
+        steps.append(run("2a. download RHPs (SEBI)",
+                         [py, os.path.join("_scripts", "download_sebi_rhps_playwright.py"),
+                          "--max", str(a.max_rhps)], dry, 2400))
+    else:
+        why = "--skip-download" if a.skip_download else "--skip-rhp-download"
+        print(f"\n  === 2a. download RHPs (SEBI)\n      SKIPPED ({why})")
+        steps.append({"step": "2a. download RHPs (SEBI)", "status": "skipped"})
+    if not a.skip_download:
+        steps.append(run("2b. download SBI notes",
+                         [py, os.path.join("_scripts", "download_sbi_notes.py"),
+                          "--out", "data/research_notes"], dry, 1200))
+        steps.append(run("2c. parse SBI notes -> DB",
+                         [py, os.path.join("_scripts", "parse_sbi_notes.py"),
+                          "--dir", "data/research_notes"] + ([] if dry else ["--write-db"]),
+                         dry, 900))
+
+    # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
+    cap = with_db(get_cap)
+    already = with_db(spent_today)
     remaining = max(0.0, cap - already)
     print(f"  [build] {FILE_BUILD}")
     print(f"  {dt.datetime.now():%Y-%m-%d %H:%M}  mode={'DRY-RUN' if dry else 'RUN'}")
     print(f"  SPEND: cap ${cap:.2f}/day (platform_config.daily_spend_cap_usd) · "
           f"already ${already:.3f} today · ${remaining:.2f} available")
 
-    targets, scope = select_active(conn, a.limit, a.backfill)
+    targets, scope = with_db(select_active, a.limit, a.backfill)
     ids = ",".join(str(t[0]) for t in targets)
     print(f"  SCOPE: {scope} — {len(targets)} IPO(s)")
     for tid, tname, tld in targets:
         print(f"         id={tid:<5} {str(tname)[:38]:40} listed={tld or '(upcoming)'}")
     if not targets:
         print("\n  nothing active — no upcoming IPOs and none listed recently. Exiting.")
-        conn.close(); return
+        return
 
-    steps = []
+    # NOTE: no `steps = []` here — that would discard the Phase A download results.
     # 1. Kite token — must be first: everything price-related depends on it
     if not a.skip_kite:
         steps.append(run("1. kite token refresh (TOTP)",
@@ -257,17 +314,6 @@ def main():
     #    NOT committed to the repo — git keeps blobs forever, so a committed 8-20MB PDF
     #    is permanent weight that a later delete does not reclaim. The data lives in the
     #    DB and the provenance in documents.sha256 + url, so the file is re-fetchable.
-    if not a.skip_download:
-        steps.append(run("2a. download RHPs (SEBI)",
-                         [py, os.path.join("_scripts", "download_sebi_rhps_playwright.py"),
-                          "--max", str(a.max_rhps)], dry, 2400))
-        steps.append(run("2b. download SBI notes",
-                         [py, os.path.join("_scripts", "download_sbi_notes.py"),
-                          "--out", "data/research_notes"], dry, 1200))
-        steps.append(run("2c. parse SBI notes -> DB",
-                         [py, os.path.join("_scripts", "parse_sbi_notes.py"),
-                          "--dir", "data/research_notes"] + ([] if dry else ["--write-db"]),
-                         dry, 900))
     # 3. NSE
     steps.append(run("3. NSE issue + subscription",
                      [py, "nse_fetch.py", "--ids", ids,
@@ -294,16 +340,25 @@ def main():
     steps.append(run("7. score + verdict + completeness + ntfy",
                      [py, "drive.py", "--ids", ids,
                       "--dry-run" if dry else "--write"], dry, 900))
-    # 9. cleanup
-    print("\n  === 9. post-lockin document cleanup")
-    try:
-        cleanup_docs(conn, dry)
-    except Exception as e:
-        print(f"      ! cleanup failed (non-fatal): {type(e).__name__}: {str(e)[:100]}")
+    # 9. post-lockin cleanup — OPT-IN ONLY (owner 08-01: keep the documents locally).
+    #    Documents now live on the laptop and are KEPT. Nothing is deleted unless you
+    #    explicitly ask, because a deleted RHP costs a re-download and a re-extraction
+    #    while disk is free.
+    if a.cleanup_lockin:
+        print("\n  === 9. post-lockin document cleanup")
+        try:
+            with_db(cleanup_docs, dry)
+        except Exception as e:
+            print(f"      ! cleanup failed (non-fatal): {type(e).__name__}: {str(e)[:100]}")
+    else:
+        print("\n  === 9. post-lockin cleanup — SKIPPED (documents are kept; "
+              "pass --cleanup-lockin to prune)")
 
     # 10. On an ephemeral runner the PDFs die with the job, but purge explicitly so a
     #     local run behaves identically and no file is left lying around after its data
     #     has been banked.
+    if not a.purge_pdfs:
+        print("\n  === 10. purge — SKIPPED. RHPs and SBI notes both KEPT on disk.")
     if a.purge_pdfs:
         print("\n  === 10. purge RHP PDFs (SBI notes are KEPT)")
         n = sz = 0
@@ -326,33 +381,44 @@ def main():
     #              vanish with the job. Only SBI notes are committed — never RHPs, whose
     #              size would sit in git history permanently.
     #     local  : the files are already where they need to be; nothing to do.
+    # 11. DOCUMENTS LIVE ON THE LAPTOP, NOT IN GIT (owner decision 08-01).
+    #     Nothing is ever committed. Git keeps every blob forever, so PDFs in the repo
+    #     are permanent weight no later delete reclaims — and .gitignore now excludes
+    #     them outright. On an ephemeral runner they cannot persist at all, which is
+    #     exactly why the downloads belong on the local machine.
     where = where_am_i()
     print(f"\n  === 11. document home ({where})")
+    def _count(d):
+        return sum(1 for r, _, fs in os.walk(d) for f in fs
+                   if f.lower().endswith(".pdf")) if os.path.isdir(d) else 0
+    n_rhp = sum(_count(d) for d in RHP_DIRS)
+    n_sbi = _count(SBI_DIR)
     if where == "github":
-        if os.path.isdir(SBI_DIR) and not dry:
-            for cmd in (["git", "config", "user.name", "aacapital-bot"],
-                        ["git", "config", "user.email", "bot@aacapital"],
-                        ["git", "add", SBI_DIR],
-                        ["git", "commit", "-m", f"SBI notes {dt.date.today()}"],
-                        ["git", "push"]):
-                r = subprocess.run(cmd, capture_output=True, text=True)
-                if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
-                    print(f"      git {' '.join(cmd[1:3])}: {(r.stderr or r.stdout)[:100]}")
-            print(f"      SBI notes committed to the repo")
-        else:
-            print(f"      [dry] would commit {SBI_DIR} to the repo")
+        print(f"      ephemeral runner — {n_rhp} RHPs and {n_sbi} SBI notes will vanish "
+              f"with this job and are NOT committed.")
+        print(f"      Run the downloads locally (or pass --skip-download here) so the "
+              f"documents persist.")
     else:
-        n = sum(1 for r, _, fs in os.walk(SBI_DIR) for f in fs
-                if f.lower().endswith(".pdf")) if os.path.isdir(SBI_DIR) else 0
-        print(f"      local run — {n} SBI notes stay in {SBI_DIR}, nothing committed")
+        print(f"      local — {n_rhp} RHPs and {n_sbi} SBI notes kept on disk, "
+              f"nothing committed")
 
-    final_spend = spent_today(conn) - already
+    # Fresh connection: the one opened 15 minutes ago is long gone.
+    try:
+        today_total = with_db(spent_today)
+    except Exception as e:
+        print(f"  (spend read failed, non-fatal: {type(e).__name__})")
+        today_total = already
+    final_spend = today_total - already
     print("\n  " + "=" * 60)
     for s in steps:
         print(f"    {s['step']:44} {s['status']}")
     print(f"    spend this run: ${final_spend:.3f} · today total "
-          f"${spent_today(conn):.3f} of ${cap:.2f}")
-    conn.close()
+          f"${today_total:.3f} of ${cap:.2f}")
+    # A step that failed must surface in the exit code, but a NON-fatal step (a skipped
+    # download, a parser that errored on one note) must not fail the whole run.
+    hard_failed = [s_["step"] for s_ in steps if s_["status"] in ("failed", "timeout")]
+    if hard_failed:
+        print(f"    FAILED STEPS: {hard_failed}")
 
 
 if __name__ == "__main__":

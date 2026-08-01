@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write        # required so the run can commit SBI notes back
+      contents: read         # nothing is committed back — documents stay local
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,11 +59,14 @@ jobs:
         run: |
           python cron.py --run \
             --limit ${{ github.event.inputs.limit || '10' }} \
-            --max-rhps 4 \
-            --purge-pdfs \
-            ${{ github.event.inputs.skip_download == 'true' && '--skip-download' || '' }}
+            --skip-download
 
-      # DOCUMENT LIFECYCLES DIFFER, DELIBERATELY:
+      # DOWNLOADS DO NOT RUN HERE. Documents are kept on the local machine; an Actions
+      # runner is ephemeral, so anything downloaded here would vanish with the job, and
+      # committing PDFs back would bloat the repo permanently. This workflow therefore
+      # runs the DB half of the pipeline only (NSE, extraction of already-local RHPs,
+      # vendor fallback, Kite, scoring, completeness, ntfy).
+      # Previous notes on the two lifecycles, kept for context:
       #   RHPs (8-20MB)  -> extracted, then PURGED. Never committed: git keeps every blob
       #                     forever, so committing one is permanent weight a later delete
       #                     never reclaims. Re-fetchable via documents.url.
