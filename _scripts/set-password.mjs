@@ -42,6 +42,14 @@ function askHidden(query) {
   });
 }
 
+// Visible prompt (for the y/N confirmation — nothing secret here).
+function askVisible(query) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(query, (val) => { rl.close(); resolve(val); });
+  });
+}
+
 async function main() {
   const url = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
   if (!url) {
@@ -59,6 +67,19 @@ async function main() {
   console.log(`  target DB host : ${host}`);
   console.log(`  email          : ${email}`);
 
+  const sql = neon(url);
+  // Guard against a typo'd email silently creating a brand-new allowlisted account:
+  // if the email isn't already in allowed_users, require an explicit confirmation.
+  const existing = await sql`SELECT 1 FROM allowed_users WHERE email = ${email} LIMIT 1`;
+  if (existing.length === 0) {
+    console.log("  note           : this email is NOT currently in allowed_users.");
+    const yn = await askVisible("  create a NEW allowlisted account for it? (y/N): ");
+    if (yn.trim().toLowerCase() !== "y") {
+      console.log("Aborted — email not allowlisted and creation declined. Nothing written.");
+      process.exit(0);
+    }
+  }
+
   const pw = await askHidden("  new password   : ");
   if (pw.length < MIN_LEN) {
     console.error(`\nPassword too short (min ${MIN_LEN} chars). Nothing written.`);
@@ -71,7 +92,6 @@ async function main() {
   }
 
   const hash = await bcrypt.hash(pw, BCRYPT_ROUNDS);
-  const sql = neon(url);
   // Insert sets added_by on first write; on conflict we only refresh the hash and
   // leave the original added_by intact.
   await sql`INSERT INTO allowed_users (email, password_hash, added_by)

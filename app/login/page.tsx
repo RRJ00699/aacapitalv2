@@ -41,6 +41,13 @@ export default function Login() {
   const requested = typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).has("requested");
 
+  // Honour ?callbackUrl=… (NextAuth appends it), but only same-site relative paths —
+  // "//evil.com" / "http://evil.com" are rejected to prevent an open redirect.
+  function safeCallback() {
+    const raw = new URLSearchParams(window.location.search).get("callbackUrl") || "/";
+    return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  }
+
   async function passwordSignIn() {
     setPwErr("");
     setPwBusy(true);
@@ -49,7 +56,7 @@ export default function Login() {
     // Same message whether the email is unknown, not allowlisted, or the password
     // is wrong — never reveal which, and never surface the password itself.
     if (!res || res.error) { setPwErr("Invalid email or password"); return; }
-    window.location.href = "/";
+    window.location.href = safeCallback();
   }
   return (
     <main style={{ minHeight:"100dvh", display:"grid", placeItems:"center",

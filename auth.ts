@@ -8,8 +8,8 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 import { neon } from "@neondatabase/serverless";
+import { verifyPassword } from "@/lib/credentials-auth";
 
 function emailList(v: string | undefined) {
   return (v ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
@@ -55,32 +55,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth(() => ({
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
     // Username/password — sits ALONGSIDE Google, never in front of it. The same
-    // allowlist gates here: allowed_users IS the lookup, so a non-allowlisted
-    // email has no row and a correct password can never match. A NULL
-    // password_hash means the user is Google-only (no password set yet).
+    // allowlist gates here (see lib/credentials-auth.ts): allowed_users IS the
+    // lookup, so a non-allowlisted email has no row and a correct password can
+    // never match. A NULL password_hash means the user is Google-only.
     Credentials({
       name: "Password",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(creds) {
-        const email = String(creds?.email ?? "").toLowerCase().trim();
-        const password = String(creds?.password ?? "");
-        if (!email || !password) return null;
-        try {
-          const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
-          const rows = await sql`SELECT password_hash FROM allowed_users WHERE email = ${email} LIMIT 1`;
-          const hash = rows[0]?.password_hash as string | null | undefined;
-          if (!hash) return null;                                     // not allowlisted / Google-only
-          if (!(await bcrypt.compare(password, hash))) return null;   // wrong password
-          return { id: email, email, name: email };
-        } catch {
-          // Pre-migration (no password_hash column) or a DB hiccup: fail the
-          // password path CLOSED. Google is a separate provider and is unaffected.
-          return null;
-        }
-      },
+      authorize: (creds) =>
+        verifyPassword(String(creds?.email ?? ""), String(creds?.password ?? "")),
     }),
   ],
   session: { strategy: "jwt" },
