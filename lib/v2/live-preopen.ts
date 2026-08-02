@@ -41,7 +41,10 @@ export async function fetchPreopenRows(sql: SqlClient) {
            v.inputs_used->>'pe_source' AS pe_source,
            lo.listing_open,
            CASE d.fundamental_verdict WHEN 'JUNK' THEN 'reject' WHEN 'WATCH' THEN 'watch'
-                WHEN 'GOOD' THEN 'accept' END AS rhp_gate
+                WHEN 'GOOD' THEN 'accept' END AS rhp_gate,
+           -- the signals that drove the verdict — surfaced so an RHP hard-kill is
+           -- explainable on the screen, not only in the DB.
+           rf.junk_signals
     FROM ipo i
     JOIN ipo_issue iss ON iss.ipo_id = i.id
     LEFT JOIN LATERAL (SELECT anchor_count FROM subscription_snapshots s
@@ -52,6 +55,8 @@ export async function fetchPreopenRows(sql: SqlClient) {
     LEFT JOIN listing_outcomes lo ON lo.ipo_id = i.id
     LEFT JOIN LATERAL (SELECT fundamental_verdict FROM decisions dd
                        WHERE dd.ipo_id = i.id ORDER BY decided_at DESC LIMIT 1) d ON true
+    LEFT JOIN LATERAL (SELECT junk_signals FROM rhp_findings r
+                       WHERE r.ipo_id = i.id ORDER BY analyzed_at DESC LIMIT 1) rf ON true
     WHERE i.listing_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
       AND i.is_mainboard = true
       AND (iss.issue_size_cr IS NULL OR iss.issue_size_cr >= 200)
@@ -202,6 +207,18 @@ export function scoreListing(c: Record<string, unknown>) {
     avoid_flags: s.avoid,
     rhp_reject: s.rhpReject,
     rhp_gate: s.rhpGate,
+    // When the RHP gate hard-kills confidence to 0, say WHY on the screen — the exact
+    // junk_signals behind the JUNK verdict. If a signal that should only be a red flag
+    // (WATCH) is killing a trade, that is visible here instead of buried in the DB.
+    // The kill rule is correct; a wrong verdict is upstream (pipeline) data.
+    kill_reason: s.rhpReject
+      ? {
+          killed_by: "rhp_gate",
+          verdict: s.rhpGate,
+          junk_signals: Array.isArray(c.junk_signals) ? c.junk_signals : [],
+          note: "Confidence hard-killed by the RHP junk gate. These junk_signals drove the JUNK verdict (set upstream by the pipeline). Red flags alone should be WATCH, not JUNK — if one of these is only a red flag, the verdict is wrong, not the kill.",
+        }
+      : null,
     mos: {
       pct: mos.mosPct, cushion_rupees: mos.cushion,
       fair_anchor: mos.fairAnchor, anchor_source: mos.anchorSource, note: mos.note,

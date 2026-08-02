@@ -10,12 +10,14 @@ const INDOMIM = {
   issue_size_cr: 3811.21, ofs_cr: 3311.21, fresh_cr: 500.0, issue_price: 485.0, anchor_count: null,
   ipo_pe: 44.95, peer_median_pe: null, roe: 18.92, debt_equity: 0.39, revenue_cagr_3y: 7.65, ofs_pct: 86.88,
   eps_post: 10.79, pe_source: "rhp_computed:price/eps_post", listing_open: 700.0, rhp_gate: "reject",
+  junk_signals: ["auditor_qualified", "sebi_action"],
 };
 const LCL = {
   ipo_id: 42, company_name: "Lohia Corp Ltd.", nse_symbol: "LCL", listing_date: "2026-07-30",
   issue_size_cr: 1101.28, ofs_cr: 1101.28, fresh_cr: null, issue_price: 425.0, anchor_count: null,
   ipo_pe: 5.69, peer_median_pe: null, roe: null, debt_equity: null, revenue_cagr_3y: 21.36, ofs_pct: 100.0,
   eps_post: null, pe_source: "proxy:issue_size/pat", listing_open: 461.0, rhp_gate: "watch",
+  junk_signals: ["related_party_concern"],
 };
 
 test("scoreStatic: mega + 50 anchors + fresh passes the key static rules", () => {
@@ -68,6 +70,23 @@ test("scoreListing REAL DATA — INDOMIM (RHP=JUNK): hard-killed to confidence 0
   assert.equal(r.gmp.available, false);          // explicit, never omitted
   assert.ok(r.avoid_flags.some((a) => a.includes("OFS-heavy")));
   assert.equal(r.pe_source, "rhp_computed:price/eps_post");
+});
+
+test("scoreListing REAL DATA — INDOMIM: the RHP kill reason is VISIBLE (which junk_signals)", () => {
+  const r = scoreListing(INDOMIM);
+  assert.equal(r.confidence, 0);
+  assert.ok(r.kill_reason, "a killed trade must expose kill_reason");
+  assert.equal(r.kill_reason!.killed_by, "rhp_gate");
+  // The exact signals behind the JUNK verdict are on the response. If the day the
+  // upstream mapping is fixed a benign signal drops out (or the verdict flips), this
+  // assertion changes and the test tells us.
+  assert.deepEqual(r.kill_reason!.junk_signals, ["auditor_qualified", "sebi_action"]);
+});
+
+test("scoreListing REAL DATA — LCL (WATCH, not killed): no kill_reason", () => {
+  const r = scoreListing(LCL);
+  assert.equal(r.rhp_reject, false);
+  assert.equal(r.kill_reason, null);
 });
 
 test("scoreListing REAL DATA — LCL: proxy pe_source is disclosed, not laundered", () => {
