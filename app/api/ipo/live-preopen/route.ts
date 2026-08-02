@@ -8,7 +8,7 @@ import { cached } from "@/lib/kv-cache";
 import { getBroker } from "@/lib/brokers";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { fixtureAwareNeon } from "@/lib/db";
-import { fetchPreopenRows, scoreStatic, marginOfSafety, scoreLive, confidence, type Rule } from "@/lib/v2/live-preopen";
+import { fetchPreopenRows, scoreListing } from "@/lib/v2/live-preopen";
 import type { SqlClient } from "@/lib/v2/sql";
 
 export const dynamic = "force-dynamic";
@@ -52,39 +52,13 @@ export async function GET() {
     } catch { broker = null; }
 
     const listings = await Promise.all(rows.map(async (c) => {
-      const s = scoreStatic(c);
-      const mos = marginOfSafety(c);
-      const lv = scoreLive(c, mos);
-
-      // research-readiness gate — a missing RHP must never read as a passed gate.
-      // SBI is no longer part of this (dropped in V2).
-      const researchMissing: string[] = [];
-      if (c.rhp_gate == null) researchMissing.push("RHP analysis pending");
-      if (c.eps_post == null && c.ipo_pe == null) researchMissing.push("fair value inputs (EPS / P·E)");
-      if (c.issue_price == null) researchMissing.push("issue price");
-      const researchReady = researchMissing.length === 0;
-
-      const stackPassed = s.isMega && s.has30 && lv.openPct != null
-        ? (lv.openPct >= 0 && lv.openPct < 50)
-        : (lv.openPct == null ? null : false);
-      const stackRule: Rule = {
-        name: "The Stack (mega+positive+30 anchors)",
-        passed: stackPassed, win: 85,
-        detail: stackPassed === true ? "cleanest setup — all three align"
-              : stackPassed === null ? "awaiting open" : "not all three aligned",
-      };
-
-      const staticRules = s.rules;
-      const liveRules = [...lv.rules, stackRule];
-      const anyAvoid = s.avoid.length > 0 || lv.euphoric;
-      const conf = confidence([...staticRules, ...liveRules], s.rhpReject, s.ofsPeReject, anyAvoid);
-      const allScored = [...staticRules, ...liveRules].filter((r) => r.passed !== null);
-      const passedCount = allScored.filter((r) => r.passed === true).length;
+      // Full deterministic scoring (unit-tested in lib/v2/live-preopen.test.ts).
+      const base = scoreListing(c);
 
       // Pre-open book lean (live depth — degrades to null off-hours / no creds).
       let book: { discoveryPrice: number | null; buyQty: number; sellQty: number; leanPct: number | null } | null = null;
       let livePrice: number | null = null;
-      const sym = String(c.nse_symbol || "").toUpperCase();
+      const sym = base.sym;
       if (broker && sym) {
         try {
           const d = await broker.getDepth(sym, "NSE");
@@ -111,31 +85,9 @@ export async function GET() {
       }
 
       return {
-        sym,
-        company_name: c.company_name,
-        listing_date: c.listing_date,
-        research_ready: researchReady,
-        research_missing: researchMissing,
-        rules_static: staticRules,
-        rules_live: liveRules,
-        avoid_flags: s.avoid,
-        rhp_reject: s.rhpReject,
-        rhp_gate: s.rhpGate,
-        mos: {
-          pct: mos.mosPct, cushion_rupees: mos.cushion,
-          fair_anchor: mos.fairAnchor, anchor_source: mos.anchorSource, note: mos.note,
-        },
-        // GMP explicitly UNAVAILABLE in V2 (never a silent fallback anchor).
-        gmp: { available: false, note: "GMP feed not wired in V2 (returns via its own pipeline); never used as a fallback anchor." },
-        pe_source: c.pe_source ?? null,   // disclosure: how P/E was derived
-        open_pct: lv.openPct,
+        ...base,
         book,
         live_price: livePrice,
-        rules_passed: passedCount,
-        rules_total: staticRules.length + liveRules.length,
-        rules_scored: allScored.length,
-        confidence: conf,
-        deadline_ist: "09:58",
         last_eval_ist: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
       };
     }));

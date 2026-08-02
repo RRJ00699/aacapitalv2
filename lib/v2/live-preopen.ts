@@ -159,3 +159,61 @@ export function confidence(all: Rule[], rhpReject: boolean, ofsPeReject: boolean
   else if (anyAvoid) conf -= 10;
   return Math.max(0, Math.min(100, Math.round(conf)));
 }
+
+// Full per-listing scoring for ONE row (everything except the live broker depth /
+// book / live_price, which the route attaches). Extracted from the route so the
+// money path is unit-testable against real captured rows. `gmp.available` is always
+// false and explicit — never a silent omission.
+export function scoreListing(c: Record<string, unknown>) {
+  const s = scoreStatic(c);
+  const mos = marginOfSafety(c);
+  const lv = scoreLive(c, mos);
+
+  const researchMissing: string[] = [];
+  if (c.rhp_gate == null) researchMissing.push("RHP analysis pending");
+  if (c.eps_post == null && c.ipo_pe == null) researchMissing.push("fair value inputs (EPS / P·E)");
+  if (c.issue_price == null) researchMissing.push("issue price");
+
+  const stackPassed = s.isMega && s.has30 && lv.openPct != null
+    ? (lv.openPct >= 0 && lv.openPct < 50)
+    : (lv.openPct == null ? null : false);
+  const stackRule: Rule = {
+    name: "The Stack (mega+positive+30 anchors)",
+    passed: stackPassed, win: 85,
+    detail: stackPassed === true ? "cleanest setup — all three align"
+          : stackPassed === null ? "awaiting open" : "not all three aligned",
+  };
+
+  const staticRules = s.rules;
+  const liveRules = [...lv.rules, stackRule];
+  const anyAvoid = s.avoid.length > 0 || lv.euphoric;
+  const conf = confidence([...staticRules, ...liveRules], s.rhpReject, s.ofsPeReject, anyAvoid);
+  const allScored = [...staticRules, ...liveRules].filter((r) => r.passed !== null);
+  const passedCount = allScored.filter((r) => r.passed === true).length;
+
+  return {
+    sym: String(c.nse_symbol || "").toUpperCase(),
+    company_name: c.company_name,
+    listing_date: c.listing_date,
+    research_ready: researchMissing.length === 0,
+    research_missing: researchMissing,
+    rules_static: staticRules,
+    rules_live: liveRules,
+    avoid_flags: s.avoid,
+    rhp_reject: s.rhpReject,
+    rhp_gate: s.rhpGate,
+    mos: {
+      pct: mos.mosPct, cushion_rupees: mos.cushion,
+      fair_anchor: mos.fairAnchor, anchor_source: mos.anchorSource, note: mos.note,
+    },
+    // GMP explicitly UNAVAILABLE in V2 (never a silent fallback anchor).
+    gmp: { available: false as const, note: "GMP feed not wired in V2 (returns via its own pipeline); never used as a fallback anchor." },
+    pe_source: c.pe_source ?? null,   // disclosure: how P/E was derived
+    open_pct: lv.openPct,
+    rules_passed: passedCount,
+    rules_total: staticRules.length + liveRules.length,
+    rules_scored: allScored.length,
+    confidence: conf,
+    deadline_ist: "09:58",
+  };
+}
