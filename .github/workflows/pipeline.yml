@@ -30,6 +30,10 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read         # nothing is committed back — documents stay local
+    defaults:
+      run:
+        working-directory: pipeline   # pipeline code lives under pipeline/ in the monorepo;
+                                       # cron.py resolves _scripts/*, rhps/, rhp_map.json from CWD
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,7 +94,7 @@ jobs:
         with:
           name: pipeline-log-${{ github.run_number }}
           path: |
-            drive_manifest.json
-            rhp_v2full/*_summary.json
+            pipeline/drive_manifest.json
+            pipeline/rhp_v2full/*_summary.json
           retention-days: 14
           if-no-files-found: ignore
