@@ -34,8 +34,30 @@ function NoteBox() {
 
 export default function Login() {
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pwErr, setPwErr] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
   const requested = typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).has("requested");
+
+  // Honour ?callbackUrl=… (NextAuth appends it), but only same-site relative paths —
+  // "//evil.com" / "http://evil.com" are rejected to prevent an open redirect.
+  function safeCallback() {
+    const raw = new URLSearchParams(window.location.search).get("callbackUrl") || "/";
+    return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  }
+
+  async function passwordSignIn() {
+    setPwErr("");
+    setPwBusy(true);
+    const res = await signIn("credentials", { email, password, redirect: false });
+    setPwBusy(false);
+    // Same message whether the email is unknown, not allowlisted, or the password
+    // is wrong — never reveal which, and never surface the password itself.
+    if (!res || res.error) { setPwErr("Invalid email or password"); return; }
+    window.location.href = safeCallback();
+  }
   return (
     <main style={{ minHeight:"100dvh", display:"grid", placeItems:"center",
       background:`radial-gradient(1100px 600px at 50% -10%, #FFF7E6 0%, ${C.bg} 55%)`,
@@ -85,6 +107,37 @@ export default function Login() {
             </svg>
             {busy ? "Redirecting to Google…" : "Continue with Google"}
           </button>
+
+          {/* divider */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"18px 0" }}>
+            <div style={{ flex:1, height:1, background:C.border }}/>
+            <span style={{ fontSize:11, color:C.dim, fontWeight:700, letterSpacing:1 }}>OR</span>
+            <div style={{ flex:1, height:1, background:C.border }}/>
+          </div>
+
+          {/* username / password */}
+          <form onSubmit={(e)=>{ e.preventDefault(); passwordSignIn(); }}>
+            <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)}
+              placeholder="Email" autoComplete="username" required
+              style={{ width:"100%", boxSizing:"border-box", border:`1px solid ${C.border}`,
+                borderRadius:10, padding:"11px 12px", fontSize:14, background:"#fff", color:C.text }}/>
+            <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)}
+              placeholder="Password" autoComplete="current-password" required
+              style={{ width:"100%", boxSizing:"border-box", border:`1px solid ${C.border}`,
+                borderRadius:10, padding:"11px 12px", fontSize:14, background:"#fff", color:C.text, marginTop:8 }}/>
+            {pwErr && (
+              <div style={{ color:"#DC2626", fontSize:12.5, fontWeight:600, marginTop:8, textAlign:"left" }}>
+                {pwErr}
+              </div>
+            )}
+            <button type="submit" disabled={pwBusy || !email || !password}
+              style={{ width:"100%", marginTop:10, padding:"12px 16px", borderRadius:10,
+                cursor:(pwBusy || !email || !password) ? "not-allowed" : "pointer",
+                background:C.text, color:"#fff", border:"none", fontSize:14.5, fontWeight:700,
+                opacity:(pwBusy || !email || !password) ? .6 : 1 }}>
+              {pwBusy ? "Signing in…" : "Sign in with password"}
+            </button>
+          </form>
 
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:18,
             justifyContent:"center", fontSize:11.5, color:C.dim }}>
