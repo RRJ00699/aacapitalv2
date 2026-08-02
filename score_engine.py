@@ -58,9 +58,14 @@ def band_of(score):
 
 def _latest_financials(cur, ipo_id):
     """Return (latest_row, rows_by_period_desc). Prefer consolidated, latest period."""
+    # period is TEXT 'DD-Mon-YY'; ORDER BY period sorts lexicographically (day-first),
+    # so '31-Mar-25' > '30-Sep-26'. Order by the PARSED date instead. Guarded so an
+    # off-format value sorts last rather than erroring the whole query.
     cur.execute("""SELECT period,basis,revenue,ebitda,pat,net_worth,total_debt,total_assets
                    FROM financial_statements WHERE ipo_id=%s
-                   ORDER BY (basis='consolidated') DESC, period DESC""",(ipo_id,))
+                   ORDER BY (basis='consolidated') DESC,
+                            CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$'
+                                 THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST""",(ipo_id,))
     rows=cur.fetchall()
     return (rows[0] if rows else None), rows
 
@@ -153,9 +158,12 @@ def compute_valuation(conn, ipo_id):
     used["pb_source"] = pb_source
     if eps is not None: used["rhp_eps"] = eps
     if nav is not None: used["rhp_nav"] = nav
-    # ---- rev_cagr_3y needs >=3 periods ----
+    # ---- rev_cagr_3y needs >=3 periods, ALL OF ONE BASIS ----
+    # allrows is consolidated-first, newest-date-first. Restrict the CAGR series to the
+    # LATEST row's basis so it never divides consolidated-newest by standalone-oldest.
     rev_cagr=None
-    revs=[float(r[2]) for r in allrows if r[2] is not None]
+    latest_basis=latest[1]
+    revs=[float(r[2]) for r in allrows if r[1]==latest_basis and r[2] is not None]
     if len(revs)>=3 and revs[-1]>0:
         try: rev_cagr=((revs[0]/revs[-1])**(1/ (len(revs)-1)) -1)*100
         except Exception: rev_cagr=None
@@ -231,18 +239,42 @@ def _r(x):
     if x <= -9999.99: return -9999.99
     return x
 
+_VAL_NUMERIC = ["pe","pb","roe","roce","de","rev_cagr_3y","ofs_pct","peer_median_pe","score"]
+
+def _same_valuation(prev, v):
+    """True if the latest stored row equals this recompute on every COMPUTED value.
+    prev is (pe,pb,roe,roce,de,rev_cagr_3y,ofs_pct,peer_median_pe,score,score_band,
+    missing_inputs). inputs_used is derived provenance and is intentionally excluded."""
+    for i,col in enumerate(_VAL_NUMERIC):
+        a=prev[i]; b=v[col]
+        if (a is None)!=(b is None): return False
+        if a is not None and round(float(a),2)!=round(float(b),2): return False
+    if (prev[9] or None)!=(v["score_band"] or None): return False
+    if sorted(prev[10] or [])!=sorted(v["missing_inputs"] or []): return False
+    return True
+
 def write_valuation(conn, v):
-    """Write one computed valuation row (recompute — new engine_version row, NEVER COALESCE)."""
+    """Write one computed valuation row — IDEMPOTENT. If the latest row for this
+    (ipo_id, engine_version) already matches every computed value, insert NOTHING
+    (computed_at=now() otherwise made every run a duplicate — 135 dup rows across 15
+    IPOs). Returns True on insert, False when skipped."""
     cur=conn.cursor()
+    cur.execute("""SELECT pe,pb,roe,roce,de,rev_cagr_3y,ofs_pct,peer_median_pe,score,
+                          score_band,missing_inputs
+                   FROM valuation WHERE ipo_id=%s AND engine_version=%s
+                   ORDER BY computed_at DESC LIMIT 1""",(v["ipo_id"],ENGINE_VERSION))
+    prev=cur.fetchone()
+    if prev is not None and _same_valuation(prev, v):
+        return False
     cur.execute("""INSERT INTO valuation
        (ipo_id,computed_at,engine_version,pe,pb,roe,roce,de,rev_cagr_3y,ofs_pct,
         peer_median_pe,score,score_band,inputs_used,missing_inputs)
-       VALUES (%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-       ON CONFLICT (ipo_id,engine_version,computed_at) DO NOTHING""",
+       VALUES (%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
        (v["ipo_id"],ENGINE_VERSION,v["pe"],v["pb"],v["roe"],v["roce"],v["de"],
         v["rev_cagr_3y"],v["ofs_pct"],v["peer_median_pe"],v["score"],v["score_band"],
         json.dumps(v["inputs_used"]), v["missing_inputs"]))
     conn.commit()
+    return True
 
 FILE_BUILD = "score_engine 2026-08-01 v2-score-2 — PE/PB from band+EPS/NAV, labelled proxy fallback"
 
@@ -290,7 +322,9 @@ def selftest():
       WITH latest AS (
         SELECT DISTINCT ON (ipo_id) ipo_id, pat
         FROM financial_statements
-        ORDER BY ipo_id, (basis='consolidated') DESC, period DESC
+        ORDER BY ipo_id, (basis='consolidated') DESC,
+                 CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$'
+                      THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST
       )
       SELECT ipo_id FROM latest WHERE pat<=0 LIMIT 1""")
     r=cur.fetchone()
@@ -346,6 +380,18 @@ def selftest():
     chk("falls back to eps_pre when eps_post absent (100/4=25)", vc["pe"]==25.0)
     chk("fallback names eps_pre, not eps_post", "eps_pre" in vc["inputs_used"]["pe_source"])
 
+    # (d) IDEMPOTENT WRITES: first write inserts one row; an identical recompute inserts
+    # NOTHING (computed_at=now() must not make a fresh duplicate on every run).
+    vd=compute_valuation(conn, tid)
+    w1=write_valuation(conn, vd)
+    cur.execute("SELECT count(*) FROM valuation WHERE ipo_id=%s AND engine_version=%s",(tid,ENGINE_VERSION))
+    n1=cur.fetchone()[0]
+    w2=write_valuation(conn, compute_valuation(conn, tid))
+    cur.execute("SELECT count(*) FROM valuation WHERE ipo_id=%s AND engine_version=%s",(tid,ENGINE_VERSION))
+    n2=cur.fetchone()[0]
+    chk("first valuation write inserts a row", w1 is True and n1>=1)
+    chk("repeat valuation write inserts NOTHING (idempotent)", w2 is False and n2==n1)
+
     for t in ["source_facts","ipo_issue","financial_statements","valuation"]:
         cur.execute(f"DELETE FROM {t} WHERE ipo_id=%s",(tid,))
     cur.execute("DELETE FROM ipo WHERE id=%s",(tid,)); conn.commit()
@@ -355,9 +401,14 @@ def selftest():
 
 def run_all(write=False):
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
-    cur.execute("SELECT id FROM ipo WHERE in_backtest_universe=TRUE ORDER BY id")
+    # Was in_backtest_universe=TRUE, which skipped new listings on a manual --all run.
+    # drive.py already scores new IPOs by calling compute_valuation directly; this makes
+    # the batch run match that scope. is_mainboard defaults to True (unreliable), so add
+    # the >=Rs.150cr floor to exclude SME issues (same scope as verdict_engine).
+    cur.execute("""SELECT i.id FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
+                   WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 ORDER BY i.id""")
     ids=[r[0] for r in cur.fetchall()]
-    print(f"computing valuation for {len(ids)} in-backtest IPOs (write={write})")
+    print(f"computing valuation for {len(ids)} mainboard IPOs (>=Rs.150cr) (write={write})")
     bands={}; scored=0
     for i,iid in enumerate(ids,1):
         v=compute_valuation(conn, iid)

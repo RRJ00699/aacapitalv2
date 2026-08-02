@@ -210,10 +210,20 @@ JUNK_SIGNAL_MAP = {
     "promoter_pledge_flag":            "promoter_pledge_flag",
 }
 
+# The owner's LOCKED junk line: ONLY these are JUNK. auditor_qualified,
+# criminal_litigation, related_party_concern, customer_concentration_high,
+# contingent_liabilities_material, promoter_pledge_flag are RED FLAGS -> WATCH.
+SEVERE_JUNK = {"sebi_action", "going_concern", "fraud", "inflated_figures"}
+
 def _derive_flags(db_fields):
-    """(red_flag_count, junk_signals[]) from the model's db_fields block."""
-    sigs = [name for key, name in JUNK_SIGNAL_MAP.items() if db_fields.get(key) is True]
-    reds = list(sigs)
+    """(red_flag_count, junk_signals[]) from the model's db_fields block.
+
+    ONLY severe signals go into junk_signals (which is the JUNK line). Every triggered
+    signal — severe OR benign — counts toward red_flag_count, so a benign concern is
+    recorded as a red flag (WATCH) rather than silently dropped or wrongly escalated."""
+    fired = [name for key, name in JUNK_SIGNAL_MAP.items() if db_fields.get(key) is True]
+    junk  = [s for s in fired if s in SEVERE_JUNK]
+    reds  = list(fired)                         # benign signals are red flags, not junk
     for k in ["numbers_integrity_flag", "working_capital_flag"]:
         if db_fields.get(k) == "watch":
             reds.append(k)
@@ -223,7 +233,7 @@ def _derive_flags(db_fields):
         reds.append("debt_rising")
     if db_fields.get("gcp_high") is True:
         reds.append("gcp_high")
-    return len(reds), sorted(set(sigs))
+    return len(set(reds)), sorted(set(junk))
 
 
 def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="rhp"):
