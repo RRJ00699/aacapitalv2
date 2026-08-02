@@ -1,26 +1,17 @@
-// app/api/ipo/index/route.ts — the FULL-UNIVERSE identity index (D5,
-// 2026-07-25): every IPO ever, for the Details/Review search. Identity only;
-// the command payload serves data for windowed IPOs, ipo_gold for the rest
-// (next slice). Cached 6h; pipeline-refreshed data changes 2x/day anyway.
+// app/api/ipo/index/route.ts — full-universe identity index for the ipo2 search.
+// V2: reads canonical `ipo` (was V1 `ipo_consolidated`). Cached 6h.
 import { NextResponse } from "next/server";
 import { fixtureAwareNeon } from "@/lib/db";
 import { cached } from "@/lib/kv-cache";
+import { buildIpoIndex } from "@/lib/v2/ipo-index";
+import type { SqlClient } from "@/lib/v2/sql";
 
 export const runtime = "edge";
 
 export async function GET() {
   try {
-    const body = await cached("ipo:index:v1", async () => {
-      const sql = fixtureAwareNeon();
-      const rows = await sql`
-        SELECT c.company_name,
-               COALESCE(NULLIF(btrim(c.symbol_final), ''), NULLIF(btrim(c.nse_symbol), ''), btrim(c.symbol)) AS sym,
-               c.listing_date
-        FROM ipo_consolidated c
-        WHERE c.company_name IS NOT NULL
-        ORDER BY c.listing_date DESC NULLS LAST`;
-      return JSON.stringify({ rows, generated_at: new Date().toISOString() });
-    }, 21600);
+    // key bumped v1->v2: payload now sourced from `ipo`, so the old cache is invalidated.
+    const body = await cached("ipo:index:v2", () => buildIpoIndex(fixtureAwareNeon() as unknown as SqlClient), 21600);
     return new NextResponse(body, { headers: { "content-type": "application/json" } });
   } catch (e) {
     return NextResponse.json({ rows: [], degraded: String(e).slice(0, 200) }, { status: 200 });
