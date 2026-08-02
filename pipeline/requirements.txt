@@ -1,0 +1,11 @@
+psycopg2-binary
+curl_cffi
+pymupdf
+kiteconnect
+pyotp
+requests
+python-dotenv
+playwright
+pdfplumber
+rapidfuzz
+boto3

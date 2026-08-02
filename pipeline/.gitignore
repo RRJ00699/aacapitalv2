@@ -1,0 +1,22 @@
+﻿# DOCUMENTS LIVE ON THE LOCAL MACHINE, NEVER IN GIT.
+# Git keeps every blob forever, so a committed PDF is permanent repo weight that no
+# later delete reclaims. Both RHPs and SBI notes stay on the laptop; the DB holds the
+# extracted data and documents.sha256 + url hold the provenance.
+rhps/
+data/research_notes/
+*.pdf
+*.PDF
+
+# Secrets
+.env
+.env.local
+
+# Run state
+drive_manifest.json
+download_manifest.json
+rhp_map.json
+failures.log
+rhp_v2full/
+rhp_summaries/
+__pycache__/
+*.pyc

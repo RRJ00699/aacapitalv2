@@ -1,0 +1,96 @@
+name: AACapital pipeline
+
+# MANUAL DISPATCH ONLY — no schedule (owner decision 08-02). Data arrives progressively,
+# so the SAME IPO is processed each run and each pass fills whatever newly became
+# available. Every writer is COALESCE-empty-only or keyed ON CONFLICT — re-running is the
+# design, not a risk. Documents are persisted to Cloudflare R2 (see r2.py), so extraction
+# on a runner can re-fetch from R2. Phase 1: downloads still run on the laptop (skip on
+# the runner by default); flip skip_download to false to test runner-side downloads.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many IPOs to process'
+        required: false
+        default: '10'
+      skip_download:
+        description: 'Leave TRUE to skip downloads on the runner (Phase 1 default). Set FALSE to test runner-side SEBI/SBI downloads.'
+        type: boolean
+        default: true
+
+concurrency:
+  # Never let two runs touch the DB at once — the writers are idempotent but a
+  # half-finished paid extraction racing a second run wastes money.
+  group: aacapital-pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read         # nothing is committed back — documents stay local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary curl_cffi pymupdf kiteconnect pyotp requests python-dotenv \
+                      playwright pdfplumber rapidfuzz boto3
+          python -m playwright install --with-deps chromium
+
+      - name: Run pipeline
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KITE_API_KEY:      ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET:   ${{ secrets.KITE_API_SECRET }}
+          KITE_USER_ID:      ${{ secrets.KITE_USER_ID }}
+          KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
+          KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
+          NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
+          # R2 document store (r2.py). Account id + bucket names are repo VARIABLES; the
+          # access key pair are repo SECRETS. Absent -> r2.py degrades to a no-op.
+          R2_ACCOUNT_ID:        ${{ vars.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_RHP:        ${{ vars.R2_BUCKET_RHP }}
+          R2_BUCKET_SBI:        ${{ vars.R2_BUCKET_SBI }}
+        run: |
+          # Phase 1: skip downloads on the runner by default; dispatch skip_download=false
+          # to test runner-side SEBI/SBI scraping.
+          SKIP="--skip-download"
+          if [ "${{ github.event.inputs.skip_download }}" = "false" ]; then SKIP=""; fi
+          python cron.py --run --limit ${{ github.event.inputs.limit || '10' }} $SKIP
+
+      # DOCUMENTS LIVE IN R2, NOT GIT. Every extracted PDF is uploaded to Cloudflare R2
+      # (content-addressed by sha256; documents.url = r2://<bucket>/<sha256>.pdf), so
+      # nothing is committed back and the runner's ephemeral disk no longer matters —
+      # extraction re-fetches from R2 when a local copy is absent. Two buckets by
+      # lifecycle: RHPs transient (180-day R2 lifecycle backstop + post-lock-in purge),
+      # SBI notes retained for the UI.
+      # PHASE 1 (this workflow): downloads (SEBI/SBI Playwright scraping) still run on the
+      # laptop — a datacenter IP scraping 1,000+ filings is likelier to be throttled, and
+      # a silently-failing scheduled job is the worst way to learn that. Flip skip_download
+      # to false on a manual dispatch to test runner-side downloads before making it default.
+
+      # The daily $ cap lives in platform_config.daily_spend_cap_usd, NOT here — so it
+      # can be changed from a phone with any DB client, with no redeploy and no commit.
+
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-log-${{ github.run_number }}
+          path: |
+            drive_manifest.json
+            rhp_v2full/*_summary.json
+          retention-days: 14
+          if-no-files-found: ignore
