@@ -120,49 +120,87 @@ def find_local_rhp(ipo_id, name, rhp_dir="rhps"):
     return hits[0] if hits else None
 
 
-def step_rhp(conn, ipo_id, name, write, spent, max_spend):
+def resolve_rhp(conn, ipo_id, name, rhp_dir="rhps", ignore_local=False):
+    """Locate the IPO's RHP PDF for extraction. Returns (path, source, base) or
+    (None, None, None). Local disk first (the laptop fast path) UNLESS ignore_local; then
+    R2 via the r2:// url in `documents` (the runner path, and re-fetch after a purge).
+    A fetched file is a temp the CALLER must delete (source == 'r2')."""
+    if not ignore_local:
+        p = find_local_rhp(ipo_id, name, rhp_dir)
+        if p:
+            return p, "local", os.path.basename(os.path.dirname(p))
+    import r2, tempfile, hashlib
+    cur = conn.cursor()
+    cur.execute("""SELECT url, sha256 FROM documents
+                    WHERE ipo_id=%s AND doc_type='rhp' AND url LIKE 'r2://%%'
+                    ORDER BY fetched_at DESC LIMIT 1""", (ipo_id,))
+    row = cur.fetchone()
+    if not row:
+        return None, None, None
+    url, sha = row
+    fd, tmp = tempfile.mkstemp(suffix=".pdf"); os.close(fd)
+    if not r2.get_to_file(url, tmp):
+        try: os.remove(tmp)
+        except OSError: pass
+        return None, None, None
+    got = hashlib.sha256(open(tmp, "rb").read()).hexdigest()
+    if sha and got != sha:
+        print(f"  [r2] sha256 MISMATCH ipo {ipo_id}: stored {sha[:12]} != fetched {got[:12]}")
+        try: os.remove(tmp)
+        except OSError: pass
+        return None, None, None
+    print(f"  [r2] RHP for ipo {ipo_id} fetched from {url} (sha256 ok, {os.path.getsize(tmp)//1024}KB)")
+    return tmp, "r2", f"ipo{ipo_id}"
+
+
+def step_rhp(conn, ipo_id, name, write, spent, max_spend, ignore_local=False):
     """RHP extraction + routing. THE ONLY STEP THAT COSTS MONEY."""
     if rhp_already_done(conn, ipo_id):
         return {"step": "rhp", "status": "skipped", "why": "v2-full extraction exists"}
-    pdf = find_local_rhp(ipo_id, name)
+    pdf, src, base = resolve_rhp(conn, ipo_id, name, ignore_local=ignore_local)
     if not pdf:
         return {"step": "rhp", "status": "skipped",
-                "why": "no local PDF mapped in rhp_map.json (needs SEBI download)"}
-    if spent + RHP_COST_EST > max_spend:
-        return {"step": "rhp", "status": "skipped",
-                "why": f"would exceed --max-spend (${spent:.2f}+{RHP_COST_EST} > ${max_spend})"}
-    if not write:
-        return {"step": "rhp", "status": "dry", "pdf": pdf, "est_cost": RHP_COST_EST}
-
-    import fitz, rhp_sonnet
-    from rhp_sections import gather_sections
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return {"step": "rhp", "status": "skipped", "why": "ANTHROPIC_API_KEY not set"}
-    doc = fitz.open(pdf)
-    pages = [(i + 1, doc[i].get_text()) for i in range(len(doc))]
-    S = gather_sections(pages)
-    if not S:
-        return {"step": "rhp", "status": "failed", "why": "no sections located"}
-    prompt = rhp_sonnet.build_prompt(name or f"ipo {ipo_id}", S)
-    text, itok, otok = rhp_sonnet.call_sonnet(rhp_sonnet.SYSTEM, prompt, key)
-    cost = itok * rhp_sonnet.IN_RATE + otok * rhp_sonnet.OUT_RATE
-    os.makedirs("rhp_v2full", exist_ok=True)
-    base = os.path.basename(os.path.dirname(pdf))
-    open(os.path.join("rhp_v2full", base + "_raw.txt"), "w", encoding="utf-8").write(text)
+                "why": "no local PDF (rhp_map.json) and no r2:// document to fetch"}
     try:
-        data = rhp_sonnet.parse_json(text)
-    except Exception as e:
-        return {"step": "rhp", "status": "failed", "why": f"parse: {e}", "cost": cost}
-    data["_meta"] = {"input_tokens": itok, "output_tokens": otok,
-                     "cost_usd": round(cost, 4), "model": rhp_sonnet.MODEL}
-    json.dump(data, open(os.path.join("rhp_v2full", base + "_summary.json"), "w",
-                         encoding="utf-8"), indent=2, ensure_ascii=False)
-    if "structured" not in data:
-        return {"step": "rhp", "status": "failed", "why": "no structured block", "cost": cost}
-    rep = rhp_sonnet.route_to_db(pdf, ipo_id, data, "rhp_v2full", base)
-    return {"step": "rhp", "status": "ok", "cost": round(cost, 4),
-            "financials": len(rep["financials"]), "insights": rep["insights"]}
+        if spent + RHP_COST_EST > max_spend:
+            return {"step": "rhp", "status": "skipped",
+                    "why": f"would exceed --max-spend (${spent:.2f}+{RHP_COST_EST} > ${max_spend})"}
+        if not write:
+            return {"step": "rhp", "status": "dry", "pdf": pdf, "source": src, "est_cost": RHP_COST_EST}
+
+        import fitz, rhp_sonnet
+        from rhp_sections import gather_sections
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            return {"step": "rhp", "status": "skipped", "why": "ANTHROPIC_API_KEY not set"}
+        doc = fitz.open(pdf)
+        pages = [(i + 1, doc[i].get_text()) for i in range(len(doc))]
+        S = gather_sections(pages)
+        if not S:
+            return {"step": "rhp", "status": "failed", "why": "no sections located"}
+        prompt = rhp_sonnet.build_prompt(name or f"ipo {ipo_id}", S)
+        text, itok, otok = rhp_sonnet.call_sonnet(rhp_sonnet.SYSTEM, prompt, key)
+        cost = itok * rhp_sonnet.IN_RATE + otok * rhp_sonnet.OUT_RATE
+        os.makedirs("rhp_v2full", exist_ok=True)
+        open(os.path.join("rhp_v2full", base + "_raw.txt"), "w", encoding="utf-8").write(text)
+        try:
+            data = rhp_sonnet.parse_json(text)
+        except Exception as e:
+            return {"step": "rhp", "status": "failed", "why": f"parse: {e}", "cost": cost}
+        data["_meta"] = {"input_tokens": itok, "output_tokens": otok,
+                         "cost_usd": round(cost, 4), "model": rhp_sonnet.MODEL}
+        json.dump(data, open(os.path.join("rhp_v2full", base + "_summary.json"), "w",
+                             encoding="utf-8"), indent=2, ensure_ascii=False)
+        if "structured" not in data:
+            return {"step": "rhp", "status": "failed", "why": "no structured block", "cost": cost}
+        rep = rhp_sonnet.route_to_db(pdf, ipo_id, data, "rhp_v2full", base)
+        return {"step": "rhp", "status": "ok", "cost": round(cost, 4), "source": src,
+                "financials": len(rep["financials"]), "insights": rep["insights"]}
+    finally:
+        # a fetched R2 copy is a temp file — never leave it lying around
+        if src == "r2" and pdf and os.path.exists(pdf):
+            try: os.remove(pdf)
+            except OSError: pass
 
 
 def step_derived(conn, ipo_id, write):
@@ -187,6 +225,10 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--rhp", action="store_true", help="enable the PAID RHP step")
+    ap.add_argument("--ignore-local", action="store_true",
+                    help="force reading the RHP from R2 even when a local copy is on disk "
+                         "— exercises the runner read path without deleting local PDFs. "
+                         "Pair with --dry-run to verify the fetch without paying for extraction.")
     ap.add_argument("--max-spend", type=float, default=0.50)
     ap.add_argument("--no-ntfy", action="store_true", help="suppress ALL pushes")
     ap.add_argument("--ntfy-each", action="store_true",
@@ -247,7 +289,7 @@ def main():
 
         if a.rhp:
             try:
-                r = step_rhp(conn, ipo_id, name, write, spent, a.max_spend)
+                r = step_rhp(conn, ipo_id, name, write, spent, a.max_spend, ignore_local=a.ignore_local)
                 spent += r.get("cost", 0.0)
                 steps.append(r)
             except Exception as e:

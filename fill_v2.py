@@ -112,9 +112,22 @@ def upsert_document(conn, ipo_id, doc_type, content_bytes=None, url=None, sha256
         sha256=hashlib.sha256(content_bytes).hexdigest()
     if sha256 is None:
         raise ValueError("documents: need content_bytes or sha256")
-    cur.execute("SELECT id FROM documents WHERE sha256=%s",(sha256,))
+    # Store the file in R2 (content-addressed by sha256) and PREFER the r2:// key as the
+    # url so the document is re-fetchable on an ephemeral runner. No-op when R2 is not
+    # configured — the url then stays whatever the caller passed (e.g. the source URL).
+    if content_bytes is not None:
+        import r2
+        r2_url = r2.put_document(doc_type, sha256, content_bytes)
+        if r2_url:
+            url = r2_url
+    cur.execute("SELECT id, url FROM documents WHERE sha256=%s",(sha256,))
     r=cur.fetchone()
-    if r: return r[0]  # already stored
+    if r:
+        # backfill an r2:// url onto a row that predates R2 (url was NULL)
+        if url and not r[1]:
+            cur.execute("UPDATE documents SET url=%s WHERE id=%s AND url IS NULL",(url, r[0]))
+            conn.commit()
+        return r[0]  # already stored
     cur.execute("""INSERT INTO documents(ipo_id,doc_type,url,sha256,page_count,fetched_at)
                    VALUES(%s,%s,%s,%s,%s,now())
                    ON CONFLICT (sha256) DO NOTHING RETURNING id""",

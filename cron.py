@@ -237,7 +237,19 @@ def cleanup_docs(conn, dry):
                     if not dry:
                         os.remove(p)
                     freed += sz
-    print(f"      {freed/1e6:.1f}MB {'would be ' if dry else ''}freed")
+    # R2 (point 3): RHPs are transient — drop the R2 copy too once past lock-in. SBI
+    # notes are NEVER touched here. Best-effort; the 180-day bucket lifecycle is the backstop.
+    import r2
+    r2_del = 0
+    for eid, _n, _ld in eligible:
+        cur.execute("""SELECT url FROM documents WHERE ipo_id=%s AND doc_type='rhp'
+                       AND url LIKE 'r2://%%'""", (eid,))
+        for (url,) in cur.fetchall():
+            r2_del += 1
+            if not dry:
+                r2.delete_url(url)
+    print(f"      {freed/1e6:.1f}MB {'would be ' if dry else ''}freed; "
+          f"{r2_del} RHP object(s) {'would be ' if dry else ''}deleted from R2 (SBI notes untouched)")
     return freed
 
 
@@ -263,6 +275,9 @@ def main():
     ap.add_argument("--cleanup-lockin", action="store_true",
                     help="prune documents whose anchor lock-in has passed. OFF by "
                          "default.")
+    ap.add_argument("--ignore-local", action="store_true",
+                    help="force RHP reads from R2 even when a local copy exists — tests "
+                         "the runner read path without deleting local PDFs.")
     a = ap.parse_args()
     if not (a.run or a.dry_run):
         sys.exit("choose --run or --dry-run")
@@ -333,7 +348,8 @@ def main():
         steps.append(run(f"4. RHP extraction (budget ${remaining:.2f})",
                          [py, "drive.py", "--ids", ids,
                           "--dry-run" if dry else "--write", "--rhp",
-                          "--max-spend", f"{remaining:.2f}"], dry, 3600))
+                          "--max-spend", f"{remaining:.2f}"]
+                         + (["--ignore-local"] if a.ignore_local else []), dry, 3600))
     # 5. Vendor fallback — fills only what the primary sources left null
     steps.append(run("5. IPOMatrix fallback",
                      [py, "ipomatrix_fallback.py", "--ids", ids,
