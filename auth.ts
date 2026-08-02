@@ -7,6 +7,8 @@
 // DB failure: ring-1 users unaffected (never query); strangers fail CLOSED.
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
 import { neon } from "@neondatabase/serverless";
 
 function emailList(v: string | undefined) {
@@ -52,11 +54,43 @@ export const { handlers, signIn, signOut, auth } = NextAuth(() => ({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
+    // Username/password — sits ALONGSIDE Google, never in front of it. The same
+    // allowlist gates here: allowed_users IS the lookup, so a non-allowlisted
+    // email has no row and a correct password can never match. A NULL
+    // password_hash means the user is Google-only (no password set yet).
+    Credentials({
+      name: "Password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(creds) {
+        const email = String(creds?.email ?? "").toLowerCase().trim();
+        const password = String(creds?.password ?? "");
+        if (!email || !password) return null;
+        try {
+          const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+          const rows = await sql`SELECT password_hash FROM allowed_users WHERE email = ${email} LIMIT 1`;
+          const hash = rows[0]?.password_hash as string | null | undefined;
+          if (!hash) return null;                                     // not allowlisted / Google-only
+          if (!(await bcrypt.compare(password, hash))) return null;   // wrong password
+          return { id: email, email, name: email };
+        } catch {
+          // Pre-migration (no password_hash column) or a DB hiccup: fail the
+          // password path CLOSED. Google is a separate provider and is unaffected.
+          return null;
+        }
+      },
+    }),
   ],
   session: { strategy: "jwt" },
   pages: { signIn: "/login", error: "/login" },
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
+      // Credentials logins are already fully gated in authorize() above (email must
+      // exist in allowed_users with a matching bcrypt hash), so skip the Google
+      // discovery path — no bogus access_request / ntfy for a password sign-in.
+      if (account?.provider === "credentials") return true;
       const email = user.email?.toLowerCase();
       if (!email) return false;
       const ALLOWED = emailList(process.env.ALLOWED_EMAILS);

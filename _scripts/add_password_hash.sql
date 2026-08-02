@@ -1,0 +1,15 @@
+-- add_password_hash.sql — record of the 2026-08-02 auth migration.
+--
+-- Adds the nullable bcrypt-hash column that backs the Credentials
+-- (username/password) login provider in auth.ts. Existing rows stay NULL =
+-- "Google-only, no password set". The app NEVER runs this at request time —
+-- it is a script you run, deliberately, against the DB the worker reads.
+--
+-- Already applied by hand to BOTH databases on 2026-08-02 (ep-misty-meadow and
+-- ep-small-river — production's DATABASE_URL is a Cloudflare plaintext var still
+-- pointing at small-river). Kept here as the durable record. Safe to re-run:
+-- ADD COLUMN IF NOT EXISTS is a no-op once the column exists.
+--
+--   psql "$DATABASE_URL" -f _scripts/add_password_hash.sql
+--
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
