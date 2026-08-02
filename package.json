@@ -16,7 +16,7 @@
     "uat:all": "npm run typecheck && npm run build && python -m pytest _scripts/tests/ -q && playwright test --project=desktop --project=tablet --project=mobile",
     "uat:smoke": "node uat/smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/credentials-auth.test.ts",
+    "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "set-password": "node _scripts/set-password.mjs"
   },
   "dependencies": {
