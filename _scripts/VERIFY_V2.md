@@ -1,5 +1,7 @@
 # Verifying feat/v2-database against misty-meadow (V2)
 
+Status: reference — how to smoke the V2 routes against misty-meadow (added with PR #282).
+
 ## The problem with the cloud branch preview
 A per-branch Cloudflare preview URL runs the **same worker** with the **same vars/secrets**
 as production. Production's `DATABASE_URL` is a plaintext variable pointing at

@@ -87,7 +87,11 @@ KEPT_DESPITE_NO_UI_REF = [
     "app/api/ipo/monitor/route.ts",      # "listed weak BUT strong quality" — owner: keep
     "app/dashboard/tracker/page.tsx",    # interruption log — owner: keep, wired into Admin
     "app/api/tracker/route.ts",          # its backend (distraction_log)
-    "app/api/market-regime/route.ts",    # required per IPO_BUSINESS_REQUIREMENTS 2C.10
+    # market-regime/route.ts REMOVED from KEPT: PR #282 DELETED it (dead route, no live
+    # consumer — full-universe price_candles has no canonical V2 source anyway). Owner
+    # confirmed in the CI-fix PR that it is correctly gone, superseding the old
+    # "required per IPO_BUSINESS_REQUIREMENTS 2C.10" note. Hard-deleted, not archived, so
+    # there is no _archive twin to guard.
     "app/api/admin/job-flag/route.ts",   # VM job_runner polls this every minute
     "app/api/health/route.ts",           # DB-free liveness probe
 ]

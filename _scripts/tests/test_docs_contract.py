@@ -60,7 +60,10 @@ def test_every_tracked_md_has_status():
                          capture_output=True, text=True).stdout.split()
     missing = []
     for rel in out:
-        if rel.startswith("docs/archive/") or "/archive/" in rel or rel.startswith("_archive/"):
+        # pipeline/ docs came in with the merged pipeline repo (#283) and follow their own
+        # convention (no app "Status:" header). Exclude them from the app doc-stamp rule.
+        if (rel.startswith("docs/archive/") or "/archive/" in rel or rel.startswith("_archive/")
+                or rel.startswith("pipeline/")):
             continue
         head = _read(os.path.join(REPO, rel))[:200]
         if "Status:" not in head and "AUTHORITATIVE" not in head:

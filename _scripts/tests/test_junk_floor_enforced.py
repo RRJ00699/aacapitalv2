@@ -15,7 +15,9 @@ import re
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-ROUTE = ROOT / "app" / "api" / "ipo-command" / "route.ts"
+# PR #282 moved the command-feed logic into lib/v2/ipo-command.ts (enrichCards splits
+# investable/filtered; buildCommand assembles the payload). Contract unchanged.
+ROUTE = ROOT / "lib" / "v2" / "ipo-command.ts"
 pytestmark = pytest.mark.unit
 
 
@@ -45,7 +47,7 @@ def test_split_uses_size_not_verdict():
     """The floor is a hard size rule — it must not depend on the verdict engine
     having run (a null verdict must still be filtered)."""
     s = _src()
-    block = s[s.index("const investable"): s.index("const payload")]
+    block = s[s.index("const investable"): s.index("const withResearch")]
     assert "issue_size_cr" in block, "split must key off issue size"
     assert "sz > 0 && sz < JUNK_FLOOR_CR" in block, \
         "must filter only real sub-floor sizes (0/unknown stays investable)"

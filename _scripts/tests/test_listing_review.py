@@ -53,16 +53,11 @@ console.log(JSON.stringify(out));
 
 
 def test_news_module_contracts():
-    src = open(os.path.join(REPO, "_scripts", "fetch_ipo_news.py"), encoding="utf-8").read()
-    assert '"reuters": 1' in src, "Reuters preferred"
-    assert "COALESCE(is_sme,false)=false" in src, "news spend/effort respects eligibility"
-    assert "source='manual'" in src and "manual override" in src.lower()
-    assert "snippet" in src and "never article text" in src.lower() or "never full" in src.lower()
-    cc = open(os.path.join(REPO, "app", "api", "ipo-command", "route.ts"), encoding="utf-8").read()
-    assert "ipo_news n" in cc and "(nw.source = 'manual') DESC" in cc, "manual wins in the feed too"
-    assert "ipo-command:v4" in cc
-    lp = open(os.path.join(REPO, "app", "api", "ipo", "live-preopen", "route.ts"), encoding="utf-8").read()
-    assert "ipo_news n" in lp
-    det = open(os.path.join(REPO, "components", "ipo", "CompleteDetails.tsx"), encoding="utf-8").read()
-    assert "linked & summarized, never scraped" in det
-    assert 'v ?? "—"' in det, "missing fields render em-dash, never invention"
+    # RETIRED: the street-news feed was DROPPED from the command/live feeds in #282's
+    # narrow cut (no maintained V2 news source — owner decision). fetch_ipo_news.py may
+    # linger as an unused pipeline script; the routes no longer join ipo_news. Guard the
+    # removal rather than the (gone) news contract.
+    cc = open(os.path.join(REPO, "lib", "v2", "ipo-command.ts"), encoding="utf-8").read()
+    lp = open(os.path.join(REPO, "lib", "v2", "live-preopen.ts"), encoding="utf-8").read()
+    assert "ipo_news" not in cc and "ipo_news" not in lp, \
+        "news was removed in #282; the feeds must not re-join ipo_news"
