@@ -9,6 +9,9 @@ belongs here; if you add one, add it here and to `inspect_schema.py`'s `V2_DATA_
 Source of truth for the list: the writers themselves — `fill_v2.py`, `fill_ipo.py`,
 `kite_fetch.py`. Do not hand-maintain a count; enumerate.
 
+> **A table with no declared writer and no declared reader will be mistaken for debris.
+> Register it here before it exists.**
+
 ## Canonical tables
 
 **Spine & data-fill** (written by `fill_v2` / `fill_ipo` / `kite_fetch`):

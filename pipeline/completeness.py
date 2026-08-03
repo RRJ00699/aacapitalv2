@@ -95,16 +95,17 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False):
             return "not listed yet"
         if listing_date and (today - listing_date).days < 1:
             return "listed today — no session yet"
-    # 15-min bars, PERMANENT-GAP state (third state, beside missing/pending): the pre-2021
-    # intraday history was lost with intraday_30d and Kite's intraday lookback cannot
-    # recover it. Reported (visible) but NEVER blocking, so old IPOs don't nag forever.
-    # Recent IPOs missing 15-min bars fall through and ARE actionable (cron/backfill fills
-    # them). NOTE: HAS_ROWS only checks existence, so an IPO with a PARTIAL series (e.g. a
-    # few 2017 bars) reads as present here — bar count / ts-range is the true coverage
-    # signal, queried separately; completeness only answers "is there any 15-min data".
-    if col == "market_candles_15m" and stage == "listed" \
-       and listing_date and listing_date.year <= 2020:
-        return "pre-2021 — 15-min history lost, unrefetchable (permanent, not actionable)"
+    # 15-min bars: coverage is UNKNOWN until the first backfill runs. We do NOT yet know
+    # which old listings Kite can still return intraday for, so we must not flag any gap as
+    # permanently unrefetchable — a wrong PERMANENT flag hides a gap we could still fill.
+    # A listed IPO with no 15-min bars is reported as awaiting-backfill: visible, NON-
+    # blocking, NOT permanent. AFTER the backfill runs, replace this with an EVIDENCE-BASED
+    # rule: the earliest listing_date Kite actually returned bars for is the real floor;
+    # anything older that is still empty is then genuinely permanent. Do not hardcode a year
+    # before then. NOTE: HAS_ROWS only checks existence, so a PARTIAL series (a few 2017
+    # bars) reads as present here — bar count / ts-range is the true coverage signal.
+    if col == "market_candles_15m" and stage == "listed":
+        return "awaiting 15-min backfill — coverage UNKNOWN until Kite is queried"
     if col.startswith("subscription_snapshots"):
         if stage in ("announced", "open"):
             return "issue not closed yet"
