@@ -187,6 +187,32 @@ def upsert_candles(conn, ipo_id, bars):
         n+=1
     conn.commit(); return n
 
+# ==================================================== 8b. market_candles_15m
+def ensure_15m_table(conn):
+    """15-minute intraday OHLCV — NEW V2 table. Replaces the dropped intraday_30d,
+    whose misleading name (said 30d, held 10 years) got it swept with the V1 debris
+    and which had NO primary key, so nothing could upsert into it safely. PK
+    (ipo_id, ts) makes the paginated backfill idempotent and re-runnable."""
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS market_candles_15m (
+        ipo_id bigint NOT NULL, ts timestamptz NOT NULL,
+        o numeric, h numeric, l numeric, c numeric, v bigint,
+        PRIMARY KEY (ipo_id, ts))""")
+    conn.commit()
+
+def upsert_candles_15m(conn, ipo_id, bars):
+    """15-min OHLCV, key=(ipo_id,ts). bars = list of {ts,o,h,l,c,v}. Idempotent —
+    a re-fetch of the same window overwrites with the same values."""
+    cur = conn.cursor(); n = 0
+    for b in bars:
+        cur.execute("""INSERT INTO market_candles_15m(ipo_id,ts,o,h,l,c,v)
+            VALUES(%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (ipo_id,ts) DO UPDATE SET
+              o=EXCLUDED.o, h=EXCLUDED.h, l=EXCLUDED.l, c=EXCLUDED.c, v=EXCLUDED.v""",
+            (ipo_id, b["ts"], b.get("o"), b.get("h"), b.get("l"), b.get("c"), b.get("v")))
+        n += 1
+    conn.commit(); return n
+
 # ============================================================ 9. listing_observations
 def upsert_observation(conn, ipo_id, observed_at, obs_type, record):
     """Listing-day tape/preopen, key=(ipo_id,obs_type,observed_at). Append (idempotent)."""
