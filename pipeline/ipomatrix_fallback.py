@@ -23,7 +23,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "ipomatrix_fallback 2026-08-01b — period_ended + rupees->crore + total_income only"
+FILE_BUILD = "ipomatrix_fallback 2026-08-03 — RETIRED: ipomatrix_raw dropped, guarded no-op"
 
 # candidate key names per target column, matched case/underscore-insensitively
 # IPOMatrix's top line is TOTAL INCOME, not revenue-from-operations — established by the
@@ -173,6 +173,18 @@ def main():
     a = ap.parse_args()
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
     print(f"  [build] {FILE_BUILD}")
+
+    # RETIRED. ipomatrix_raw was dropped in the V1 sweep and NOTHING repopulates it — the
+    # ingest that fed it is gone (ipomatrix_ingest.py does not write it). Without the raw
+    # payload this fallback has no source. Exit cleanly so cron never crashes on the missing
+    # table. Existing ipomatrix-sourced fills PERSIST in financial_statements (COALESCE-only,
+    # never overwritten); total_income / total_debt for non-RHP IPOs now depend on the RHP
+    # extraction (findings.structured.financials). To revive: rebuild the IPOMatrix ingest.
+    cur.execute("SELECT to_regclass('public.ipomatrix_raw')")
+    if cur.fetchone()[0] is None:
+        print("  ipomatrix_raw ABSENT (dropped, V1 sweep) — vendor fallback RETIRED, no source. "
+              "Nothing to do; existing fills unchanged.")
+        conn.close(); return
 
     if a.inspect:
         payload = load_raw(cur, a.inspect)
