@@ -359,10 +359,17 @@ def main():
         steps.append(run("6. Kite candles + listing outcomes",
                          [py, "kite_fetch.py", "--ids", ids,
                           "--dry-run" if dry else "--write"], dry, 900))
-    # 7-8. score + verdict + completeness + ntfy (drive without --rhp is free)
+    # 7. score + verdict + completeness + ntfy (drive without --rhp is free)
     steps.append(run("7. score + verdict + completeness + ntfy",
                      [py, "drive.py", "--ids", ids,
                       "--dry-run" if dry else "--write"], dry, 900))
+    # 8. warm Cloudflare KV — push V2 payloads (ipo:<id>:details + ipo:list:v2, live +
+    #    stale twin) so user reads are served from KV and never wake Neon. Runs LAST among
+    #    the writers, after score/verdict, so KV reflects the freshest data. Needs
+    #    ADMIN_JOB_KEY in the env (warm_kv exits loudly without it on --write).
+    steps.append(run("8. warm KV cache",
+                     [py, "warm_kv.py", "--ids", ids,
+                      "--dry-run" if dry else "--write"], dry, 600))
     # 9. post-lockin cleanup — OPT-IN ONLY (owner 08-01: keep the documents locally).
     #    Documents now live on the laptop and are KEPT. Nothing is deleted unless you
     #    explicitly ask, because a deleted RHP costs a re-download and a re-extraction
