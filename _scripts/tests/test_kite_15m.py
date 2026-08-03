@@ -71,6 +71,21 @@ def test_backfill_2016_window_count():
     assert len(bars) == span
 
 
+def test_daily_candles_paginate_at_2000_days():
+    """A pre-2020 listing->today range exceeds Kite's 2000-day day-interval cap, so the
+    DAILY fetch must paginate too — an unpaginated call errored and (via the old
+    early-return) skipped the 15-min fetch for exactly the old IPOs that need it."""
+    k = FakeKite()
+    start, end = dt.date(2016, 2, 8), dt.date(2026, 8, 3)         # ~3,830 days -> 2 windows
+    bars = kf.fetch_candles(k, 1, start, end)
+    span = (end - start).days + 1
+    assert len(k.calls) == math.ceil(span / 2000)
+    assert all(call[2] == "day" for call in k.calls)             # day interval, paginated
+    assert k.calls[0][0] == start and k.calls[-1][1] == end
+    assert len(bars) == span
+    assert set(bars[0]) == {"d", "o", "h", "l", "c", "v"}
+
+
 @pytest.mark.integration
 def test_upsert_15m_idempotent(pg_uri):
     import psycopg2

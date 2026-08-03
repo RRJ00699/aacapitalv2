@@ -26,7 +26,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "kite_fetch 2026-08-01b — UPPERCASE pool labels + honest exit code"
+FILE_BUILD = "kite_fetch 2026-08-03c — NSE/BSE resolve, market_candles_15m, score-scope 699, paginated daily"
 _INSTRUMENTS = None
 
 
@@ -78,14 +78,22 @@ def resolve_token(kite, isin, symbol):
 
 
 def fetch_candles(kite, token, start, end):
-    """Daily OHLCV -> the bar shape upsert_candles expects: {d,o,h,l,c,v}."""
-    raw = kite.historical_data(token, from_date=start, to_date=end, interval="day")
+    """Daily OHLCV -> {d,o,h,l,c,v}. PAGINATED at <=2000 days/request (Kite's cap for the
+    day interval). A listing->today range for a pre-2020 IPO exceeds 2000 days; an
+    unpaginated call errored, and that error used to early-return and skip the 15-min
+    fetch too — so old IPOs (the early-era sample) silently got no intraday bars."""
     bars = []
-    for c in raw:
-        d = c["date"]
-        bars.append({"d": d.date() if hasattr(d, "date") else d,
-                     "o": c.get("open"), "h": c.get("high"), "l": c.get("low"),
-                     "c": c.get("close"), "v": c.get("volume")})
+    win_start = start
+    step = dt.timedelta(days=2000)
+    while win_start <= end:
+        win_end = min(win_start + step - dt.timedelta(days=1), end)
+        raw = kite.historical_data(token, from_date=win_start, to_date=win_end, interval="day")
+        for c in raw:
+            d = c["date"]
+            bars.append({"d": d.date() if hasattr(d, "date") else d,
+                         "o": c.get("open"), "h": c.get("high"), "l": c.get("low"),
+                         "c": c.get("close"), "v": c.get("volume")})
+        win_start = win_end + dt.timedelta(days=1)
     return bars
 
 
@@ -186,12 +194,14 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
         start = end - dt.timedelta(days=days)
     try:
         bars = fetch_candles(kite, token, start, end)
+        out["bars"] = len(bars)
+        if write and bars:
+            upsert_candles(conn, ipo_id, bars)
     except Exception as e:
-        out["notes"].append(f"candles failed: {type(e).__name__}: {str(e)[:90]}")
-        return out
-    out["bars"] = len(bars)
-    if write and bars:
-        upsert_candles(conn, ipo_id, bars)
+        # A daily failure must NOT skip the (independently paginated) 15-min fetch below —
+        # they are separate series, and the old IPOs that most need 15-min data are exactly
+        # the ones whose long daily range is most likely to hit an API edge. Log and go on.
+        out["notes"].append(f"daily candles failed: {type(e).__name__}: {str(e)[:80]}")
 
     # 15-minute intraday -> market_candles_15m. INCREMENTAL: start at the day after
     # the last stored bar (or listing_date on first backfill), paginate to today.
