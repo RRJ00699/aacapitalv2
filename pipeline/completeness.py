@@ -57,8 +57,9 @@ HAS_ROWS_OPEN = {
     "subscription_snapshots": "subscription / anchor / MF data",
 }
 HAS_ROWS_LISTED = {
-    "market_candles": "daily candles",
-    "decisions":      "verdict written",
+    "market_candles":     "daily candles",
+    "market_candles_15m": "15-min intraday bars",
+    "decisions":          "verdict written",
 }
 # subscription columns that matter for the house rules — checked on the FINAL snapshot
 SUBSCRIPTION_FIELDS = ["qib_x", "nii_x", "retail_x", "total_x",
@@ -94,6 +95,16 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False):
             return "not listed yet"
         if listing_date and (today - listing_date).days < 1:
             return "listed today — no session yet"
+    # 15-min bars, PERMANENT-GAP state (third state, beside missing/pending): the pre-2021
+    # intraday history was lost with intraday_30d and Kite's intraday lookback cannot
+    # recover it. Reported (visible) but NEVER blocking, so old IPOs don't nag forever.
+    # Recent IPOs missing 15-min bars fall through and ARE actionable (cron/backfill fills
+    # them). NOTE: HAS_ROWS only checks existence, so an IPO with a PARTIAL series (e.g. a
+    # few 2017 bars) reads as present here — bar count / ts-range is the true coverage
+    # signal, queried separately; completeness only answers "is there any 15-min data".
+    if col == "market_candles_15m" and stage == "listed" \
+       and listing_date and listing_date.year <= 2020:
+        return "pre-2021 — 15-min history lost, unrefetchable (permanent, not actionable)"
     if col.startswith("subscription_snapshots"):
         if stage in ("announced", "open"):
             return "issue not closed yet"

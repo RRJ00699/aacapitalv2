@@ -358,13 +358,15 @@ def upsert_insights(conn, ipo_id, items, model=None, prompt_version=None,
 # ============================================================ SELFTEST
 def selftest():
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
+    ensure_15m_table(conn)   # the one V2 table with a CREATE helper — make the cleanup
+                             # DELETE below safe even before kite_fetch's first --write run
     TISIN="INE000FILL999"; TNORM=_norm("Zzz Fillv2 Test Ltd")
     # cleanup any prior
     cur.execute("SELECT id FROM ipo WHERE isin=%s OR name_norm=%s",(TISIN,TNORM))
     old=[r[0] for r in cur.fetchall()]
     for tid in old:
         for t in ["rhp_findings","insights","source_facts","ipo_issue","subscription_snapshots",
-                  "financial_statements","listing_outcomes","market_candles",
+                  "financial_statements","listing_outcomes","market_candles","market_candles_15m",
                   "listing_observations","documents"]:
             cur.execute(f"DELETE FROM {t} WHERE ipo_id=%s",(tid,))
         cur.execute("DELETE FROM ipo WHERE id=%s",(tid,))
@@ -516,7 +518,7 @@ def selftest():
 
     # cleanup — rhp_findings/insights FIRST: both carry a doc_id FK into documents
     for t in ["rhp_findings","insights","source_facts","ipo_issue","subscription_snapshots",
-              "financial_statements","listing_outcomes","market_candles",
+              "financial_statements","listing_outcomes","market_candles","market_candles_15m",
               "listing_observations","documents"]:
         cur.execute(f"DELETE FROM {t} WHERE ipo_id=%s",(iid,))
     cur.execute("DELETE FROM ipo WHERE id=%s",(iid,))
