@@ -57,11 +57,25 @@ def bearish_candle(b, t):
                 return True
     return False
 
+def _window(b, days):
+    """Truncate bars to `days` CALENDAR days from the first (listing-day) bar. The trade
+    horizon is 30 days = the first anchor lock-in (why the old table was intraday_30d);
+    real_peak / gap_to_peak / later_high must be measured over the window actually traded,
+    not the full ~257d Kite retention — otherwise a CLEAN 30-day top reads as EARLY_FIRE."""
+    if not b or not days:
+        return b
+    cutoff = b[0][0] + dt.timedelta(days=days)
+    return [x for x in b if x[0] <= cutoff]
+
+
 def run_ipo(b, CLIMAX, REJECT, LH_N, MA_N, ACCEL, NBAR, VOLWIN, RETEST,
-            BREAKDOWN=1.0, SOW_MARGIN=1.0):
+            BREAKDOWN=1.0, SOW_MARGIN=1.0, window_days=None):
     """b = list of (ts,o,h,l,c,v) chronological. Returns result dict. ONLINE: at bar
     t only bars<=t used for decisions; t+1 used ONLY for the confirm close (allowed,
-    it's the next real bar you'd wait for live)."""
+    it's the next real bar you'd wait for live). window_days truncates b FIRST so the
+    hindsight scoring (real_peak) is over the traded horizon, not all of Kite's retention."""
+    if window_days:
+        b = _window(b, window_days)
     n=len(b)
     hs=[f(x[2]) for x in b]; cs=[f(x[4]) for x in b]; vs=[f(x[5]) for x in b]
     b0=f(b[0][1])  # listing open, for run-up filter
@@ -226,6 +240,8 @@ def main():
     ap.add_argument("--nbar",type=int,default=8)         # leg length in bars (~2hr)
     ap.add_argument("--volwin",type=int,default=50)
     ap.add_argument("--retest",type=float,default=2.0)   # retest within X% of climax level
+    ap.add_argument("--window-days",dest="window_days",type=int,default=30,
+                    help="truncate bars to N calendar days from listing before scoring (30 = anchor lock-in horizon)")
     ap.add_argument("--full",action="store_true")       # tradable 269 (band10/20+MF>0)
     ap.add_argument("--all",action="store_true")         # ALL 531 IPOs 2016+ (no band/MF)
     a=ap.parse_args()
@@ -277,7 +293,7 @@ def main():
             skipped+=1; continue
         if not bars or len(bars)<25: skipped+=1; continue
         b=[(x["date"],x["open"],x["high"],x["low"],x["close"],x.get("volume")) for x in bars]
-        r=run_ipo(b,a.climax,a.reject,a.lh,a.ma,a.accel,a.nbar,a.volwin,a.retest)
+        r=run_ipo(b,a.climax,a.reject,a.lh,a.ma,a.accel,a.nbar,a.volwin,a.retest,window_days=a.window_days)
         if r["alert"]:
             fires+=1; tgaps.append(r["gap_to_peak"])
             if r.get("dd_avoided") is not None: ddsaved.append(r["dd_avoided"])
