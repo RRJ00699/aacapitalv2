@@ -63,29 +63,40 @@ def test_quantitative_ofs_weight_unchanged():
 
 
 # ── B. hard filters ─────────────────────────────────────────────────────────
-FILTER = re.compile(r"COALESCE\((?:c\.)?is_sme, false\) = false")
-SIZE = re.compile(r"issue_size_cr IS NULL OR (?:c\.)?issue_size_cr >= 200")
+# PR #282 moved the queries into lib/v2/*.ts and, on the canonical V2 schema, gates on
+# is_mainboard (not the V1 is_sme). The size FLOOR is the real SME exclusion; is_mainboard
+# is secondary/unreliable (fill_ipo.upsert_ipo defaults it True). RULING: the floor is
+# >=150cr THROUGHOUT (matches the locked verdict JUNK line). The >=200 below is the CURRENT
+# code (drift); the standardisation PR after task 1 flips code + assertion to >=150 together.
+# Do not read 200 as canonical.
+FILTER = re.compile(r"is_mainboard\s*=\s*true")
+SIZE = re.compile(r"issue_size_cr IS NULL OR (?:iss\.|c\.)?issue_size_cr >= 200")
 
 def test_ipo_command_hard_filter():
-    src = _read("app", "api", "ipo-command", "route.ts")
+    src = _read("lib", "v2", "ipo-command.ts")
     assert FILTER.search(src) and SIZE.search(src)
 
 def test_live_preopen_hard_filter():
-    src = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    src = _read("lib", "v2", "live-preopen.ts")
     assert FILTER.search(src) and SIZE.search(src)
 
 def test_api_ipo_hard_filter():
-    src = _read("app", "api", "ipo", "route.ts")
-    assert FILTER.search(src) and SIZE.search(src)
+    # RETIRED: /api/ipo was DELETED by PR #282 (dead route — no live consumer, only
+    # _archive/*.txt referenced it). The hard filter now lives in the routes that
+    # survived (covered above). Guard the deletion instead of the filter.
+    assert not os.path.exists(os.path.join(REPO, "app", "api", "ipo", "route.ts")), \
+        "/api/ipo was deleted in #282 and must not return"
 
 def test_cache_keys_bumped_for_filter_change():
-    assert "ipo-command:v4" in _read("app", "api", "ipo-command", "route.ts")
-    assert "live-preopen:rows:v2" in _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert "ipo-command:v5" in _read("app", "api", "ipo-command", "route.ts")     # v4->v5 (#282)
+    assert "live-preopen:rows:v3" in _read("app", "api", "ipo", "live-preopen", "route.ts")  # v2->v3 (#282)
 
 
 # ── C. SBI exact join ───────────────────────────────────────────────────────
 def test_sbi_join_is_exact_key_not_fuzzy():
-    src = _read("app", "api", "ipo-command", "route.ts")
-    assert "split_part" not in src, "first-word fuzzy ILIKE join must be gone"
-    assert src.count("regexp_replace(lower(n.company),'(ltd|limited|and|&)|[^a-z0-9]','','g')") >= 6, \
-        "all six SBI subqueries must use the exact normalized-name key"
+    # RETIRED: SBI extraction/joins were DROPPED — pipeline commit 85678db ("SBI parser
+    # dropped") and PR #282 removed the SBI subqueries from ipo-command. The exact-key
+    # concern is moot; guard that the fuzzy first-word ILIKE never comes back instead.
+    src = _read("lib", "v2", "ipo-command.ts")
+    assert "n.source='SBI'" not in src and "sbi_rating" not in src, \
+        "SBI joins were removed in #282; they must not return to the command feed"

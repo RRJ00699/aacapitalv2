@@ -19,9 +19,13 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CMD_ROUTE = ROOT / "app" / "api" / "ipo-command" / "route.ts"
+# PR #282 moved the route logic into tested lib/v2 helpers; the House Stack lives in
+# lib/v2/ipo-command.ts (enrichCards) and lib/v2/live-preopen.ts (scoreStatic). The
+# contract is unchanged — re-pointed to where the code now is (behaviour is unit-tested
+# in lib/v2/*.test.ts).
+CMD_ROUTE = ROOT / "lib" / "v2" / "ipo-command.ts"
 CARD = ROOT / "components" / "ipo" / "IpoCard.tsx"
-LIVE = ROOT / "app" / "api" / "ipo" / "live-preopen" / "route.ts"
+LIVE = ROOT / "lib" / "v2" / "live-preopen.ts"
 pytestmark = pytest.mark.unit
 
 

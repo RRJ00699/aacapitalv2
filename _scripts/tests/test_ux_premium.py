@@ -104,7 +104,8 @@ def test_p4_loading_states_use_shared_skeleton():
 # ── UAT round 1 (SBIFUNDS listing 2026-07-21) — guards so bugs stay dead ──
 
 def test_u1_confidence_scales_with_rule_coverage():
-    src = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    # #282 moved confidence() into lib/v2/live-preopen.ts — arithmetic byte-identical.
+    src = _read("lib", "v2", "live-preopen.ts")
     assert "0.5 + 0.5 * (passed.length / scoreable)" in src, \
         "confidence must blend pass-quality WITH coverage — 2/9 elite passes must not outrank 4/9"
 
@@ -182,9 +183,9 @@ def test_u7_reit_invit_excluded_from_both_feeds():
     leaked through the eligibility rule. REIT/InvIT units are not IPO
     equities — excluded at ipo-command AND live-preopen, with the LOCKED
     eligibility rule text left byte-identical."""
-    cc = _read("app", "api", "ipo-command", "route.ts")
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
-    assert "AND (c.issue_size_cr IS NULL OR c.issue_size_cr >= 200)" in cc  # locked rule untouched
+    cc = _read("lib", "v2", "ipo-command.ts")     # queries moved to lib/v2 in #282
+    lp = _read("lib", "v2", "live-preopen.ts")
+    assert "iss.issue_size_cr IS NULL OR iss.issue_size_cr >= 200" in cc  # >=200 floor kept
     assert cc.count("REIT|InvIT") == 1 and lp.count("REIT|InvIT") == 1
     # U13 (CUBEINVIT): fused symbols have no word boundary — symbol guard too
     assert cc.count("(INVIT|REIT)") == 1 and lp.count("(INVIT|REIT)") == 1
@@ -285,10 +286,13 @@ def test_news_feeds_reject_placeholder_rows():
     """Owner pasted the manual-insert TEMPLATE verbatim and '<paste exact
     headline>' rendered on the live site. Feeds require a real URL and a
     headline that isn't template text."""
-    cc = _read("app", "api", "ipo-command", "route.ts")
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
-    assert "nw.url ~* '^https?://'" in cc and "nw.headline NOT LIKE '<%'" in cc  # alias nw: smoke maps n->research_notes
-    assert "n2.url ~* '^https?://'" in lp and "n2.headline NOT LIKE '<%'" in lp
+    # RETIRED: the street-news feed was DROPPED in #282's narrow cut (no maintained V2
+    # news source — owner decision). Guard that news joins do NOT return, rather than
+    # that they reject placeholder rows.
+    cc = _read("lib", "v2", "ipo-command.ts")
+    lp = _read("lib", "v2", "live-preopen.ts")
+    assert "ipo_news" not in cc and "ipo_news" not in lp, \
+        "news feed was removed in #282; it must not return without a maintained V2 source"
 
 
 # ── Golden table (owner architecture, 2026-07-22) ─────────────────────────
@@ -331,21 +335,18 @@ def test_golden_fields_flow_to_command_and_details():
     Complete Details binds the fields (candle sessions, ISIN, locks, Sonnet
     one-line). Contract DBs execute the join, so a bad column fails here
     first — the class that reached prod three times today."""
-    cc = _read("app", "api", "ipo-command", "route.ts")
-    assert "LEFT JOIN ipo_golden g" in cc
-    for f in ("g.isin", "jsonb_array_length(g.candles_json) AS candle_days",
-              "g.rhp_sonnet_json->>'one_line'", "g.street_headline"):
-        assert f in cc, f
-    det = _read("components", "ipo", "CompleteDetails.tsx")
-    for f in ("candle_days", "sonnet_one_line", "lock30_date", "ISIN"):
-        assert f in det, f
+    # RETIRED: ipo_golden (a V1 denormalized table) was DROPPED from the command feed in
+    # #282's narrow cut; the Complete Details screen is being rebuilt against canonical
+    # tables in the v2-screens work (Stage 1). Guard that the V1 golden join is gone.
+    cc = _read("lib", "v2", "ipo-command.ts")
+    assert "ipo_golden" not in cc, "the V1 ipo_golden join was removed in #282; do not re-add"
 
 
 def test_live_serves_listing_day_only():
     """Stale day-old SBIFUNDS card (frozen pre-open book, eternal 'awaiting')
     was served at 03:32 IST via the old 7-day window. Live = IST-today only;
     D1..D5 belong to Listing Review."""
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    lp = _read("lib", "v2", "live-preopen.ts")  # fetchPreopenRows (moved in #282)
     assert "listing_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" in lp
     assert "INTERVAL '7 days'" not in lp
 

@@ -48,19 +48,22 @@ def test_kv_cache_stale_tier():
 # ── B. ipo-command stale tier ───────────────────────────────────────────────
 def test_ipo_command_serves_stale_without_neon():
     src = _read(APP, "api", "ipo-command", "route.ts")
-    assert "CACHE_KEY}:stale" in src or ":stale" in src, "no stale twin read"
-    assert '"x-cache": "STALE"' in src, "stale responses must be flagged"
+    # PR #282: the stale twin is now served by the shared cachedWithStale() helper in
+    # lib/kv-cache.ts (its twin mechanics are covered by test_kv_cache_stale_tier),
+    # rather than inline in the route. Contract unchanged: KV-first, stale flagged,
+    # Neon not woken on a primary miss.
+    assert "cachedWithStale" in src, "route must serve via the stale-capable helper"
+    assert '"STALE"' in src, "stale responses must be flagged x-cache: STALE"
     assert "x-warning" in src, "stale responses need the warning header"
-    # the stale read must sit between the primary read and the first sql query
-    assert src.index('"x-cache": "HIT"') < src.index('"x-cache": "STALE"') < src.index("const cards = await sql")
-    # write path keeps the twin fresh
-    assert src.count(":stale") >= 2, "build/warm must also write the stale twin"
+    assert '"HIT"' in src and '"MISS"' in src
+    # the warm/rebuild path writes BOTH twins so a KV expiry never wakes Neon
+    assert "kvPutBoth" in src, "warm/rebuild must also write the stale twin"
 
 
 # ── C. journey day-cache ────────────────────────────────────────────────────
 def test_journey_candles_kv_day_cache():
     src = _read(APP, "api", "ipo", "journey", "route.ts")
-    assert "journey:candles:v1" in src, "journey candle KV key missing"
+    assert "journey:candles:v2" in src, "journey candle KV key missing"  # v1->v2: market_candles source (#282)
     assert "kvStore" in src, "journey must use the shared KV helper"
     assert "istDate" in src, "cache key must be per IST calendar day"
     assert re.search(r"rows\.length", src) and "store.put" in src, \
@@ -95,7 +98,7 @@ def test_cum_volume_confirm_requires_both_bounds_and_close():
 # ── E. live-preopen ─────────────────────────────────────────────────────────
 def test_live_preopen_caches_read_keeps_write():
     src = _read(APP, "api", "ipo", "live-preopen", "route.ts")
-    assert "live-preopen:rows:v2" in src, "nightly-read KV key missing"
+    assert "live-preopen:rows:v3" in src, "nightly-read KV key missing"  # v2->v3: canonical sources (#282)
     assert 'from "@/lib/kv-cache"' in src
     # the pre-open book capture is a WRITE and must remain per-request
     assert "INSERT INTO ipo_preopen_book" in src

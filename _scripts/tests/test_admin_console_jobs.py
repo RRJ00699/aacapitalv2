@@ -77,51 +77,28 @@ def test_pipeline_calls_the_real_peer_pe_script():
 
 
 def test_route_selfheal_ddl_matches_schema_sync_exactly():
-    """Incident 2026-07-21: deploy raced the VM schema run and the screen
-    degraded on relation "ipo_insights" does not exist. The route self-heals
-    with inline DDL — which must stay BYTE-EQUIVALENT (normalized) to
-    schema_sync's, so the single-DDL-owner rule holds."""
-    import os, re
+    # RETIRED: #282 rewrote ipo-command to read the CANONICAL `insights` table (lib/v2/
+    # ipo-command.ts), removing the inline ipo_insights self-heal DDL entirely — there is
+    # no route-owned DDL left to keep byte-equivalent with schema_sync. Guard that no
+    # inline CREATE TABLE resurfaces in the command logic.
+    import os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     repo = os.path.dirname(root)
-
-    def norm(sql):
-        return re.sub(r"\s+", " ", sql).strip().rstrip(";").lower()
-
-    route = open(os.path.join(repo, "app", "api", "ipo-command", "route.ts"), encoding="utf-8").read()
-    m = re.search(r"await sql`(CREATE TABLE IF NOT EXISTS ipo_insights .*?)`", route, re.S)
-    assert m, "route must self-heal ipo_insights before querying it"
-    sync = open(os.path.join(root, "schema_sync.py"), encoding="utf-8").read()
-    m2 = re.search(r'"""(CREATE TABLE IF NOT EXISTS ipo_insights .*?)"""', sync, re.S)
-    assert m2, "schema_sync must own the authoritative DDL"
-    assert norm(m.group(1)) == norm(m2.group(1)), \
-        "route inline DDL diverged from schema_sync — update BOTH or the self-heal creates the wrong shape"
+    src = open(os.path.join(repo, "lib", "v2", "ipo-command.ts"), encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS ipo_insights" not in src, \
+        "#282 dropped the self-heal DDL (canonical `insights` table); do not re-add inline DDL"
 
 
 def test_cards_query_survives_missing_insights_table(pg_uri):
-    """EXECUTED deploy-order proof: fresh DB WITHOUT ipo_insights; run the
-    route's self-heal DDL, then the real cards query — no degraded mode."""
-    import os, re, sys
-    import psycopg2
+    # RETIRED: the deploy-order self-heal is obsolete — #282 reads the canonical `insights`
+    # table and no longer creates ipo_insights inline, so the "missing table" incident this
+    # guarded cannot recur. The canonical cards query is EXECUTED in test_api_contract,
+    # deferred to its own PR (V2 schema fixture). Guard the self-heal removal here.
+    import os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     repo = os.path.dirname(root)
-    sys.path.insert(0, root)
-    tests = os.path.join(root, "tests")
-    sys.path.insert(0, tests)
-    from contract_schema import CONTRACT_DDL
-    route = open(os.path.join(repo, "app", "api", "ipo-command", "route.ts"), encoding="utf-8").read()
-    heals = re.findall(r"await sql`(CREATE TABLE IF NOT EXISTS [a-z_]+ .*?)`", route, re.S)
-    cards_sql = re.search(r"const cards = await sql`\n(.*?)`;", route, re.S).group(1)
-    cards_sql = re.sub(r"\$\{[^}]*\}", "NULL", cards_sql).replace("\\\\", "\\")
-    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
-    cur.execute(CONTRACT_DDL)
-    cur.execute("DROP TABLE IF EXISTS ipo_insights")          # the incident state
-    cur.execute("DROP TABLE IF EXISTS ipo_news")
-    for heal in heals:
-        cur.execute(heal)                                      # route self-heals (insights + news)
-    cur.execute(cards_sql)                                     # the real query
-    cur.fetchall()                                             # no NeonDbError-equivalent
-    c.close()
+    src = open(os.path.join(repo, "lib", "v2", "ipo-command.ts"), encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS ipo_insights" not in src
 
 
 def test_expected_steps_mirror_the_lean_pipeline_exactly():

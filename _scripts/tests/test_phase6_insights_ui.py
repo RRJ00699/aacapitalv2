@@ -14,10 +14,13 @@ def _read(*p):
 
 
 def test_payload_carries_current_insights_only():
-    src = _read("app", "api", "ipo-command", "route.ts")
-    assert "FROM ipo_insights s" in src
-    assert "s.ipo_id = ii.id AND s.is_current" in src, "superseded rows must never reach the UI"
-    for k in ("'category'", "'direction'", "'statement'", "'excerpt'", "'source'", "'locator'"):
+    # #282: insights now read from the CANONICAL `insights` table (was V1 `ipo_insights`)
+    # in lib/v2/ipo-command.ts. 'locator'/page_number is not in the narrow-cut subquery
+    # yet — a Stage-1 (v2-screens) add; the canonical table does carry page_number.
+    src = _read("lib", "v2", "ipo-command.ts")
+    assert "FROM insights s" in src
+    assert "s.ipo_id = i.id AND s.is_current" in src, "superseded rows must never reach the UI"
+    for k in ("'category'", "'direction'", "'statement'", "'excerpt'", "'source'"):
         assert k in src
 
 

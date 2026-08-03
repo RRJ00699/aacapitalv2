@@ -6,7 +6,7 @@ import os
 import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CSS = open(os.path.join(HERE, "..", "..", "app", "globals.css")).read()
+CSS = open(os.path.join(HERE, "..", "..", "app", "globals.css"), encoding="utf-8").read()
 
 
 def _lum(h):

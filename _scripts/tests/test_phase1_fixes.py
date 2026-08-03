@@ -62,12 +62,15 @@ def test_full_pipeline_writers_apply():
 
 # ── #3 journey listing-date floor ───────────────────────────────────────────
 def test_journey_floors_candles_at_listing_date():
-    route = _read(APP, "api", "ipo", "journey", "route.ts")
-    assert "ipo_intelligence" in route, "journey must join ipo_intelligence"
-    assert "listing_date" in route and "c.date >= ld.listing_date" in route, \
+    # #282: journey candles now come from canonical market_candles via lib/v2/journey.ts
+    # (fetchJourneyCandles), floored at ipo.listing_date. Was V1 price_candles +
+    # ipo_intelligence. Same flooring contract.
+    src = _read(ROOT, "..", "lib", "v2", "journey.ts")
+    assert "FROM ipo" in src and "market_candles" in src, "journey must resolve listing_date from ipo"
+    assert "c.d >= t.listing_date" in src, \
         "journey candles must be floored at listing_date (entry-price bug)"
     # graceful when no IPO row exists for the symbol
-    assert "ld.listing_date IS NULL OR" in route
+    assert "t.listing_date IS NULL OR" in src
 
 
 # ── #4 cum-volume IST-today default ─────────────────────────────────────────

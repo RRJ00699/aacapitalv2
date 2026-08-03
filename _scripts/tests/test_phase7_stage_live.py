@@ -72,12 +72,14 @@ def test_haiku_windows_path_fallback_repairs_source():
 
 # ── PR-D: readiness is server-attested; UI names the gaps ──────────────────
 def test_live_preopen_attests_readiness():
-    src = _read("app", "api", "ipo", "live-preopen", "route.ts")
-    assert "research_ready: researchReady" in src
+    # #282 moved readiness into lib/v2/live-preopen.ts (scoreListing); SBI was dropped, so
+    # the old "RHP & SBI both unread" gap is now "RHP analysis pending".
+    src = _read("lib", "v2", "live-preopen.ts")
+    assert "research_ready:" in src
     assert "research_missing: researchMissing" in src
-    assert '"RHP & SBI research both unread"' in src
-    assert '"fair value inputs (EPS/peer P/E)"' in src, \
-        "missing EPS/peer P/E must block readiness (fair value UNAVAILABLE rule)"
+    assert '"RHP analysis pending"' in src
+    assert '"fair value inputs (EPS / P·E)"' in src, \
+        "missing EPS/P·E must block readiness (fair value UNAVAILABLE rule)"
 
 
 def test_live_ui_shows_incomplete_never_silent():

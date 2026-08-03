@@ -13,8 +13,8 @@ def _read(*p):
 
 # ── zero-idle: every live/hot value the user sees on the cards page is KV ──
 def test_hot_reads_are_kv_served():
-    assert 'const CACHE_KEY = "ipo-command:v4"' in _read("app", "api", "ipo-command", "route.ts")
-    assert 'cached("live-preopen:rows:v2"' in _read("app", "api", "ipo", "live-preopen", "route.ts")
+    assert 'const CACHE_KEY = "ipo-command:v5"' in _read("app", "api", "ipo-command", "route.ts")   # v4->v5 (#282)
+    assert 'cached("live-preopen:rows:v3"' in _read("app", "api", "ipo", "live-preopen", "route.ts")  # v2->v3 (#282)
     j = _read("app", "api", "ipo", "journey", "route.ts")
     assert "kv-cache" in j
     t = _read("app", "api", "ipo", "tick-feed", "route.ts")
@@ -37,14 +37,16 @@ def test_frontend_never_invents_research():
     for banned in ("promoter cash-out, not growth capital",
                    "SBI does not recommend", "SBI recommends"):
         assert banned not in card and banned not in page
-    # fair value: no issue-price substitution in the MoS anchor without label
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
-    assert "fair value inputs (EPS/peer P/E)" in lp
+    # fair value: no issue-price substitution in the MoS anchor without label. #282 moved
+    # the readiness logic into lib/v2/live-preopen.ts (scoreListing) — same contract, and
+    # the FV-inputs gap is named there (wording is now "EPS / P·E").
+    lp = _read("lib", "v2", "live-preopen.ts")
+    assert "fair value inputs (EPS / P·E)" in lp
 
 
 # ── four-state visibility (API + UI) ───────────────────────────────────────
 def test_states_visible_not_nulled():
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    lp = _read("lib", "v2", "live-preopen.ts")  # scoreListing (moved from route in #282)
     assert "research_missing" in lp, "gaps are named, not nulled"
     card = _read("components", "ipo", "IpoCard.tsx")
     assert "SBI research note not available or not yet parsed." in card
@@ -56,19 +58,22 @@ def test_states_visible_not_nulled():
 
 # ── eligibility: ONE rule text across every feed ───────────────────────────
 def test_same_eligibility_rule_everywhere():
-    rule_sme = "COALESCE(is_sme, false) = false"
-    rule_size = "issue_size_cr IS NULL OR issue_size_cr >= 200"
-    for f in (("app", "api", "ipo", "route.ts"),
-              ("app", "api", "ipo", "live-preopen", "route.ts")):
+    # ONE eligibility rule across the surviving feeds. #282 deleted /api/ipo and moved the
+    # rule into lib/v2. The size FLOOR is the primary SME guard; is_mainboard is SECONDARY
+    # and UNRELIABLE — fill_ipo.upsert_ipo defaults it to True, so it excludes almost nothing
+    # on its own. RULING: the floor is >=150cr THROUGHOUT (matches the locked verdict JUNK
+    # line). The >=200 asserted below is the CURRENT code (drift) — the standardisation PR
+    # that follows task 1 flips both the code and this assertion to >=150 together.
+    size_floor = "issue_size_cr IS NULL OR iss.issue_size_cr >= 200"
+    for f in (("lib", "v2", "ipo-command.ts"), ("lib", "v2", "live-preopen.ts")):
         src = _read(*f)
-        assert rule_sme in src and rule_size in src, f"{f} diverges from the eligibility rule"
-    cc = _read("app", "api", "ipo-command", "route.ts")
-    assert "COALESCE(c.is_sme, false) = false" in cc and "c.issue_size_cr >= 200" in cc
+        assert size_floor in src, f"{f} diverges from the eligibility size floor (the real SME guard)"
+        assert "is_mainboard = true" in src  # secondary, unreliable (defaults True) — kept for intent
 
 
 # ── verdict-layer separation ───────────────────────────────────────────────
 def test_layers_not_blended():
-    lp = _read("app", "api", "ipo", "live-preopen", "route.ts")
+    lp = _read("lib", "v2", "live-preopen.ts")  # scoreListing (moved from route in #282)
     # live decision inputs include the research gate but the gate never
     # rewrites the pre-listing score, and readiness is its own field
     assert "research_ready" in lp and "rules_static" in lp and "rules_live" in lp

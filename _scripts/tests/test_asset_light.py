@@ -18,13 +18,15 @@ def _checks():
     r["ticker admin key auth"] = "ADMIN_JOB_KEY" in ticker and "X-AAC-Key" in ticker
     r["ticker kv before neon"] = ticker.index("last_kv") < ticker.index("NEON_FLUSH_S")
 
-    route = open(os.path.join(APP, "api", "ipo-command", "route.ts")).read()
-    r["cmd leak removed"] = "c.listing_date IS NULL AND c.ipo_close_date IS NULL" not in route
-    r["cmd window filter"] = "CURRENT IPOs ONLY" in route
-    r["cmd 30day lockin"] = "30 DAYS post-listing" in route and "::date - 30" in route
-    r["cmd keeps listing cond"] = "c.listing_date >=" in route
-    r["cmd keeps close cond"] = "c.ipo_close_date >=" in route
-    r["cmd keeps open cond"] = "c.ipo_open_date  >=" in route
+    # #282: the command WHERE moved into lib/v2/ipo-command.ts (fetchCards), on canonical
+    # columns (i.listing_date / iss.close_date / iss.open_date). Same 30-day window.
+    route = open(os.path.join(ROOT, "..", "lib", "v2", "ipo-command.ts")).read()
+    r["cmd leak removed"] = "listing_date IS NULL AND" not in route
+    r["cmd window filter"] = "AT TIME ZONE 'Asia/Kolkata')::date - 30" in route
+    r["cmd 30day lockin"] = "::date - 30" in route
+    r["cmd keeps listing cond"] = "i.listing_date >=" in route
+    r["cmd keeps close cond"] = "iss.close_date >=" in route
+    r["cmd keeps open cond"] = "iss.open_date" in route
 
     tf = open(os.path.join(APP, "api", "ipo", "tick-feed", "route.ts")).read()
     r["tick-feed kv read"] = "live:tick:" in tf
