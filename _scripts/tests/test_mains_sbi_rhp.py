@@ -40,8 +40,9 @@ def _run_sbi(uri_or_none, tmp, *args):
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(s)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(s)])
+    env["PYTHONIOENCODING"] = "utf-8"        # child writes UTF-8 (em-dash in the dry-run line)
     return subprocess.run([*cmd, *args], capture_output=True, text=True,
-                          env=env, timeout=120, cwd=tmp)
+                          encoding="utf-8", env=env, timeout=120, cwd=tmp)
 
 def test_sbi_main_no_pdfs_exits_loud(tmp_path):
     r = _run_sbi(None, tmp_path, "--dir", str(tmp_path / "empty"))

@@ -22,8 +22,9 @@ def _run(script, uri, contract=None, *args):
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(s)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(s)])
+    env["PYTHONIOENCODING"] = "utf-8"        # child writes UTF-8 banners (✅, box-drawing)
     return subprocess.run([*cmd, *args], capture_output=True, text=True,
-                          env=env, timeout=120, cwd=ROOT)
+                          encoding="utf-8", env=env, timeout=120, cwd=ROOT)
 
 
 def _contract(tmp_path, rows):
