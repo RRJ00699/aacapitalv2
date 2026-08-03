@@ -235,7 +235,14 @@ def build_details(conn, ipo_id):
     out["evidence"] = ev
     out["evidence_tier"] = ev["tier"]              # top-level so the list/screen reads it directly
 
-    out["gmp"] = {"available": False, "reason": "no source — InvestorGain integration pending"}
+    # ipo_gmp is PRESENT but stale (no live feed; InvestorGain unbuilt). available=false,
+    # but the reason must say STALE, not "no source" — stale data is a different problem,
+    # and the 584 historical rows are kept (the backtest set InvestorGain won't backfill).
+    cur.execute("SELECT max(date) FROM ipo_gmp")
+    gmp_max = cur.fetchone()[0]
+    out["gmp"] = {"available": False,
+                  "reason": (f"last updated {gmp_max} — no live source (InvestorGain integration pending)"
+                             if gmp_max else "no source — InvestorGain integration pending")}
     out["gaps"] = GAPS
 
     try:
@@ -314,6 +321,8 @@ def put_both(key, obj, job_key, dry):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids"); ap.add_argument("--limit", type=int, default=10)
+    ap.add_argument("--all", action="store_true",
+                    help="warm EVERY in-scope IPO (not the active window) — the cron default")
     ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--write", action="store_true")
     ap.add_argument("--print", action="store_true", help="print one details payload as JSON and exit")
     a = ap.parse_args()
@@ -323,6 +332,13 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
     if a.ids:
         ids = [int(x) for x in a.ids.split(",") if x.strip()]
+    elif a.all:
+        # EVERY in-scope IPO — warming is cheap KV puts (no Kite/Sonnet spend), and the
+        # cron works only the active window, so without this most IPOs never get a payload
+        # and their Details screen is permanently degraded.
+        cur.execute("""SELECT id FROM ipo WHERE COALESCE(is_mainboard,TRUE)=TRUE
+                        ORDER BY listing_date DESC NULLS FIRST""")
+        ids = [r[0] for r in cur.fetchall()]
     else:
         cur.execute("""SELECT id FROM ipo WHERE COALESCE(is_mainboard,TRUE)=TRUE
                         ORDER BY listing_date DESC NULLS FIRST LIMIT %s""", (a.limit,))

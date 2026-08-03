@@ -364,12 +364,14 @@ def main():
                      [py, "drive.py", "--ids", ids,
                       "--dry-run" if dry else "--write"], dry, 900))
     # 8. warm Cloudflare KV — push V2 payloads (ipo:<id>:details + ipo:list:v2, live +
-    #    stale twin) so user reads are served from KV and never wake Neon. Runs LAST among
-    #    the writers, after score/verdict, so KV reflects the freshest data. Needs
-    #    ADMIN_JOB_KEY in the env (warm_kv exits loudly without it on --write).
-    steps.append(run("8. warm KV cache",
-                     [py, "warm_kv.py", "--ids", ids,
-                      "--dry-run" if dry else "--write"], dry, 600))
+    #    stale twin) so user reads are served from KV and never wake Neon. --all, NOT the
+    #    active-window `ids`: warming is cheap KV puts, and every in-scope IPO needs a
+    #    payload or its Details screen is permanently degraded. Runs LAST, after
+    #    score/verdict, so KV reflects the freshest data. Needs ADMIN_JOB_KEY in the env
+    #    (warm_kv exits loudly without it on --write).
+    steps.append(run("8. warm KV cache (all in-scope)",
+                     [py, "warm_kv.py", "--all",
+                      "--dry-run" if dry else "--write"], dry, 900))
     # 9. post-lockin cleanup — OPT-IN ONLY (owner 08-01: keep the documents locally).
     #    Documents now live on the laptop and are KEPT. Nothing is deleted unless you
     #    explicitly ask, because a deleted RHP costs a re-download and a re-extraction

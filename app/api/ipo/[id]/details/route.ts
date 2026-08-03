@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Honest degraded state, 200 so the screen can render "details are being prepared".
   return NextResponse.json(
     { id: ipoId, available: false,
-      reason: "not yet warmed — the pipeline warms details twice daily; new IPOs appear after their first cycle" },
+      reason: `IPO ${ipoId} is not yet in the cache — the pipeline warms every in-scope IPO twice daily; this resolves on the next run` },
     { status: 200, headers: { "x-cache": "MISS" } },
   );
 }
