@@ -26,16 +26,15 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "kite_fetch 2026-08-03e — NSE/BSE resolve, market_candles_15m + lookback clamp, ceiling_20 fix, score-scope 699"
+FILE_BUILD = "kite_fetch 2026-08-03e — NSE/BSE resolve + exchange provenance, market_candles_15m, ceiling_20 fix, score-scope 699"
 _INSTRUMENTS = None
 
-# Kite serves only the most recent ~258 days of 15-minute history — a HARD retention wall,
-# not a per-request cap. MEASURED, not documented: today - min(ts) across market_candles_15m
-# on 2026-08-03 (min(ts)=2025-11-18) = 258. Older 15-min history is gone permanently.
-# Used to clamp the 15-min fetch start so an IPO listed BEFORE the wall still gets its last
-# ~258 days (it still trades — the basing/bottom-out trade the business case wants) instead
-# of an out-of-range request that returns nothing. Re-measure if the observed wall shifts.
-LOOKBACK_15M_DAYS = 258
+# NOTE: a 15-min fetch-start clamp (today - LOOKBACK) is DEFERRED. The horizon must be
+# MEASURED with a backward-walking probe (request today-300/-400/-600/-1000 for a token
+# that listed well before the wall, find where Kite returns empty) — min(ts) across
+# market_candles_15m is self-confirming (old IPOs returned 0 because from_date was out of
+# range under the OLD code, not because Kite refuses recent data). Set LOOKBACK from the
+# probe, then re-add the clamp.
 
 
 def get_kite():
@@ -249,10 +248,7 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         last = (cur.fetchone() or [None])[0]
         i_start = last.date() if last else (listing_date or (end - dt.timedelta(days=days)))
-        # Clamp to Kite's 15-min retention wall. An IPO listed before the wall would
-        # otherwise ask from its (out-of-range) listing_date and get NOTHING — but Kite
-        # WILL serve the last LOOKBACK_15M_DAYS, which is the current basing data we want.
-        i_start = max(i_start, end - dt.timedelta(days=LOOKBACK_15M_DAYS))
+        # (clamp to a MEASURED lookback horizon deferred — see the note at LOOKBACK above)
         try:
             bars15 = fetch_candles_15m(kite, token, i_start, end)
             out["bars_15m"] = upsert_candles_15m(conn, ipo_id, bars15) if bars15 else 0

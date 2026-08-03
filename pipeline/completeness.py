@@ -106,19 +106,19 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False,
     # before then. NOTE: HAS_ROWS only checks existence, so a PARTIAL series (a few 2017
     # bars) reads as present here — bar count / ts-range is the true coverage signal.
     if col == "market_candles_15m" and stage == "listed":
-        # TWO DISTINCT states, evidence-based (wall_date = min(ts) observed in
-        # market_candles_15m — a rolling wall, not a guessed year). They are NOT the
-        # same gap:
-        #  (1) listed BEFORE the wall -> its listing-period 15-min history is gone for
-        #      good (Kite retains only ~the last wall window), but the IPO still trades,
-        #      so RECENT bars are fetchable — permanent for the listing period only.
-        #  (2) token UNRESOLVED -> no series at all yet, but FIXABLE (resolve, backfill).
-        # Both are non-blocking here; (2)'s real blocker is surfaced on ipo.kite_token.
+        # TWO DISTINCT states (not the same gap). wall_date = min(ts) = the earliest 15-min
+        # bar we currently HOLD (rolling). NOTE: this is NOT Kite's true horizon — that is
+        # unmeasured (backward-walking probe pending; see kite_fetch). So we do NOT claim
+        # permanence:
+        #  (1) listed BEFORE our earliest held bar -> listing-period 15-min not held; whether
+        #      it is refetchable depends on the unmeasured Kite horizon.
+        #  (2) token UNRESOLVED -> no series yet, but FIXABLE (resolve, then backfill).
+        # Both non-blocking here; (2)'s real blocker is surfaced on ipo.kite_token.
         if wall_date and listing_date and listing_date < wall_date:
-            return "listing-period 15-min lost (before the observed Kite retention wall); recent bars fetchable"
+            return "listing-period 15-min not held (before our earliest bar; refetchability pending horizon probe)"
         if not has_token:
             return "15-min blocked: kite_token unresolved (fixable — resolve, then backfill)"
-        return None    # listed after the wall WITH a token -> actionable: the fetch should fill it
+        return None    # listed after our earliest bar WITH a token -> actionable: the fetch should fill it
     if col.startswith("subscription_snapshots"):
         if stage in ("announced", "open"):
             return "issue not closed yet"
