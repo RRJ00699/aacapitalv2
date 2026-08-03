@@ -36,8 +36,10 @@ class FakeKite:
 @pytest.fixture(autouse=True)
 def _reset_instrument_cache():
     kf._INSTRUMENTS = None               # the module caches the dump globally
+    kf._TOKEN_EXCH = None                # and the token->exchange map
     yield
     kf._INSTRUMENTS = None
+    kf._TOKEN_EXCH = None
 
 
 def test_nse_preferred_when_listed_on_both():
@@ -72,6 +74,16 @@ def test_case_and_whitespace_normalised():
 def test_empty_symbol_is_unresolved():
     for sym in (None, "", "   "):
         assert kf.resolve_token(FakeKite(FAKE_DUMP), None, sym) == (None, "unresolved")
+
+
+def test_exchange_for_token_reads_back_provenance():
+    """Backfill path: an already-stored token's exchange is read back from the dump
+    (NSE|BSE), and a token absent from the dump (delisted) returns None so nothing is
+    asserted."""
+    k = FakeKite(FAKE_DUMP)
+    assert kf.exchange_for_token(k, 195661057) == "NSE"   # INDOMIM on NSE
+    assert kf.exchange_for_token(k, 139238148) == "BSE"   # CUBEINVIT on BSE
+    assert kf.exchange_for_token(k, 424242424) is None    # not in dump -> unknown
 
 
 def test_single_no_arg_instruments_call():

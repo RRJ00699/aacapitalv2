@@ -78,7 +78,8 @@ VENDOR_FALLBACK = {"subscription_snapshots.anchor_count",
                    "subscription_snapshots.anchor_amount_cr"}
 
 
-def _pending(stage, listing_date, close_date, today, col, has_rhp=False):
+def _pending(stage, listing_date, close_date, today, col, has_rhp=False,
+             wall_date=None, has_token=True):
     """Is this column NOT YET AVAILABLE rather than missing?
 
     Data arrives progressively and the pipeline must know the difference:
@@ -105,7 +106,19 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False):
     # before then. NOTE: HAS_ROWS only checks existence, so a PARTIAL series (a few 2017
     # bars) reads as present here — bar count / ts-range is the true coverage signal.
     if col == "market_candles_15m" and stage == "listed":
-        return "awaiting 15-min backfill — coverage UNKNOWN until Kite is queried"
+        # TWO DISTINCT states (not the same gap). wall_date = min(ts) = the earliest 15-min
+        # bar we currently HOLD (rolling). NOTE: this is NOT Kite's true horizon — that is
+        # unmeasured (backward-walking probe pending; see kite_fetch). So we do NOT claim
+        # permanence:
+        #  (1) listed BEFORE our earliest held bar -> listing-period 15-min not held; whether
+        #      it is refetchable depends on the unmeasured Kite horizon.
+        #  (2) token UNRESOLVED -> no series yet, but FIXABLE (resolve, then backfill).
+        # Both non-blocking here; (2)'s real blocker is surfaced on ipo.kite_token.
+        if wall_date and listing_date and listing_date < wall_date:
+            return "listing-period 15-min not held (before our earliest bar; refetchability pending horizon probe)"
+        if not has_token:
+            return "15-min blocked: kite_token unresolved (fixable — resolve, then backfill)"
+        return None    # listed after our earliest bar WITH a token -> actionable: the fetch should fill it
     if col.startswith("subscription_snapshots"):
         if stage in ("announced", "open"):
             return "issue not closed yet"
@@ -192,12 +205,20 @@ def check_completeness(conn, ipo_id, today=None):
     if today is None:
         cur.execute("SELECT current_date"); today = cur.fetchone()[0]
 
-    cur.execute("""SELECT id, status, listing_date, name_display FROM ipo WHERE id=%s""", (ipo_id,))
+    cur.execute("""SELECT id, status, listing_date, name_display, kite_token FROM ipo WHERE id=%s""", (ipo_id,))
     row = cur.fetchone()
     if not row:
         return dict(ipo_id=ipo_id, stage=None, complete=False,
                     missing=["ipo.row_absent"], present=[], name=None)
-    _, status, listing_date, name = row
+    _, status, listing_date, name, kite_token = row
+    has_token = kite_token is not None
+    # The 15-min retention wall, read from the data (rolling): IPOs listed before it can
+    # never have listing-period 15-min bars. Cheap; None if the table is empty/absent.
+    try:
+        cur.execute("SELECT min(ts)::date FROM market_candles_15m")
+        wall_date = cur.fetchone()[0]
+    except Exception:
+        wall_date = None
     cur.execute("SELECT close_date FROM ipo_issue WHERE ipo_id=%s", (ipo_id,))
     ii = cur.fetchone()
     close_date = ii[0] if ii else None
@@ -275,7 +296,8 @@ def check_completeness(conn, ipo_id, today=None):
     real_missing = []
     for m in missing:
         col = m.split(" [")[0]
-        why = _pending(stage, listing_date, close_date, today, col, has_rhp)
+        why = _pending(stage, listing_date, close_date, today, col, has_rhp,
+                       wall_date=wall_date, has_token=has_token)
         if why:
             pend[col] = why
         else:

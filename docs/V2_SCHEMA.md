@@ -48,11 +48,21 @@ Source of truth for the list: the writers themselves — `fill_v2.py`, `fill_ipo
   upsert into it safely). `intraday_30d` and its data are gone permanently — Neon's restore
   window closed before a back-dated branch could be taken. `market_candles_15m` is refilled
   forward by cron and back-filled by `kite_fetch --ids … --write`.
-- **Coverage is honest-partial.** The fetch stores exactly the bars Kite returns; an IPO
-  with a short 2017 series reads as *present* (has rows) but its bar-count / ts-range is
-  the real coverage signal. `completeness.py` treats missing pre-2021 15-min data as a
-  **permanent, non-blocking gap** (lost with `intraday_30d`, unrefetchable), and missing
-  recent data as actionable.
+- **Coverage currently starts ~2025-11-18** (earliest bar held, as of 2026-08-03). The
+  2016→2026 backfill returned 15-min data only from ~2025-11-18 forward. **Kite's true
+  15-min availability horizon is UNMEASURED** — `min(ts)` is self-confirming (old IPOs
+  returned 0 because the fetch asked from an out-of-range `listing_date`, not because Kite
+  refuses recent data). It must be measured with a backward-walking probe (request
+  today-300/-400/-600/-1000 for a token that listed well before the wall; find where Kite
+  returns empty), then a fetch-start clamp set from the measured value. Until then no
+  permanence is claimed. **The cross-era validation in `AACapital_TopBottom_Approach.md`
+  (2016–2026) rests on 15-min data no longer held and is not reproducible** from what we
+  have; current coverage is 2025-11 onward.
+- **Coverage is honest-partial, in two distinct states** (`completeness.py`, off `min(ts)` =
+  earliest bar held): (1) **listed before our earliest held bar** → listing-period 15-min
+  not held; refetchability pending the horizon probe; (2) **token unresolved** → no series
+  yet but fixable. The fetch stores exactly the bars Kite returns, so a short series reads
+  as *present* (has rows) — bar-count / ts-range is the real coverage signal.
 
 ## Where the V2 set is enumerated in code (keep these in sync)
 - `pipeline/inspect_schema.py` — `V2_TARGETS` (extractor-gated) + `V2_DATA_FILL` (the rest).

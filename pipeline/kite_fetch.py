@@ -26,8 +26,15 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "kite_fetch 2026-08-03c — NSE/BSE resolve, market_candles_15m, score-scope 699, paginated daily"
+FILE_BUILD = "kite_fetch 2026-08-03e — NSE/BSE resolve + exchange provenance, market_candles_15m, ceiling_20 fix, score-scope 699"
 _INSTRUMENTS = None
+
+# NOTE: a 15-min fetch-start clamp (today - LOOKBACK) is DEFERRED. The horizon must be
+# MEASURED with a backward-walking probe (request today-300/-400/-600/-1000 for a token
+# that listed well before the wall, find where Kite returns empty) — min(ts) across
+# market_candles_15m is self-confirming (old IPOs returned 0 because from_date was out of
+# range under the OLD code, not because Kite refuses recent data). Set LOOKBACK from the
+# probe, then re-add the clamp.
 
 
 def get_kite():
@@ -49,6 +56,18 @@ def instruments(kite):
     if _INSTRUMENTS is None:
         _INSTRUMENTS = kite.instruments()
     return _INSTRUMENTS
+
+
+_TOKEN_EXCH = None
+def exchange_for_token(kite, token):
+    """Which exchange a STORED instrument_token belongs to (NSE|BSE|…), read back from the
+    dump. Lets us record provenance for tokens resolved before this module existed (the old
+    resolver was NSE-only but never wrote the fact). None if the token isn't in the current
+    dump (e.g. delisted) — then the exchange can't be asserted, so nothing is recorded."""
+    global _TOKEN_EXCH
+    if _TOKEN_EXCH is None:
+        _TOKEN_EXCH = {r.get("instrument_token"): r.get("exchange") for r in instruments(kite)}
+    return _TOKEN_EXCH.get(token)
 
 
 def resolve_token(kite, isin, symbol):
@@ -148,11 +167,18 @@ def derive_outcome(conn, ipo_id):
         rec["pool"] = ("NEGATIVE" if gap < 0 else "FLAT" if gap < 15
                        else "WARM" if gap < 50 else "HEAVY")
     closes = [float(x[4]) for x in rows if x[4] is not None]
+    highs = [float(x[2]) for x in rows if x[2] is not None]
     if closes:
         rec["best_close"] = max(closes)
         rec["worst_close"] = min(closes)
-    if len(rows) >= 20 and closes:
-        rec["ceiling_20"] = max(closes[:20])
+    if highs and rec.get("listing_open"):
+        # ceiling_20 (BOOLEAN): reached +20% above the listing OPEN, on the intraday HIGH,
+        # within the first 30 sessions (D30). The "20" is the +20% threshold (cf. winner_35
+        # = +35%); the window is D30. Definition RECOVERED EMPIRICALLY, not guessed — it
+        # reproduces 98.4% of the 457 pre-existing stored booleans; close-based, vs-issue,
+        # and D20/unbounded variants scored 66-91%. The old code wrote a PRICE
+        # (max(closes[:20])) into this boolean column — every listed IPO failed the upsert.
+        rec["ceiling_20"] = max(highs[:30]) >= rec["listing_open"] * 1.20
     if rec.get("listing_open") and closes:
         rec["hold_positive_vs_open"] = closes[-1] > rec["listing_open"]
         if issue_price:
@@ -186,6 +212,19 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
             # upsert_ipo committed above; _log_fact writes on `cur`, so commit it too.
             _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
             conn.commit()
+    elif write:
+        # Token already stored (possibly by the old NSE-only resolver, which never wrote
+        # provenance). Backfill kite_token_exchange from the token itself — but only if NO
+        # exchange fact exists yet, so this fills the gap on every re-run without duplicating
+        # freshly-resolved rows. source='kite-backfill' keeps it distinguishable from 'kite'.
+        out["resolved_by"] = "already stored"
+        cur.execute("SELECT 1 FROM source_facts WHERE ipo_id=%s AND field='kite_token_exchange' LIMIT 1",
+                    (ipo_id,))
+        if cur.fetchone() is None:
+            exch = exchange_for_token(kite, token)
+            if exch:
+                _log_fact(cur, ipo_id, "kite_token_exchange", exch, "kite-backfill")
+                conn.commit()
     out["token"] = token
 
     end = dt.date.today()
@@ -209,6 +248,7 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         last = (cur.fetchone() or [None])[0]
         i_start = last.date() if last else (listing_date or (end - dt.timedelta(days=days)))
+        # (clamp to a MEASURED lookback horizon deferred — see the note at LOOKBACK above)
         try:
             bars15 = fetch_candles_15m(kite, token, i_start, end)
             out["bars_15m"] = upsert_candles_15m(conn, ipo_id, bars15) if bars15 else 0
