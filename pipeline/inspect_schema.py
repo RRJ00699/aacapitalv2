@@ -16,12 +16,20 @@ try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="
 except Exception: pass
 import psycopg2
 
-# tables the v2-full extraction path will touch
+# tables the v2-full extraction path will touch (these GATE the "safe to build" verdict)
 V2_TARGETS = ["rhp_findings", "insights", "valuation", "documents",
               "financial_statements", "source_facts", "ipo_issue"]
-# V1 debris — presence is expected and harmless; we just must never WRITE here
+# the rest of the V2 canonical family — written by the pipeline (fill_v2 / kite_fetch),
+# NOT the RHP extractor, so they do not gate the verdict below. Enumerated so every V2
+# table is DECLARED: an undeclared table looks like debris, which is exactly how the
+# dropped intraday_30d got swept. market_candles_15m (PK ipo_id,ts) is its V2 successor.
+V2_DATA_FILL = ["ipo", "subscription_snapshots", "market_candles", "market_candles_15m",
+                "listing_outcomes", "listing_observations", "market_regimes", "decisions"]
+# V1 debris — presence is expected and harmless; we just must never WRITE here.
+# NOTE: intraday_30d is NOT listed here — it was dropped and SUPERSEDED by the V2 table
+# market_candles_15m; classifying it as debris is what got its data swept. Do not re-add.
 V1_DEBRIS  = ["ipo_intelligence", "ipo_consolidated", "ipo_golden", "ipo_master",
-              "ipo_rhp_intel", "intraday_30d"]
+              "ipo_rhp_intel"]
 
 
 def main():
@@ -58,6 +66,10 @@ def main():
     print("  V2 targets (fill_v2 / extractor WRITE here):")
     for t in V2_TARGETS:
         mark = "OK " if t in present else "MISSING"
+        print(f"    [{mark}] {t}")
+    print("  V2 data-fill family (pipeline writes; NOT extractor-gated):")
+    for t in V2_DATA_FILL:
+        mark = "OK " if t in present else "absent "
         print(f"    [{mark}] {t}")
     print("  V1 debris (must never be written to):")
     for t in V1_DEBRIS:

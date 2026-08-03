@@ -40,31 +40,40 @@ def get_kite():
 
 
 def instruments(kite):
-    """NSE instrument dump, fetched once per run (it is a large call)."""
+    """Full instrument dump (ALL exchanges), fetched once per run.
+
+    kite.instruments() with NO exchange argument returns every exchange (NSE, BSE, …)
+    in a SINGLE HTTP call to /instruments — one call, not one-per-exchange — and is the
+    source for both the NSE-preferred and the BSE-fallback token lookups below."""
     global _INSTRUMENTS
     if _INSTRUMENTS is None:
-        _INSTRUMENTS = kite.instruments("NSE")
+        _INSTRUMENTS = kite.instruments()
     return _INSTRUMENTS
 
 
 def resolve_token(kite, isin, symbol):
-    """instrument_token for one IPO. ISIN FIRST — rule 5, never a blank/fuzzy symbol.
+    """instrument_token for one IPO: NSE-exact FIRST, then BSE-exact fallback.
 
-    Kite's NSE dump does not always carry an isin field, so symbol is the documented
-    fallback — but ONLY an exact, case-normalised match on a non-empty symbol. A fuzzy
-    or partial match here would attach the wrong price series to an IPO, which is worse
-    than leaving the token null."""
+    Returns (token, how) where how is 'NSE' | 'BSE' | 'unresolved'. Only an EXACT,
+    case-normalised match on a NON-EMPTY tradingsymbol counts — a fuzzy or partial
+    match would attach the wrong price series to an IPO, which is worse than a null
+    token. NSE is preferred (primary listing, deeper candle history); BSE recovers the
+    ~BSE-only mainboard listings the old NSE-only lookup silently dropped."""
     rows = instruments(kite)
-    if isin:
-        for r in rows:
-            if (r.get("isin") or "").strip().upper() == isin.strip().upper():
-                return r["instrument_token"], "isin"
+    # ISIN branch kept INERT (documented, not deleted): Kite's combined dump does not
+    # carry a usable `isin` for equities, so this never matched in practice. Re-enable
+    # only if a future dump populates the field.
+    #   if isin:
+    #       for r in rows:
+    #           if (r.get("isin") or "").strip().upper() == isin.strip().upper():
+    #               return r["instrument_token"], "isin"
     if symbol and symbol.strip():
         want = symbol.strip().upper()
-        for r in rows:
-            if (r.get("tradingsymbol") or "").strip().upper() == want \
-               and r.get("segment") == "NSE":
-                return r["instrument_token"], "symbol_exact"
+        for exch in ("NSE", "BSE"):                       # NSE preferred, BSE fallback
+            for r in rows:
+                if (r.get("tradingsymbol") or "").strip().upper() == want \
+                   and r.get("exchange") == exch:
+                    return r["instrument_token"], exch
     return None, "unresolved"
 
 
@@ -77,6 +86,26 @@ def fetch_candles(kite, token, start, end):
         bars.append({"d": d.date() if hasattr(d, "date") else d,
                      "o": c.get("open"), "h": c.get("high"), "l": c.get("low"),
                      "c": c.get("close"), "v": c.get("volume")})
+    return bars
+
+
+def fetch_candles_15m(kite, token, start, end):
+    """15-minute OHLCV, PAGINATED at <=200 days/request (Kite's per-request cap for
+    the 15minute interval). Walks [start, end] in <=200-day windows and concatenates.
+    Returns bars in the shape upsert_candles_15m expects: {ts,o,h,l,c,v}. `ts` is the
+    tz-aware bar timestamp Kite returns (stored verbatim as timestamptz)."""
+    bars = []
+    win_start = start
+    step = dt.timedelta(days=200)
+    while win_start <= end:
+        win_end = min(win_start + step - dt.timedelta(days=1), end)
+        raw = kite.historical_data(token, from_date=win_start, to_date=win_end,
+                                   interval="15minute")
+        for c in raw:
+            bars.append({"ts": c["date"],
+                         "o": c.get("open"), "h": c.get("high"), "l": c.get("low"),
+                         "c": c.get("close"), "v": c.get("volume")})
+        win_start = win_end + dt.timedelta(days=1)
     return bars
 
 
@@ -123,11 +152,12 @@ def derive_outcome(conn, ipo_id):
     return rec, None
 
 
-def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write):
+def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_15m=True):
     """One IPO through the whole chain. Returns a step report."""
-    from fill_v2 import upsert_candles, upsert_listing_outcome
-    from fill_ipo import upsert_ipo
-    out = {"ipo_id": ipo_id, "token": None, "bars": 0, "outcome": None, "notes": []}
+    from fill_v2 import upsert_candles, upsert_listing_outcome, upsert_candles_15m
+    from fill_ipo import upsert_ipo, _log_fact
+    out = {"ipo_id": ipo_id, "token": None, "bars": 0, "bars_15m": 0,
+           "outcome": None, "notes": []}
 
     cur = conn.cursor()
     cur.execute("SELECT kite_token FROM ipo WHERE id=%s", (ipo_id,))
@@ -137,13 +167,17 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write):
         token, how = resolve_token(kite, isin, symbol)
         out["resolved_by"] = how
         if token is None:
-            out["notes"].append("token unresolved (no ISIN match, no exact symbol) "
+            out["notes"].append("token unresolved (no exact NSE or BSE symbol match) "
                                 "-> candles and listing_outcomes both blocked")
             return out
         if write:
             # COALESCE-empty-only, so this can only fill a null token
             upsert_ipo(conn, dict(isin=isin, name_display=name,
                                   name_norm=None, kite_token=token), source="kite")
+            # provenance: record WHICH exchange the token resolved on (NSE|BSE).
+            # upsert_ipo committed above; _log_fact writes on `cur`, so commit it too.
+            _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
+            conn.commit()
     out["token"] = token
 
     end = dt.date.today()
@@ -158,6 +192,18 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write):
     out["bars"] = len(bars)
     if write and bars:
         upsert_candles(conn, ipo_id, bars)
+
+    # 15-minute intraday -> market_candles_15m. INCREMENTAL: start at the day after
+    # the last stored bar (or listing_date on first backfill), paginate to today.
+    if write and fetch_15m:
+        cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
+        last = (cur.fetchone() or [None])[0]
+        i_start = last.date() if last else (listing_date or (end - dt.timedelta(days=days)))
+        try:
+            bars15 = fetch_candles_15m(kite, token, i_start, end)
+            out["bars_15m"] = upsert_candles_15m(conn, ipo_id, bars15) if bars15 else 0
+        except Exception as e:
+            out["notes"].append(f"15m candles failed: {type(e).__name__}: {str(e)[:80]}")
 
     if not write:
         out["notes"].append("dry-run: outcome not derived (needs candles stored)")
@@ -178,20 +224,35 @@ def main():
     ap.add_argument("--days", type=int, default=400)
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-15m", action="store_true",
+                    help="skip the 15-minute market_candles_15m fetch (daily only)")
     a = ap.parse_args()
     if not (a.write or a.dry_run):
         sys.exit("choose --write or --dry-run")
     write = a.write and not a.dry_run
+    fetch_15m = not a.no_15m
 
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
+    if write and fetch_15m:
+        from fill_v2 import ensure_15m_table
+        ensure_15m_table(conn)          # idempotent; creates market_candles_15m once
     if a.ids:
         ids = [int(x) for x in a.ids.split(",") if x.strip()]
         cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
                         WHERE id = ANY(%s) ORDER BY id""", (ids,))
     else:
-        cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
-                        WHERE in_backtest_universe=TRUE
-                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
+        # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
+        # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
+        # 105 score-scope IPOs with no candle attempt at all — kite candles must cover
+        # the SAME 699 the pipeline scores/verdicts. Scalar subquery (not a JOIN) so a
+        # multi-row ipo_issue can't fan out the target list. NULL size -> treated as
+        # large (999999), matching the engines' COALESCE.
+        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+                        FROM ipo i
+                        WHERE i.is_mainboard = TRUE
+                          AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
+                                        WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
+                        ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
     targets = cur.fetchall()
 
     print(f"  [build] {FILE_BUILD}")
@@ -199,7 +260,7 @@ def main():
     try:
         kite = get_kite()
         n_inst = len(instruments(kite))
-        print(f"  kite authenticated · {n_inst} NSE instruments loaded\n")
+        print(f"  kite authenticated · {n_inst} instruments loaded (all exchanges)\n")
     except Exception as e:
         sys.exit(f"  ✗ Kite auth failed: {type(e).__name__}: {str(e)[:160]}\n"
                  "    Run _scripts/refresh_kite_token.py first (TOTP, no browser).")
@@ -208,9 +269,10 @@ def main():
     for ipo_id, isin, symbol, name, listing_date in targets:
         print(f"  == id={ipo_id} {str(symbol or '(no symbol)'):14} {str(name)[:34]}")
         try:
-            r = process(conn, kite, ipo_id, isin, symbol, name, listing_date, a.days, write)
+            r = process(conn, kite, ipo_id, isin, symbol, name, listing_date, a.days,
+                        write, fetch_15m)
             print(f"       token={r['token']} ({r.get('resolved_by','already stored')})  "
-                  f"bars={r['bars']}")
+                  f"bars={r['bars']}  bars_15m={r['bars_15m']}")
             if r["outcome"]:
                 print(f"       outcome {r['outcome']}")
             for n in r["notes"]:

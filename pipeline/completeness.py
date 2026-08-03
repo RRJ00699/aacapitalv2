@@ -57,8 +57,9 @@ HAS_ROWS_OPEN = {
     "subscription_snapshots": "subscription / anchor / MF data",
 }
 HAS_ROWS_LISTED = {
-    "market_candles": "daily candles",
-    "decisions":      "verdict written",
+    "market_candles":     "daily candles",
+    "market_candles_15m": "15-min intraday bars",
+    "decisions":          "verdict written",
 }
 # subscription columns that matter for the house rules — checked on the FINAL snapshot
 SUBSCRIPTION_FIELDS = ["qib_x", "nii_x", "retail_x", "total_x",
@@ -94,6 +95,17 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False):
             return "not listed yet"
         if listing_date and (today - listing_date).days < 1:
             return "listed today — no session yet"
+    # 15-min bars: coverage is UNKNOWN until the first backfill runs. We do NOT yet know
+    # which old listings Kite can still return intraday for, so we must not flag any gap as
+    # permanently unrefetchable — a wrong PERMANENT flag hides a gap we could still fill.
+    # A listed IPO with no 15-min bars is reported as awaiting-backfill: visible, NON-
+    # blocking, NOT permanent. AFTER the backfill runs, replace this with an EVIDENCE-BASED
+    # rule: the earliest listing_date Kite actually returned bars for is the real floor;
+    # anything older that is still empty is then genuinely permanent. Do not hardcode a year
+    # before then. NOTE: HAS_ROWS only checks existence, so a PARTIAL series (a few 2017
+    # bars) reads as present here — bar count / ts-range is the true coverage signal.
+    if col == "market_candles_15m" and stage == "listed":
+        return "awaiting 15-min backfill — coverage UNKNOWN until Kite is queried"
     if col.startswith("subscription_snapshots"):
         if stage in ("announced", "open"):
             return "issue not closed yet"
