@@ -26,8 +26,16 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "kite_fetch 2026-08-03d — NSE/BSE resolve, market_candles_15m, score-scope 699, paginated daily, exchange provenance"
+FILE_BUILD = "kite_fetch 2026-08-03e — NSE/BSE resolve, market_candles_15m + lookback clamp, ceiling_20 fix, score-scope 699"
 _INSTRUMENTS = None
+
+# Kite serves only the most recent ~258 days of 15-minute history — a HARD retention wall,
+# not a per-request cap. MEASURED, not documented: today - min(ts) across market_candles_15m
+# on 2026-08-03 (min(ts)=2025-11-18) = 258. Older 15-min history is gone permanently.
+# Used to clamp the 15-min fetch start so an IPO listed BEFORE the wall still gets its last
+# ~258 days (it still trades — the basing/bottom-out trade the business case wants) instead
+# of an out-of-range request that returns nothing. Re-measure if the observed wall shifts.
+LOOKBACK_15M_DAYS = 258
 
 
 def get_kite():
@@ -160,11 +168,18 @@ def derive_outcome(conn, ipo_id):
         rec["pool"] = ("NEGATIVE" if gap < 0 else "FLAT" if gap < 15
                        else "WARM" if gap < 50 else "HEAVY")
     closes = [float(x[4]) for x in rows if x[4] is not None]
+    highs = [float(x[2]) for x in rows if x[2] is not None]
     if closes:
         rec["best_close"] = max(closes)
         rec["worst_close"] = min(closes)
-    if len(rows) >= 20 and closes:
-        rec["ceiling_20"] = max(closes[:20])
+    if highs and rec.get("listing_open"):
+        # ceiling_20 (BOOLEAN): reached +20% above the listing OPEN, on the intraday HIGH,
+        # within the first 30 sessions (D30). The "20" is the +20% threshold (cf. winner_35
+        # = +35%); the window is D30. Definition RECOVERED EMPIRICALLY, not guessed — it
+        # reproduces 98.4% of the 457 pre-existing stored booleans; close-based, vs-issue,
+        # and D20/unbounded variants scored 66-91%. The old code wrote a PRICE
+        # (max(closes[:20])) into this boolean column — every listed IPO failed the upsert.
+        rec["ceiling_20"] = max(highs[:30]) >= rec["listing_open"] * 1.20
     if rec.get("listing_open") and closes:
         rec["hold_positive_vs_open"] = closes[-1] > rec["listing_open"]
         if issue_price:
@@ -234,6 +249,10 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         last = (cur.fetchone() or [None])[0]
         i_start = last.date() if last else (listing_date or (end - dt.timedelta(days=days)))
+        # Clamp to Kite's 15-min retention wall. An IPO listed before the wall would
+        # otherwise ask from its (out-of-range) listing_date and get NOTHING — but Kite
+        # WILL serve the last LOOKBACK_15M_DAYS, which is the current basing data we want.
+        i_start = max(i_start, end - dt.timedelta(days=LOOKBACK_15M_DAYS))
         try:
             bars15 = fetch_candles_15m(kite, token, i_start, end)
             out["bars_15m"] = upsert_candles_15m(conn, ipo_id, bars15) if bars15 else 0

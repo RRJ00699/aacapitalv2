@@ -48,11 +48,19 @@ Source of truth for the list: the writers themselves — `fill_v2.py`, `fill_ipo
   upsert into it safely). `intraday_30d` and its data are gone permanently — Neon's restore
   window closed before a back-dated branch could be taken. `market_candles_15m` is refilled
   forward by cron and back-filled by `kite_fetch --ids … --write`.
-- **Coverage is honest-partial.** The fetch stores exactly the bars Kite returns; an IPO
-  with a short 2017 series reads as *present* (has rows) but its bar-count / ts-range is
-  the real coverage signal. `completeness.py` treats missing pre-2021 15-min data as a
-  **permanent, non-blocking gap** (lost with `intraday_30d`, unrefetchable), and missing
-  recent data as actionable.
+- **Retention wall — coverage starts 2025-11-18 (measured 2026-08-03).** Kite serves only
+  the most recent **~258 days** of 15-minute history — a HARD retention wall (not a
+  per-request cap; pagination does not extend it). The 2016→2026 backfill confirmed this
+  empirically: bars exist only from ~2025-11-18 forward. **The cross-era validation in
+  `AACapital_TopBottom_Approach.md` (2016–2026, stable across eras) rests on 15-min data
+  no longer held and is not reproducible** from what we have; current coverage is 2025-11
+  onward. The wall rolls forward daily.
+- **Coverage is honest-partial, in two distinct states** (`completeness.py`, evidence-based
+  off `min(ts)`): (1) **listed before the wall** → its listing-period 15-min is permanently
+  gone, but the IPO still trades so RECENT bars ARE fetchable (`kite_fetch` clamps the
+  fetch start to `today − LOOKBACK_15M_DAYS`); (2) **token unresolved** → no series yet but
+  fixable. The fetch stores exactly the bars Kite returns, so a short series reads as
+  *present* (has rows) — bar-count / ts-range is the real coverage signal.
 
 ## Where the V2 set is enumerated in code (keep these in sync)
 - `pipeline/inspect_schema.py` — `V2_TARGETS` (extractor-gated) + `V2_DATA_FILL` (the rest).
