@@ -59,13 +59,15 @@ def test_states_visible_not_nulled():
 # ── eligibility: ONE rule text across every feed ───────────────────────────
 def test_same_eligibility_rule_everywhere():
     # ONE eligibility rule across the surviving feeds. #282 deleted /api/ipo and moved the
-    # rule into lib/v2. On the canonical schema the >=Rs.200cr FLOOR is the PRIMARY SME
-    # guard; is_mainboard is SECONDARY and UNRELIABLE — fill_ipo.upsert_ipo defaults it to
-    # True, so it excludes almost nothing on its own. The size floor is the real gate.
+    # rule into lib/v2. The size FLOOR is the primary SME guard; is_mainboard is SECONDARY
+    # and UNRELIABLE — fill_ipo.upsert_ipo defaults it to True, so it excludes almost nothing
+    # on its own. RULING: the floor is >=150cr THROUGHOUT (matches the locked verdict JUNK
+    # line). The >=200 asserted below is the CURRENT code (drift) — the standardisation PR
+    # that follows task 1 flips both the code and this assertion to >=150 together.
     size_floor = "issue_size_cr IS NULL OR iss.issue_size_cr >= 200"
     for f in (("lib", "v2", "ipo-command.ts"), ("lib", "v2", "live-preopen.ts")):
         src = _read(*f)
-        assert size_floor in src, f"{f} diverges from the >=200cr eligibility floor (the real SME guard)"
+        assert size_floor in src, f"{f} diverges from the eligibility size floor (the real SME guard)"
         assert "is_mainboard = true" in src  # secondary, unreliable (defaults True) — kept for intent
 
 

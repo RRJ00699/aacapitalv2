@@ -14,16 +14,14 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "_scripts" / "tests" / "route_harness" / "run_route.mjs"
 pytestmark = [pytest.mark.integration,
               pytest.mark.skipif(not (ROOT / "node_modules" / "esbuild").exists(),
-                                 reason="node_modules missing — run npm ci (route runtime tier NOT covered)"),
-              # DEFERRED to its own PR (same as test_api_contract). This esbuild+node harness
-              # BUILDS and EXECUTES each route; #282 both deleted routes it references
-              # (market-regime, playbook, /api/ipo, post-listing) — causing "Could not
-              # resolve" build failures — and changed the query structure/caching keys/tiers
-              # by moving logic into lib/v2. Re-pointing the harness (QUERY_CEILING, HOT_ROUTES,
-              # the A2* tier tests) at the V2 routes is real execute-test work with its own
-              # review, so it is xfailed (run=False) here rather than weakened. CI is honest
-              # that it is still red. See the CI-fix PR description.
-              pytest.mark.xfail(reason="route-runtime harness deferred to the V2 execute-tests PR", run=False)]
+                                 reason="node_modules missing — run npm ci (route runtime tier NOT covered)")]
+# NOTE (#282 fallout, fixed in the CI-fix PR): this harness stubs Neon with a
+# COUNTER (never a real DB), so unlike test_api_contract it needs NO schema
+# rework. #282 only (a) deleted 5 routes it referenced — market-regime,
+# post-listing, ipo/post-listing, /api/ipo, ipo/playbook (removed from
+# QUERY_CEILING / HOT_ROUTES / the market-regime cache test below) and (b)
+# renamed two cache keys (ipo-command v4->v5, live-preopen full-response
+# v1->v2). Both updated in place; the execute coverage stays LIVE.
 
 
 def run_route(route, calls=2, fake_ist=None, expire=None):
@@ -54,22 +52,15 @@ def test_A2_ipo_command_second_call_zero_queries():
 def test_A2b_ipo_command_stale_tier_never_wakes_neon():
     """Phase-2 zero-idle: when the PRIMARY key has expired but the :stale twin
     survives, the route serves STALE with ZERO Neon queries and ZERO writes."""
-    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v4@3")
+    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v5@3")
     c1, c2, c3 = d["results"]
     assert c1["xcache"] == "MISS" and c2["xcache"] == "HIT"
     assert c3["xcache"] == "STALE", f"expected STALE, got {c3['xcache']}"
     assert c3["queries"] == 0, "STALE path woke Neon — zero-idle broken"
     assert c3["kv_puts"] == 0
 
-def test_A2_market_regime_second_call_zero_queries():
-    """Ledger #12 FIX flipped: market-regime now caches in KV (keyed per
-    threshold, 1h TTL) — second call ZERO Neon queries, x-cache HIT. Was:
-    a Cache-Control comment; every call paid the 400-day candle scan."""
-    d = run_route("app/api/market-regime/route.ts", 2)
-    c1, c2 = d["results"]
-    assert c1["queries"] == 2 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
-    assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
-    assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
+# test_A2_market_regime_second_call_zero_queries REMOVED — #282 deleted
+# app/api/market-regime/route.ts (dead route, no UI caller). Nothing to execute.
 
 
 def test_A2_live_preopen_caches_outside_window():
@@ -79,7 +70,7 @@ def test_A2_live_preopen_caches_outside_window():
     d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist="14:30")
     c1, c2 = d["results"]
     assert c1["queries"] > 0 and c1["xcache"] == "MISS"
-    assert any(op == "put:ipo-live-preopen:v1" for op in c1["kv_ops"])
+    assert any(op == "put:ipo-live-preopen:v2" for op in c1["kv_ops"])
     assert c2["queries"] == 0 and c2["xcache"] == "HIT"
 
 @pytest.mark.parametrize("t", ["08:55", "09:45", "09:58", "10:05"])
@@ -91,7 +82,7 @@ def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
     INNER rows-cache (main's zero-idle tier, identity rows that change only
     nightly) IS allowed to serve — it holds no decision-window data."""
     d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
-    full_key = "ipo-live-preopen:v1"
+    full_key = "ipo-live-preopen:v2"
     for c in d["results"]:
         assert c["xcache"] == "BYPASS-DECISION-WINDOW"
         assert not any(op.endswith(":" + full_key) for op in c["kv_ops"]), \
@@ -140,19 +131,16 @@ QUERY_CEILING = {
     "app/api/broker/status/route.ts": 1,
     "app/api/health/route.ts": 0,
     # levels / intelligence / pipeline-status pruned 2026-07-20: archived
-    "app/api/ipo-command/route.ts": 8,  # +1 self-heal ipo_insights, +1 self-heal ipo_news (deploy-order, reviewed)
+    # #282 pruned 5 more (removed below): market-regime, post-listing,
+    # ipo/post-listing, /api/ipo, ipo/playbook — dead routes, no UI callers.
+    "app/api/ipo-command/route.ts": 8,  # buildCommand() in lib/v2; ceiling kept as an N+1 upper bound (self-heal DDL dropped in #282)
     "app/api/ipo/cum-volume/route.ts": 0,
     "app/api/ipo/journey/route.ts": 0,
     "app/api/ipo/live-preopen/route.ts": 2,
     "app/api/ipo/monitor/route.ts": 0,
-    "app/api/ipo/playbook/route.ts": 1,
-    "app/api/ipo/post-listing/route.ts": 1,
-    "app/api/ipo/route.ts": 1,
     "app/api/ipo/tick-feed/route.ts": 0,
-    "app/api/market-regime/route.ts": 2,
     "app/api/market/global/route.ts": 5,  # +1: india_breadth read (U16, 2026-07-22)
     "app/api/market/snapshot/route.ts": 2,
-    "app/api/post-listing/route.ts": 0,
     "app/api/settings/route.ts": 2,
     "app/api/tracker/route.ts": 0,
 }
@@ -170,8 +158,9 @@ def test_A1_query_ceiling(route, ceiling):
 
 HOT_ROUTES = [
     "ipo-command", "ipo/live-preopen", "market/global",
-    "market/snapshot", "ipo", "ipo/journey", "ipo/playbook",
-]  # market/live archived 2026-07-18; ipo/intelligence archived 2026-07-20 (zero callers)
+    "market/snapshot", "ipo/journey",
+]  # market/live archived 2026-07-18; ipo/intelligence archived 2026-07-20 (zero callers);
+   # #282 deleted "ipo" (/api/ipo) and "ipo/playbook" — removed here too
 
 # LEDGER #13: hot routes that hit Neon per-request TODAY without a KV cache
 # (audited 2026-07-17 via this test — 8 of the 9 hot routes; only ipo-command
@@ -180,9 +169,10 @@ HOT_ROUTES = [
 # 2026-07-20 shrink: ipo/live-preopen + ipo/journey CURED (Phase-2 KV caches);
 # ipo/intelligence archived. Remaining three are the next zero-idle targets.
 ALLOWED_UNCACHED_FOR_NOW = frozenset({
-    "market/global", "ipo", "ipo/playbook",
+    "market/global",
 })  # CURED 07-17: live-preopen, market/snapshot (#261 caches) · CURED 07-20:
-    # ipo/journey (Phase-2 KV day-cache) · archived: ipo/intelligence, market/live
+    # ipo/journey (Phase-2 KV day-cache) · archived: ipo/intelligence, market/live ·
+    # #282 DELETED: "ipo" (/api/ipo), "ipo/playbook" — dropped from HOT_ROUTES and here
 
 
 def _route_file(name):

@@ -64,8 +64,11 @@ def test_quantitative_ofs_weight_unchanged():
 
 # ── B. hard filters ─────────────────────────────────────────────────────────
 # PR #282 moved the queries into lib/v2/*.ts and, on the canonical V2 schema, gates on
-# is_mainboard (not the V1 is_sme). The >=Rs.200cr floor is the real SME exclusion and is
-# unchanged. Re-pointed + the FILTER pattern updated to the V2 field.
+# is_mainboard (not the V1 is_sme). The size FLOOR is the real SME exclusion; is_mainboard
+# is secondary/unreliable (fill_ipo.upsert_ipo defaults it True). RULING: the floor is
+# >=150cr THROUGHOUT (matches the locked verdict JUNK line). The >=200 below is the CURRENT
+# code (drift); the standardisation PR after task 1 flips code + assertion to >=150 together.
+# Do not read 200 as canonical.
 FILTER = re.compile(r"is_mainboard\s*=\s*true")
 SIZE = re.compile(r"issue_size_cr IS NULL OR (?:iss\.|c\.)?issue_size_cr >= 200")
 
