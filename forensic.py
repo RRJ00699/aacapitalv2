@@ -24,7 +24,7 @@ if __name__=="__main__":
     except Exception: pass
 import psycopg2
 sys.path.insert(0,".")
-from topout_online import run_ipo, get_kite, f
+from topout_online import run_ipo, get_kite, f, _window
 
 def stage2_confirm(r, bars, N=8):
     """After a CAUTION fire, decide PARABOLIC vs CONFIRMED two ways.
@@ -72,6 +72,9 @@ def main():
     ap.add_argument("--lh",type=int,default=3); ap.add_argument("--ma",type=int,default=10)
     ap.add_argument("--accel",type=float,default=1.5); ap.add_argument("--nbar",type=int,default=8)
     ap.add_argument("--volwin",type=int,default=50); ap.add_argument("--retest",type=float,default=2.0)
+    ap.add_argument("--window-days",dest="window_days",type=int,default=30,
+                    help="truncate each IPO's bars to N calendar days from listing BEFORE scoring "
+                         "(30 = anchor lock-in trade horizon; why the old table was intraday_30d)")
     a=ap.parse_args()
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
     era_clause=""
@@ -102,6 +105,10 @@ def main():
         recs=curb.fetchall()
         if not recs or len(recs)<25: skipped+=1; continue
         b=[(x[0],x[1],x[2],x[3],x[4],x[5]) for x in recs]
+        # 30-day trade horizon: truncate BEFORE scoring so real_peak / gap / later_high are
+        # measured over what we'd actually hold (listing -> first anchor lock-in), not the
+        # full ~257d Kite retention that reclassifies a clean 30-day top as EARLY_FIRE.
+        if a.window_days: b=_window(b,a.window_days)
         r=run_ipo(b,a.climax,a.reject,a.lh,a.ma,a.accel,a.nbar,a.volwin,a.retest)
         reason,later_high,clean=classify(r,b)
         s2a,s2b=stage2_confirm(r,b)
