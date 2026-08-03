@@ -22,7 +22,9 @@ def _run(uri):
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(script)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(script)])
-    return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120, cwd=ROOT)
+    env["PYTHONIOENCODING"] = "utf-8"        # child writes UTF-8 (banners / non-ASCII)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          env=env, timeout=120, cwd=ROOT)
 
 
 @pytest.fixture
@@ -126,6 +128,7 @@ def test_regime_join_when_market_regimes_present(build_db):
 def test_missing_db_url_exits_loud():
     env = {k: v for k, v in os.environ.items()
            if k not in ("DATABASE_URL", "NEON_DATABASE_URL")}
+    env["PYTHONIOENCODING"] = "utf-8"
     r = subprocess.run([sys.executable, str(ROOT / "_scripts" / "build_ipo_consolidated_v2.py")],
-                       capture_output=True, text=True, env=env, timeout=60)
+                       capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
     assert r.returncode != 0 and "DATABASE_URL" in (r.stdout + r.stderr)

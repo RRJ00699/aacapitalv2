@@ -101,14 +101,20 @@ def test_healthcheck_pinged_only_on_full_green(orch):
     ran, fail, mp, tmp = orch
     pings = []
     import urllib.request as _ur
-    mp.setattr(_ur, "urlopen", lambda url, timeout=15: pings.append(url))
+    # the healthcheck pings via urlopen(Request(url)); record the URL, not the Request
+    # object, so the contract is "which URL was pinged" regardless of arg wrapping.
+    mp.setattr(_ur, "urlopen", lambda url, timeout=15: pings.append(getattr(url, "full_url", url)))
     mp.setenv("HEALTHCHECK_URL", "https://hc.example/ping")
+    HC = "https://hc.example/ping"
     _main(mp)
-    assert pings == ["https://hc.example/ping"]
-    # and NOT pinged when the gate fails
+    # The contract is "healthcheck fires IFF the pipeline is green" — not "exactly one
+    # URL is ever pinged". Step 8 (KV cache-warm, 93d4783) also urlopen()s a warm URL,
+    # so assert membership, not an exact single-element list.
+    assert HC in pings, "healthcheck must fire on full green"
+    # and NOT when a gate fails
     pings.clear(); fail["check_data_contract.py"] = 1
     _main(mp)
-    assert pings == []
+    assert HC not in pings, "healthcheck must NOT fire when a gate fails"
 
 
 @pytest.mark.db

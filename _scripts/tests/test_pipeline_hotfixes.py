@@ -72,7 +72,7 @@ def test_runbook_documents_kite_maintenance_window():
     assert "23:30" in src and "market regime" in src
 
 
-def test_haiku_gate_excludes_sme_and_small_on_real_postgres(pg_uri):
+def test_haiku_gate_excludes_sme_and_small_on_real_postgres(pg_uri, require_pg_tz):
     """EXECUTED: an SME note and a <200cr note are NOT work; a mainboard
     NULL-size note IS (NULL stays eligible per the locked rule)."""
     import importlib.util, psycopg2
@@ -133,7 +133,7 @@ def test_core_ipo_scope_no_universe_candles():
     assert "full NSE universe" not in route
 
 
-def test_ticker_targets_use_strong_symbol_key(pg_uri):
+def test_ticker_targets_use_strong_symbol_key(pg_uri, require_pg_tz):
     """Volume-confirm silent failure: the ticker's auto-today read only
     `symbol`. EXECUTED: a row with empty symbol + real nse_symbol must
     resolve; SME and small issues stay excluded."""

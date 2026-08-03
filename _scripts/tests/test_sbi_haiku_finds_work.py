@@ -56,7 +56,7 @@ def test_query_fails_on_production_schema(clean_db):
         cur.execute(sbi.TODO_SQL)
     c.close()
 
-def test_finds_work_after_schema_sync(clean_db):
+def test_finds_work_after_schema_sync(clean_db, require_pg_tz):
     """THE FIX: with schema_sync applied, an upcoming IPO's note is found."""
     c, cur = _prod_db(clean_db); _apply_schema_sync(cur)
     cur.execute("INSERT INTO ipo_intelligence (company_name, listing_date) VALUES ('Alpine Texworld Ltd.', CURRENT_DATE + 7)")
@@ -65,7 +65,7 @@ def test_finds_work_after_schema_sync(clean_db):
     assert len(cur.fetchall()) == 1
     c.close()
 
-def test_window_includes_recent_listings(clean_db):
+def test_window_includes_recent_listings(clean_db, require_pg_tz):
     """WINDOW FIX: an IPO that listed 10 days ago is still current (Command Center
     shows 30d). The old 2-day window excluded 6 of the 9 eligible notes."""
     c, cur = _prod_db(clean_db); _apply_schema_sync(cur)
@@ -75,7 +75,7 @@ def test_window_includes_recent_listings(clean_db):
     assert len(cur.fetchall()) == 1, "10-day-old listing excluded — old 2-day window"
     c.close()
 
-def test_canon_join_handles_name_variants(clean_db):
+def test_canon_join_handles_name_variants(clean_db, require_pg_tz):
     """'&' vs 'and', trailing 'Ltd.' — the existing canon join already handles it
     (208/244 notes matched in production); this locks that behaviour."""
     c, cur = _prod_db(clean_db); _apply_schema_sync(cur)
@@ -85,7 +85,7 @@ def test_canon_join_handles_name_variants(clean_db):
     assert len(cur.fetchall()) == 1
     c.close()
 
-def test_skips_already_extracted(clean_db):
+def test_skips_already_extracted(clean_db, require_pg_tz):
     """Idempotency — a note with full_json is never re-billed."""
     c, cur = _prod_db(clean_db); _apply_schema_sync(cur)
     cur.execute("INSERT INTO ipo_intelligence (company_name, listing_date) VALUES ('Done Co Ltd', CURRENT_DATE + 3)")
@@ -95,7 +95,7 @@ def test_skips_already_extracted(clean_db):
     assert len(cur.fetchall()) == 0
     c.close()
 
-def test_skips_ancient_ipo(clean_db):
+def test_skips_ancient_ipo(clean_db, require_pg_tz):
     """Cost control — a 2023 listing is outside the window."""
     c, cur = _prod_db(clean_db); _apply_schema_sync(cur)
     cur.execute("INSERT INTO ipo_intelligence (company_name, listing_date) VALUES ('Old Co Ltd', DATE '2023-05-01')")

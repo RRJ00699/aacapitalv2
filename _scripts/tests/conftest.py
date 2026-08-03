@@ -14,6 +14,34 @@ def pg_uri():
     os.environ["DATABASE_URL"] = uri
     yield uri
 
+@pytest.fixture(scope="session")
+def pg_has_tz(pg_uri):
+    """Whether the embedded Postgres has IANA tz data. Some pgserver wheels — notably
+    the Windows one — ship WITHOUT share/postgresql/timezone, so named zones like
+    'Asia/Kolkata' are unresolvable and even querying pg_timezone_names errors. Probed
+    once (session-scoped) against the real server, so the result is never a path guess."""
+    import psycopg2
+    c = psycopg2.connect(pg_uri); cur = c.cursor()
+    try:
+        cur.execute("SELECT count(*) FROM pg_timezone_names WHERE name = 'Asia/Kolkata'")
+        ok = cur.fetchone()[0] > 0
+    except Exception:
+        ok = False
+    finally:
+        c.close()
+    return ok
+
+@pytest.fixture
+def require_pg_tz(pg_has_tz):
+    """Skip (with a loud reason) when the embedded Postgres has no tz data. The
+    production SQL under test uses now() AT TIME ZONE 'Asia/Kolkata'; on a tz-less
+    server it cannot run. NOT a weakened assertion — the test is UNVERIFIED on this
+    platform and Linux CI, which has full tzdata, is authoritative for it."""
+    if not pg_has_tz:
+        pytest.skip("embedded Postgres lacks IANA tz data (Asia/Kolkata unresolvable) — "
+                    "unverified here; Linux CI is authoritative")
+
+
 @pytest.fixture
 def clean_db(pg_uri):
     """Fresh base schema per test — the real column shapes the scripts expect."""
