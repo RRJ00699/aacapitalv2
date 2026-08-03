@@ -12,7 +12,7 @@ ORDER (each step is skipped-with-a-reason, never half-done):
   (SBI note CONTENT extraction goes through Sonnet, not the old regex parser)
   3. NSE issue/subscription  nse_fetch.py                     (tested 35 PASS)
   4. RHP extraction          drive.py --rhp                   (tested, PAID)
-  5. Vendor fallback         ipomatrix_fallback.py            (tested, fills nulls only)
+  5. Vendor fallback         RETIRED — ipomatrix_raw dropped in the V1 sweep, no source
   6. Kite candles + outcomes kite_fetch.py                    (auth verified)
   7. Score + verdict         inside drive.py                  (tested)
   8. Completeness + ntfy     inside drive.py                  (tested)
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     except Exception: pass
 import psycopg2
 
-FILE_BUILD = "cron 2026-08-01j — dropped the V1 SBI regex parser"
+FILE_BUILD = "cron 2026-08-03 — retired IPOMatrix fallback (ipomatrix_raw dropped)"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
 # RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
@@ -350,10 +350,11 @@ def main():
                           "--dry-run" if dry else "--write", "--rhp",
                           "--max-spend", f"{remaining:.2f}"]
                          + (["--ignore-local"] if a.ignore_local else []), dry, 3600))
-    # 5. Vendor fallback — fills only what the primary sources left null
-    steps.append(run("5. IPOMatrix fallback",
-                     [py, "ipomatrix_fallback.py", "--ids", ids,
-                      "--dry-run" if dry else "--write"], dry, 600))
+    # 5. Vendor fallback — RETIRED. ipomatrix_raw was dropped in the V1 sweep and nothing
+    #    repopulates it, so ipomatrix_fallback.py has no source (it now no-ops with a stated
+    #    reason). Not invoked here. total_income/total_debt for non-RHP IPOs now come only
+    #    from the RHP extraction. Revive by rebuilding the IPOMatrix ingest, then restore.
+    print("\n  === 5. IPOMatrix fallback — RETIRED (ipomatrix_raw dropped; no source)")
     # 6. Kite candles + derived outcomes
     if not a.skip_kite:
         steps.append(run("6. Kite candles + listing outcomes",
