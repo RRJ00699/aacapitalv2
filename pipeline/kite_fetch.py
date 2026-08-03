@@ -40,31 +40,40 @@ def get_kite():
 
 
 def instruments(kite):
-    """NSE instrument dump, fetched once per run (it is a large call)."""
+    """Full instrument dump (ALL exchanges), fetched once per run.
+
+    kite.instruments() with NO exchange argument returns every exchange (NSE, BSE, …)
+    in a SINGLE HTTP call to /instruments — one call, not one-per-exchange — and is the
+    source for both the NSE-preferred and the BSE-fallback token lookups below."""
     global _INSTRUMENTS
     if _INSTRUMENTS is None:
-        _INSTRUMENTS = kite.instruments("NSE")
+        _INSTRUMENTS = kite.instruments()
     return _INSTRUMENTS
 
 
 def resolve_token(kite, isin, symbol):
-    """instrument_token for one IPO. ISIN FIRST — rule 5, never a blank/fuzzy symbol.
+    """instrument_token for one IPO: NSE-exact FIRST, then BSE-exact fallback.
 
-    Kite's NSE dump does not always carry an isin field, so symbol is the documented
-    fallback — but ONLY an exact, case-normalised match on a non-empty symbol. A fuzzy
-    or partial match here would attach the wrong price series to an IPO, which is worse
-    than leaving the token null."""
+    Returns (token, how) where how is 'NSE' | 'BSE' | 'unresolved'. Only an EXACT,
+    case-normalised match on a NON-EMPTY tradingsymbol counts — a fuzzy or partial
+    match would attach the wrong price series to an IPO, which is worse than a null
+    token. NSE is preferred (primary listing, deeper candle history); BSE recovers the
+    ~BSE-only mainboard listings the old NSE-only lookup silently dropped."""
     rows = instruments(kite)
-    if isin:
-        for r in rows:
-            if (r.get("isin") or "").strip().upper() == isin.strip().upper():
-                return r["instrument_token"], "isin"
+    # ISIN branch kept INERT (documented, not deleted): Kite's combined dump does not
+    # carry a usable `isin` for equities, so this never matched in practice. Re-enable
+    # only if a future dump populates the field.
+    #   if isin:
+    #       for r in rows:
+    #           if (r.get("isin") or "").strip().upper() == isin.strip().upper():
+    #               return r["instrument_token"], "isin"
     if symbol and symbol.strip():
         want = symbol.strip().upper()
-        for r in rows:
-            if (r.get("tradingsymbol") or "").strip().upper() == want \
-               and r.get("segment") == "NSE":
-                return r["instrument_token"], "symbol_exact"
+        for exch in ("NSE", "BSE"):                       # NSE preferred, BSE fallback
+            for r in rows:
+                if (r.get("tradingsymbol") or "").strip().upper() == want \
+                   and r.get("exchange") == exch:
+                    return r["instrument_token"], exch
     return None, "unresolved"
 
 
@@ -126,7 +135,7 @@ def derive_outcome(conn, ipo_id):
 def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write):
     """One IPO through the whole chain. Returns a step report."""
     from fill_v2 import upsert_candles, upsert_listing_outcome
-    from fill_ipo import upsert_ipo
+    from fill_ipo import upsert_ipo, _log_fact
     out = {"ipo_id": ipo_id, "token": None, "bars": 0, "outcome": None, "notes": []}
 
     cur = conn.cursor()
@@ -137,13 +146,17 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write):
         token, how = resolve_token(kite, isin, symbol)
         out["resolved_by"] = how
         if token is None:
-            out["notes"].append("token unresolved (no ISIN match, no exact symbol) "
+            out["notes"].append("token unresolved (no exact NSE or BSE symbol match) "
                                 "-> candles and listing_outcomes both blocked")
             return out
         if write:
             # COALESCE-empty-only, so this can only fill a null token
             upsert_ipo(conn, dict(isin=isin, name_display=name,
                                   name_norm=None, kite_token=token), source="kite")
+            # provenance: record WHICH exchange the token resolved on (NSE|BSE).
+            # upsert_ipo committed above; _log_fact writes on `cur`, so commit it too.
+            _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
+            conn.commit()
     out["token"] = token
 
     end = dt.date.today()
@@ -189,9 +202,18 @@ def main():
         cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
                         WHERE id = ANY(%s) ORDER BY id""", (ids,))
     else:
-        cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
-                        WHERE in_backtest_universe=TRUE
-                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
+        # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
+        # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
+        # 105 score-scope IPOs with no candle attempt at all — kite candles must cover
+        # the SAME 699 the pipeline scores/verdicts. Scalar subquery (not a JOIN) so a
+        # multi-row ipo_issue can't fan out the target list. NULL size -> treated as
+        # large (999999), matching the engines' COALESCE.
+        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+                        FROM ipo i
+                        WHERE i.is_mainboard = TRUE
+                          AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
+                                        WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
+                        ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
     targets = cur.fetchall()
 
     print(f"  [build] {FILE_BUILD}")
