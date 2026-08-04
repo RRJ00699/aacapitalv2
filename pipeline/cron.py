@@ -364,6 +364,11 @@ def main():
     steps.append(run("7. score + verdict + completeness + ntfy",
                      [py, "drive.py", "--ids", ids,
                       "--dry-run" if dry else "--write"], dry, 900))
+    # 8. The pipeline is the ONE production owner for all route snapshots.  This
+    # protected call builds from the now-settled DB state and atomically advances
+    # version pointers; failure is hard so a green run can never leave stale UI data.
+    steps.append(run("8. publish versioned route snapshots",
+                     [py, "warm_kv.py"], dry, 180))
     # 9. post-lockin cleanup — OPT-IN ONLY (owner 08-01: keep the documents locally).
     #    Documents now live on the laptop and are KEPT. Nothing is deleted unless you
     #    explicitly ask, because a deleted RHP costs a re-download and a re-extraction

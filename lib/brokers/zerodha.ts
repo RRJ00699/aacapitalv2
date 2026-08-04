@@ -11,6 +11,17 @@ const KITE_BASE = "https://api.kite.trade"
 
 async function getToken(): Promise<string | null> {
   try {
+    // Cloudflare live path: the pipeline copies today's token to protected KV.
+    // This check is first and therefore a successful quote causes zero Neon wakes.
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare")
+    const cache = (getCloudflareContext().env as unknown as { CACHE?: { get(k: string): Promise<string | null> } }).CACHE
+    if (cache) {
+      const edgeToken = await cache.get("broker:kite:access-token")
+      if (edgeToken) return isEncrypted(edgeToken) ? decrypt(edgeToken) : edgeToken
+      return null // deployed Worker: never fall through and wake Neon
+    }
+  } catch { /* local runtime or no binding: retain legacy fallback below */ }
+  try {
     const { neon } = await import("@neondatabase/serverless")
     const sql = neon(process.env.DATABASE_URL!)
     const rows = await sql`

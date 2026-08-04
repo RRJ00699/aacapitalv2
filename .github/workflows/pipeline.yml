@@ -60,6 +60,8 @@ jobs:
           KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
           KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
           NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
+          SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}
+          SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
           # R2 document store (r2.py). Account id + bucket names are repo VARIABLES; the
           # access key pair are repo SECRETS. Absent -> r2.py degrades to a no-op.
           R2_ACCOUNT_ID:        ${{ vars.R2_ACCOUNT_ID }}

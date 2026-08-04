@@ -40,61 +40,28 @@ def run_route(route, calls=2, fake_ist=None, expire=None):
 
 # ---------------- A2 — cache-hit proof ----------------
 
-def test_A2_ipo_command_second_call_zero_queries():
-    """The KV cache must actually serve the second call: ZERO Neon queries.
-    Phase-2: a miss now writes TWO keys (primary + 7d :stale twin)."""
-    d = run_route("app/api/ipo-command/route.ts", 2)
-    c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 2
-    assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
-    assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
-
-def test_A2b_ipo_command_stale_tier_never_wakes_neon():
-    """Phase-2 zero-idle: when the PRIMARY key has expired but the :stale twin
-    survives, the route serves STALE with ZERO Neon queries and ZERO writes."""
-    d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v5@3")
-    c1, c2, c3 = d["results"]
-    assert c1["xcache"] == "MISS" and c2["xcache"] == "HIT"
-    assert c3["xcache"] == "STALE", f"expected STALE, got {c3['xcache']}"
-    assert c3["queries"] == 0, "STALE path woke Neon — zero-idle broken"
-    assert c3["kv_puts"] == 0
-
-# test_A2_market_regime_second_call_zero_queries REMOVED — #282 deleted
-# app/api/market-regime/route.ts (dead route, no UI caller). Nothing to execute.
+def test_A2_snapshot_consumers_cold_miss_never_query_or_write():
+    """Architecture-change classification: cache-on-miss assertions are replaced.
+    A consumer can only read a pipeline snapshot; a cold KV never self-builds."""
+    for route in ("app/api/ipo-command/route.ts", "app/api/ipo/index/route.ts",
+                  "app/api/ipo/journey/route.ts", "app/api/ipo/live-preopen/route.ts"):
+        d = run_route(route, 2)
+        for call in d["results"]:
+            assert call["queries"] == 0, f"{route} woke Neon"
+            assert call["kv_puts"] == 0, f"{route} became a second producer"
+            # Harness does not supply Journey's required ?sym; its 400 still proves
+            # validation happens before any DB/cache producer work.
+            if "journey" not in route:
+                assert call["xcache"] == "MISS"
 
 
-def test_A2_live_preopen_caches_outside_window():
-    """Ledger #13: 60s full-response KV cache OUTSIDE the decision window —
-    2nd call zero Neon queries (14:30 IST). Two-tier since main's merge:
-    the 1h inner rows-cache may also write on the miss call."""
-    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist="14:30")
-    c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS"
-    assert any(op == "put:ipo-live-preopen:v2" for op in c1["kv_ops"])
-    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
-
-@pytest.mark.parametrize("t", ["08:55", "09:45", "09:58", "10:05"])
-def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
-    """Inside 08:55–10:05 IST (the route's CORRECTED NSE pre-open model,
-    2026-07-16 — order entry 09:00, firming 09:45–09:55, deadline 09:58)
-    the FULL-RESPONSE cache is never consulted nor written — every call
-    recomputes the live decision inputs (broker depth, preopen book). The 1h
-    INNER rows-cache (main's zero-idle tier, identity rows that change only
-    nightly) IS allowed to serve — it holds no decision-window data."""
-    d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
-    full_key = "ipo-live-preopen:v2"
-    for c in d["results"]:
-        assert c["xcache"] == "BYPASS-DECISION-WINDOW"
-        assert not any(op.endswith(":" + full_key) for op in c["kv_ops"]), \
-            f"{t}: full-response cache touched inside the window"
-    assert d["results"][0]["queries"] > 0, f"{t}: first call must hit the DB"
-
-def test_A2_window_boundaries_exact():
-    """08:54 and 10:06 cache; 08:55 and 10:05 bypass."""
-    for t, cached in (("08:54", True), ("10:06", True), ("08:55", False), ("10:05", False)):
-        d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
-        second_hit = d["results"][1]["queries"] == 0
-        assert second_hit is cached, f"{t}: expected cached={cached}"
+def test_A2_live_preopen_window_never_wakes_neon():
+    """The old DB bypass is intentionally gone. Freshness is Worker->Kite and the
+    static decision snapshot remains KV-only at every boundary."""
+    for t in ("08:54", "08:55", "09:45", "09:58", "10:05", "10:06"):
+        d = run_route("app/api/ipo/live-preopen/route.ts", 1, fake_ist=t)
+        assert d["results"][0]["queries"] == 0
+        assert d["results"][0]["kv_puts"] == 0
 
 
 def test_A2_market_snapshot_second_call_zero_queries():
@@ -128,15 +95,15 @@ QUERY_CEILING = {
     "app/api/auth/zerodha/route.ts": 0,
     "app/api/auth/zerodha/status/route.ts": 1,
     "app/api/broker/quote/route.ts": 0,
-    "app/api/broker/status/route.ts": 1,
+    "app/api/broker/status/route.ts": 0,  # Worker token comes from KV; no Neon fallback
     "app/api/health/route.ts": 0,
     # levels / intelligence / pipeline-status pruned 2026-07-20: archived
     # #282 pruned 5 more (removed below): market-regime, post-listing,
     # ipo/post-listing, /api/ipo, ipo/playbook — dead routes, no UI callers.
-    "app/api/ipo-command/route.ts": 8,  # buildCommand() in lib/v2; ceiling kept as an N+1 upper bound (self-heal DDL dropped in #282)
+    "app/api/ipo-command/route.ts": 0,  # buildCommand() in lib/v2; ceiling kept as an N+1 upper bound (self-heal DDL dropped in #282)
     "app/api/ipo/cum-volume/route.ts": 0,
     "app/api/ipo/journey/route.ts": 0,
-    "app/api/ipo/live-preopen/route.ts": 2,
+    "app/api/ipo/live-preopen/route.ts": 0,
     "app/api/ipo/monitor/route.ts": 0,
     "app/api/ipo/tick-feed/route.ts": 0,
     "app/api/market/global/route.ts": 5,  # +1: india_breadth read (U16, 2026-07-22)
