@@ -13,8 +13,8 @@ def _read(*p):
 
 # ── zero-idle: every live/hot value the user sees on the cards page is KV ──
 def test_hot_reads_are_kv_served():
-    assert 'const CACHE_KEY = "ipo-command:v5"' in _read("app", "api", "ipo-command", "route.ts")   # v4->v5 (#282)
-    assert 'cached("live-preopen:rows:v3"' in _read("app", "api", "ipo", "live-preopen", "route.ts")  # v2->v3 (#282)
+    assert '"ipo-command:v6"' in _read("app", "api", "ipo-command", "route.ts")  # RESTORED: versioned pipeline snapshot
+    assert '"ipo-live-preopen:v2"' in _read("app", "api", "ipo", "live-preopen", "route.ts")  # RESTORED: versioned pipeline snapshot
     j = _read("app", "api", "ipo", "journey", "route.ts")
     assert "kv-cache" in j
     t = _read("app", "api", "ipo", "tick-feed", "route.ts")

@@ -79,3 +79,33 @@ Tested against the live DB on 2026-08-01: steps 1, 3, 4, 5, 6, 7 and the cleanup
 end to end. Steps 2a/2b/2c (the downloaders) are carried over from the previous repo and
 have NOT been executed from this one yet — run once with `--skip-download` omitted,
 supervised, before scheduling.
+
+## Snapshot architecture additions
+
+Status: Accepted
+
+The pipeline is the only production owner of IPO snapshot construction. User-facing routes consume Cloudflare KV snapshots and must not build snapshots or wake Neon.
+
+### Fetch
+
+Fetch jobs collect upstream IPO, document, market, subscription, GMP, and broker inputs into the database or local/R2-backed working files. Fetchers should keep source-specific behavior isolated and must not be imported by user-facing routes.
+
+### Build
+
+Snapshot build jobs live under `pipeline/build/`. The canonical snapshot builder is `pipeline/build/build_snapshots.ts`; it runs with `npx tsx`, reuses the TypeScript domain builders, selects the Journey universe with `selectJourneyUniverse()`, validates bounds from `lib/config/pipeline.ts`, and emits/publishes JSON snapshots.
+
+### Publish
+
+`pipeline/warm_kv.py` invokes the TypeScript builder. The builder posts validated snapshot payloads to `POST /api/admin/snapshots`, which is a publication-only endpoint that writes versioned KV and does not read Neon or construct domain payloads.
+
+### Capture
+
+`pipeline/capture_preopen.py` performs bounded listing-day pre-open capture into the existing `listing_observations` table only. It supports dry-run and limit modes, selects identity by ISIN first, prints operator verification details, and remains manually dispatched until owner approval enables any schedule.
+
+### Engines
+
+Engines compute derived IPO analysis such as scoring, valuation, extraction, and decision artifacts. Engine outputs must be validated before they feed published snapshots. Research outputs must graduate through validation before entering pipeline or production paths.
+
+### Diagnostics
+
+Diagnostics and audit checks should verify producer ownership, no user-route DB imports, snapshot publication/fallback behavior, pre-open bounds, and credential safety. Diagnostics must avoid deployments, broad backfills, paid APIs, or schema changes unless explicitly approved.

@@ -6,6 +6,7 @@ export async function buildIpoIndex(sql: SqlClient) {
   const rows = await sql`
     SELECT name_display AS company_name,
            symbol       AS sym,
+           isin,
            listing_date
     FROM ipo
     WHERE name_display IS NOT NULL

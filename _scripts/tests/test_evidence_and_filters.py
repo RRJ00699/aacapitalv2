@@ -88,8 +88,8 @@ def test_api_ipo_hard_filter():
         "/api/ipo was deleted in #282 and must not return"
 
 def test_cache_keys_bumped_for_filter_change():
-    assert "ipo-command:v5" in _read("app", "api", "ipo-command", "route.ts")     # v4->v5 (#282)
-    assert "live-preopen:rows:v3" in _read("app", "api", "ipo", "live-preopen", "route.ts")  # v2->v3 (#282)
+    assert "ipo-command:v6" in _read("app", "api", "ipo-command", "route.ts")  # RESTORED: filter contract now uses pipeline snapshot v6
+    assert "ipo-live-preopen:v2" in _read("app", "api", "ipo", "live-preopen", "route.ts")  # RESTORED: static filtered snapshot
 
 
 # ── C. SBI exact join ───────────────────────────────────────────────────────
