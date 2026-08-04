@@ -39,15 +39,6 @@ jobs:
         with:
           persist-credentials: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install Node dependencies for TypeScript snapshot builder
-        working-directory: .
-        run: npm ci
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -69,8 +60,7 @@ jobs:
           KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
           KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
           NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
-          SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}
-          SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
+          SKIP_SNAPSHOT_PUBLISH: "1"
           # R2 document store (r2.py). Account id + bucket names are repo VARIABLES; the
           # access key pair are repo SECRETS. Absent -> r2.py degrades to a no-op.
           R2_ACCOUNT_ID:        ${{ vars.R2_ACCOUNT_ID }}
@@ -84,6 +74,23 @@ jobs:
           SKIP="--skip-download"
           if [ "${{ github.event.inputs.skip_download }}" = "false" ]; then SKIP=""; fi
           python cron.py --run --limit ${{ github.event.inputs.limit || '10' }} $SKIP
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies for TypeScript snapshot builder
+        working-directory: .
+        run: npm ci
+
+      - name: Build and publish route snapshots
+        working-directory: pipeline
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}
+          SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
+        run: python publish_snapshot_with_ledger.py
 
       # DOCUMENTS LIVE IN R2, NOT GIT. Every extracted PDF is uploaded to Cloudflare R2
       # (content-addressed by sha256; documents.url = r2://<bucket>/<sha256>.pdf), so
@@ -106,6 +113,7 @@ jobs:
           name: pipeline-log-${{ github.run_number }}
           path: |
             pipeline/drive_manifest.json
+            pipeline/snapshot_publication_ledger.json
             pipeline/rhp_v2full/*_summary.json
           retention-days: 14
           if-no-files-found: ignore

@@ -10,7 +10,11 @@ type KV = {
   put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void>;
 };
 
+let testKV: KV | null | undefined;
+export function __setTestKVForIntegration(store: KV | null | undefined): void { testKV = store; }
+
 function kv(): KV | null {
+  if (testKV !== undefined) return testKV;
   try {
     return (getCloudflareContext().env as unknown as { CACHE?: KV }).CACHE ?? null;
   } catch {
