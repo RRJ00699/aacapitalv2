@@ -15,7 +15,8 @@
   // All consumers already guard for a missing CACHE binding (`?? null` + `if (kv)`),
   // so read-caching is simply disabled until then — no functional loss.
   "kv_namespaces": [
-    { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" }
+    { "binding": "JOB_FLAG", "id": "71fc0e8060ce4cad919b58d35b9681e2" },
+    { "binding": "CACHE", "id": "71fc0e8060ce4cad919b58d35b9681e2" }
   ],
   "vars": {
     "ALLOWED_EMAILS": "try.rakeshreddy@gmail.com,jesravani1@gmail.com",

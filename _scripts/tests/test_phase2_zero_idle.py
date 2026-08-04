@@ -47,35 +47,24 @@ def test_kv_cache_stale_tier():
 
 # ── B. ipo-command stale tier ───────────────────────────────────────────────
 def test_ipo_command_serves_stale_without_neon():
+    # OBSOLETE BY ARCHITECTURE: cache-on-miss/stale-twin assertions were replaced by
+    # immutable active/previous snapshots; product contract (readable fallback) is restored in versioned-snapshot.test.ts.
     src = _read(APP, "api", "ipo-command", "route.ts")
-    # PR #282: the stale twin is now served by the shared cachedWithStale() helper in
-    # lib/kv-cache.ts (its twin mechanics are covered by test_kv_cache_stale_tier),
-    # rather than inline in the route. Contract unchanged: KV-first, stale flagged,
-    # Neon not woken on a primary miss.
-    assert "cachedWithStale" in src, "route must serve via the stale-capable helper"
-    assert '"STALE"' in src, "stale responses must be flagged x-cache: STALE"
-    assert "x-warning" in src, "stale responses need the warning header"
-    assert '"HIT"' in src and '"MISS"' in src
-    # the warm/rebuild path writes BOTH twins so a KV expiry never wakes Neon
-    assert "kvPutBoth" in src, "warm/rebuild must also write the stale twin"
+    assert "readVersionedSnapshot" in src and "ipo-command:v6" in src
+    assert "@/lib/db" not in src
 
 
 # ── C. journey day-cache ────────────────────────────────────────────────────
 def test_journey_candles_kv_day_cache():
+    # OBSOLETE BY ARCHITECTURE: day bundle and route-side non-empty writes are gone.
+    # RESTORED product contract: ISIN-first per-IPO immutable snapshots and no route producer.
     src = _read(APP, "api", "ipo", "journey", "route.ts")
-    assert "journey:candles:v2" in src, "journey candle KV key missing"  # v1->v2: market_candles source (#282)
-    assert "kvStore" in src, "journey must use the shared KV helper"
-    assert "istDate" in src, "cache key must be per IST calendar day"
-    assert re.search(r"rows\.length", src) and "store.put" in src, \
-        "journey must cache only non-empty candle sets"
-    # live price stays per-request (never cached)
-    assert "/api/broker/quote" in src
-
+    assert "journey:isin:${isin}:v1" in src and "readVersionedSnapshot" in src
+    assert "store.put" not in src and "@/lib/db" not in src
 
 def test_journey_does_not_cache_empty():
     src = _read(APP, "api", "ipo", "journey", "route.ts")
-    m = re.search(r"if \(store && rows\.length\)", src)
-    assert m, "empty candle sets must not be cached (listing-morning bug)"
+    assert "store.put" not in src  # route cannot publish empty or non-empty data
 
 
 # ── D. cum-volume ───────────────────────────────────────────────────────────
@@ -97,8 +86,8 @@ def test_cum_volume_confirm_requires_both_bounds_and_close():
 
 # ── E. live-preopen ─────────────────────────────────────────────────────────
 def test_live_preopen_caches_read_keeps_write():
+    # OBSOLETE BY ARCHITECTURE: route-side cache/write and ipo_preopen_book were removed.
+    # RESTORED contract: pipeline snapshot only, honest BLOCKED overlay, no external request.
     src = _read(APP, "api", "ipo", "live-preopen", "route.ts")
-    assert "live-preopen:rows:v3" in src, "nightly-read KV key missing"  # v2->v3: canonical sources (#282)
-    assert 'from "@/lib/kv-cache"' in src
-    # the pre-open book capture is a WRITE and must remain per-request
-    assert "INSERT INTO ipo_preopen_book" in src
+    assert "ipo-live-preopen:v2" in src and 'live_overlay:"BLOCKED"' in src
+    assert "fetch(" not in src and "INSERT" not in src and "@/lib/db" not in src

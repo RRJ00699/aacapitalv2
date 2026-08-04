@@ -39,6 +39,15 @@ jobs:
         with:
           persist-credentials: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies for TypeScript snapshot builder
+        working-directory: .
+        run: npm ci
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -60,6 +69,8 @@ jobs:
           KITE_PASSWORD:     ${{ secrets.KITE_PASSWORD }}
           KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
           NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
+          SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}
+          SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
           # R2 document store (r2.py). Account id + bucket names are repo VARIABLES; the
           # access key pair are repo SECRETS. Absent -> r2.py degrades to a no-op.
           R2_ACCOUNT_ID:        ${{ vars.R2_ACCOUNT_ID }}
