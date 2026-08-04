@@ -9,6 +9,7 @@ from config import (MIN_POSITIVE_LIMIT, PREOPEN_DEFAULT_IPOS, PREOPEN_HARD_MAX_I
     PREOPEN_START_MINUTE_IST, PREOPEN_END_MINUTE_IST)
 
 def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN_DEFAULT_RETRIES):
+    limit=max(MIN_POSITIVE_LIMIT,min(limit,PREOPEN_HARD_MAX_IPOS)); retries=max(0,min(retries,PREOPEN_HARD_MAX_RETRIES))
     now=now or dt.datetime.now(ZoneInfo("Asia/Kolkata")); minute=now.hour*60+now.minute
     if now.weekday()>WEEKDAY_MAX_INDEX or not PREOPEN_START_MINUTE_IST<=minute<=PREOPEN_END_MINUTE_IST:
       print("ineligible: outside weekday 08:55-10:05 IST"); return 0
@@ -19,6 +20,9 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
       FROM ipo WHERE listing_date=%s AND isin IS NOT NULL
       AND symbol IS NOT NULL AND is_mainboard=true ORDER BY id LIMIT %s""",(now.date(),limit+MIN_POSITIVE_LIMIT))
     targets=cur.fetchall(); cur.close(); conn.close()
+    if not targets:
+      print(json.dumps({"selected":[],"selected_isins":[],"reason":"no listing-day IPO exists","fast_exit":True,"dry_run":dry_run,"limit":limit}))
+      return 0
     if len(targets)>limit: print(f"bounded: {len(targets)} eligible exceeds limit {limit}"); targets=targets[:limit]
     selected=[{"ipo_name":x[1],"isin":x[2],"symbol":x[3],"listing_date":str(x[4]),"reason_selected":x[5]} for x in targets]
     print(json.dumps({"dry_run":dry_run,"selected":selected,"selected_isins":[x["isin"] for x in selected],"limit":limit,"obs_type":"preopen",
@@ -41,4 +45,4 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
     conn.commit(); cur.close(); conn.close(); print(f"captured {count}"); return count
 
 if __name__=="__main__":
- ap=argparse.ArgumentParser(); ap.add_argument("--limit",type=int,default=PREOPEN_DEFAULT_IPOS); ap.add_argument("--dry-run",action="store_true"); ap.add_argument("--retries",type=int,default=PREOPEN_DEFAULT_RETRIES); a=ap.parse_args(); capture(limit=max(MIN_POSITIVE_LIMIT,min(a.limit,PREOPEN_HARD_MAX_IPOS)),dry_run=a.dry_run,retries=max(0,min(a.retries,PREOPEN_HARD_MAX_RETRIES)))
+ ap=argparse.ArgumentParser(); ap.add_argument("--limit",type=int,default=PREOPEN_DEFAULT_IPOS); ap.add_argument("--dry-run",action="store_true"); ap.add_argument("--retries",type=int,default=PREOPEN_DEFAULT_RETRIES); a=ap.parse_args(); capture(limit=a.limit,dry_run=a.dry_run,retries=a.retries)

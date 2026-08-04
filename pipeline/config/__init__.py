@@ -4,7 +4,7 @@ MIN_POSITIVE_LIMIT = 1
 # Owner default: real listing-day sessions usually have only a few IPOs, keeps Kite calls bounded.
 PREOPEN_DEFAULT_IPOS = 5
 # Hard guardrail: prevents an accidental broad listing capture from consuming Kite/API budget.
-PREOPEN_HARD_MAX_IPOS = 10
+PREOPEN_HARD_MAX_IPOS = 5
 # Owner default: bounded transient retry budget for broker hiccups.
 PREOPEN_DEFAULT_RETRIES = 2
 # Hard guardrail: avoids long capture loops inside the listing window.
