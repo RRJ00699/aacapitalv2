@@ -39,6 +39,15 @@ jobs:
         with:
           persist-credentials: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies for TypeScript snapshot builder
+        working-directory: .
+        run: npm ci
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

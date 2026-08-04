@@ -6,7 +6,11 @@ def test_pipeline_automatically_invokes_the_only_snapshot_producer():
     cron = (ROOT / "pipeline/cron.py").read_text()
     assert cron.count('"warm_kv.py"') == 1
     publisher = (ROOT / "pipeline/warm_kv.py").read_text()
-    assert publisher.count('"/api/admin/snapshots"') == 1
+    builder = (ROOT / "pipeline/build/build_snapshots.ts").read_text()
+    endpoint = (ROOT / "app/api/admin/snapshots/route.ts").read_text()
+    assert 'pipeline/build/build_snapshots.ts' in publisher
+    assert '/api/admin/snapshots' in builder
+    assert '@/lib/db' not in endpoint and '@neondatabase' not in endpoint
 
 def test_ci_build_has_no_fake_database_url():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()

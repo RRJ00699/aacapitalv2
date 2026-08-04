@@ -11,11 +11,14 @@ export const TRAIL = 0.12; // 12% trailing stop from peak
 // price_candles held the whole NSE universe, so its earliest row was not the
 // listing day; market_candles is IPO-scoped by ipo_id, but we still floor at
 // listing_date so pre-listing rows (if any) never enter the entry/floor math.
-export async function fetchJourneyCandles(sql: SqlClient, sym: string) {
+export async function fetchJourneyCandles(sql: SqlClient, identity: string | { isin: string; sym?: string }) {
+  const isin = typeof identity === "string" ? "" : identity.isin;
+  const sym = typeof identity === "string" ? identity : (identity.sym ?? "");
   return await sql`
     WITH t AS (
       SELECT id, listing_date FROM ipo
-      WHERE UPPER(symbol) = ${sym}
+      WHERE (${isin} <> '' AND isin = ${isin})
+         OR (${isin} = '' AND UPPER(symbol) = ${sym})
       ORDER BY listing_date DESC NULLS LAST
       LIMIT 1
     )
