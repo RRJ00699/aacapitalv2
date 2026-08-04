@@ -76,10 +76,8 @@ def test_journey_floors_candles_at_listing_date():
 # ── #4 cum-volume IST-today default ─────────────────────────────────────────
 def test_cum_volume_defaults_to_ist_today():
     route = _read(APP, "api", "ipo", "cum-volume", "route.ts")
-    assert "COALESCE" in route and "Asia/Kolkata" in route
-    # the broken pattern: bare `= ${date ?? null}::date` with no COALESCE
-    assert not re.search(r"=\s*\$\{date \?\? null\}::date\s*\n", route), \
-        "date filter must not compare against bare NULL"
+    assert "5.5 * 3600_000" in route and "toISOString" in route
+    assert "@neondatabase/serverless" not in route
 
 
 # ── #5 search -> post-listing exact row ─────────────────────────────────────

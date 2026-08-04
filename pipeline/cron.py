@@ -37,11 +37,12 @@ RE-RUNNABLE BY DESIGN
   python cron.py --run
   python cron.py --run --skip-download        # when the PDFs are already local
 """
-import os, sys, io, json, time, argparse, subprocess, datetime as dt
+import os, sys, io, json, time, argparse, subprocess, datetime as dt, uuid
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     except Exception: pass
 import psycopg2
+from run_ledger import record_step
 
 FILE_BUILD = "cron 2026-08-03 — retired IPOMatrix fallback (ipomatrix_raw dropped)"
 DEFAULT_CAP = 2.00
@@ -169,8 +170,9 @@ def run(step, cmd, dry, timeout=1800):
     print(f"      $ {' '.join(cmd)}")
     if dry:
         print("      [dry-run] not executed")
-        return {"step": step, "status": "dry"}
+        return {"step": step, "status": "dry", "started_at": None, "finished_at": None}
     t0 = time.time()
+    started_at = dt.datetime.now(dt.timezone.utc)
     try:
         # Child processes inherit a cp1252 console on Windows, so a single unicode
         # character in a progress line raises UnicodeEncodeError and fails a step that
@@ -185,15 +187,15 @@ def run(step, cmd, dry, timeout=1800):
             print(f"      {line}")
         if p.returncode != 0:
             print(f"      ! exit {p.returncode}  {err[:200]}")
-            return {"step": step, "status": "failed", "rc": p.returncode}
+            return {"step": step, "status": "failed", "rc": p.returncode, "error_summary": err[:300], "started_at": started_at, "finished_at": dt.datetime.now(dt.timezone.utc)}
         print(f"      ok ({time.time()-t0:.0f}s)")
-        return {"step": step, "status": "ok"}
+        return {"step": step, "status": "ok", "started_at": started_at, "finished_at": dt.datetime.now(dt.timezone.utc)}
     except subprocess.TimeoutExpired:
         print(f"      ! TIMEOUT after {timeout}s — step abandoned, chain continues")
-        return {"step": step, "status": "timeout"}
+        return {"step": step, "status": "timeout", "error_summary": f"timeout after {timeout}s", "started_at": started_at, "finished_at": dt.datetime.now(dt.timezone.utc)}
     except FileNotFoundError:
         print("      ! script not found — skipped")
-        return {"step": step, "status": "missing"}
+        return {"step": step, "status": "missing", "error_summary": "script not found", "started_at": started_at, "finished_at": dt.datetime.now(dt.timezone.utc)}
 
 
 def cleanup_docs(conn, dry):
@@ -254,6 +256,8 @@ def cleanup_docs(conn, dry):
 
 
 def main():
+    run_started = time.time()
+    run_id = str(uuid.uuid4())
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", action="store_true"); ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int, default=10)
@@ -436,13 +440,28 @@ def main():
     print("\n  " + "=" * 60)
     for s in steps:
         print(f"    {s['step']:44} {s['status']}")
+        if not dry:
+            event = {
+                "run_id": run_id, "step_name": s["step"], "started_at": s.get("started_at"),
+                "finished_at": s.get("finished_at"), "status": s["status"], "ipo_count": len(targets),
+                "rows_read": None, "rows_written": None, "estimated_cost": 0,
+                "actual_cost": final_spend if s["step"].startswith("4.") else 0,
+                "error_summary": s.get("error_summary"), "retry_number": 0,
+                "source_freshness": {"observed_at": dt.datetime.now(dt.timezone.utc).isoformat()},
+            }
+            try:
+                with_db(record_step, event)
+            except Exception as exc:
+                print(f"    ledger warning ({s['step']}): {type(exc).__name__}: {str(exc)[:120]}")
     print(f"    spend this run: ${final_spend:.3f} · today total "
           f"${today_total:.3f} of ${cap:.2f}")
+    print(f"    run_id {run_id} · IPOs {len(targets)} · runtime {time.time()-run_started:.0f}s · cost ${final_spend:.3f}")
     # A step that failed must surface in the exit code, but a NON-fatal step (a skipped
     # download, a parser that errored on one note) must not fail the whole run.
     hard_failed = [s_["step"] for s_ in steps if s_["status"] in ("failed", "timeout")]
     if hard_failed:
         print(f"    FAILED STEPS: {hard_failed}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

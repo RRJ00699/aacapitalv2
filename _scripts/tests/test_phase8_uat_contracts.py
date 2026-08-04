@@ -13,8 +13,8 @@ def _read(*p):
 
 # ── zero-idle: every live/hot value the user sees on the cards page is KV ──
 def test_hot_reads_are_kv_served():
-    assert 'const CACHE_KEY = "ipo-command:v5"' in _read("app", "api", "ipo-command", "route.ts")   # v4->v5 (#282)
-    assert 'cached("live-preopen:rows:v3"' in _read("app", "api", "ipo", "live-preopen", "route.ts")  # v2->v3 (#282)
+    assert 'SNAPSHOT_KEY = "ipo-command:v6"' in _read("app", "api", "ipo-command", "route.ts")
+    assert 'readStrict("ipo-live-preopen:v2")' in _read("app", "api", "ipo", "live-preopen", "route.ts")
     j = _read("app", "api", "ipo", "journey", "route.ts")
     assert "kv-cache" in j
     t = _read("app", "api", "ipo", "tick-feed", "route.ts")
@@ -22,7 +22,7 @@ def test_hot_reads_are_kv_served():
 
 def test_stale_twin_survives_neon_sleep():
     src = _read("lib", "kv-cache.ts")
-    assert ":stale" in src and "STALE" in src, "7d stale twin = zero-idle guarantee"
+    assert ":stale" in src and 'source: "stale"' in src
 
 def test_loadtest_script_cannot_wake_neon():
     src = _read("_scripts", "loadtest_k6.js")

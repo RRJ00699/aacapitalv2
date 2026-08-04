@@ -31,7 +31,7 @@ def _checks():
     tf = open(os.path.join(APP, "api", "ipo", "tick-feed", "route.ts")).read()
     r["tick-feed kv read"] = "live:tick:" in tf
     r["tick-feed live=1 path"] = 'searchParams.get("live")' in tf
-    r["tick-feed kv preferred"] = "kvLatest ?? dbLatest" in tf
+    r["tick-feed no DB fallback"] = "historical_snapshot_unavailable" in tf and "@/lib/db" not in tf
 
     kp = open(os.path.join(APP, "api", "admin", "kv-put", "route.ts")).read()
     r["kv-put admin key"] = "ADMIN_JOB_KEY" in kp

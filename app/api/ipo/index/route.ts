@@ -1,19 +1,11 @@
-// app/api/ipo/index/route.ts — full-universe identity index for the ipo2 search.
-// V2: reads canonical `ipo` (was V1 `ipo_consolidated`). Cached 6h.
 import { NextResponse } from "next/server";
-import { fixtureAwareNeon } from "@/lib/db";
-import { cached } from "@/lib/kv-cache";
-import { buildIpoIndex } from "@/lib/v2/ipo-index";
-import type { SqlClient } from "@/lib/v2/sql";
+import { readStrict, readVersionedSnapshot } from "@/lib/kv-cache";
 
 export const runtime = "edge";
+export const SNAPSHOT_KEY = "ipo:index:v3";
 
 export async function GET() {
-  try {
-    // key bumped v1->v2: payload now sourced from `ipo`, so the old cache is invalidated.
-    const body = await cached("ipo:index:v2", () => buildIpoIndex(fixtureAwareNeon() as unknown as SqlClient), 21600);
-    return new NextResponse(body, { headers: { "content-type": "application/json" } });
-  } catch (e) {
-    return NextResponse.json({ rows: [], degraded: String(e).slice(0, 200) }, { status: 200 });
-  }
+  const hit = await readVersionedSnapshot(SNAPSHOT_KEY) ?? await readStrict("ipo:index:v2");
+  if (!hit) return NextResponse.json({ rows: [], unavailable: true, reason: "snapshot_unavailable" }, { status: 503, headers: { "retry-after": "300", "x-cache": "MISS" } });
+  return new NextResponse(hit.payload, { headers: { "content-type": "application/json", "x-cache": hit.source === "primary" ? "HIT" : "STALE" } });
 }

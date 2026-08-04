@@ -41,23 +41,17 @@ def run_route(route, calls=2, fake_ist=None, expire=None):
 # ---------------- A2 — cache-hit proof ----------------
 
 def test_A2_ipo_command_second_call_zero_queries():
-    """The KV cache must actually serve the second call: ZERO Neon queries.
-    Phase-2: a miss now writes TWO keys (primary + 7d :stale twin)."""
+    """A total miss remains controlled and cannot build/write from the request."""
     d = run_route("app/api/ipo-command/route.ts", 2)
     c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 2
-    assert c2["queries"] == 0, "CACHE BROKEN — second call hit Neon"
-    assert c2["xcache"] == "HIT" and c2["kv_puts"] == 0
+    assert c1["queries"] == c2["queries"] == 0
+    assert c1["xcache"] == c2["xcache"] == "MISS"
+    assert c1["kv_puts"] == c2["kv_puts"] == 0
 
 def test_A2b_ipo_command_stale_tier_never_wakes_neon():
-    """Phase-2 zero-idle: when the PRIMARY key has expired but the :stale twin
-    survives, the route serves STALE with ZERO Neon queries and ZERO writes."""
+    """Expiration never turns the request into a builder."""
     d = run_route("app/api/ipo-command/route.ts", 3, expire="ipo-command:v5@3")
-    c1, c2, c3 = d["results"]
-    assert c1["xcache"] == "MISS" and c2["xcache"] == "HIT"
-    assert c3["xcache"] == "STALE", f"expected STALE, got {c3['xcache']}"
-    assert c3["queries"] == 0, "STALE path woke Neon — zero-idle broken"
-    assert c3["kv_puts"] == 0
+    assert all(c["queries"] == 0 and c["kv_puts"] == 0 for c in d["results"])
 
 # test_A2_market_regime_second_call_zero_queries REMOVED — #282 deleted
 # app/api/market-regime/route.ts (dead route, no UI caller). Nothing to execute.
@@ -69,9 +63,8 @@ def test_A2_live_preopen_caches_outside_window():
     the 1h inner rows-cache may also write on the miss call."""
     d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist="14:30")
     c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS"
-    assert any(op == "put:ipo-live-preopen:v2" for op in c1["kv_ops"])
-    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+    assert c1["queries"] == c2["queries"] == 0
+    assert c1["kv_puts"] == c2["kv_puts"] == 0
 
 @pytest.mark.parametrize("t", ["08:55", "09:45", "09:58", "10:05"])
 def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
@@ -82,19 +75,14 @@ def test_A2_live_preopen_HARD_BYPASS_in_decision_window(t):
     INNER rows-cache (main's zero-idle tier, identity rows that change only
     nightly) IS allowed to serve — it holds no decision-window data."""
     d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
-    full_key = "ipo-live-preopen:v2"
     for c in d["results"]:
-        assert c["xcache"] == "BYPASS-DECISION-WINDOW"
-        assert not any(op.endswith(":" + full_key) for op in c["kv_ops"]), \
-            f"{t}: full-response cache touched inside the window"
-    assert d["results"][0]["queries"] > 0, f"{t}: first call must hit the DB"
+        assert c["queries"] == 0 and c["kv_puts"] == 0
 
 def test_A2_window_boundaries_exact():
-    """08:54 and 10:06 cache; 08:55 and 10:05 bypass."""
-    for t, cached in (("08:54", True), ("10:06", True), ("08:55", False), ("10:05", False)):
+    """No clock boundary permits a Neon fallback."""
+    for t in ("08:54", "10:06", "08:55", "10:05"):
         d = run_route("app/api/ipo/live-preopen/route.ts", 2, fake_ist=t)
-        second_hit = d["results"][1]["queries"] == 0
-        assert second_hit is cached, f"{t}: expected cached={cached}"
+        assert all(c["queries"] == 0 for c in d["results"])
 
 
 def test_A2_market_snapshot_second_call_zero_queries():
@@ -102,8 +90,9 @@ def test_A2_market_snapshot_second_call_zero_queries():
     queries AND zero Yahoo fetches (whole handler skipped)."""
     d = run_route("app/api/market/snapshot/route.ts", 2)
     c1, c2 = d["results"]
-    assert c1["queries"] > 0 and c1["xcache"] == "MISS" and c1["kv_puts"] == 1
-    assert c2["queries"] == 0 and c2["xcache"] == "HIT"
+    assert c1["queries"] == c2["queries"] == 0
+    assert c1["xcache"] == c2["xcache"] == "MISS"
+    assert c1["kv_puts"] == c2["kv_puts"] == 0
 
 
 # ---------------- A1 — query-count ceilings ----------------
@@ -133,14 +122,14 @@ QUERY_CEILING = {
     # levels / intelligence / pipeline-status pruned 2026-07-20: archived
     # #282 pruned 5 more (removed below): market-regime, post-listing,
     # ipo/post-listing, /api/ipo, ipo/playbook — dead routes, no UI callers.
-    "app/api/ipo-command/route.ts": 8,  # buildCommand() in lib/v2; ceiling kept as an N+1 upper bound (self-heal DDL dropped in #282)
+    "app/api/ipo-command/route.ts": 0,
     "app/api/ipo/cum-volume/route.ts": 0,
     "app/api/ipo/journey/route.ts": 0,
-    "app/api/ipo/live-preopen/route.ts": 2,
+    "app/api/ipo/live-preopen/route.ts": 0,
     "app/api/ipo/monitor/route.ts": 0,
     "app/api/ipo/tick-feed/route.ts": 0,
-    "app/api/market/global/route.ts": 5,  # +1: india_breadth read (U16, 2026-07-22)
-    "app/api/market/snapshot/route.ts": 2,
+    "app/api/market/global/route.ts": 0,
+    "app/api/market/snapshot/route.ts": 0,
     "app/api/settings/route.ts": 2,
     "app/api/tracker/route.ts": 0,
 }

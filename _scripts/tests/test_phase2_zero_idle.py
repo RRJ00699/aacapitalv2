@@ -35,14 +35,13 @@ def _read(*parts):
 # ── A. shared helper ────────────────────────────────────────────────────────
 def test_kv_cache_stale_tier():
     src = _read(LIB, "kv-cache.ts")
-    for sym in ("export async function cachedWithStale",
-                "export async function kvPutBoth",
+    for sym in ("export async function readStrict",
+                "export async function readVersionedSnapshot",
                 "export function kvStore"):
         assert sym in src, f"kv-cache.ts missing {sym}"
     assert ":stale" in src, "stale twin key suffix missing"
-    # stale hit must return BEFORE build() runs (Neon stays asleep)
-    body = src[src.index("cachedWithStale"):]
-    assert body.index('source: "stale"') < body.index('source: "build"')
+    strict_body = src[src.index("export async function readStrict"):src.index("export async function cached")]
+    assert "await _build" not in strict_body and "build()" not in strict_body
 
 
 # ── B. ipo-command stale tier ───────────────────────────────────────────────
@@ -52,38 +51,33 @@ def test_ipo_command_serves_stale_without_neon():
     # lib/kv-cache.ts (its twin mechanics are covered by test_kv_cache_stale_tier),
     # rather than inline in the route. Contract unchanged: KV-first, stale flagged,
     # Neon not woken on a primary miss.
-    assert "cachedWithStale" in src, "route must serve via the stale-capable helper"
+    assert "readVersionedSnapshot" in src and "readStrict" in src
     assert '"STALE"' in src, "stale responses must be flagged x-cache: STALE"
-    assert "x-warning" in src, "stale responses need the warning header"
     assert '"HIT"' in src and '"MISS"' in src
-    # the warm/rebuild path writes BOTH twins so a KV expiry never wakes Neon
-    assert "kvPutBoth" in src, "warm/rebuild must also write the stale twin"
+    assert "@/lib/db" not in src
 
 
 # ── C. journey day-cache ────────────────────────────────────────────────────
 def test_journey_candles_kv_day_cache():
     src = _read(APP, "api", "ipo", "journey", "route.ts")
     assert "journey:candles:v2" in src, "journey candle KV key missing"  # v1->v2: market_candles source (#282)
-    assert "kvStore" in src, "journey must use the shared KV helper"
+    assert "readStrict" in src, "journey must use strict shared KV reads"
     assert "istDate" in src, "cache key must be per IST calendar day"
-    assert re.search(r"rows\.length", src) and "store.put" in src, \
-        "journey must cache only non-empty candle sets"
+    assert "historical_snapshot_unavailable" in src and "store.put" not in src
     # live price stays per-request (never cached)
     assert "/api/broker/quote" in src
 
 
 def test_journey_does_not_cache_empty():
     src = _read(APP, "api", "ipo", "journey", "route.ts")
-    m = re.search(r"if \(store && rows\.length\)", src)
-    assert m, "empty candle sets must not be cached (listing-morning bug)"
+    assert "store.put" not in src and "@/lib/db" not in src
 
 
 # ── D. cum-volume ───────────────────────────────────────────────────────────
 def test_cum_volume_kv_front():
     src = _read(APP, "api", "ipo", "cum-volume", "route.ts")
     assert "cumvol:v1" in src, "cum-volume KV key missing"
-    assert "86400" in src and "60" in src, "confirmed 24h / in-window 60s TTLs"
-    assert "kvStore" in src
+    assert "readStrict" in src and "retry-after" in src
 
 
 def test_cum_volume_confirm_requires_both_bounds_and_close():
@@ -91,14 +85,12 @@ def test_cum_volume_confirm_requires_both_bounds_and_close():
     # old bug: vol_end alone (whole-day volume) confirmed as the window total
     assert not re.search(r"vol_end != null \? Number\(r\.vol_end\) : null", src), \
         "vol_end-alone fallback must be gone (it confirmed the wrong number)"
-    assert "windowClosed" in src, "confirmation requires the 11:00 IST close"
-    assert "660" in src, "11:00 IST = 660 IST-minutes gate missing"
+    assert "@neondatabase/serverless" not in src
 
 
 # ── E. live-preopen ─────────────────────────────────────────────────────────
 def test_live_preopen_caches_read_keeps_write():
     src = _read(APP, "api", "ipo", "live-preopen", "route.ts")
-    assert "live-preopen:rows:v3" in src, "nightly-read KV key missing"  # v2->v3: canonical sources (#282)
+    assert "ipo-live-preopen:v2" in src
     assert 'from "@/lib/kv-cache"' in src
-    # the pre-open book capture is a WRITE and must remain per-request
-    assert "INSERT INTO ipo_preopen_book" in src
+    assert "INSERT INTO" not in src and "@/lib/db" not in src

@@ -16,14 +16,15 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
-      - run: npx next build
-        env: { DATABASE_URL: "postgresql://x:x@localhost/x", AUTH_SECRET: "ci" }
+      - name: Build without database environment variables
+        run: env -u DATABASE_URL -u NEON_DATABASE_URL npm run build
+        env: { AUTH_SECRET: "ci" }
       # Route runtime tier (A1/A2/A3) + admin auth-gating (B7) need node_modules,
       # so they run HERE — in the python job they would skip loudly.
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install pytest
-      - run: python -m pytest _scripts/tests/test_route_runtime.py _scripts/tests/test_auth_gating.py -q
+      - run: python -m pytest _scripts/tests/test_route_runtime.py _scripts/tests/test_auth_gating.py _scripts/tests/test_zero_wake_imports.py -q
   python-tests:
     runs-on: ubuntu-latest
     steps:
