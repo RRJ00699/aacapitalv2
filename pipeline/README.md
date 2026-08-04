@@ -100,7 +100,7 @@ Snapshot build jobs live under `pipeline/build/`. The canonical snapshot builder
 
 ### Capture
 
-`pipeline/capture_preopen.py` performs bounded listing-day pre-open capture into the existing `listing_observations` table only. It supports dry-run and limit modes, selects identity by ISIN first, prints operator verification details, and remains manually dispatched until owner approval enables any schedule.
+`pipeline/capture_preopen.py` performs bounded listing-day pre-open capture into the existing `listing_observations` table only. It supports dry-run and limit modes, selects identity by ISIN first, prints operator verification details, uses the weekday 03:25–04:35 UTC / 08:55–10:05 IST schedule to cover the 09:00–09:40 IST decision window, with 75 maximum scheduled checks/week and a fast exit when no eligible IPO lists that day.
 
 ### Engines
 
