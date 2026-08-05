@@ -29,6 +29,9 @@ export async function selectJourneyUniverse(sql: SqlClient, maxIpos: number = PI
     WHERE i.is_mainboard=true AND i.isin IS NOT NULL
       AND (iss.open_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
         OR iss.close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date
-        OR i.listing_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - ${PIPELINE_LIMITS.JOURNEY_MONITORING_DAYS})
+        OR i.listing_date >= (
+          (now() AT TIME ZONE 'Asia/Kolkata')::date
+          - (${PIPELINE_LIMITS.JOURNEY_MONITORING_DAYS}::int)
+        ))
     ORDER BY i.listing_date DESC NULLS LAST LIMIT ${bounded}` as Promise<JourneyUniverseRow[]>;
 }

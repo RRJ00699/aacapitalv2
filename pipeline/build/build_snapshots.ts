@@ -107,6 +107,10 @@ function fixtureSqlClient(): SqlClient {
     // This fixture executes every real snapshot query. Keep the guard here rather
     // than source-grepping so interpolated tagged-template SQL is also checked.
     if (/\bi\.name\b/i.test(query)) throw new Error(`stale ipo identity column in fixture query #${queryCount}: i.name`);
+    if (/SELECT DISTINCT i\.id/.test(query)
+        && !/i\.listing_date >= \(\s*\(now\(\) AT TIME ZONE 'Asia\/Kolkata'\)::date\s*- \(\?::int\)\s*\)/.test(query)) {
+      throw new Error("Journey monitoring-days SQL parameter must be explicitly cast to int");
+    }
     if (process.env.SNAPSHOT_TEST_POSTGRES_ERROR === "1" && /SELECT DISTINCT i\.id/.test(query)) {
       throw new Error("column i.forced_missing does not exist");
     }

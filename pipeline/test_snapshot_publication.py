@@ -164,7 +164,7 @@ def test_real_producer_chain_origin_without_trailing_slash_switches_active_point
         assert hit["payload"]["cards"][0]["sym"] == "FIXTURE"
 
 
-def test_real_builder_fixture_executes_and_rejects_stale_ipo_identity_sql():
+def test_real_builder_fixture_executes_and_checks_ipo_identity_and_date_parameter_sql():
     with ServerContext() as srv:
         res = run_publisher(srv.url)
         assert res.returncode == 0, res.stdout + res.stderr
