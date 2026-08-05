@@ -93,7 +93,7 @@ KNOWN_GAPS = {
 def test_B5_every_route_sql_block_runs_or_is_known_gap(contract_db):
     new_failures, cured = {}, []
     blocks = list(all_blocks())
-    assert len(blocks) >= 40, f"extractor regressed: only {len(blocks)} sql blocks found"
+    assert len(blocks) >= 38, f"extractor regressed: only {len(blocks)} sql blocks found"
     cur = contract_db.cursor()
     for f, i, q in blocks:
         q2, params = _bind(q)

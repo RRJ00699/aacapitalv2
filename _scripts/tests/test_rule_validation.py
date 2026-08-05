@@ -80,6 +80,9 @@ def test_pattern_mining_runs_and_reports(pg_uri, monkeypatch):
     import psycopg2, subprocess, sys, os
     uri = pg_uri
     conn = psycopg2.connect(uri); conn.autocommit = True; cur = conn.cursor()
+    for stmt in ("DROP VIEW IF EXISTS ipo_gold", "DROP TABLE IF EXISTS ipo_gold"):
+        try: cur.execute(stmt)
+        except Exception: pass  # whichever form the previous test left
     cur.execute("""CREATE TABLE ipo_gold (company_name TEXT, listing_date DATE,
         anchor_count INT, anchor_amount_cr NUMERIC, issue_size_cr NUMERIC, ipo_pe NUMERIC,
         final_qib NUMERIC, final_nii NUMERIC, final_retail NUMERIC, final_total NUMERIC,

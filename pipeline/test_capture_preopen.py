@@ -97,6 +97,7 @@ class CapturePreopenTest(unittest.TestCase):
         self.assertIn("GROUP BY ipo_id", sql)
         self.assertIn("COALESCE(issue.issue_size_cr,0) >= 150", sql)
         self.assertIn("issue.issue_size_cr DESC NULLS LAST", sql)
+        self.assertIn("i.isin IS NOT NULL", sql)
         self.assertIn("i.id", sql)
 
     def test_idempotent_write_contract(self):
@@ -109,6 +110,7 @@ class CapturePreopenTest(unittest.TestCase):
         self.assertEqual(kite.calls, [["NSE:SYM"]])
         self.assertIn("ON CONFLICT (ipo_id,obs_type,observed_at) DO NOTHING", inserts[0][0])
         self.assertIn("'preopen'", inserts[0][0])
+        self.assertEqual(json.loads(inserts[0][1][-1])["isin"], "INE000000001")
 
 if __name__ == "__main__":
     unittest.main()
