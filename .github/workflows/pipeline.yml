@@ -84,6 +84,13 @@ jobs:
         working-directory: .
         run: npm ci
 
+      # Required secret: a PostgreSQL role with SELECT-only grants. This gate never
+      # falls back to DATABASE_URL, so a write-capable pipeline credential is not used.
+      - name: Smoke-test snapshot queries against the canonical schema (read-only)
+        env:
+          NEON_READONLY_DATABASE_URL: ${{ secrets.NEON_READONLY_DATABASE_URL }}
+        run: npx tsx pipeline/build/build_snapshots.ts --limit=1 --concurrency=1 --schema-smoke
+
       # Snapshot publication configuration required after merge:
       # - Variable SNAPSHOT_PUBLISH_URL: site origin only, e.g. https://aacapitalprivatelimited.com
       # - Secret SNAPSHOT_PUBLISH_KEY: sent by builder as HTTP header x-aac-key

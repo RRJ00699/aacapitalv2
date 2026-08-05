@@ -188,6 +188,24 @@ def test_builder_postgres_failure_names_stage_domain_and_redacts_database_url():
         assert "secret-password" not in output
 
 
+def test_schema_smoke_requires_real_read_only_neon_but_not_publication_credentials():
+    env = os.environ.copy()
+    for name in ("DATABASE_URL", "NEON_DATABASE_URL", "NEON_READONLY_DATABASE_URL",
+                 "SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY", "SNAPSHOT_TEST_FIXTURE"):
+        env.pop(name, None)
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    assert npx
+    res = subprocess.run(
+        [npx, "tsx", "pipeline/build/build_snapshots.ts", "--limit=1", "--concurrency=1", "--schema-smoke"],
+        cwd=ROOT, env=env, text=True, capture_output=True, timeout=30,
+    )
+    output = res.stdout + res.stderr
+    assert res.returncode != 0
+    assert "NEON_READONLY_DATABASE_URL is required for schema smoke" in output
+    assert "SNAPSHOT_PUBLISH_URL" not in output
+    assert "SNAPSHOT_PUBLISH_KEY" not in output
+
+
 def test_real_producer_chain_origin_with_trailing_slash_keeps_single_endpoint_path():
     with ServerContext() as srv:
         res = run_publisher(srv.url + "/")

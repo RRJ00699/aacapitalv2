@@ -37,15 +37,17 @@ function requirePublishKey(): string {
   return key;
 }
 
-function requireDatabaseUrl(): string {
-  const url = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is required");
+function requireDatabaseUrl(schemaSmoke = false): string {
+  const url = schemaSmoke
+    ? process.env.NEON_READONLY_DATABASE_URL
+    : process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
+  if (!url) throw new Error(schemaSmoke ? "NEON_READONLY_DATABASE_URL is required for schema smoke" : "DATABASE_URL is required");
   return url;
 }
 
 function safeErrorMessage(error: unknown): string {
   let message = error instanceof Error ? error.message : String(error);
-  for (const secret of [process.env.DATABASE_URL, process.env.NEON_DATABASE_URL]) {
+  for (const secret of [process.env.DATABASE_URL, process.env.NEON_DATABASE_URL, process.env.NEON_READONLY_DATABASE_URL]) {
     if (secret) message = message.split(secret).join("[REDACTED]");
   }
   return message;
@@ -59,17 +61,31 @@ async function atBuilderStage<T>(domain: string, operation: () => Promise<T>): P
   }
 }
 
-async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: number) {
+function readOnlySqlClient(sql: SqlClient): SqlClient {
+  return ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const statement = strings.join("?").trimStart();
+    if (!/^(SELECT|WITH)\b/i.test(statement)) {
+      throw new Error("schema smoke blocked a non-read-only SQL statement");
+    }
+    return sql(strings, ...values);
+  }) as SqlClient;
+}
+
+async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: number, schemaSmoke = false) {
   const selected = await atBuilderStage("journey-universe", () => selectJourneyUniverse(sql, maxIpos));
-  console.log(JSON.stringify({ selected_count: selected.length, selected_isins: selected.map(r => r.isin), max_ipos: maxIpos,
+  if (!schemaSmoke) console.log(JSON.stringify({ selected_count: selected.length, selected_isins: selected.map(r => r.isin), max_ipos: maxIpos,
     concurrency, expected_neon_queries: PIPELINE_LIMITS.SNAPSHOT_FIXED_NEON_QUERIES + selected.length, scope: PIPELINE_SCOPE_DESCRIPTION }));
   const limit = pLimit(concurrency);
+  // An empty time-window universe must not let schema smoke skip Journey SQL.
+  const journeyQueries = selected.length || !schemaSmoke
+    ? selected.map(r => ({ row: r, identity: { isin: String(r.isin), sym: String(r.sym) } }))
+    : [{ row: null, identity: { isin: "__SCHEMA_SMOKE__", sym: "__SCHEMA_SMOKE__" } }];
   const [command, index, journeys, preopenRows, observations] = await Promise.all([
     atBuilderStage("ipo-command", () => buildCommand(sql)),
     atBuilderStage("ipo-index", () => buildIpoIndex(sql)),
-    Promise.all(selected.map(r => limit(async () => ({ row: r, candles: await atBuilderStage(
-      `journey:${String(r.isin)}`,
-      () => fetchJourneyCandles(sql, { isin: String(r.isin), sym: String(r.sym) }),
+    Promise.all(journeyQueries.map(({ row, identity }) => limit(async () => ({ row, candles: await atBuilderStage(
+      row ? `journey:${String(row.isin)}` : "journey:schema-probe",
+      () => fetchJourneyCandles(sql, identity),
     ) })))),
     atBuilderStage("live-preopen", () => fetchPreopenRows(sql)),
     atBuilderStage("preopen-observations", () => sql`SELECT DISTINCT ON (o.ipo_id) o.ipo_id,o.ltp,o.buy_qty,o.sell_qty,o.payload,o.observed_at FROM listing_observations o WHERE o.obs_type='preopen' ORDER BY o.ipo_id,o.observed_at DESC`),
@@ -79,7 +95,7 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
   return [
     { name: "ipo-command:v6", payload: command }, { name: "ipo:index:v3", payload: index },
     { name: "ipo-live-preopen:v2", payload: { ok:true, window:"listing_date = IST-today", book_live:false, live_overlay:"BLOCKED", degraded:"Kite credential automation is not proven safe", count:preopenRows.length, listings:preopenRows.map(r => ({...scoreListing(r),latest_observation:latest.get(String(r.ipo_id))??null})), fetchedAt:now } },
-    ...journeys.map(({row,candles}) => ({ name:`journey:isin:${String(row.isin).toUpperCase()}:v1`, payload:{ isin:row.isin,sym:row.sym,rows:candles,generated_at:now } })),
+    ...journeys.filter(({ row }) => row !== null).map(({row,candles}) => ({ name:`journey:isin:${String(row!.isin).toUpperCase()}:v1`, payload:{ isin:row!.isin,sym:row!.sym,rows:candles,generated_at:now } })),
   ];
 }
 
@@ -105,18 +121,25 @@ export async function main() {
   const maxIpos = Math.max(PIPELINE_LIMITS.MIN_POSITIVE_LIMIT, Math.min(PIPELINE_LIMITS.SNAPSHOT_HARD_MAX_IPOS, Number(arg("limit", process.env.SNAPSHOT_MAX_IPOS || String(PIPELINE_LIMITS.SNAPSHOT_DEFAULT_IPOS)))));
   const concurrency = Math.max(PIPELINE_LIMITS.MIN_POSITIVE_LIMIT, Math.min(PIPELINE_LIMITS.SNAPSHOT_HARD_MAX_CONCURRENCY, Number(arg("concurrency", String(PIPELINE_LIMITS.SNAPSHOT_DEFAULT_CONCURRENCY)))));
   const dryRun = process.argv.includes("--dry-run");
-  const publishEndpoint = snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
-  const key = requirePublishKey();
+  const schemaSmoke = process.argv.includes("--schema-smoke");
+  if (schemaSmoke && process.env.SNAPSHOT_TEST_FIXTURE === "1") throw new Error("schema smoke requires real Neon SQL; fixture is not allowed");
+  const publishEndpoint = schemaSmoke ? null : snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
+  const key = schemaSmoke ? null : requirePublishKey();
 
   const fixture = process.env.SNAPSHOT_TEST_FIXTURE === "1";
-  const sql = fixture ? fixtureSqlClient() : neon(requireDatabaseUrl()) as unknown as SqlClient;
-  const snapshots = await buildSnapshots(sql, maxIpos, concurrency);
+  const realSql = fixture ? null : neon(requireDatabaseUrl(schemaSmoke)) as unknown as SqlClient;
+  const sql = fixture ? fixtureSqlClient() : schemaSmoke ? readOnlySqlClient(realSql!) : realSql!;
+  const snapshots = await buildSnapshots(sql, maxIpos, concurrency, schemaSmoke);
   if (fixture) console.log(JSON.stringify({ snapshot_fixture_sql_verified: true }));
+  if (schemaSmoke) {
+    console.log(JSON.stringify({ stage: "schema-smoke", domain: "snapshot-builder", selected_count: snapshots.filter(s => s.name.startsWith("journey:")).length, status: "success" }));
+    return;
+  }
 
   if (dryRun) return;
   const payload = JSON.stringify({ snapshots });
   console.log(JSON.stringify({ payload_bytes:Buffer.byteLength(payload), snapshots:snapshots.length, publish_endpoint: publishEndpoint }));
-  const response = await fetch(publishEndpoint, { method:"POST",headers:{"content-type":"application/json","x-aac-key":key},body:payload });
+  const response = await fetch(publishEndpoint!, { method:"POST",headers:{"content-type":"application/json","x-aac-key":key!},body:payload });
   if (!response.ok) throw new Error(`publication failed ${response.status}: ${await response.text()}`);
   console.log(await response.text());
 }
