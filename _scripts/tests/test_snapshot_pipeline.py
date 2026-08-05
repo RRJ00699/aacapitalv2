@@ -22,3 +22,12 @@ def test_all_static_snapshot_consumers_have_no_db_import():
     for route in routes:
         source = (ROOT / route).read_text()
         assert "@/lib/db" not in source and "@neondatabase" not in source, route
+
+
+def test_snapshot_publication_workflow_documents_required_configuration():
+    wf = (ROOT / ".github/workflows/pipeline.yml").read_text()
+    assert "SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}" in wf
+    assert "SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}" in wf
+    assert "NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}" in wf
+    assert "Snapshot publication configuration required" in wf
+    assert "x-aac-key" in wf
