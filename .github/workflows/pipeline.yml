@@ -84,6 +84,10 @@ jobs:
         working-directory: .
         run: npm ci
 
+      # Snapshot publication configuration required after merge:
+      # - Variable SNAPSHOT_PUBLISH_URL: site origin only, e.g. https://aacapitalprivatelimited.com
+      # - Secret SNAPSHOT_PUBLISH_KEY: sent by builder as HTTP header x-aac-key
+      # - Secret NTFY_TOPIC: ntfy topic for publication-failure alerts
       - name: Build and publish route snapshots
         working-directory: pipeline
         env:

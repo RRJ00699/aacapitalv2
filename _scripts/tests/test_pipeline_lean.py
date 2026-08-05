@@ -18,7 +18,7 @@ class FakeProc:
 
 
 @pytest.fixture
-def orch(monkeypatch, tmp_path):
+def orch(monkeypatch, tmp_path, request):
     """Stub everything that leaves the process; record step invocations."""
     ran = []
     def fake_run(cmd, **kw):
@@ -30,6 +30,12 @@ def orch(monkeypatch, tmp_path):
     fail = {}
     monkeypatch.setattr(P.subprocess, "run", fake_run)
     monkeypatch.setattr(P, "preflight", lambda: True)
+    # Unit isolation: production _log_step writes to DB best-effort, but most
+    # tests intentionally use a fake DATABASE_URL. Keep run-order assertions
+    # focused and prevent unintended fake DB/network access; db-marked tests
+    # retain the production DB boundary.
+    if request.node.get_closest_marker("db") is None:
+        monkeypatch.setattr(P, "_log_step", lambda *args, **kwargs: None)
     monkeypatch.setattr(P, "LOG", str(tmp_path / "p.log"))
     monkeypatch.setenv("DATABASE_URL", "postgresql://fake-never-connects")
     monkeypatch.delenv("NEON_DATABASE_URL", raising=False)

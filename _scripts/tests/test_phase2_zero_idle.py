@@ -86,8 +86,9 @@ def test_cum_volume_confirm_requires_both_bounds_and_close():
 
 # ── E. live-preopen ─────────────────────────────────────────────────────────
 def test_live_preopen_caches_read_keeps_write():
-    # OBSOLETE BY ARCHITECTURE: route-side cache/write and ipo_preopen_book were removed.
-    # RESTORED contract: pipeline snapshot only, honest BLOCKED overlay, no external request.
+    # Stage 2: route still consumes the pipeline snapshot and never writes DB,
+    # but may call the dedicated broker proxy inside the bounded IST window.
     src = _read(APP, "api", "ipo", "live-preopen", "route.ts")
     assert "ipo-live-preopen:v2" in src and 'live_overlay:"BLOCKED"' in src
-    assert "fetch(" not in src and "INSERT" not in src and "@/lib/db" not in src
+    assert "approvedSymbolsFromSnapshot(payload)" in src
+    assert "INSERT" not in src and "@/lib/db" not in src and "searchParams" not in src

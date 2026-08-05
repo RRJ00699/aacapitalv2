@@ -10,16 +10,28 @@ import urllib.request
 from pathlib import Path
 
 FAILED_STEP = "snapshot build/publication"
-LEDGER = Path("snapshot_publication_ledger.json")
+HERE = Path(__file__).resolve().parent
+LEDGER = HERE / "snapshot_publication_ledger.json"
+ROOT = HERE.parent
+
 
 def write_ledger(record):
     LEDGER.write_text(json.dumps(record, indent=2) + "\n")
 
+
+def github_warning(message: str):
+    print(f"::warning::{message}")
+
+
 def send_failure_alert(record):
     topic = os.environ.get("NTFY_TOPIC", "").strip()
     if not topic:
-        print("ntfy snapshot failure alert skipped: NTFY_TOPIC unset")
+        record["alert_status"] = "NOT_CONFIGURED"
+        msg = "ntfy snapshot failure alert skipped: NTFY_TOPIC unset"
+        print(msg)
+        github_warning("NTFY_TOPIC is not configured; snapshot publication failure alert was not sent")
         return
+    record["alert_status"] = "ATTEMPTED"
     branch = os.environ.get("GITHUB_REF_NAME") or os.environ.get("GITHUB_REF", "unknown")
     sha = os.environ.get("GITHUB_SHA", "unknown")
     run_id = os.environ.get("GITHUB_RUN_ID", "unknown")
@@ -41,30 +53,54 @@ def send_failure_alert(record):
     )
     try:
         urllib.request.urlopen(req, timeout=10).read()
+        record["alert_status"] = "SENT"
         print("ntfy snapshot failure alert sent")
     except Exception as exc:
-        print(f"ntfy snapshot failure alert failed: {type(exc).__name__}: {str(exc)[:120]}")
+        record["alert_status"] = "FAILED"
+        record["alert_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        print(f"ntfy snapshot failure alert failed: {record['alert_error']}")
 
-started = time.time()
-record = {
-    "step": FAILED_STEP,
-    "status": "running",
-    "started_at": dt.datetime.now(dt.UTC).isoformat(),
-    "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
-    "branch": os.environ.get("GITHUB_REF_NAME") or os.environ.get("GITHUB_REF"),
-    "commit_sha": os.environ.get("GITHUB_SHA"),
-    "last_known_good_kv_remains_active": True,
-}
-write_ledger(record)
-try:
-    subprocess.run([sys.executable, "warm_kv.py"], check=True)
-    record.update({"status": "ok"})
-except subprocess.CalledProcessError as exc:
-    record.update({"status": "failed", "returncode": exc.returncode})
-    raise
-finally:
-    record["finished_at"] = dt.datetime.now(dt.UTC).isoformat()
-    record["duration_seconds"] = round(time.time() - started, 3)
+
+def missing_required_config():
+    missing = []
+    for name in ("SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY"):
+        if not os.environ.get(name, "").strip():
+            missing.append(name)
+    return missing
+
+
+def main() -> int:
+    started = time.time()
+    record = {
+        "step": FAILED_STEP,
+        "status": "running",
+        "started_at": dt.datetime.now(dt.UTC).isoformat(),
+        "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "branch": os.environ.get("GITHUB_REF_NAME") or os.environ.get("GITHUB_REF"),
+        "commit_sha": os.environ.get("GITHUB_SHA"),
+        "last_known_good_kv_remains_active": True,
+    }
     write_ledger(record)
-    if record["status"] == "failed":
-        send_failure_alert(record)
+    try:
+        missing = missing_required_config()
+        if missing:
+            raise RuntimeError("missing required snapshot publication configuration: " + ", ".join(missing))
+        subprocess.run([sys.executable, str(HERE / "warm_kv.py")], check=True, cwd=ROOT)
+        record.update({"status": "ok", "alert_status": "NOT_REQUIRED"})
+        return 0
+    except subprocess.CalledProcessError as exc:
+        record.update({"status": "failed", "returncode": exc.returncode, "error": f"snapshot builder exited {exc.returncode}"})
+        return exc.returncode or 1
+    except Exception as exc:
+        record.update({"status": "failed", "returncode": 1, "error": str(exc)})
+        return 1
+    finally:
+        record["finished_at"] = dt.datetime.now(dt.UTC).isoformat()
+        record["duration_seconds"] = round(time.time() - started, 3)
+        if record["status"] == "failed":
+            send_failure_alert(record)
+        write_ledger(record)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
