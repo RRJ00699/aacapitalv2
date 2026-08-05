@@ -6,7 +6,7 @@ export type JourneyUniverseRow = {
   isin: string;
   sym: string;
   listing_date: string | Date | null;
-  name: string | null;
+  company_name: string | null;
   reason_selected: string;
 };
 
@@ -16,7 +16,8 @@ export async function selectJourneyUniverse(sql: SqlClient, maxIpos: number = PI
     Math.min(PIPELINE_LIMITS.SNAPSHOT_HARD_MAX_IPOS, maxIpos),
   );
   return sql`
-    SELECT DISTINCT i.id, i.isin, UPPER(COALESCE(i.symbol,'')) AS sym, i.listing_date, i.name,
+    SELECT DISTINCT i.id, i.isin, UPPER(COALESCE(i.symbol,'')) AS sym, i.listing_date,
+      i.name_display AS company_name,
       CASE
         WHEN iss.open_date <= (now() AT TIME ZONE 'Asia/Kolkata')::date
           AND iss.close_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'open IPO issue'

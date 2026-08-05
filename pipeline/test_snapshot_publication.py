@@ -164,6 +164,30 @@ def test_real_producer_chain_origin_without_trailing_slash_switches_active_point
         assert hit["payload"]["cards"][0]["sym"] == "FIXTURE"
 
 
+def test_real_builder_fixture_executes_and_rejects_stale_ipo_identity_sql():
+    with ServerContext() as srv:
+        res = run_publisher(srv.url)
+        assert res.returncode == 0, res.stdout + res.stderr
+        assert '"snapshot_fixture_sql_verified":true' in res.stdout
+
+
+def test_builder_postgres_failure_names_stage_domain_and_redacts_database_url():
+    secret_url = "postgresql://secret-user:secret-password@example.invalid/db"
+    with ServerContext() as srv:
+        res = run_publisher(srv.url, extra_env={
+            "DATABASE_URL": secret_url,
+            "SNAPSHOT_TEST_POSTGRES_ERROR": "1",
+        })
+        output = res.stdout + res.stderr
+        assert res.returncode != 0
+        assert "[snapshot builder]" in output
+        assert "stage=query" in output
+        assert "domain=journey-universe" in output
+        assert "PostgreSQL error: column i.forced_missing does not exist" in output
+        assert secret_url not in output
+        assert "secret-password" not in output
+
+
 def test_real_producer_chain_origin_with_trailing_slash_keeps_single_endpoint_path():
     with ServerContext() as srv:
         res = run_publisher(srv.url + "/")
