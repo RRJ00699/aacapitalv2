@@ -17,12 +17,17 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
     # ISIN is selected first and is the durable identity; symbol is only Kite routing metadata.
     cur.execute("""SELECT i.id, i.name, i.isin, UPPER(i.symbol), i.listing_date,
         'IST-today mainboard listing with ISIN and symbol' AS reason_selected,
-        ii.issue_size_cr
-      FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
+        issue.issue_size_cr
+      FROM ipo i
+      LEFT JOIN (
+        SELECT ipo_id, MAX(issue_size_cr) AS issue_size_cr
+        FROM ipo_issue
+        GROUP BY ipo_id
+      ) issue ON issue.ipo_id=i.id
       WHERE i.listing_date=%s AND i.isin IS NOT NULL
       AND i.symbol IS NOT NULL AND i.is_mainboard=true
-      ORDER BY CASE WHEN COALESCE(ii.issue_size_cr,0) >= 150 THEN 0 ELSE 1 END,
-        ii.issue_size_cr DESC NULLS LAST, i.id
+      ORDER BY CASE WHEN COALESCE(issue.issue_size_cr,0) >= 150 THEN 0 ELSE 1 END,
+        issue.issue_size_cr DESC NULLS LAST, i.id
       LIMIT %s""",(now.date(),limit+MIN_POSITIVE_LIMIT))
     targets=cur.fetchall(); cur.close(); conn.close()
     if not targets:

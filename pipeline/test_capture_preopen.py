@@ -93,8 +93,10 @@ class CapturePreopenTest(unittest.TestCase):
         mod, cur, _conn, _kite = self.load_module([])
         mod.capture(now=dt.datetime(2026,8,4,9,0,tzinfo=ZoneInfo("Asia/Kolkata")), dry_run=True)
         sql = cur.executed[0][0]
-        self.assertIn("COALESCE(ii.issue_size_cr,0) >= 150", sql)
-        self.assertIn("ii.issue_size_cr DESC NULLS LAST", sql)
+        self.assertIn("MAX(issue_size_cr) AS issue_size_cr", sql)
+        self.assertIn("GROUP BY ipo_id", sql)
+        self.assertIn("COALESCE(issue.issue_size_cr,0) >= 150", sql)
+        self.assertIn("issue.issue_size_cr DESC NULLS LAST", sql)
         self.assertIn("i.id", sql)
 
     def test_idempotent_write_contract(self):
