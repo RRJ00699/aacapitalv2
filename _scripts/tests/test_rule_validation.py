@@ -70,12 +70,15 @@ def test_engine_runs_stores_and_ranks(pg_uri, monkeypatch, capsys):
 SCRIPTS = __import__("os").path.join(__import__("os").path.dirname(__file__), "..")
 
 
-def test_pattern_mining_runs_and_reports(tmp_path, monkeypatch):
+def test_pattern_mining_runs_and_reports(pg_uri, monkeypatch):
     """Executed smoke: the winners-profile miner runs against a real Postgres
-    ipo_gold and prints the factor table (owner ask 2026-07-22)."""
-    import pgserver, psycopg2, subprocess, sys, os
-    pg = pgserver.get_server(tmp_path / "pm")
-    uri = pg.get_uri()
+    ipo_gold and prints the factor table (owner ask 2026-07-22).
+
+    Uses the shared pg_uri fixture so environments without pgserver skip with
+    the suite's standard explicit reason instead of failing at import time.
+    """
+    import psycopg2, subprocess, sys, os
+    uri = pg_uri
     conn = psycopg2.connect(uri); conn.autocommit = True; cur = conn.cursor()
     cur.execute("""CREATE TABLE ipo_gold (company_name TEXT, listing_date DATE,
         anchor_count INT, anchor_amount_cr NUMERIC, issue_size_cr NUMERIC, ipo_pe NUMERIC,
