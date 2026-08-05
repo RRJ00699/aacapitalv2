@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "aacapital-kite-broker-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-14",
+  "keep_vars": true,
+  "vars": {
+    "KITE_BASE_URL": "https://api.kite.trade"
+  }
+}

@@ -3,8 +3,8 @@ _scripts/refresh_kite_token.py
 
 Fully automated Kite token refresh using TOTP.
 No Selenium, no browser — pure HTTP + pyotp.
-Stores token in Neon platform_config table.
-All other scripts read token from DB, not environment.
+Rotates token into the dedicated Cloudflare Kite broker Worker Secret.
+The public Next.js Worker never receives or reads the Kite access token.
 
 Run manually: python _scripts/refresh_kite_token.py
 GitHub Actions: kite-token-refresh.yml at 8:00 AM IST Mon-Fri
@@ -174,8 +174,12 @@ def exchange_token(request_token: str) -> str:
     return data["access_token"]
 
 
-def save_to_db(access_token: str):
-    """Save token to Neon platform_config table."""
+def legacy_save_to_db(access_token: str):
+    """Temporary development-only legacy write. Disabled unless ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1."""
+    if os.environ.get("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") != "1":
+        log.info("legacy platform_config token write skipped")
+        return
+    log.warning("LEGACY development-only platform_config token write enabled")
     conn = psycopg2.connect(DATABASE_URL)
     cur  = conn.cursor()
 
@@ -224,6 +228,55 @@ def save_to_db(access_token: str):
     conn.commit()
     conn.close()
     log.info(f"Token saved to Neon platform_config + kite_session")
+
+
+def rotate_worker_secret(access_token: str) -> None:
+    """Update the dedicated broker Worker Secret without printing the token.
+
+    This uses wrangler only when explicitly enabled by the operator. CI and dry-runs
+    must not mutate Cloudflare.
+    """
+    if os.environ.get("EXECUTE_CLOUDFLARE_SECRET_ROTATION") != "1":
+        raise RuntimeError("Cloudflare secret rotation disabled; set EXECUTE_CLOUDFLARE_SECRET_ROTATION=1 only during approved production activation")
+    import subprocess
+    worker = os.environ.get("KITE_BROKER_WORKER_NAME", "aacapital-kite-broker-proxy")
+    cmd = ["npx", "wrangler", "secret", "put", "KITE_ACCESS_TOKEN", "--name", worker]
+    subprocess.run(cmd, input=access_token, text=True, check=True)
+
+
+def verify_broker() -> bool:
+    """Verify broker /health and one bounded /quotes call; never includes token."""
+    url = os.environ.get("KITE_BROKER_PROXY_URL", "").rstrip("/")
+    secret = os.environ.get("KITE_BROKER_PROXY_AUTH_SECRET", "")
+    symbol = os.environ.get("KITE_ROTATION_VERIFY_SYMBOL", "NIFTYBEES").strip().upper()
+    if not url or not secret:
+        log.error("Broker verification missing URL/auth secret")
+        return False
+    headers = {"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}
+    try:
+        h = requests.get(f"{url}/health", headers=headers, timeout=8)
+        if h.status_code != 200:
+            return False
+        q = requests.post(f"{url}/quotes", headers=headers, json={"symbols": [symbol], "allowed_symbols": [symbol]}, timeout=8)
+        return q.status_code == 200 and bool(q.json().get("ok"))
+    except Exception as e:
+        log.error(f"Broker verification failed: {type(e).__name__}")
+        return False
+
+
+def mark_overlay_available() -> None:
+    """Non-token control-plane hook reserved for activation; no-op unless configured."""
+    log.info("Broker verified; live overlay may be enabled by public Worker configuration")
+
+
+def last_snapshot_timestamp() -> str:
+    try:
+        conn = psycopg2.connect(DATABASE_URL); cur = conn.cursor()
+        cur.execute("SELECT updated_at::text FROM platform_config WHERE key = 'ipo-live-preopen:v2'")
+        row = cur.fetchone(); conn.close()
+        return row[0] if row else "unknown"
+    except Exception:
+        return "unknown"
 
 
 def get_token_from_db() -> str:
@@ -279,19 +332,20 @@ def main():
 
     try:
         request_token = get_request_token()
-        log.info(f"request_token: {request_token[:8]}...")
+        log.info("request_token obtained")
 
         access_token = exchange_token(request_token)
-        log.info(f"access_token:  {access_token[:8]}...")
+        log.info("access_token obtained")
 
-        save_to_db(access_token)
+        legacy_save_to_db(access_token)
+        rotate_worker_secret(access_token)
 
-        if verify_token(access_token):
-            log.info("✅ Token refresh complete — all pipelines will use new token")
+        if verify_broker():
+            mark_overlay_available()
+            log.info("✅ Broker Worker token rotation complete")
         else:
-            log.error("❌ Token saved but verification failed")
-            _alert("Token saved but VERIFICATION failed — Kite may reject calls today. "
-                   "Check API key/secret pair and Zerodha app status.")
+            log.error("❌ Broker verification failed; live overlay remains disabled")
+            _alert(f"Broker verification failed. Live overlay remains disabled; static snapshot fallback retained. Last snapshot: {last_snapshot_timestamp()}")
             sys.exit(1)
 
     except Exception as e:

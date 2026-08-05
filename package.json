@@ -17,7 +17,9 @@
     "uat:smoke": "node uat/smoke.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"lib/**/*.test.ts\"",
-    "set-password": "node _scripts/set-password.mjs"
+    "set-password": "node _scripts/set-password.mjs",
+    "worker:kite:dry-run": "wrangler deploy --config workers/kite-broker-proxy/wrangler.jsonc --dry-run",
+    "worker:kite:types": "wrangler types --config workers/kite-broker-proxy/wrangler.jsonc workers/kite-broker-proxy/worker-configuration.d.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
