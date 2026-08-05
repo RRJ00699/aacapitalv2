@@ -1,5 +1,7 @@
 # Test Contract Audit — Phase A
 
+Status: Active operational-readiness audit.
+
 This audit records assertion strength for the Phase A operational-readiness PR. It is intentionally limited to pre-open capture, pipeline ordering, snapshot publication, and the deferred Journey measurement TODO. No Journey selector logic, schema, deployment, migration, Worker secret rotation, paid extraction, or repository cleanup is included.
 
 ## Preserved

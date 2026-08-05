@@ -11,7 +11,10 @@ type KV = {
 };
 
 let testKV: KV | null | undefined;
-export function __setTestKVForIntegration(store: KV | null | undefined): void { testKV = store; }
+export function __setTestKVForIntegration(store: KV | null | undefined): void {
+  if (process.env.NODE_ENV === "production") throw new Error("test KV injection is disabled in production");
+  testKV = store;
+}
 
 function kv(): KV | null {
   if (testKV !== undefined) return testKV;

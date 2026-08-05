@@ -129,8 +129,8 @@ def test_core_ipo_scope_no_universe_candles():
     assert 'step("candles: full NSE universe"' not in lean
     assert 'step("candles: in-window daily sync"' in lean
     assert '"universe_candles"' not in open(os.path.join(ROOT, "job_runner.py"), encoding="utf-8").read()
-    route = open(os.path.join(REPO, "app", "api", "admin", "pipeline-steps", "route.ts"), encoding="utf-8").read()
-    assert "full NSE universe" not in route
+    expected = open(os.path.join(REPO, "lib", "pipeline-steps.ts"), encoding="utf-8").read()
+    assert "full NSE universe" not in expected
 
 
 def test_ticker_targets_use_strong_symbol_key(pg_uri, require_pg_tz):

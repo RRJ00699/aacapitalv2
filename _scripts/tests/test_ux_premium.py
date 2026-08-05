@@ -385,7 +385,7 @@ def test_chittorgarh_steps_removed_from_pipeline():
     assert 'step("scrape IPO calendar + details"' not in lean.replace("# step(", "STEP_OFF(")
     assert 'step("anchor + subscription enrich"' not in lean.replace("# step(", "STEP_OFF(")
     assert '"ipomatrix_ingest.py","--only-null"' in lean and '"ipo/fetch_nse_ipos.py"' in lean
-    mirror = _read("app", "api", "admin", "pipeline-steps", "route.ts")
+    mirror = _read("lib", "pipeline-steps.ts")
     assert "scrape IPO calendar" not in mirror and "anchor + subscription enrich" not in mirror
 
 

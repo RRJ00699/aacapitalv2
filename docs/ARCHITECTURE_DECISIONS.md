@@ -71,7 +71,8 @@ Permanent decisions are append-only. Supersede an ADR with a later ADR; do not s
 
 - **Existing schema only:** writes `listing_observations(ipo_id, observed_at, obs_type, ltp, buy_qty, sell_qty, payload)` with `obs_type='preopen'`. Payload is `{isin,symbol,discovery_price,depth}`. `ON CONFLICT (ipo_id,obs_type,observed_at) DO NOTHING` provides minute-bucket idempotency.
 - **Bounds:** IST-today mainboard listings are resolved by ISIN first, count/retry limits are the documented constants in `pipeline/config/__init__.py`, and one Kite quote call is made per selected listing per five-minute session. Dry-run prints IPO name, ISIN, symbol, listing date, reason selected, and the write contract. Expected rows/session are bounded by the configured default limit.
-- **Schedule:** no schedule is activated without owner approval. Proposed maximum is 75 lightweight weekday checks/week; no-listing checks are expected below one minute, and real capture below two minutes. IST and US-owner equivalents are documented in the workflow.
+- **Schedule:** enabled for weekdays only at 03:25–04:35 UTC, which is 08:55–10:05 IST. This intentionally covers the 09:00–09:40 IST decision window, remains bounded at 75 maximum scheduled checks/week, and fast-exits when no eligible IPO lists that day. It is not broadened to 24/7.
+- **Kite credential design selected for future implementation:** Cloudflare Worker Secret rotation using `wrangler versions secret put` → verification → explicit `wrangler versions deploy`. Future implementation requires a scoped Workers Scripts Write/Edit token, no Kite token in KV, no token in logs/artifacts/responses, rotation before the market window, deployment verification, ntfy alert on rotation or verification failure, and static snapshot fallback when unavailable. This PR records the owner decision only; it does not implement or deploy secret rotation.
 
 
 ## ADR-009 — Research Separation

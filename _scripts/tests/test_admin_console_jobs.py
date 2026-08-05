@@ -110,8 +110,8 @@ def test_expected_steps_mirror_the_lean_pipeline_exactly():
     repo = os.path.dirname(root)
     lean = open(os.path.join(root, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
     lean_steps = re.findall(r'(?<!_log_)step\("([^"]+)"', lean)  # _log_step() skip-rows are not steps
-    route = open(os.path.join(repo, "app", "api", "admin", "pipeline-steps", "route.ts"), encoding="utf-8").read()
-    ui_steps = re.findall(r'\{ step: "([^"]+)"', route)
+    expected = open(os.path.join(repo, "lib", "pipeline-steps.ts"), encoding="utf-8").read()
+    ui_steps = re.findall(r'\{ step: "([^"]+)"', expected)
     assert lean_steps, "lean pipeline steps not parseable"
     assert ui_steps == lean_steps, (
         f"Pipeline-health EXPECTED list diverged from the lean pipeline.\n"

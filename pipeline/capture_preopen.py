@@ -15,21 +15,31 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
       print("ineligible: outside weekday 08:55-10:05 IST"); return 0
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
     # ISIN is selected first and is the durable identity; symbol is only Kite routing metadata.
-    cur.execute("""SELECT id, name, isin, UPPER(symbol), listing_date,
-        'IST-today mainboard listing with ISIN and symbol' AS reason_selected
-      FROM ipo WHERE listing_date=%s AND isin IS NOT NULL
-      AND symbol IS NOT NULL AND is_mainboard=true ORDER BY id LIMIT %s""",(now.date(),limit+MIN_POSITIVE_LIMIT))
+    cur.execute("""SELECT i.id, i.name, i.isin, UPPER(i.symbol), i.listing_date,
+        'IST-today mainboard listing with ISIN and symbol' AS reason_selected,
+        issue.issue_size_cr
+      FROM ipo i
+      LEFT JOIN (
+        SELECT ipo_id, MAX(issue_size_cr) AS issue_size_cr
+        FROM ipo_issue
+        GROUP BY ipo_id
+      ) issue ON issue.ipo_id=i.id
+      WHERE i.listing_date=%s AND i.isin IS NOT NULL
+      AND i.symbol IS NOT NULL AND i.is_mainboard=true
+      ORDER BY CASE WHEN COALESCE(issue.issue_size_cr,0) >= 150 THEN 0 ELSE 1 END,
+        issue.issue_size_cr DESC NULLS LAST, i.id
+      LIMIT %s""",(now.date(),limit+MIN_POSITIVE_LIMIT))
     targets=cur.fetchall(); cur.close(); conn.close()
     if not targets:
       print(json.dumps({"selected":[],"selected_isins":[],"reason":"no listing-day IPO exists","fast_exit":True,"dry_run":dry_run,"limit":limit}))
       return 0
     if len(targets)>limit: print(f"bounded: {len(targets)} eligible exceeds limit {limit}"); targets=targets[:limit]
-    selected=[{"ipo_name":x[1],"isin":x[2],"symbol":x[3],"listing_date":str(x[4]),"reason_selected":x[5]} for x in targets]
+    selected=[{"ipo_name":x[1],"isin":x[2],"symbol":x[3],"listing_date":str(x[4]),"reason_selected":x[5],"issue_size_cr":float(x[6]) if x[6] is not None else None} for x in targets]
     print(json.dumps({"dry_run":dry_run,"selected":selected,"selected_isins":[x["isin"] for x in selected],"limit":limit,"obs_type":"preopen",
       "columns":["ipo_id","observed_at","obs_type","ltp","buy_qty","sell_qty","payload"],"idempotency":"(ipo_id,obs_type,observed_at)","expected_rows":len(targets)}))
     if dry_run or not targets: return 0
     kite=get_kite(); conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor(); count=0
-    for ipo_id,_name,isin,symbol,_listing_date,_reason in targets:
+    for ipo_id,_name,isin,symbol,_listing_date,_reason,_issue_size_cr in targets:
       quote=None
       for attempt in range(retries+MIN_POSITIVE_LIMIT):
         try: quote=kite.quote([f"NSE:{symbol}"]).get(f"NSE:{symbol}",{}); break
