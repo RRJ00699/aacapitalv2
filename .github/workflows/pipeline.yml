@@ -90,6 +90,7 @@ jobs:
           DATABASE_URL:      ${{ secrets.DATABASE_URL }}
           SNAPSHOT_PUBLISH_URL: ${{ vars.SNAPSHOT_PUBLISH_URL }}
           SNAPSHOT_PUBLISH_KEY: ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
+          NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
         run: python publish_snapshot_with_ledger.py
 
       # DOCUMENTS LIVE IN R2, NOT GIT. Every extracted PDF is uploaded to Cloudflare R2
