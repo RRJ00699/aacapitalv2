@@ -175,7 +175,12 @@ def exchange_token(request_token: str) -> str:
 
 
 def legacy_save_to_db(access_token: str):
-    """Temporary development-only legacy write. Disabled unless ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1."""
+    """Temporary rollback switch. Disabled unless ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1.
+
+    TODO/ADR Stage 2: delete this function and its call immediately after all
+    three owner proofs are complete: broker Worker Secret rotation succeeds,
+    broker verification succeeds, and rollback drill succeeds.
+    """
     if os.environ.get("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") != "1":
         log.info("legacy platform_config token write skipped")
         return

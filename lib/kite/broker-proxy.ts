@@ -31,7 +31,10 @@ export function istMinutes(d = new Date()): number {
 
 export function inIpoDecisionWindow(d = new Date()): boolean {
   const mins = istMinutes(d)
-  return mins >= 9 * 60 + 45 && mins <= 10 * 60 + 14
+  // Mirrors pipeline/config PREOPEN_START/END: 08:55–10:05 IST.
+  // This bounded live-overlay window covers the 09:00–09:40 critical decision
+  // period while allowing pre-open priming and immediate post-discovery fallback.
+  return mins >= 8 * 60 + 55 && mins <= 10 * 60 + 5
 }
 
 export function normalizeSnapshotSymbol(value: unknown): string | null {

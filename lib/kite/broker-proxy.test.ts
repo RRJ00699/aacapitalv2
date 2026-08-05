@@ -19,9 +19,11 @@ test("public allow-list is derived from server snapshot, not browser input", () 
 })
 
 test("IST decision window is bounded", () => {
-  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:15:00Z")), true) // 09:45 IST
-  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:44:00Z")), true) // 10:14 IST
-  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:45:00Z")), false)
+  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T03:24:00Z")), false) // 08:54 IST
+  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T03:25:00Z")), true)  // 08:55 IST
+  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:10:00Z")), true)  // 09:40 IST critical decision window
+  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:35:00Z")), true)  // 10:05 IST
+  assert.equal(inIpoDecisionWindow(new Date("2026-08-05T04:36:00Z")), false) // 10:06 IST
 })
 
 test("broker authentication required", async () => {
