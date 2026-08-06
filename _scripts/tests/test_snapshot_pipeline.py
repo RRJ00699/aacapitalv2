@@ -1,4 +1,6 @@
 import pathlib
+import re
+import shlex
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -31,3 +33,25 @@ def test_snapshot_publication_workflow_documents_required_configuration():
     assert "NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}" in wf
     assert "Snapshot publication configuration required" in wf
     assert "x-aac-key" in wf
+
+
+def test_schema_smoke_workflow_command_resolves_from_configured_working_directory():
+    workflow = (ROOT / ".github/workflows/pipeline.yml").read_text()
+    working_directory_match = re.search(
+        r"defaults:\s+run:\s+working-directory:\s*([^\s#]+)", workflow
+    )
+    smoke_step_match = re.search(
+        r"- name: Smoke-test snapshot queries.*?\n(?:.*\n)*?\s+run:\s*(npx tsx [^\n]+--schema-smoke)",
+        workflow,
+    )
+
+    assert working_directory_match, "pipeline job must configure a working directory"
+    assert smoke_step_match, "schema-smoke workflow command must be configured"
+
+    working_directory = working_directory_match.group(1)
+    command = shlex.split(smoke_step_match.group(1))
+    command_path = command[2]
+    resolved_path = ROOT / working_directory / command_path
+
+    assert "pipeline/pipeline" not in resolved_path.as_posix()
+    assert resolved_path.is_file(), f"workflow command path does not exist: {resolved_path}"
