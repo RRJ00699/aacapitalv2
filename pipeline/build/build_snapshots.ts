@@ -82,6 +82,10 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
   const journeyQueries = selected.length || !schemaSmoke
     ? selected.map(r => ({ row: r, identity: { isin: String(r.isin), sym: String(r.sym) } }))
     : [{ row: null, identity: { isin: "__SCHEMA_SMOKE__", sym: "__SCHEMA_SMOKE__" } }];
+  // Schema smoke must execute the full Details SQL even when today's bounded universe is
+  // empty. A non-existent sentinel id returns no domain row while PostgreSQL still parses,
+  // plans, and validates every new table, column, alias, lateral join and JSON aggregate.
+  const detailIds = selected.length || !schemaSmoke ? selected.map(row => row.id) : [-1];
   const [command, index, journeys, preopenRows, observations, detailRows] = await Promise.all([
     atBuilderStage("ipo-command", () => buildCommand(sql)),
     atBuilderStage("ipo-index", () => buildIpoIndex(sql)),
@@ -91,7 +95,7 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
     ) })))),
     atBuilderStage("live-preopen", () => fetchPreopenRows(sql)),
     atBuilderStage("preopen-observations", () => sql`SELECT DISTINCT ON (o.ipo_id) o.ipo_id,o.ltp,o.buy_qty,o.sell_qty,o.payload,o.observed_at FROM listing_observations o WHERE o.obs_type='preopen' ORDER BY o.ipo_id,o.observed_at DESC`),
-    atBuilderStage("ipo-details", () => fetchDetailsRows(sql, selected.map(row => row.id))),
+    atBuilderStage("ipo-details", () => fetchDetailsRows(sql, detailIds)),
   ]);
   const latest = new Map(observations.map(o => [String(o.ipo_id), o]));
   const now = new Date().toISOString();

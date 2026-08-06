@@ -62,6 +62,7 @@ class SnapshotHandler(http.server.BaseHTTPRequestHandler):
     kv = {}
     requests_seen = []
     fail_http = False
+    fail_on_request = None
     skip_pointer = False
 
     def log_message(self, *_args):
@@ -73,7 +74,7 @@ class SnapshotHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers(); return
         if self.headers.get("x-aac-key") != self.expected_key:
             self.send_response(401); self.end_headers(); self.wfile.write(b'{"error":"unauthorized"}'); return
-        if self.fail_http:
+        if self.fail_http or self.fail_on_request == len(self.requests_seen):
             self.send_response(503); self.end_headers(); self.wfile.write(b'{"error":"forced"}'); return
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))))
         published = {}
@@ -99,6 +100,7 @@ class ServerContext:
         SnapshotHandler.kv = {}
         SnapshotHandler.requests_seen = []
         SnapshotHandler.fail_http = False
+        SnapshotHandler.fail_on_request = None
         SnapshotHandler.skip_pointer = False
         self.server = SnapshotEndpoint(("127.0.0.1", 0), SnapshotHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -213,6 +215,15 @@ def test_schema_smoke_requires_real_read_only_neon_but_not_publication_credentia
     assert "SNAPSHOT_PUBLISH_KEY" not in output
 
 
+def test_schema_smoke_cannot_skip_details_sql_when_selected_universe_is_empty():
+    """Regression: stale Details columns must fail schema smoke even on a zero-IPO day."""
+    builder = (ROOT / "pipeline/build/build_snapshots.ts").read_text(encoding="utf-8")
+    assert "const detailIds = selected.length || !schemaSmoke" in builder
+    assert ": [-1]" in builder
+    assert 'fetchDetailsRows(sql, detailIds)' in builder
+    assert 'atBuilderStage("ipo-details"' in builder
+
+
 def test_real_producer_chain_origin_with_trailing_slash_keeps_single_endpoint_path():
     with ServerContext() as srv:
         res = run_publisher(srv.url + "/")
@@ -267,6 +278,21 @@ def test_http_publication_failure_records_failed_ledger():
         assert res.returncode != 0
         ledger = json.loads(LEDGER.read_text())
         assert ledger["status"] == "failed"
+        assert SnapshotHandler.kv == {}, "failed global/Journey request must fail before any Details request"
+
+
+def test_failed_details_batch_preserves_successful_global_journey_and_records_batch_isin():
+    with ServerContext() as srv:
+        SnapshotHandler.fail_on_request = 2  # globals/Journey succeed; first Details batch fails
+        res = run_publisher(srv.url)
+        assert res.returncode != 0
+        assert SnapshotHandler.kv.get(_pointer("ipo-command:v6", "active"))
+        assert SnapshotHandler.kv.get(_pointer("journey:isin:INE000000001:v1", "active"))
+        assert SnapshotHandler.kv.get(_pointer("ipo-details:isin:INE000000001:v1", "active")) is None
+        ledger = json.loads(LEDGER.read_text())
+        assert ledger["status"] == "failed"
+        assert ledger["details_batch"] == 1
+        assert ledger["failing_isins"] == ["INE000000001"]
 
 
 def test_missing_pointer_switch_is_detected_by_consumer_proof():
