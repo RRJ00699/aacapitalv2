@@ -56,7 +56,9 @@ def test_fetch_honors_backoff_and_records_all_outcomes():
     src = _read("_scripts", "fetch_new_rhps.py")
     assert "st.next_retry_at > NOW()" in src and "st.stage = 'RHP_DOWNLOADED'" in src
     assert src.count('_stage(company, "FAILED"') >= 3, "every failure path records FAILED"
-    assert src.count('_stage(company, "CONFIRMED")') == 2, "both success paths record CONFIRMED"
+    assert src.count('_stage(company, "CONFIRMED")') == 1, \
+        "only the direct download with verified MIME may record CONFIRMED"
+    assert "viewer download MIME is not verifiable" in src
 
 
 def test_sonnet_and_haiku_record_stages():
