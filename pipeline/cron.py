@@ -46,10 +46,9 @@ import psycopg2
 FILE_BUILD = "cron 2026-08-03 — retired IPOMatrix fallback (ipomatrix_raw dropped)"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
-# RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
-# re-fetchable from documents.url, so they are purged.
-# SBI notes are ~3 pages, are shown in the UI, and are KEPT. Different lifecycle, so
-# they are tracked separately and never share a delete path.
+# Local RHP working copies are transient and may be purged after extraction. Immutable
+# R2 source objects have permanent retention. SBI notes are tracked separately; neither
+# source-document type has an R2 deletion path.
 RHP_DIRS = ["rhps"]
 SBI_DIR = "data/research_notes"
 
@@ -228,12 +227,11 @@ def run(step, cmd, dry, timeout=1800):
 
 
 def cleanup_docs(conn, dry):
-    """Delete RHP/SBI PDFs once the anchor lock-in has passed.
+    """Delete local RHP PDFs once the anchor lock-in has passed.
 
     The DATA lives in the DB and the PROVENANCE lives in documents.sha256 + url, so the
-    PDF is re-fetchable and holding 8-20MB per IPO forever is waste. Only deletes when
-    the IPO listed more than LOCKIN_DAYS ago AND a document row exists (i.e. we actually
-    banked what the PDF contained)."""
+    PDF is re-fetchable. R2 documents have permanent retention and are never deleted.
+    Local cleanup remains independent of the immutable object retention contract."""
     cur = conn.cursor()
     cur.execute("""SELECT i.id, i.name_display, i.listing_date
                      FROM ipo i
@@ -268,19 +266,8 @@ def cleanup_docs(conn, dry):
                     if not dry:
                         os.remove(p)
                     freed += sz
-    # R2 (point 3): RHPs are transient — drop the R2 copy too once past lock-in. SBI
-    # notes are NEVER touched here. Best-effort; the 180-day bucket lifecycle is the backstop.
-    import r2
-    r2_del = 0
-    for eid, _n, _ld in eligible:
-        cur.execute("""SELECT url FROM documents WHERE ipo_id=%s AND doc_type='rhp'
-                       AND url LIKE 'r2://%%'""", (eid,))
-        for (url,) in cur.fetchall():
-            r2_del += 1
-            if not dry:
-                r2.delete_url(url)
-    print(f"      {freed/1e6:.1f}MB {'would be ' if dry else ''}freed; "
-          f"{r2_del} RHP object(s) {'would be ' if dry else ''}deleted from R2 (SBI notes untouched)")
+    print(f"      {freed/1e6:.1f}MB {'would be ' if dry else ''}freed locally; "
+          "R2 objects retained permanently")
     return freed
 
 
