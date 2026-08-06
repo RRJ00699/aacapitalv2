@@ -94,6 +94,18 @@ Fetch jobs collect upstream IPO, document, market, subscription, GMP, and broker
 
 Snapshot build jobs live under `pipeline/build/`. The canonical snapshot builder is `pipeline/build/build_snapshots.ts`; it runs with `npx tsx`, reuses the TypeScript domain builders, selects the Journey universe with `selectJourneyUniverse()`, validates bounds from `lib/config/pipeline.ts`, and emits/publishes JSON snapshots.
 
+Run the read-only schema smoke from the repository root with:
+
+```bash
+npx tsx pipeline/build/build_snapshots.ts --limit=1 --concurrency=1 --schema-smoke
+```
+
+When the working directory is `pipeline` (as it is for pipeline workflow steps), use:
+
+```bash
+npx tsx build/build_snapshots.ts --limit=1 --concurrency=1 --schema-smoke
+```
+
 ### Publish
 
 `pipeline/warm_kv.py` invokes the TypeScript builder. The builder posts validated snapshot payloads to `POST /api/admin/snapshots`, which is a publication-only endpoint that writes versioned KV and does not read Neon or construct domain payloads.
