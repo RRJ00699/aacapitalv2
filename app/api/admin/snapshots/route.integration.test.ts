@@ -72,12 +72,20 @@ test("fixture builder publishes versioned snapshots through the real local Worke
     assert.equal(stderr, "");
     assert.match(stdout, /"snapshot_fixture_sql_verified":true/);
 
-    const success = stdout.trim().split("\n").map(line => {
+    const successes = stdout.trim().split("\n").map(line => {
       try { return JSON.parse(line) as Record<string, unknown>; } catch { return {}; }
-    }).find(value => value.ok === true);
-    assert.ok(success, `builder did not print the publication success response:\n${stdout}`);
-    const published = success.published as Record<string, string>;
+    }).filter(value => value.ok === true);
+    assert.ok(successes.length, `builder did not print the publication success response:\n${stdout}`);
+    const published = Object.assign({}, ...successes.map(success => success.published as Record<string,string>));
     assert.ok(published["ipo-command:v6"]);
+    assert.ok(published["ipo-details:isin:INE000000001:v1"]);
+
+    const detailsResponse = await fetch(`${origin}/api/ipo/details/INE000000001`);
+    assert.equal(detailsResponse.status, 200, "Details consumer must read the builder-published local KV snapshot");
+    assert.equal(detailsResponse.headers.get("x-cache"), "HIT");
+    const detailsPayload = await detailsResponse.json() as { schema_version?: string; verified_evidence?: unknown[] };
+    assert.equal(detailsPayload.schema_version, "ipo-details-v1");
+    assert.equal(detailsPayload.verified_evidence?.length, 1);
 
     const readKV = async (key: string) => (await execFileAsync(
       process.platform === "win32" ? "npx.cmd" : "npx",

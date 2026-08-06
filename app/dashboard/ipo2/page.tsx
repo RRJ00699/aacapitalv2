@@ -11,7 +11,6 @@ import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
 import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
-import CompleteDetails from "@/components/ipo/CompleteDetails";
 import ListingReview from "@/components/ipo/ListingReview";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
@@ -1080,7 +1079,7 @@ function IpoCommand() {
                     border:`1px solid ${sel===c?C.amberBd:C.border}`,background:sel===c?C.amberBg:C.surface,color:sel===c?C.gold:C.meta}}>
                   {String(c.sym||c.company_name||"")}</button>))}
             </div>
-            <CompleteDetails c={sel as R}/>
+            <div style={{padding:16,border:`1px solid ${C.border}`,borderRadius:12}}>Complete Details now has an immutable per-IPO page. {sel?.isin ? <a href={`/dashboard/ipo2/details/${String(sel.isin).toUpperCase()}`} style={{color:C.blue,fontWeight:800}}>Open Complete Details →</a> : <span style={{color:C.meta}}>An ISIN-backed snapshot is not available for this selection.</span>}</div>
           </div>
         );})()}
       {view==="review" && d && (()=>{

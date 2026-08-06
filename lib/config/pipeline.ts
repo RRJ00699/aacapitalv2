@@ -12,10 +12,14 @@ export const PIPELINE_LIMITS = {
   SNAPSHOT_HARD_MAX_CONCURRENCY: 8,
   /** Publication upper bound: three global snapshots plus the hard maximum per-IPO Journey snapshots. */
   SNAPSHOT_MAX_PUBLICATION_ITEMS: 53,
+  /** Details are deliberately isolated into small, non-atomic publication requests. */
+  DETAILS_PUBLICATION_BATCH_SIZE: 5,
+  /** Measured fixture maximum is reported by the builder; 512 KiB leaves ample evidence headroom. */
+  DETAILS_MAX_PAYLOAD_BYTES: 524288,
   /** Journey monitoring window: keep listing-day context for the anchor-lock/review period only. */
   JOURNEY_MONITORING_DAYS: 30,
-  /** Fixed query accounting: Command 4 + index 1 + selection 1 + live inputs 2, plus Journey per IPO. */
-  SNAPSHOT_FIXED_NEON_QUERIES: 8,
+  /** Fixed query accounting: Command 4 + index 1 + selection 1 + live inputs 2 + Details 1, plus Journey per IPO. */
+  SNAPSHOT_FIXED_NEON_QUERIES: 9,
 } as const;
 
 export const PIPELINE_SCOPE_DESCRIPTION =

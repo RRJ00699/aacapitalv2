@@ -155,13 +155,20 @@ def test_real_producer_chain_origin_without_trailing_slash_switches_active_point
         print("STDOUT\n" + res.stdout)
         print("STDERR\n" + res.stderr)
         assert res.returncode == 0
-        assert SnapshotHandler.requests_seen == [{"path": "/api/admin/snapshots", "key": "unit-publish-key"}]
+        assert SnapshotHandler.requests_seen == [
+            {"path": "/api/admin/snapshots", "key": "unit-publish-key"},
+            {"path": "/api/admin/snapshots", "key": "unit-publish-key"},
+        ]
         active = SnapshotHandler.kv.get(_pointer("ipo-command:v6", "active"))
         assert active
         assert _data_key("ipo-command:v6", active) in SnapshotHandler.kv
         hit = consume_with_versioned_snapshot(SnapshotHandler.kv)
         assert hit["source"] == "active"
         assert hit["payload"]["cards"][0]["sym"] == "FIXTURE"
+        details_active = SnapshotHandler.kv.get(_pointer("ipo-details:isin:INE000000001:v1", "active"))
+        assert details_active
+        details = json.loads(SnapshotHandler.kv[_data_key("ipo-details:isin:INE000000001:v1", details_active)])
+        assert details["schema_version"] == "ipo-details-v1"
 
 
 def test_real_builder_fixture_executes_and_checks_ipo_identity_and_date_parameter_sql():
