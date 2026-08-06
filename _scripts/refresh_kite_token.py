@@ -119,7 +119,6 @@ def get_request_token() -> str:
         location = final_res.headers.get("Location", "")
         m = re.search(r"request_token=([a-zA-Z0-9]+)", location)
         if m:
-            log.info("request_token from Location header")
             return m.group(1)
     except Exception as e:
         m = re.search(r"request_token=([a-zA-Z0-9]+)", str(e))
@@ -131,13 +130,11 @@ def get_request_token() -> str:
         final_res = session.get(login_url, allow_redirects=True, timeout=5)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", final_res.url)
         if m:
-            log.info("request_token from final URL")
             return m.group(1)
     except Exception as e:
         err_str = str(e)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", err_str)
         if m:
-            log.info("request_token from connection error URL")
             return m.group(1)
 
     # Strategy 3: check all response history
@@ -149,7 +146,6 @@ def get_request_token() -> str:
         for r in resp.history:
             m = re.search(r"request_token=([a-zA-Z0-9]+)", r.url)
             if m:
-                log.info("request_token from redirect history")
                 return m.group(1)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", resp.url)
         if m:
@@ -336,13 +332,11 @@ def _finish(status: str) -> int:
 def _obtain_access_token() -> str:
     """Authenticate, with an explicit offline mode used only by tests/CI."""
     if os.environ.get("KITE_REFRESH_TEST_MODE") == "1":
-        log.info("request_token obtained (test mode)")
-        log.info("access_token obtained (test mode)")
+        log.info("Kite authentication completed (test mode)")
         return "test-only-sensitive-access-token"
     request_token = get_request_token()
-    log.info("request_token obtained")
     access_token = exchange_token(request_token)
-    log.info("access_token obtained")
+    log.info("Kite authentication completed")
     return access_token
 
 

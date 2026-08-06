@@ -84,6 +84,8 @@ def test_login_diagnostics_do_not_log_request_ids_totp_or_redirects():
     assert "request_id[:" not in source
     assert "Generated TOTP:" not in source
     assert "Redirect location:" not in source
+    assert 'log.info("request_token' not in source
+    assert 'log.info("access_token' not in source
 
 
 def test_verification_failure_alerts_and_keeps_overlay_unavailable(monkeypatch, capsys):
