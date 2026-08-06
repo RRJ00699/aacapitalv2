@@ -164,6 +164,48 @@ def test_real_producer_chain_origin_without_trailing_slash_switches_active_point
         assert hit["payload"]["cards"][0]["sym"] == "FIXTURE"
 
 
+def test_real_builder_fixture_executes_and_checks_ipo_identity_and_date_parameter_sql():
+    with ServerContext() as srv:
+        res = run_publisher(srv.url)
+        assert res.returncode == 0, res.stdout + res.stderr
+        assert '"snapshot_fixture_sql_verified":true' in res.stdout
+
+
+def test_builder_postgres_failure_names_stage_domain_and_redacts_database_url():
+    secret_url = "postgresql://secret-user:secret-password@example.invalid/db"
+    with ServerContext() as srv:
+        res = run_publisher(srv.url, extra_env={
+            "DATABASE_URL": secret_url,
+            "SNAPSHOT_TEST_POSTGRES_ERROR": "1",
+        })
+        output = res.stdout + res.stderr
+        assert res.returncode != 0
+        assert "[snapshot builder]" in output
+        assert "stage=query" in output
+        assert "domain=journey-universe" in output
+        assert "PostgreSQL error: column i.forced_missing does not exist" in output
+        assert secret_url not in output
+        assert "secret-password" not in output
+
+
+def test_schema_smoke_requires_real_read_only_neon_but_not_publication_credentials():
+    env = os.environ.copy()
+    for name in ("DATABASE_URL", "NEON_DATABASE_URL", "NEON_READONLY_DATABASE_URL",
+                 "SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY", "SNAPSHOT_TEST_FIXTURE"):
+        env.pop(name, None)
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    assert npx
+    res = subprocess.run(
+        [npx, "tsx", "pipeline/build/build_snapshots.ts", "--limit=1", "--concurrency=1", "--schema-smoke"],
+        cwd=ROOT, env=env, text=True, capture_output=True, timeout=30,
+    )
+    output = res.stdout + res.stderr
+    assert res.returncode != 0
+    assert "NEON_READONLY_DATABASE_URL is required for schema smoke" in output
+    assert "SNAPSHOT_PUBLISH_URL" not in output
+    assert "SNAPSHOT_PUBLISH_KEY" not in output
+
+
 def test_real_producer_chain_origin_with_trailing_slash_keeps_single_endpoint_path():
     with ServerContext() as srv:
         res = run_publisher(srv.url + "/")
