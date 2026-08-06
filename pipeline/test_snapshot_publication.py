@@ -5,6 +5,7 @@ import shutil
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -128,27 +129,59 @@ def run_publisher(origin, key="unit-publish-key", extra_env=None):
     return subprocess.run([sys.executable, "pipeline/publish_snapshot_with_ledger.py"], cwd=ROOT, env=env, text=True, capture_output=True, timeout=60)
 
 
+def versioned_consumer_command(node, script_path, dump_path):
+    return [node, "--import", "tsx", str(script_path), str(dump_path)]
+
+
+def _sanitized_stderr(stderr):
+    message = stderr
+    for name in ("DATABASE_URL", "NEON_DATABASE_URL", "NEON_READONLY_DATABASE_URL", "SNAPSHOT_PUBLISH_KEY"):
+        secret = os.environ.get(name)
+        if secret:
+            message = message.replace(secret, "[REDACTED]")
+    return message
+
+
 def consume_with_versioned_snapshot(kv):
-    dump = PIPELINE / ".snapshot_test_kv.json"
-    dump.write_text(json.dumps(kv), encoding="utf-8")
+    dump_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".json", prefix="snapshot-test-",
+                                              dir=ROOT, encoding="utf-8", delete=False)
+    script_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".ts", prefix="snapshot-consumer-",
+                                                dir=ROOT, encoding="utf-8", delete=False)
+    dump = Path(dump_handle.name)
+    script_path = Path(script_handle.name)
     try:
+        dump_handle.write(json.dumps(kv)); dump_handle.close()
         script = """
           import { readVersionedSnapshot } from './lib/versioned-snapshot.ts';
           import fs from 'node:fs';
           async function main() {
-            const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+            const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
             const kv = { get: async (k) => data[k] ?? null, put: async () => { throw new Error('read only') } };
             const hit = await readVersionedSnapshot(kv, 'ipo-command:v6');
             console.log(JSON.stringify({ source: hit?.source, payload: JSON.parse(hit?.payload ?? '{}') }));
           }
           main().catch((err) => { console.error(err); process.exit(1); });
         """
-        npx = shutil.which("npx") or shutil.which("npx.cmd")
-        assert npx, "npx required for consumer proof"
-        out = subprocess.check_output([npx, "tsx", "-e", script, str(dump)], cwd=ROOT, text=True, timeout=30)
-        return json.loads(out)
+        script_handle.write(script); script_handle.close()
+        node = shutil.which("node")
+        assert node, "node executable required for versioned-snapshot consumer proof"
+        result = subprocess.run(versioned_consumer_command(node, script_path, dump), cwd=ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        stderr = _sanitized_stderr(result.stderr)
+        assert result.returncode == 0, f"versioned-snapshot consumer failed ({result.returncode}): {stderr}"
+        assert result.stdout.strip(), f"versioned-snapshot consumer returned empty stdout: {stderr}"
+        return json.loads(result.stdout.strip())
     finally:
+        if not dump_handle.closed: dump_handle.close()
+        if not script_handle.closed: script_handle.close()
         dump.unlink(missing_ok=True)
+        script_path.unlink(missing_ok=True)
+
+
+def test_versioned_consumer_command_is_shell_free_and_cross_platform():
+    expected_tail = ["--import", "tsx", "consumer.ts", "snapshot.json"]
+    assert versioned_consumer_command("/usr/bin/node", "consumer.ts", "snapshot.json") == ["/usr/bin/node", *expected_tail]
+    assert versioned_consumer_command(r"C:\\Program Files\\nodejs\\node.exe", "consumer.ts", "snapshot.json") == [r"C:\\Program Files\\nodejs\\node.exe", *expected_tail]
 
 
 def test_real_producer_chain_origin_without_trailing_slash_switches_active_pointer_and_consumer_hit():
@@ -243,8 +276,8 @@ def test_missing_snapshot_publish_url_fails_before_builder_and_records_ledger():
     LEDGER.unlink(missing_ok=True)
     res = subprocess.run([sys.executable, "pipeline/publish_snapshot_with_ledger.py"], cwd=ROOT, env=env, text=True, capture_output=True, timeout=30)
     assert res.returncode != 0
-    assert "SNAPSHOT_PUBLISH_URL" in LEDGER.read_text()
-    ledger = json.loads(LEDGER.read_text())
+    assert "SNAPSHOT_PUBLISH_URL" in LEDGER.read_text(encoding="utf-8")
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     assert ledger["alert_status"] == "NOT_CONFIGURED"
     assert "::warning::" in res.stdout
     assert "snapshot builder command" not in res.stdout
@@ -255,7 +288,7 @@ def test_missing_snapshot_publish_key_fails_before_builder_and_records_ledger():
     LEDGER.unlink(missing_ok=True)
     res = subprocess.run([sys.executable, "pipeline/publish_snapshot_with_ledger.py"], cwd=ROOT, env=env, text=True, capture_output=True, timeout=30)
     assert res.returncode != 0
-    ledger = json.loads(LEDGER.read_text())
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     assert "SNAPSHOT_PUBLISH_KEY" in ledger["error"]
     assert ledger["alert_status"] == "NOT_CONFIGURED"
     assert "snapshot builder command" not in res.stdout
@@ -265,7 +298,7 @@ def test_wrong_x_aac_key_http_failure_records_failed_ledger():
     with ServerContext() as srv:
         res = run_publisher(srv.url, key="wrong")
         assert res.returncode != 0
-        ledger = json.loads(LEDGER.read_text())
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         assert ledger["status"] == "failed"
         assert ledger["returncode"] != 0
         assert SnapshotHandler.requests_seen[0]["key"] == "wrong"
@@ -276,7 +309,7 @@ def test_http_publication_failure_records_failed_ledger():
         SnapshotHandler.fail_http = True
         res = run_publisher(srv.url)
         assert res.returncode != 0
-        ledger = json.loads(LEDGER.read_text())
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         assert ledger["status"] == "failed"
         assert SnapshotHandler.kv == {}, "failed global/Journey request must fail before any Details request"
 
@@ -289,7 +322,7 @@ def test_failed_details_batch_preserves_successful_global_journey_and_records_ba
         assert SnapshotHandler.kv.get(_pointer("ipo-command:v6", "active"))
         assert SnapshotHandler.kv.get(_pointer("journey:isin:INE000000001:v1", "active"))
         assert SnapshotHandler.kv.get(_pointer("ipo-details:isin:INE000000001:v1", "active")) is None
-        ledger = json.loads(LEDGER.read_text())
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         assert ledger["status"] == "failed"
         assert ledger["details_batch"] == 1
         assert ledger["failing_isins"] == ["INE000000001"]
@@ -310,7 +343,7 @@ def test_missing_npx_fails_clear(monkeypatch):
         env = {"PATH": str(PIPELINE)}
         res = run_publisher(srv.url, extra_env=env)
         assert res.returncode != 0
-        ledger = json.loads(LEDGER.read_text())
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         assert "snapshot builder exited" in ledger["error"]
         assert "npx executable not found" in (res.stdout + res.stderr)
 
@@ -323,7 +356,7 @@ def test_tsx_compile_failure_fails_publication(tmp_path):
     with ServerContext() as srv:
         res = run_publisher(srv.url, extra_env={"PATH": str(fakebin)})
         assert res.returncode != 0
-        ledger = json.loads(LEDGER.read_text())
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
         assert ledger["returncode"] != 0
         assert "tsx compile failed" in res.stderr
 
@@ -337,7 +370,7 @@ def test_configured_ntfy_path_is_attempted_on_failure(monkeypatch):
     monkeypatch.setenv("SNAPSHOT_PUBLISH_KEY", "k")
     monkeypatch.setattr(publisher.urllib.request, "urlopen", lambda req, timeout=10: calls.append((req.full_url, timeout)) or FakeResponse())
     code = publisher.main()
-    ledger = json.loads(publisher.LEDGER.read_text())
+    ledger = json.loads(publisher.LEDGER.read_text(encoding="utf-8"))
     assert code == 1
     assert calls and calls[0][0] == "https://ntfy.sh/unit-topic"
     assert ledger["alert_status"] == "SENT"
