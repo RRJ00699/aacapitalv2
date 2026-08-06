@@ -655,6 +655,8 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           {showRhp ? "▲ Hide details" : "▼ RHP + SBI research · risks · flags · AI read"}
         </button>
       )}
+      {c.isin ? <a href={`/dashboard/ipo2/details/${String(c.isin).toUpperCase()}`} style={{ display: "inline-block", marginTop: 8, marginRight: 14, fontSize: 11, fontWeight: 800, color: C.blue, textDecoration: "none" }}>Complete Details →</a> : null}
+
       {c.chittorgarh_slug ? (
         <a href={`https://www.chittorgarh.com/ipo/${String(c.chittorgarh_slug)}/`}
           target="_blank" rel="noopener noreferrer"

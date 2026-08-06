@@ -85,11 +85,25 @@ def main() -> int:
         missing = missing_required_config()
         if missing:
             raise RuntimeError("missing required snapshot publication configuration: " + ", ".join(missing))
-        subprocess.run([sys.executable, str(HERE / "warm_kv.py")], check=True, cwd=ROOT)
+        completed = subprocess.run([sys.executable, str(HERE / "warm_kv.py")], check=True, cwd=ROOT,
+                                   text=True, capture_output=True)
+        if completed.stdout: print(completed.stdout, end="")
+        if completed.stderr: print(completed.stderr, end="", file=sys.stderr)
         record.update({"status": "ok", "alert_status": "NOT_REQUIRED"})
         return 0
     except subprocess.CalledProcessError as exc:
+        if exc.stdout: print(exc.stdout, end="")
+        if exc.stderr: print(exc.stderr, end="", file=sys.stderr)
         record.update({"status": "failed", "returncode": exc.returncode, "error": f"snapshot builder exited {exc.returncode}"})
+        for line in reversed((exc.stderr or "").splitlines() + (exc.stdout or "").splitlines()):
+            try:
+                diagnostic = json.loads(line)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if diagnostic.get("stage") == "details-publication":
+                record["details_batch"] = diagnostic.get("details_batch")
+                record["failing_isins"] = diagnostic.get("failing_isins")
+                break
         return exc.returncode or 1
     except Exception as exc:
         record.update({"status": "failed", "returncode": 1, "error": str(exc)})

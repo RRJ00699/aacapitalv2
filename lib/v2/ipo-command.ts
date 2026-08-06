@@ -12,7 +12,7 @@ import type { SqlClient } from "./sql";
 
 export async function fetchCards(sql: SqlClient) {
   return await sql`
-    SELECT i.id AS ipo_id, i.name_display AS company_name, i.listing_date,
+    SELECT i.id AS ipo_id, i.isin, i.name_display AS company_name, i.listing_date,
            iss.open_date, iss.close_date, iss.issue_size_cr, iss.issue_price,
            iss.ofs_cr, iss.fresh_cr AS fresh_issue_cr, iss.band_hi AS band_high,
            iss.band_lo AS band_low, iss.lot_size, iss.face_value, iss.allotment_date,
