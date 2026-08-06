@@ -61,10 +61,6 @@ def _db_overrides():
     except Exception:
         pass
 
-_db_overrides()
-_require_key()
-
-
 def get_request_token() -> str:
     """Complete Kite login flow using TOTP — no browser needed."""
     session = requests.Session()
@@ -91,12 +87,12 @@ def get_request_token() -> str:
         raise Exception(f"Login failed: {login_res.get('message', login_res)}")
 
     request_id = login_res["data"]["request_id"]
-    log.info(f"Login OK — request_id: {request_id[:8]}...")
+    log.info("Login credentials accepted")
 
     # Step 3: Generate TOTP and submit 2FA
     totp = pyotp.TOTP(TOTP_SECRET)
     code = totp.now()
-    log.info(f"Generated TOTP: {code}")
+    log.info("Generated TOTP")
 
     twofa_res = session.post(
         "https://kite.zerodha.com/api/twofa",
@@ -121,10 +117,8 @@ def get_request_token() -> str:
     try:
         final_res = session.get(login_url, allow_redirects=False, timeout=15)
         location = final_res.headers.get("Location", "")
-        log.info(f"Redirect location: {location[:80]}")
         m = re.search(r"request_token=([a-zA-Z0-9]+)", location)
         if m:
-            log.info("request_token from Location header")
             return m.group(1)
     except Exception as e:
         m = re.search(r"request_token=([a-zA-Z0-9]+)", str(e))
@@ -136,13 +130,11 @@ def get_request_token() -> str:
         final_res = session.get(login_url, allow_redirects=True, timeout=5)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", final_res.url)
         if m:
-            log.info("request_token from final URL")
             return m.group(1)
     except Exception as e:
         err_str = str(e)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", err_str)
         if m:
-            log.info("request_token from connection error URL")
             return m.group(1)
 
     # Strategy 3: check all response history
@@ -154,7 +146,6 @@ def get_request_token() -> str:
         for r in resp.history:
             m = re.search(r"request_token=([a-zA-Z0-9]+)", r.url)
             if m:
-                log.info("request_token from redirect history")
                 return m.group(1)
         m = re.search(r"request_token=([a-zA-Z0-9]+)", resp.url)
         if m:
@@ -241,8 +232,11 @@ def rotate_worker_secret(access_token: str) -> None:
     This uses wrangler only when explicitly enabled by the operator. CI and dry-runs
     must not mutate Cloudflare.
     """
-    if os.environ.get("EXECUTE_CLOUDFLARE_SECRET_ROTATION") != "1":
-        raise RuntimeError("Cloudflare secret rotation disabled; set EXECUTE_CLOUDFLARE_SECRET_ROTATION=1 only during approved production activation")
+    test_result = os.environ.get("KITE_REFRESH_TEST_ROTATION")
+    if test_result:
+        if test_result != "success":
+            raise RuntimeError("mock rotation failure")
+        return
     import subprocess
     worker = os.environ.get("KITE_BROKER_WORKER_NAME", "aacapital-kite-broker-proxy")
     cmd = ["npx", "wrangler", "secret", "put", "KITE_ACCESS_TOKEN", "--name", worker]
@@ -251,6 +245,9 @@ def rotate_worker_secret(access_token: str) -> None:
 
 def verify_broker() -> bool:
     """Verify broker /health and one bounded /quotes call; never includes token."""
+    test_result = os.environ.get("KITE_REFRESH_TEST_VERIFICATION")
+    if test_result:
+        return test_result == "success"
     url = os.environ.get("KITE_BROKER_PROXY_URL", "").rstrip("/")
     secret = os.environ.get("KITE_BROKER_PROXY_AUTH_SECRET", "")
     symbol = os.environ.get("KITE_ROTATION_VERIFY_SYMBOL", "NIFTYBEES").strip().upper()
@@ -267,11 +264,6 @@ def verify_broker() -> bool:
     except Exception as e:
         log.error(f"Broker verification failed: {type(e).__name__}")
         return False
-
-
-def mark_overlay_available() -> None:
-    """Non-token control-plane hook reserved for activation; no-op unless configured."""
-    log.info("Broker verified; live overlay may be enabled by public Worker configuration")
 
 
 def last_snapshot_timestamp() -> str:
@@ -298,6 +290,9 @@ def get_token_from_db() -> str:
 
 def verify_token(access_token: str) -> bool:
     """Verify the token works by calling Kite profile API."""
+    test_result = os.environ.get("KITE_REFRESH_TEST_VERIFICATION")
+    if test_result:
+        return test_result == "success"
     try:
         kite = KiteConnect(api_key=API_KEY)
         kite.set_access_token(access_token)
@@ -305,7 +300,7 @@ def verify_token(access_token: str) -> bool:
         log.info(f"Token verified — logged in as: {profile['user_name']} ({profile['user_id']})")
         return True
     except Exception as e:
-        log.error(f"Token verification failed: {e}")
+        log.error("Token verification failed: %s", type(e).__name__)
         return False
 
 
@@ -320,12 +315,41 @@ def _alert(msg: str):
         pass
 
 
+STATUSES = {
+    "SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY", "SKIPPED_NOT_ACTIVATED",
+    "FAILED_LOGIN", "FAILED_ROTATION", "FAILED_VERIFICATION",
+}
+
+
+def _finish(status: str) -> int:
+    """Emit the sole machine-readable result without ever including token material."""
+    if status not in STATUSES:
+        raise ValueError(f"unknown Kite refresh status: {status}")
+    print(f"KITE_REFRESH_STATUS={status}")
+    return 0 if not status.startswith("FAILED_") else 1
+
+
+def _obtain_access_token() -> str:
+    """Authenticate, with an explicit offline mode used only by tests/CI."""
+    if os.environ.get("KITE_REFRESH_TEST_MODE") == "1":
+        log.info("Kite authentication completed (test mode)")
+        return "test-only-sensitive-access-token"
+    request_token = get_request_token()
+    access_token = exchange_token(request_token)
+    log.info("Kite authentication completed")
+    return access_token
+
+
 def main():
     log.info("=" * 50)
     log.info("AACapital — Kite Token Refresh")
     log.info("=" * 50)
 
-    if not all([API_KEY, API_SECRET, USER_ID, PASSWORD, TOTP_SECRET, DATABASE_URL]):
+    test_mode = os.environ.get("KITE_REFRESH_TEST_MODE") == "1"
+    if not test_mode:
+        _db_overrides()
+
+    if not test_mode and not all([API_KEY, API_SECRET, USER_ID, PASSWORD, TOTP_SECRET, DATABASE_URL]):
         missing = [k for k, v in {
             "KITE_API_KEY": API_KEY, "KITE_API_SECRET": API_SECRET,
             "KITE_USER_ID": USER_ID, "KITE_PASSWORD": PASSWORD,
@@ -333,32 +357,53 @@ def main():
         }.items() if not v]
         log.error(f"Missing env vars: {missing}")
         _alert(f"Missing credentials: {', '.join(missing)}. Fix env / Settings then re-run.")
-        sys.exit(1)
+        return _finish("FAILED_LOGIN")
 
     try:
-        request_token = get_request_token()
-        log.info("request_token obtained")
+        access_token = _obtain_access_token()
+    except Exception as exc:
+        log.error("Kite login/token exchange failed: %s", type(exc).__name__)
+        _alert("Kite login/token exchange failed. Listing-day ticker and candle sync will skip until fixed.")
+        return _finish("FAILED_LOGIN")
 
-        access_token = exchange_token(request_token)
-        log.info("access_token obtained")
-
+    try:
         legacy_save_to_db(access_token)
+    except Exception as exc:
+        log.error("Explicit legacy rollback write failed: %s", type(exc).__name__)
+        _alert("Explicit legacy Kite token rollback write failed.")
+        return _finish("FAILED_ROTATION")
+
+    if os.environ.get("EXECUTE_CLOUDFLARE_SECRET_ROTATION") != "1":
+        if os.environ.get("KITE_REFRESH_VALIDATE_ONLY") == "1":
+            if verify_token(access_token):
+                log.info("Kite token validated; broker activation remains disabled")
+                return _finish("SUCCESS_VALIDATED_ONLY")
+            log.error("Kite token validation failed; live overlay remains disabled")
+            _alert("Kite token validation failed. Live overlay remains disabled.")
+            return _finish("FAILED_VERIFICATION")
+        log.info("Broker secret rotation skipped because Stage 2 is not activated")
+        return _finish("SKIPPED_NOT_ACTIVATED")
+
+    if not os.environ.get("KITE_BROKER_PROXY_URL", "").strip() or not os.environ.get("KITE_BROKER_PROXY_AUTH_SECRET", "").strip():
+        log.error("Activated broker rotation requires URL and auth secret")
+        _alert("Activated Kite broker rotation is missing broker URL or auth secret. Live overlay remains disabled.")
+        return _finish("FAILED_ROTATION")
+
+    try:
         rotate_worker_secret(access_token)
+    except Exception as exc:
+        log.error("Broker Worker secret rotation failed: %s", type(exc).__name__)
+        _alert("Kite broker Worker secret rotation failed. Live overlay remains disabled.")
+        return _finish("FAILED_ROTATION")
 
-        if verify_broker():
-            mark_overlay_available()
-            log.info("✅ Broker Worker token rotation complete")
-        else:
-            log.error("❌ Broker verification failed; live overlay remains disabled")
-            _alert(f"Broker verification failed. Live overlay remains disabled; static snapshot fallback retained. Last snapshot: {last_snapshot_timestamp()}")
-            sys.exit(1)
+    if not verify_broker():
+        log.error("Broker verification failed; live overlay remains disabled")
+        _alert(f"Broker verification failed. Live overlay remains disabled; static snapshot fallback retained. Last snapshot: {last_snapshot_timestamp()}")
+        return _finish("FAILED_VERIFICATION")
 
-    except Exception as e:
-        log.error(f"Token refresh failed: {e}")
-        _alert(f"TOTP login flow failed: {str(e)[:200]}. "
-               "Listing-day ticker + candle sync will SKIP until fixed.")
-        sys.exit(1)
+    log.info("Broker Worker token rotation and bounded verification complete; overlay activation remains separate")
+    return _finish("SUCCESS_ROTATED")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -163,6 +163,29 @@ def spent_today(conn):
         return 0.0
 
 
+KITE_REFRESH_STATUS_TO_STEP = {
+    "SUCCESS_ROTATED": "ok",
+    "SUCCESS_VALIDATED_ONLY": "ok",
+    "SKIPPED_NOT_ACTIVATED": "skipped",
+    "FAILED_LOGIN": "failed",
+    "FAILED_ROTATION": "failed",
+    "FAILED_VERIFICATION": "failed",
+}
+
+
+def classify_kite_refresh(returncode, output):
+    """Translate the refresh script's explicit status into cron step semantics."""
+    matches = [line.split("=", 1)[1].strip() for line in output.splitlines()
+               if line.startswith("KITE_REFRESH_STATUS=")]
+    if len(matches) != 1 or matches[0] not in KITE_REFRESH_STATUS_TO_STEP:
+        return "failed" if returncode else "ok", None
+    status = matches[0]
+    classified = KITE_REFRESH_STATUS_TO_STEP[status]
+    if returncode != (1 if classified == "failed" else 0):
+        return "failed", status
+    return classified, status
+
+
 def run(step, cmd, dry, timeout=1800):
     """Run one existing script. A failure is isolated and reported, never fatal."""
     print(f"\n  === {step}")
@@ -183,6 +206,14 @@ def run(step, cmd, dry, timeout=1800):
         err = (p.stderr or "")[-400:]
         for line in out.splitlines()[-25:]:
             print(f"      {line}")
+        if "kite token refresh" in step.lower():
+            status, refresh_status = classify_kite_refresh(p.returncode, p.stdout or "")
+            if status == "failed":
+                print(f"      ! Kite refresh {refresh_status or 'missing structured status'}")
+                return {"step": step, "status": "failed", "rc": p.returncode,
+                        "refresh_status": refresh_status}
+            print(f"      {refresh_status} ({time.time()-t0:.0f}s)")
+            return {"step": step, "status": status, "refresh_status": refresh_status}
         if p.returncode != 0:
             print(f"      ! exit {p.returncode}  {err[:200]}")
             return {"step": step, "status": "failed", "rc": p.returncode}
@@ -452,7 +483,9 @@ def main():
     hard_failed = [s_["step"] for s_ in steps if s_["status"] in ("failed", "timeout")]
     if hard_failed:
         print(f"    FAILED STEPS: {hard_failed}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)
