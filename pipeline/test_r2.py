@@ -13,6 +13,7 @@ import sys
 import pytest
 
 import document_contract as contract
+import probe_r2_document_store as probe
 import r2
 
 
@@ -354,3 +355,117 @@ def test_legacy_put_document_caller_map_is_explicit():
         if "r2.put_document(" in path.read_text(encoding="utf-8"):
             callers.append(path.relative_to(ROOT).as_posix())
     assert callers == ["pipeline/fill_v2.py"]
+
+
+class ProbeClient:
+    def __init__(self, *, get_error=None):
+        self.events = []
+        self.object = None
+        self.get_error = get_error
+
+    def head_object(self, **kwargs):
+        self.events.append("HEAD")
+        if self.object is None:
+            raise NotFound()
+        return {
+            "ContentLength": len(self.object["Body"]),
+            "ContentType": self.object["ContentType"],
+            "Metadata": self.object["Metadata"],
+        }
+
+    def put_object(self, **kwargs):
+        self.events.append("PUT")
+        assert kwargs["IfNoneMatch"] == "*"
+        self.object = kwargs
+
+    def get_object(self, **kwargs):
+        self.events.append("GET")
+        if self.get_error:
+            raise self.get_error
+        return {"Body": io.BytesIO(self.object["Body"])}
+
+    def delete_object(self, **kwargs):
+        self.events.append("DELETE")
+        self.object = None
+
+
+PROBE_ENV = {
+    "R2_DOCUMENT_BUCKET": "private-test-bucket",
+    "R2_ACCOUNT_ID": "private-account",
+    "R2_ACCESS_KEY_ID": "private-access-key",
+    "R2_SECRET_ACCESS_KEY": "private-secret",
+}
+
+
+def test_probe_without_confirmation_makes_zero_client_calls():
+    calls = []
+    code, result = probe.run_probe([], env=PROBE_ENV, client_factory=lambda env: calls.append(env))
+    assert code != 0 and result["status"] == "confirmation-required"
+    assert calls == []
+
+
+def test_probe_missing_variable_makes_zero_client_calls():
+    calls = []
+    env = dict(PROBE_ENV)
+    env.pop("R2_SECRET_ACCESS_KEY")
+    code, result = probe.run_probe(
+        ["--confirm-test-probe"], env=env, client_factory=lambda values: calls.append(values)
+    )
+    assert code != 0 and result["status"] == "configuration-missing"
+    assert calls == []
+
+
+def test_probe_success_sequence_and_safe_output():
+    client = ProbeClient()
+    code, result = probe.run_probe(
+        ["--confirm-test-probe"], env=PROBE_ENV, client_factory=lambda values: client
+    )
+    assert code == 0
+    assert result["key"].startswith("test/pr303/")
+    assert client.events == ["HEAD", "PUT", "HEAD", "GET", "DELETE", "HEAD"]
+    assert result["class_a_operations"] == 2
+    assert result["class_b_operations"] == 4
+    assert result["put_conditional"] and result["head_verified"]
+    assert result["get_sha_verified"] and result["cleanup_verified"]
+    output = json.dumps(result)
+    assert set(result) == {
+        "status", "key", "uploaded_bytes", "class_a_operations", "class_b_operations",
+        "put_conditional", "head_verified", "get_sha_verified", "cleanup_verified", "runtime_ms",
+    }
+    assert not any(value in output for value in PROBE_ENV.values())
+
+
+@pytest.mark.parametrize("key", ["rhp/x.pdf", "sbi/x.pdf", "test/pr303/not-generated/x.pdf"])
+def test_probe_cleanup_rejects_non_generated_or_production_key(key):
+    client = ProbeClient()
+    with pytest.raises(ValueError, match="cleanup refused"):
+        probe._safe_cleanup(client, "bucket", key, "test/pr303/" + "a" * 32 + "/" + "b" * 64 + ".pdf")
+    assert client.events == []
+
+
+def test_probe_does_not_accept_a_caller_supplied_prefix():
+    with pytest.raises(SystemExit):
+        probe.run_probe(
+            ["--confirm-test-probe", "--prefix", "rhp/"],
+            env=PROBE_ENV,
+            client_factory=lambda values: pytest.fail("client must not be created"),
+        )
+
+
+def test_probe_failed_get_attempts_exact_test_cleanup_and_redacts():
+    error = RuntimeError(" ".join(PROBE_ENV.values()))
+    client = ProbeClient(get_error=error)
+    code, result = probe.run_probe(
+        ["--confirm-test-probe"], env=PROBE_ENV, client_factory=lambda values: client
+    )
+    assert code != 0
+    assert client.events == ["HEAD", "PUT", "HEAD", "GET", "DELETE", "HEAD"]
+    assert result["cleanup_verified"]
+    output = json.dumps(result)
+    assert not any(value in output for value in PROBE_ENV.values())
+
+
+def test_probe_introduces_no_production_delete_api():
+    assert not hasattr(r2.R2DocumentStore, "delete_document")
+    assert not hasattr(r2.R2DocumentStore, "delete")
+    assert not hasattr(r2, "delete_url")

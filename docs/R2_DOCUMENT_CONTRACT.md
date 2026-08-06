@@ -54,6 +54,12 @@ No live integration probe is part of PR A. An owner-approved probe must use only
 prefix and a tiny valid PDF, and its test-only cleanup must not be available to normal
 document flows.
 
+The isolated, operator-run probe is `pipeline/probe_r2_document_store.py`. It is not a
+cron or workflow step and requires all four R2 variables plus the explicit
+`--confirm-test-probe` flag. It generates its own `test/pr303/<uuid>/<sha256>.pdf` key,
+prints one secret-safe JSON summary, and restricts its direct cleanup call to that exact
+generated key. Contract-v1 production APIs remain deletion-free.
+
 ## Activation and rollback
 
 PR B must add/reconcile the Neon ledger fields, backfill reviewed rows, and migrate the
