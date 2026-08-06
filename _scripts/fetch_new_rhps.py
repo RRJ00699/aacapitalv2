@@ -17,7 +17,8 @@ Fast: one page load, a handful of targeted downloads. Never walks history.
 """
 import os
 import re, sys, io, re, argparse, unicodedata
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE = "https://www.sebi.gov.in"
 LISTING_URL = f"{BASE}/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=11"
@@ -45,7 +46,17 @@ def slugify(name):
     s = re.sub(r"\b(limited|ltd|rhp|drhp|prospectus)\b\.?", "", s, flags=re.I)
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "unknown"
 
-def new_ipos_without_rhp(days):
+def _positive_ipo_id(value):
+    try:
+        ipo_id = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("--ipo-id must be a positive integer") from None
+    if ipo_id <= 0:
+        raise argparse.ArgumentTypeError("--ipo-id must be a positive integer")
+    return ipo_id
+
+
+def new_ipos_without_rhp(days, ipo_id=None):
     import psycopg2
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("no DATABASE_URL")
@@ -57,6 +68,7 @@ def new_ipos_without_rhp(days):
     # the SEBI over-matching. A target must now (a) be mainboard, (b) carry at
     # least one real IPO date inside [-days, +60d]. Historical RHPs live on the
     # owner's local machine — only NEW IPOs need fetching (owner 2026-07-21).
+    id_predicate = " AND i.id = %s" if ipo_id is not None else ""
     cur.execute("""
         SELECT i.id, i.name, i.isin, COALESCE(i.listing_date, i.open_date, CURRENT_DATE)
         FROM ipo i
@@ -79,21 +91,31 @@ def new_ipos_without_rhp(days):
               SELECT 1 FROM documents d
               WHERE d.ipo_id = i.id AND d.doc_type = 'rhp'
                 AND d.object_key IS NOT NULL)
-    """, (days, days, days))
+    """ + id_predicate, (days, days, days, ipo_id) if ipo_id is not None else (days, days, days))
     names = cur.fetchall()
     c.close()
+    if ipo_id is not None:
+        if not names:
+            sys.exit(f"ipo_id {ipo_id} is missing, ineligible, outside the active date window, or already stored")
+        if len(names) != 1:
+            sys.exit(f"ipo_id {ipo_id} returned {len(names)} eligible rows; refusing an unbounded run")
     return names
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--days", type=int, default=45)
+    ap.add_argument("--ipo-id", type=_positive_ipo_id,
+                    help="process exactly one normally eligible Neon ipo.id")
     a = ap.parse_args()
 
-    targets = new_ipos_without_rhp(a.days)
+    targets = new_ipos_without_rhp(a.days, ipo_id=a.ipo_id)
     print(f"NEW IPOs (last {a.days}d) without an RHP: {len(targets)}")
     if not targets:
         print("nothing to fetch — all recent IPOs already have RHPs."); return
+    if a.ipo_id is not None:
+        selected = targets[0]
+        print(f"BOUNDED IPO: id={selected[0]} isin={selected[2] or '(unresolved)'} name={selected[1]}")
     # Names are used only to discover the official filing. Object ownership always
     # comes from this Neon-selected ipo.id/isin tuple, never from the name or filename.
     tset = {norm(t[1]): t for t in targets}
