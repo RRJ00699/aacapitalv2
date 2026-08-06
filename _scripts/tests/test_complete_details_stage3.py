@@ -19,9 +19,12 @@ def test_visual_semantics_and_navigation():
 def test_stage3_sources_are_read_as_utf8_and_preserve_non_ascii_navigation():
  assert 'encoding="utf-8"' in Path(__file__).read_text(encoding="utf-8")
  assert '→' in read('components/ipo/IpoCard.tsx')
-def test_uat_server_resolves_npx_on_windows_and_handles_spawn_errors():
+def test_uat_server_uses_local_next_cli_through_node_and_handles_spawn_errors():
  s=read('uat/serve.mjs')
- assert 'process.platform === "win32" ? "npx.cmd" : "npx"' in s
+ assert 'createRequire(import.meta.url).resolve("next/dist/bin/next")' in s
+ assert 'spawn(process.execPath, [nextCli, "start", "-p"' in s
+ assert 'spawn("npx"' not in s and 'spawn("npx.cmd"' not in s
+ assert 'shell:true' not in s and 'shell: true' not in s
  assert 'child.on("error"' in s and 'process.exit(1)' in s
 def test_explicit_honest_gaps():
  s=read('lib/v2/ipo-details.ts')
