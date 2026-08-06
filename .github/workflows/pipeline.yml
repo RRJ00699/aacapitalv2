@@ -107,9 +107,9 @@ jobs:
       # DOCUMENTS LIVE IN R2, NOT GIT. Every extracted PDF is uploaded to Cloudflare R2
       # (content-addressed by sha256; documents.url = r2://<bucket>/<sha256>.pdf), so
       # nothing is committed back and the runner's ephemeral disk no longer matters —
-      # extraction re-fetches from R2 when a local copy is absent. Two buckets by
-      # lifecycle: RHPs transient (180-day R2 lifecycle backstop + post-lock-in purge),
-      # SBI notes retained for the UI.
+      # extraction re-fetches from R2 when a local copy is absent. PR A defines one
+      # private bucket and permanent retention for immutable RHP/SBI source objects;
+      # legacy bucket variables remain in this pre-cutover workflow until PR B.
       # PHASE 1 (this workflow): downloads (SEBI/SBI Playwright scraping) still run on the
       # laptop — a datacenter IP scraping 1,000+ filings is likelier to be throttled, and
       # a silently-failing scheduled job is the worst way to learn that. Flip skip_download

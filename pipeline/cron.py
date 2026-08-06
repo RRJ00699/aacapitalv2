@@ -46,10 +46,9 @@ import psycopg2
 FILE_BUILD = "cron 2026-08-03 — retired IPOMatrix fallback (ipomatrix_raw dropped)"
 DEFAULT_CAP = 2.00
 LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
-# RHPs are 8-20MB and TRANSIENT: their content is extracted into the DB and the file is
-# re-fetchable from documents.url, so they are purged.
-# SBI notes are ~3 pages, are shown in the UI, and are KEPT. Different lifecycle, so
-# they are tracked separately and never share a delete path.
+# Local RHP working copies are transient and may be purged after extraction. Immutable
+# R2 source objects have permanent retention. SBI notes are tracked separately; neither
+# source-document type has an R2 deletion path.
 RHP_DIRS = ["rhps"]
 SBI_DIR = "data/research_notes"
 

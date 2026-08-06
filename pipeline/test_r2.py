@@ -7,6 +7,8 @@ import io
 import json
 from pathlib import Path
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -14,12 +16,26 @@ import document_contract as contract
 import r2
 
 
-DIGEST = "a" * 64
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def pdf_bytes(size=100 * 1024):
+    return b"%PDF-" + b"0" * (size - 5)
+
+
+RHP_PDF = pdf_bytes()
+DIGEST = sha256(RHP_PDF).hexdigest()
 
 
 class NotFound(Exception):
     response = {"ResponseMetadata": {"HTTPStatusCode": 404}, "Error": {"Code": "NoSuchKey"}}
+
+
+class PreconditionConflict(Exception):
+    response = {
+        "ResponseMetadata": {"HTTPStatusCode": 412},
+        "Error": {"Code": "PreconditionFailed"},
+    }
 
 
 class FakeClient:
@@ -42,13 +58,43 @@ class FakeClient:
         if self.put_error:
             raise self.put_error
         self.puts.append(kwargs)
-        self.head = matching_head(len(kwargs["Body"]), kwargs["Metadata"]["sha256"])
+        body = kwargs["Body"]
+        position = body.tell()
+        payload = body.read()
+        body.seek(position)
+        self.head = matching_head(len(payload), kwargs["Metadata"]["sha256"])
 
     def get_object(self, **kwargs):
         return {"Body": io.BytesIO(b"pdf")}
 
 
-def matching_head(size=3, digest=DIGEST):
+class BoundedOversizedStream:
+    """Seekable fake proving the validator stops one byte beyond the maximum."""
+
+    def __init__(self, size):
+        self.size = size
+        self.position = 0
+        self.largest_read = 0
+
+    def tell(self):
+        return self.position
+
+    def seek(self, position):
+        self.position = position
+
+    def read(self, amount):
+        self.largest_read = max(self.largest_read, amount)
+        remaining = self.size - self.position
+        if remaining <= 0:
+            return b""
+        count = min(amount, remaining)
+        start = self.position
+        self.position += count
+        prefix = b"%PDF-" if start == 0 else b""
+        return prefix + b"0" * (count - len(prefix))
+
+
+def matching_head(size=len(RHP_PDF), digest=DIGEST):
     return {
         "ContentLength": size,
         "ContentType": "application/pdf",
@@ -109,42 +155,129 @@ def test_pdf_validation_limits():
 
 def test_existing_matching_object_performs_no_put():
     fake = FakeClient(head=matching_head())
-    assert store(fake).put_document_if_absent("rhp/x", b"pdf", DIGEST).startswith("r2://")
+    assert store(fake).put_document_if_absent("rhp/x", RHP_PDF, DIGEST, doc_type="rhp").startswith("r2://")
     assert fake.puts == []
 
 
-@pytest.mark.parametrize("head", [matching_head(4), matching_head(3, "b" * 64)])
+@pytest.mark.parametrize("head", [matching_head(len(RHP_PDF) + 1), matching_head(digest="b" * 64)])
 def test_existing_mismatching_object_fails_closed(head):
     fake = FakeClient(head=head)
     with pytest.raises(r2.R2ContractError):
-        store(fake).put_document_if_absent("rhp/x", b"pdf", DIGEST)
+        store(fake).put_document_if_absent("rhp/x", RHP_PDF, DIGEST, doc_type="rhp")
     assert fake.puts == []
 
 
 def test_missing_object_puts_then_heads_and_verifies():
     fake = FakeClient()
-    store(fake).put_document_if_absent("rhp/x", b"pdf", DIGEST)
+    store(fake).put_document_if_absent("rhp/x", RHP_PDF, DIGEST, doc_type="rhp")
     assert len(fake.puts) == 1
     assert fake.heads == 2
     assert fake.puts[0]["ContentType"] == "application/pdf"
     assert fake.puts[0]["Metadata"] == contract.object_metadata(DIGEST)
+    assert fake.puts[0]["IfNoneMatch"] == "*"
+
+
+@pytest.mark.parametrize("kind,size", [("rhp", 100 * 1024), ("sbi", 10 * 1024)])
+def test_valid_pdf_type_and_minimum(kind, size):
+    payload = pdf_bytes(size)
+    fake = FakeClient()
+    store(fake).put_document_if_absent(
+        f"{kind}/x", payload, sha256(payload).hexdigest(), doc_type=kind
+    )
+    assert len(fake.puts) == 1
+
+
+@pytest.mark.parametrize(
+    ("payload", "kind", "content_type", "digest", "message"),
+    [
+        (b"not-pdf" + b"0" * (100 * 1024), "rhp", "application/pdf", None, "magic"),
+        (pdf_bytes(100 * 1024 - 1), "rhp", "application/pdf", None, "minimum"),
+        (pdf_bytes(10 * 1024 - 1), "sbi", "application/pdf", None, "minimum"),
+        (RHP_PDF, "rhp", "text/plain", None, "content type"),
+        (RHP_PDF, "rhp", "application/pdf", "b" * 64, "sha256"),
+    ],
+)
+def test_invalid_pdf_performs_no_r2_call(payload, kind, content_type, digest, message):
+    fake = FakeClient()
+    requested = digest or sha256(payload).hexdigest()
+    with pytest.raises(ValueError, match=message):
+        store(fake).put_document_if_absent(
+            "x", payload, requested, doc_type=kind, content_type=content_type
+        )
+    assert fake.heads == 0 and fake.puts == []
+
+
+def test_oversized_stream_is_bounded_and_performs_no_r2_call():
+    source = BoundedOversizedStream(contract.MAX_PDF_BYTES + 1)
+    fake = FakeClient()
+    with pytest.raises(ValueError, match="maximum"):
+        store(fake).put_document_if_absent("x", source, DIGEST, doc_type="sbi")
+    assert source.largest_read <= 1024 * 1024
+    assert source.tell() == 0
+    assert fake.heads == 0 and fake.puts == []
+
+
+@pytest.mark.parametrize("head", [matching_head(), matching_head(digest="b" * 64)])
+def test_concurrent_creation_race_accepts_only_exact_match(head):
+    fake = FakeClient(put_error=PreconditionConflict())
+    original_head = fake.head_object
+
+    def race_head(**kwargs):
+        if not fake.puts and fake.heads == 0:
+            fake.heads += 1
+            raise NotFound()
+        return head
+
+    fake.head_object = race_head
+    # Record an attempted conditional PUT before raising the simulated race.
+    original_put = fake.put_object
+    fake.put_object = lambda **kwargs: (fake.puts.append(kwargs), original_put(**kwargs))[1]
+    if head["Metadata"]["sha256"] == DIGEST:
+        assert store(fake).put_document_if_absent("x", RHP_PDF, DIGEST, doc_type="rhp").startswith("r2://")
+    else:
+        with pytest.raises(r2.R2ContractError):
+            store(fake).put_document_if_absent("x", RHP_PDF, DIGEST, doc_type="rhp")
+    assert fake.puts[0]["IfNoneMatch"] == "*"
 
 
 def test_put_failure_fails():
     with pytest.raises(r2.R2OperationError):
-        store(FakeClient(put_error=RuntimeError("failed"))).put_document_if_absent("x", b"pdf", DIGEST)
+        store(FakeClient(put_error=RuntimeError("failed"))).put_document_if_absent("x", RHP_PDF, DIGEST, doc_type="rhp")
 
 
 def test_post_put_head_failure_fails():
     with pytest.raises(r2.R2OperationError):
-        store(FakeClient(post_head_error=RuntimeError("head failed"))).put_document_if_absent("x", b"pdf", DIGEST)
+        store(FakeClient(post_head_error=RuntimeError("head failed"))).put_document_if_absent("x", RHP_PDF, DIGEST, doc_type="rhp")
 
 
 def test_post_put_missing_head_fails():
     fake = FakeClient()
     fake.put_object = lambda **kwargs: fake.puts.append(kwargs)
     with pytest.raises(r2.R2ContractError, match="missing"):
-        store(fake).put_document_if_absent("x", b"pdf", DIGEST)
+        store(fake).put_document_if_absent("x", RHP_PDF, DIGEST, doc_type="rhp")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("ContentLength", len(RHP_PDF) + 1),
+        ("ContentType", "application/octet-stream"),
+        ("Metadata", {}),
+        ("Metadata", {"sha256": DIGEST, "contract-version": "2"}),
+    ],
+)
+def test_boto_head_contract_fields_are_required(field, value):
+    head = matching_head()
+    head[field] = value
+    head["ETag"] = DIGEST  # An ETag cannot rescue any failed contract field.
+    with pytest.raises(r2.R2ContractError):
+        store(FakeClient(head=head)).verify_document("x", DIGEST, len(RHP_PDF), head)
+
+
+def test_metadata_keys_are_normalized_deliberately():
+    head = matching_head()
+    head["Metadata"] = {"SHA256": DIGEST, "Contract-Version": contract.CONTRACT_VERSION}
+    assert store(FakeClient(head=head)).verify_document("x", DIGEST, len(RHP_PDF), head)
 
 
 def test_missing_credentials_in_production_fails(monkeypatch):
@@ -194,3 +327,30 @@ def test_public_wrangler_has_no_r2_binding_or_credentials():
     serialized = json.dumps(config).upper()
     assert "R2_ACCESS_KEY_ID" not in serialized
     assert "R2_SECRET_ACCESS_KEY" not in serialized
+
+
+def test_supported_import_modes_and_cron_entrypoint():
+    commands = [
+        (ROOT, "import pipeline.document_contract; import pipeline.r2"),
+        (ROOT / "pipeline", "import document_contract; import r2"),
+    ]
+    for cwd, source in commands:
+        result = subprocess.run(
+            [sys.executable, "-c", source], cwd=cwd, text=True, capture_output=True
+        )
+        assert result.returncode == 0, result.stderr
+    for cwd, script in [(ROOT, "pipeline/cron.py"), (ROOT / "pipeline", "cron.py")]:
+        result = subprocess.run(
+            [sys.executable, script, "--help"], cwd=cwd, text=True, capture_output=True
+        )
+        assert result.returncode == 0, result.stderr
+
+
+def test_legacy_put_document_caller_map_is_explicit():
+    callers = []
+    for path in (ROOT / "pipeline").glob("*.py"):
+        if path.name in {"r2.py", "test_r2.py"}:
+            continue
+        if "r2.put_document(" in path.read_text(encoding="utf-8"):
+            callers.append(path.relative_to(ROOT).as_posix())
+    assert callers == ["pipeline/fill_v2.py"]

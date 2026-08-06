@@ -33,7 +33,9 @@ slug, filename, or upstream URL. Document dates are strict calendar dates. SHA-2
 `contract-version=1`; it contains no company or upstream filename.
 
 The accepted PDF size range is 100 KiB–100 MiB for RHP and 10 KiB–100 MiB for SBI.
-The expected content type is `application/pdf`.
+The expected content type is `application/pdf`. Before any R2 request, the contract-v1
+client reads a seekable source in bounded chunks, checks `%PDF-` magic, enforces the
+type-specific size range, and verifies that the bytes hash to the requested SHA-256.
 
 ## Request and failure behavior
 
@@ -44,6 +46,10 @@ content length, content type, SHA-256 metadata, and contract version. ETag is ne
 treated as a digest. Any mismatch, PUT failure, post-PUT HEAD failure, or missing
 production configuration fails closed.
 
+The PUT sends the boto3 `IfNoneMatch="*"` parameter. If a concurrent creator causes a
+409/412 conditional conflict, the client performs HEAD and succeeds only when the
+resulting immutable object matches every contract field; it never retries an overwrite.
+
 No live integration probe is part of PR A. An owner-approved probe must use only a test
 prefix and a tiny valid PDF, and its test-only cleanup must not be available to normal
 document flows.
@@ -53,7 +59,9 @@ document flows.
 PR B must add/reconcile the Neon ledger fields, backfill reviewed rows, and migrate the
 current `fill_v2.put_document` and download callers to the new key-based methods. Until
 then the pre-cutover uploader remains explicitly marked as compatibility behavior and
-does not activate this contract.
+does not activate this contract. Repository caller mapping identifies
+`pipeline/fill_v2.py` as the only current caller of legacy `r2.put_document`; its
+nullable return is not shared by or treated as success in the contract-v1 API.
 
 Rollback PR A by reverting its commit. It creates no database or R2 state, changes no
 Worker binding, and uploads no object, so no data rollback or object deletion is needed.

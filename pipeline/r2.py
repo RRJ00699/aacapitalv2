@@ -11,13 +11,24 @@ import os
 import warnings
 from typing import Any
 
-from document_contract import (
-    CONTRACT_VERSION,
-    PDF_CONTENT_TYPE,
-    object_metadata,
-    redact_diagnostic,
-    validate_sha256,
-)
+if __package__:
+    from .document_contract import (
+        CONTRACT_VERSION,
+        PDF_CONTENT_TYPE,
+        object_metadata,
+        redact_diagnostic,
+        validate_pdf_source,
+        validate_sha256,
+    )
+else:
+    from document_contract import (
+        CONTRACT_VERSION,
+        PDF_CONTENT_TYPE,
+        object_metadata,
+        redact_diagnostic,
+        validate_pdf_source,
+        validate_sha256,
+    )
 
 
 _CREDENTIAL_NAMES = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
@@ -81,6 +92,18 @@ def _is_not_found(exc: Exception) -> bool:
     return status == 404 or code in {"404", "NoSuchKey", "NotFound"}
 
 
+def _is_precondition_conflict(exc: Exception) -> bool:
+    response = getattr(exc, "response", {})
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    code = str(response.get("Error", {}).get("Code", ""))
+    return status in {409, 412} or code in {
+        "409",
+        "412",
+        "ConditionalRequestConflict",
+        "PreconditionFailed",
+    }
+
+
 class R2DocumentStore:
     """Immutable document operations. There is intentionally no delete method."""
 
@@ -116,24 +139,40 @@ class R2DocumentStore:
             raise R2ContractError("document object contract mismatch: " + ", ".join(failed))
         return result
 
-    def put_document_if_absent(self, key: str, content: bytes, sha256: str) -> str:
-        digest = validate_sha256(sha256)
+    def put_document_if_absent(
+        self,
+        key: str,
+        content,
+        sha256: str,
+        *,
+        doc_type: str,
+        content_type: str = PDF_CONTENT_TYPE,
+    ) -> str:
+        # Local validation precedes HEAD so invalid input performs zero R2 operations.
+        validated = validate_pdf_source(content, doc_type, sha256, content_type=content_type)
+        digest = validated.sha256
         existing = self.head_document(key)
         if existing is not None:
-            self.verify_document(key, digest, len(content), existing)
+            self.verify_document(key, digest, validated.size, existing)
             return f"r2://{self.bucket}/{key}"
         try:
             self.client.put_object(
                 Bucket=self.bucket,
                 Key=key,
-                Body=content,
+                Body=validated.body,
                 ContentType=PDF_CONTENT_TYPE,
                 Metadata=object_metadata(digest),
+                IfNoneMatch="*",
             )
         except Exception as exc:
+            # A concurrent immutable creator may win after our missing HEAD. Conditional
+            # PUT prevents overwrite; accept the race only after exact HEAD verification.
+            if _is_precondition_conflict(exc):
+                self.verify_document(key, digest, validated.size)
+                return f"r2://{self.bucket}/{key}"
             raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
         # A fresh HEAD is mandatory: a successful PUT response is not verification.
-        self.verify_document(key, digest, len(content))
+        self.verify_document(key, digest, validated.size)
         return f"r2://{self.bucket}/{key}"
 
     def get_document(self, key: str) -> bytes:
@@ -157,8 +196,10 @@ def head_document(key: str, *, store: R2DocumentStore | None = None):
     return (store or R2DocumentStore()).head_document(key)
 
 
-def put_document_if_absent(key: str, content: bytes, sha256: str, *, store: R2DocumentStore | None = None):
-    return (store or R2DocumentStore()).put_document_if_absent(key, content, sha256)
+def put_document_if_absent(key: str, content, sha256: str, *, doc_type: str, content_type: str = PDF_CONTENT_TYPE, store: R2DocumentStore | None = None):
+    return (store or R2DocumentStore()).put_document_if_absent(
+        key, content, sha256, doc_type=doc_type, content_type=content_type
+    )
 
 
 def verify_document(key: str, sha256: str, size: int, *, store: R2DocumentStore | None = None):

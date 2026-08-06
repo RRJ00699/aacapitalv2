@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import hashlib
+import io
 import re
-from typing import Any, Mapping
+from typing import Any, BinaryIO, Mapping
 
 
 CONTRACT_VERSION = "1"
@@ -21,6 +23,13 @@ class PDFValidationConfig:
     minimum_bytes: int
     maximum_bytes: int = MAX_PDF_BYTES
     content_type: str = PDF_CONTENT_TYPE
+
+
+@dataclass(frozen=True)
+class ValidatedPDF:
+    body: BinaryIO
+    size: int
+    sha256: str
 
 
 def normalize_document_type(value: str) -> str:
@@ -92,6 +101,67 @@ def pdf_validation_config(doc_type: str) -> PDFValidationConfig:
 def object_metadata(sha256: str) -> dict[str, str]:
     """Return the complete, non-secret metadata written to each object."""
     return {"sha256": validate_sha256(sha256), "contract-version": CONTRACT_VERSION}
+
+
+def validate_pdf_source(
+    source: bytes | bytearray | memoryview | BinaryIO,
+    doc_type: str,
+    expected_sha256: str,
+    *,
+    content_type: str = PDF_CONTENT_TYPE,
+    chunk_size: int = 1024 * 1024,
+) -> ValidatedPDF:
+    """Validate PDF bytes with bounded reads and restore the source stream position.
+
+    Streams must be seekable so validation never copies an unbounded document into
+    memory and the exact validated stream can subsequently be uploaded.
+    """
+    config = pdf_validation_config(doc_type)
+    digest = validate_sha256(expected_sha256)
+    if content_type != config.content_type:
+        raise ValueError("content type must be application/pdf")
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+
+    if isinstance(source, (bytes, bytearray, memoryview)):
+        stream: BinaryIO = io.BytesIO(source)
+    elif all(hasattr(source, method) for method in ("read", "seek", "tell")):
+        stream = source
+    else:
+        raise ValueError("PDF source must be bytes or a seekable binary stream")
+
+    try:
+        start = stream.tell()
+        stream.seek(start)
+    except (OSError, TypeError) as exc:
+        raise ValueError("PDF source must be seekable") from exc
+
+    hasher = hashlib.sha256()
+    size = 0
+    magic = b""
+    try:
+        while True:
+            chunk = stream.read(min(chunk_size, config.maximum_bytes + 1 - size))
+            if not chunk:
+                break
+            if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                raise ValueError("PDF stream must return bytes")
+            if len(magic) < 5:
+                magic += bytes(chunk[: 5 - len(magic)])
+            size += len(chunk)
+            if size > config.maximum_bytes:
+                raise ValueError("PDF exceeds maximum size")
+            hasher.update(chunk)
+    finally:
+        stream.seek(start)
+
+    if magic != b"%PDF-":
+        raise ValueError("invalid PDF magic bytes")
+    if size < config.minimum_bytes:
+        raise ValueError("PDF is below minimum size")
+    if hasher.hexdigest() != digest:
+        raise ValueError("PDF sha256 does not match requested digest")
+    return ValidatedPDF(body=stream, size=size, sha256=digest)
 
 
 def redact_diagnostic(value: Any, secrets: Mapping[str, str] | None = None) -> str:
