@@ -1,56 +1,70 @@
-#!/usr/bin/env python3
-"""r2.py — Cloudflare R2 document store (S3-compatible), content-addressed by sha256.
+"""Fail-closed Cloudflare R2 client for immutable PDF document objects.
 
-Two buckets by LIFECYCLE (point 3): RHPs are transient (a 180-day R2 lifecycle backstop
-plus the app's post-lock-in purge), SBI notes are retained because the UI shows them.
-Keeping them in separate buckets is what lets each carry its own lifecycle policy —
-prefixes could not express "purge RHPs, never touch SBI notes".
-
-The object key IS the sha256 (`<sha256>.pdf`), so the dedup key doubles as the R2 key and
-`documents.url` stores `r2://<bucket>/<sha256>.pdf`.
-
-DEGRADES TO NO-OP when creds are absent: every function returns None/False rather than
-raising, so a laptop run with no R2 configured still works entirely local-only.
-
-Env (set in .env locally; GitHub Actions secrets/vars):
-  R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_RHP, R2_BUCKET_SBI
+The public Worker has no R2 binding.  This module is for the Python pipeline and
+expects bucket-scoped S3-compatible object read/write credentials.
 """
-import os, functools
 
-# doc_type -> which bucket env var. "sbi"/"research_note" share the retained bucket.
-_BUCKET_ENV = {"rhp": "R2_BUCKET_RHP", "sbi": "R2_BUCKET_SBI", "research_note": "R2_BUCKET_SBI"}
+from __future__ import annotations
+
+import functools
+import os
+import warnings
+from typing import Any
+
+from document_contract import (
+    CONTRACT_VERSION,
+    PDF_CONTENT_TYPE,
+    object_metadata,
+    redact_diagnostic,
+    validate_sha256,
+)
+
+
+_CREDENTIAL_NAMES = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
+_LEGACY_BUCKET_NAMES = ("R2_BUCKET_RHP", "R2_BUCKET_SBI")
+
+
+class R2ConfigurationError(RuntimeError):
+    pass
+
+
+class R2ContractError(RuntimeError):
+    pass
+
+
+class R2OperationError(RuntimeError):
+    pass
 
 
 def configured() -> bool:
-    return all(os.environ.get(k) for k in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"))
+    return all(os.environ.get(name) for name in _CREDENTIAL_NAMES) and bool(document_bucket())
 
 
-def _bucket(doc_type: str):
-    return os.environ.get(_BUCKET_ENV.get(doc_type, "R2_BUCKET_RHP"))
-
-
-def key_for(sha256: str) -> str:
-    return f"{sha256}.pdf"
-
-
-def url_for(doc_type: str, sha256: str):
-    b = _bucket(doc_type)
-    return f"r2://{b}/{key_for(sha256)}" if b else None
-
-
-def parse_url(url):
-    """r2://<bucket>/<key> -> (bucket, key), or None."""
-    if not url or not url.startswith("r2://"):
-        return None
-    bucket, _, key = url[len("r2://"):].partition("/")
-    return (bucket, key) if bucket and key else None
+def document_bucket(env: dict[str, str] | None = None) -> str | None:
+    values = os.environ if env is None else env
+    if values.get("R2_DOCUMENT_BUCKET"):
+        return values["R2_DOCUMENT_BUCKET"]
+    present = [name for name in _LEGACY_BUCKET_NAMES if values.get(name)]
+    if present:
+        buckets = {values[name] for name in present}
+        if len(buckets) != 1:
+            raise R2ConfigurationError("legacy R2 bucket variables disagree")
+        warnings.warn(
+            "legacy R2 bucket environment variable used; configure R2_DOCUMENT_BUCKET",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return buckets.pop()
+    return None
 
 
 @functools.lru_cache(maxsize=1)
 def _client():
-    if not configured():
-        return None
-    import boto3  # imported only when creds exist, so no hard dep on the laptop local path
+    missing = [name for name in _CREDENTIAL_NAMES if not os.environ.get(name)]
+    if missing:
+        raise R2ConfigurationError("R2 credentials are not configured")
+    import boto3
+
     return boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
@@ -60,55 +74,159 @@ def _client():
     )
 
 
-def exists(bucket, key) -> bool:
-    c = _client()
-    if not c or not bucket:
+def _is_not_found(exc: Exception) -> bool:
+    response = getattr(exc, "response", {})
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    code = str(response.get("Error", {}).get("Code", ""))
+    return status == 404 or code in {"404", "NoSuchKey", "NotFound"}
+
+
+class R2DocumentStore:
+    """Immutable document operations. There is intentionally no delete method."""
+
+    def __init__(self, *, client: Any | None = None, bucket: str | None = None):
+        self.bucket = bucket or document_bucket()
+        if not self.bucket:
+            raise R2ConfigurationError("R2_DOCUMENT_BUCKET is not configured")
+        self.client = client if client is not None else _client()
+
+    def head_document(self, key: str) -> dict[str, Any] | None:
+        try:
+            return self.client.head_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            if _is_not_found(exc):
+                return None
+            raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
+
+    def verify_document(self, key: str, sha256: str, size: int, head: dict[str, Any] | None = None) -> dict[str, Any]:
+        digest = validate_sha256(sha256)
+        result = self.head_document(key) if head is None else head
+        if result is None:
+            raise R2ContractError("document object is missing")
+        metadata = {str(k).lower(): str(v) for k, v in result.get("Metadata", {}).items()}
+        checks = {
+            "key": result.get("Key", key) == key,
+            "content length": result.get("ContentLength") == size,
+            "content type": result.get("ContentType") == PDF_CONTENT_TYPE,
+            "sha256 metadata": metadata.get("sha256") == digest,
+            "contract version": metadata.get("contract-version") == CONTRACT_VERSION,
+        }
+        failed = [name for name, valid in checks.items() if not valid]
+        if failed:
+            raise R2ContractError("document object contract mismatch: " + ", ".join(failed))
+        return result
+
+    def put_document_if_absent(self, key: str, content: bytes, sha256: str) -> str:
+        digest = validate_sha256(sha256)
+        existing = self.head_document(key)
+        if existing is not None:
+            self.verify_document(key, digest, len(content), existing)
+            return f"r2://{self.bucket}/{key}"
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=content,
+                ContentType=PDF_CONTENT_TYPE,
+                Metadata=object_metadata(digest),
+            )
+        except Exception as exc:
+            raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
+        # A fresh HEAD is mandatory: a successful PUT response is not verification.
+        self.verify_document(key, digest, len(content))
+        return f"r2://{self.bucket}/{key}"
+
+    def get_document(self, key: str) -> bytes:
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+            body = response["Body"]
+            return body.read() if hasattr(body, "read") else bytes(body)
+        except Exception as exc:
+            raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
+
+    def document_exists(self, key: str) -> bool:
+        return self.head_document(key) is not None
+
+
+def _secret_values() -> dict[str, str]:
+    return {name: os.environ.get(name, "") for name in _CREDENTIAL_NAMES}
+
+
+# Module-level methods keep call sites simple while preserving client injection in tests.
+def head_document(key: str, *, store: R2DocumentStore | None = None):
+    return (store or R2DocumentStore()).head_document(key)
+
+
+def put_document_if_absent(key: str, content: bytes, sha256: str, *, store: R2DocumentStore | None = None):
+    return (store or R2DocumentStore()).put_document_if_absent(key, content, sha256)
+
+
+def verify_document(key: str, sha256: str, size: int, *, store: R2DocumentStore | None = None):
+    return (store or R2DocumentStore()).verify_document(key, sha256, size)
+
+
+def get_document(key: str, *, store: R2DocumentStore | None = None):
+    return (store or R2DocumentStore()).get_document(key)
+
+
+def document_exists(key: str, *, store: R2DocumentStore | None = None) -> bool:
+    return (store or R2DocumentStore()).document_exists(key)
+
+
+# Read compatibility for pre-cutover documents. PR B will move callers to key-based GET.
+def parse_url(url: str):
+    if not url or not url.startswith("r2://"):
+        return None
+    bucket, separator, key = url[5:].partition("/")
+    return (bucket, key) if bucket and separator and key else None
+
+
+def get_to_file(url: str, destination: str, *, client: Any | None = None) -> bool:
+    parsed = parse_url(url)
+    if not parsed:
         return False
+    active_client = client if client is not None else _client()
+    bucket, key = parsed
     try:
-        c.head_object(Bucket=bucket, Key=key)
+        active_client.download_file(bucket, key, destination)
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
 
 
 def put_document(doc_type: str, sha256: str, content_bytes: bytes):
-    """Upload once (skipped if already present). Returns the r2:// url, or None if R2 is
-    not configured / the upload failed (the data is already in the DB, so a storage hiccup
-    must never break the pipeline)."""
-    c = _client(); bucket = _bucket(doc_type)
-    if not c or not bucket:
+    """Pre-cutover compatibility entry point used by ``fill_v2``.
+
+    It deliberately does not upload under the new namespace without the identity and
+    document date required by the contract. PR B must replace this call with
+    ``document_key`` plus ``put_document_if_absent``. Missing configuration retains the
+    pre-existing return value until that coordinated cutover.
+    """
+    warnings.warn(
+        "legacy put_document does not activate the R2 document contract; migrate the caller in PR B",
+        FutureWarning,
+        stacklevel=2,
+    )
+    if not all(os.environ.get(name) for name in _CREDENTIAL_NAMES):
         return None
-    key = key_for(sha256)
-    try:
-        if not exists(bucket, key):
-            c.put_object(Bucket=bucket, Key=key, Body=content_bytes, ContentType="application/pdf")
-        return url_for(doc_type, sha256)
-    except Exception as e:
-        print(f"  [r2] put failed for {doc_type}/{sha256[:12]}: {type(e).__name__}: {str(e)[:80]}")
+    legacy_name = "R2_BUCKET_SBI" if doc_type in {"sbi", "research_note"} else "R2_BUCKET_RHP"
+    bucket = os.environ.get(legacy_name)
+    if not bucket:
         return None
-
-
-def get_to_file(url, dest_path) -> bool:
-    """Fetch r2://bucket/key to dest_path. Returns True on success."""
-    c = _client(); pu = parse_url(url)
-    if not c or not pu:
-        return False
-    bucket, key = pu
+    key = f"{sha256}.pdf"
+    active_client = _client()
     try:
-        c.download_file(bucket, key, dest_path)
-        return True
-    except Exception as e:
-        print(f"  [r2] get failed for {url}: {type(e).__name__}: {str(e)[:80]}")
-        return False
-
-
-def delete_url(url) -> bool:
-    c = _client(); pu = parse_url(url)
-    if not c or not pu:
-        return False
-    bucket, key = pu
-    try:
-        c.delete_object(Bucket=bucket, Key=key)
-        return True
-    except Exception:
-        return False
+        try:
+            active_client.head_object(Bucket=bucket, Key=key)
+        except Exception as exc:
+            if not _is_not_found(exc):
+                raise
+            active_client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=content_bytes,
+                ContentType=PDF_CONTENT_TYPE,
+            )
+        return f"r2://{bucket}/{key}"
+    except Exception as exc:
+        raise R2OperationError(redact_diagnostic(exc, _secret_values())) from None
