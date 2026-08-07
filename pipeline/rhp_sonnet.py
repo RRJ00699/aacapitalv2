@@ -7,12 +7,16 @@ Processes recent-first. Returns a rich, source-cited forensic summary + structur
   python rhp_sonnet.py --pdf rhps/laser.pdf                 # single
   python rhp_sonnet.py --dir rhps --year-min 2021 --cap 20  # batch recent-first, capped
 """
-import os,sys,json,argparse,glob,urllib.request,time,io,re
+import os,sys,json,argparse,glob,urllib.request,time,re
 import hashlib
-try:
-    sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding="utf-8",errors="replace")
-    sys.stderr=io.TextIOWrapper(sys.stderr.buffer,encoding="utf-8",errors="replace")
-except Exception: pass
+
+
+def _configure_cli_streams():
+    """Use UTF-8 for direct CLI runs without replacing importers' capture streams."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
 
 MODEL="claude-sonnet-4-6"
 IN_RATE=3.00/1_000_000    # $ per input token
@@ -320,28 +324,29 @@ def parse_json(text):
     except Exception as e:
         raise e
 
-def route_to_db(pdf_path, ipo_id, data, out_dir, base):
-    """Register the document, then route the extraction through the TESTED writers.
+def route_to_db(pdf_path, ipo_id, data, out_dir, base, *, doc_id=None, conn=None):
+    """Atomically route extraction for an existing document-ledger row.
 
-    Order matters: upsert_document FIRST, because rhp_findings' UNIQUE index is partial
-    (WHERE doc_id IS NOT NULL) and upsert_rhp_findings refuses a NULL doc_id — without a
-    document row there is no dedup protection at all.
+    Extraction never uploads or mutates the source ledger. The caller must supply the
+    ledger ``doc_id`` (or a pre-existing row with this PDF hash must be found).
     """
     import psycopg2
-    from fill_v2 import upsert_document
     from rhp_writer import route_extraction
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    owns_conn = conn is None
+    conn = conn or psycopg2.connect(os.environ["DATABASE_URL"])
     try:
-        content = open(pdf_path, "rb").read() if pdf_path and os.path.exists(pdf_path) else None
-        page_count = None
-        if content:
-            try:
-                import fitz; page_count = len(fitz.open(pdf_path))
-            except Exception: pass
-        doc_id = upsert_document(conn, ipo_id, "rhp", content_bytes=content,
-                                 url=(data.get("_meta") or {}).get("source_url"),
-                                 page_count=page_count)
-        rep = route_extraction(conn, ipo_id, doc_id, data, MODEL, PROMPT_VERSION)
+        if doc_id is None:
+            sha = _pdf_sha256(pdf_path)
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM documents WHERE ipo_id=%s AND doc_type='rhp' AND sha256=%s",
+                        (ipo_id, sha))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("no existing documents ledger row for extraction")
+            doc_id = row[0]
+        rep = route_extraction(conn, ipo_id, doc_id, data, MODEL, PROMPT_VERSION,
+                               commit=False)
+        conn.commit()
         print(f"     doc_id={doc_id}  findings={rep['findings'][1]}  "
               f"financials={len(rep['financials'])}  insights={rep['insights']}  "
               f"peers={rep.get('peers_stored', 0)}")
@@ -352,8 +357,11 @@ def route_to_db(pdf_path, ipo_id, data, out_dir, base):
         if rep.get("valuation"):
             print(f"     valuation v2-rhp-1 id={rep['valuation']['valuation_id']}")
         return rep
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        if owns_conn: conn.close()
 
 
 def route_existing(a):
@@ -593,6 +601,7 @@ def selftest():
     return ok
 
 if __name__=="__main__":
+    _configure_cli_streams()
     if "--selftest" in sys.argv:
         sys.exit(0 if selftest() else 1)
     main()

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""verify_r2.py — READ-ONLY. Prove the R2 read path works WITHOUT deleting local PDFs or
-paying for extraction: for each RHP document that has an r2:// url, fetch it from R2,
-confirm the sha256 matches, and open it to confirm it is a valid, readable PDF.
+"""verify_r2.py — READ-ONLY contract-v1 exact-key verification without model spend.
 
 This is the safe way to exercise the runner read path from the laptop.
 
@@ -24,24 +22,29 @@ def main():
         sys.exit("R2 not configured — set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY.")
 
     conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
-    q = ("SELECT ipo_id, url, sha256, page_count FROM documents "
-         "WHERE doc_type='rhp' AND url LIKE 'r2://%'")
+    q = ("SELECT ipo_id, object_key, sha256, byte_size, page_count FROM documents "
+         "WHERE doc_type='rhp' AND object_key IS NOT NULL AND byte_size IS NOT NULL "
+         "AND content_type='application/pdf' AND object_contract_version='1'")
     if a.ipo:
         cur.execute(q + " AND ipo_id=%s ORDER BY fetched_at DESC", (a.ipo,))
     else:
         cur.execute(q + " ORDER BY ipo_id")
     rows = cur.fetchall()
     if not rows:
-        print("no rhp documents with an r2:// url yet — extract one first (extraction uploads to R2).")
+        print("no fully verified contract-v1 RHP document exists in the ledger")
         conn.close(); return
 
     ok = fail = 0
-    for ipo_id, url, sha, pc in rows:
+    for ipo_id, object_key, sha, byte_size, pc in rows:
         fd, tmp = tempfile.mkstemp(suffix=".pdf"); os.close(fd)
         try:
-            if not r2.get_to_file(url, tmp):
-                print(f"  FAIL ipo {ipo_id}: fetch failed for {url}"); fail += 1; continue
-            got = hashlib.sha256(open(tmp, "rb").read()).hexdigest()
+            content = r2.get_document(object_key)
+            if not content.startswith(b"%PDF-"):
+                print(f"  FAIL ipo {ipo_id}: bad PDF signature"); fail += 1; continue
+            if len(content) != byte_size:
+                print(f"  FAIL ipo {ipo_id}: byte-size mismatch"); fail += 1; continue
+            open(tmp, "wb").write(content)
+            got = hashlib.sha256(content).hexdigest()
             if sha and got != sha:
                 print(f"  FAIL ipo {ipo_id}: sha256 mismatch ({got[:12]} != stored {sha[:12]})"); fail += 1; continue
             try:
@@ -49,7 +52,7 @@ def main():
             except Exception as e:
                 print(f"  FAIL ipo {ipo_id}: not a readable PDF ({type(e).__name__})"); fail += 1; continue
             note = "" if (pc is None or pages == pc) else f"  (page_count {pages} != stored {pc})"
-            print(f"  OK   ipo {ipo_id}: sha256 ✓ · {pages} pages · {url}{note}"); ok += 1
+            print(f"  OK   ipo {ipo_id}: sha256 ✓ · {pages} pages · doc key verified{note}"); ok += 1
         finally:
             try: os.remove(tmp)
             except OSError: pass
