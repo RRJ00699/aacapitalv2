@@ -18,8 +18,8 @@ export const PIPELINE_LIMITS = {
   DETAILS_MAX_PAYLOAD_BYTES: 524288,
   /** Journey monitoring window: keep listing-day context for the anchor-lock/review period only. */
   JOURNEY_MONITORING_DAYS: 30,
-  /** Fixed query accounting: Command 4 + index 1 + selection 1 + live inputs 2 + Details 1, plus Journey per IPO. */
-  SNAPSHOT_FIXED_NEON_QUERIES: 9,
+  /** Fixed query accounting: Command 5 + index 1 + selection 1 + live inputs 2 + Details 2, plus Journey per IPO. */
+  SNAPSHOT_FIXED_NEON_QUERIES: 11,
 } as const;
 
 export const PIPELINE_SCOPE_DESCRIPTION =

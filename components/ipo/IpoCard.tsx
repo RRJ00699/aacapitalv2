@@ -299,6 +299,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const street = c.street_consensus ? String(c.street_consensus) : null;
   const brokers = N(c.street_brokers);
   const rhpGate = c.rhp_gate ? String(c.rhp_gate) : null;
+  const intel = c.intelligence_summary && typeof c.intelligence_summary === "object" ? c.intelligence_summary as Row : null;
 
   // Setup (playbook engine — route.ts computes, v2 renders)
   const setup = c.playbook_setup ? String(c.playbook_setup) : null;
@@ -656,6 +657,17 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
         </button>
       )}
       {c.isin ? <a href={`/dashboard/ipo2/details/${String(c.isin).toUpperCase()}`} style={{ display: "inline-block", marginTop: 8, marginRight: 14, fontSize: 11, fontWeight: 800, color: C.blue, textDecoration: "none" }}>Complete Details →</a> : null}
+
+      <div data-testid="command-intelligence-summary" style={{marginTop:10,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:C.surface2}}>
+        <div style={{fontSize:10,fontWeight:800,letterSpacing:.4,textTransform:"uppercase",color:C.meta}}>IPO intelligence</div>
+        {intel?.status!=="AVAILABLE"?<div style={{fontSize:12,color:C.meta,marginTop:4}}>Unavailable — canonical financial evidence is insufficient.</div>:<div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11.5,marginTop:5}}>
+          <span><b>Reported</b> PAT ₹{String((intel.reported as Row)?.pat_cr??"—")}cr · EPS ₹{String((intel.reported as Row)?.eps??"—")} · P/E {String((intel.reported as Row)?.pe??"—")}</span>
+          <span><b>Pro-forma</b> PAT ₹{String((intel.pro_forma as Row)?.pat_cr??"—")}cr · EPS ₹{String((intel.pro_forma as Row)?.eps??"—")} · net debt ₹{String((intel.pro_forma as Row)?.net_debt_cr??"—")}cr</span>
+          <span><b>Transformations</b> {Array.isArray(intel.known_transformations)&&intel.known_transformations.length?intel.known_transformations.join(", "):"None known"}</span>
+          <span><b>Fair value / MoS</b> {intel.fair_value==null?"Unavailable":`₹${String(intel.fair_value)} / ${String(intel.margin_of_safety_pct)}%`}</span>
+          <span><b>Verdict / red flags</b> {String(intel.rhp_verdict??"Unavailable")} / {Array.isArray(intel.red_flags)?intel.red_flags.length:0}</span>
+        </div>}
+      </div>
 
       {c.chittorgarh_slug ? (
         <a href={`https://www.chittorgarh.com/ipo/${String(c.chittorgarh_slug)}/`}

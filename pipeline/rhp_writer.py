@@ -195,6 +195,19 @@ def to_crore(value, unit):
         return None, f"unknown_unit:{unit}"
     return round(v * f, 4), None
 
+def normalize_canonical_fact(fact):
+    """Validate and normalize one page-cited fact using only its own printed unit."""
+    if not isinstance(fact, dict) or fact.get("value") is None:
+        return None, "missing_value"
+    if not fact.get("unit_as_printed"):
+        return None, "missing_unit_as_printed"
+    if not isinstance(fact.get("page"), int):
+        return None, "missing_page"
+    if not str(fact.get("excerpt") or "").strip():
+        return None, "missing_excerpt"
+    value, note = to_crore(fact["value"], fact["unit_as_printed"])
+    return value, note
+
 
 # ============================================================ THE ROUTER
 # junk_signals vocabulary — taken from what is ALREADY stored in the DB (inspect_checks
@@ -252,7 +265,7 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
     """
     from fill_v2 import upsert_financials, upsert_rhp_findings, upsert_insights
 
-    rep = {"ipo_id": ipo_id, "doc_id": doc_id, "financials": [], "skipped": [],
+    rep = {"ipo_id": ipo_id, "doc_id": doc_id, "financials": [], "canonical_facts": [], "skipped": [],
            "valuation": None, "insights": 0, "findings": None}
     st = data.get("structured") or {}
     unit = st.get("unit_as_printed")
@@ -290,6 +303,20 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
         upsert_financials(conn, ipo_id, period, basis, rec, source=source, commit=False)
         rep["financials"].append({"period": period, "basis": basis,
                                   "fields": sorted(rec.keys()), "notes": notes})
+
+    # ---- 2b. canonical scalar facts: only explicitly disclosed, page-cited values ----
+    # The model reports figures exactly as printed; this writer remains the single
+    # unit-normalisation and storage boundary. Missing/page-less facts are refused.
+    for field in ("cash_cr","interest_expense_cr","operating_cash_flow_cr","debt_repayment_cr","capex_cr"):
+        fact = (st.get("canonical_facts") or {}).get(field) or {}
+        value, page, excerpt = fact.get("value"), fact.get("page"), fact.get("excerpt")
+        crore, note = normalize_canonical_fact(fact)
+        if crore is None:
+            if value is not None: rep["skipped"].append({"why":"canonical fact rejected","field":field,"reason":note})
+            continue
+        fact_source=f"{source}:doc={doc_id}:page={page}"
+        log_source_fact(conn, ipo_id, field, crore, fact_source, doc_id=doc_id, commit=False)
+        rep["canonical_facts"].append({"field":field,"value_cr":crore,"page":page,"excerpt":str(excerpt)[:250]})
 
     # ---- 3. valuation v2-rhp-1: reported ratios (unit-free, band-independent) ----
     kpi = st.get("kpi") or {}
@@ -480,6 +507,12 @@ def selftest():
       "_meta": {"cost_usd": 0.1234},
       "structured": {
         "unit_as_printed": "million", "currency": "INR",
+        "canonical_facts": {
+          "cash_cr": {"value": 500.0, "unit_as_printed": "million", "page": 102, "excerpt": "Cash and cash equivalents 500.0"},
+          "interest_expense_cr": {"value": 100.0, "unit_as_printed": "million", "page": 101, "excerpt": "Finance costs 100.0"},
+          "operating_cash_flow_cr": {"value": 900.0, "unit_as_printed": "million", "page": 103, "excerpt": "Net cash from operating activities 900.0"},
+          "debt_repayment_cr": {"value": 650.0, "unit_as_printed": "crore", "page": 80, "excerpt": "Repayment of borrowings 650.0"},
+          "capex_cr": {"value": 125.0, "unit_as_printed": "crore", "page": 80, "excerpt": "Capital expenditure 125.0"}},
         "financials": [
           {"period": "31-Mar-26", "basis": "consolidated",
            "revenue_from_operations": 41929.8, "total_income": 43207.0,
@@ -518,6 +551,17 @@ def selftest():
     chk("revenue million->crore (41929.8 -> 4192.98)", float(f[0]) == 4192.98)
     chk("total_income million->crore (43207.0 -> 4320.70)", float(f[1]) == 4320.70)
     chk("pat million->crore (5123.3 -> 512.33)", float(f[2]) == 512.33)
+    cur.execute("SELECT field,value,source FROM source_facts WHERE ipo_id=%s AND field='cash_cr' ORDER BY fetched_at DESC LIMIT 1",(iid,))
+    cf=cur.fetchone();chk("mixed units: cash 500 million -> 50 crore",cf[0]=="cash_cr" and float(cf[1])==50.0 and f"doc={doc_id}:page=102" in cf[2])
+    cur.execute("SELECT field,value FROM source_facts WHERE ipo_id=%s AND field IN ('debt_repayment_cr','capex_cr') ORDER BY field",(iid,))
+    mixed={field:float(value) for field,value in cur.fetchall()}
+    chk("mixed units: debt repayment 650 crore stays 650 (never 65)",mixed.get("debt_repayment_cr")==650.0)
+    chk("mixed units: capex 125 crore stays 125",mixed.get("capex_cr")==125.0)
+    cur.execute("SELECT count(*) FROM source_facts WHERE ipo_id=%s AND field='capex_cr'",(iid,));before=cur.fetchone()[0]
+    bad=dict(fixture);bad["structured"]={**fixture["structured"],"canonical_facts":{"capex_cr":{"value":999,"page":80,"excerpt":"Capital expenditure 999"}}}
+    rejected=route_extraction(conn,iid,doc_id,bad,"claude-sonnet-4-6","v2-full")
+    cur.execute("SELECT count(*) FROM source_facts WHERE ipo_id=%s AND field='capex_cr'",(iid,));after=cur.fetchone()[0]
+    chk("missing per-fact unit rejected with no source_facts write",before==after and any(s.get("field")=="capex_cr" and s.get("reason")=="missing_unit_as_printed" for s in rejected["skipped"]))
 
     v = latest(conn, iid)
     chk("valuation v2-rhp-1 got RoNW as roe (22.04)", float(v[3]) == 22.04)

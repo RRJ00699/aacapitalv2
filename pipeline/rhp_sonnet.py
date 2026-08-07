@@ -193,6 +193,14 @@ Produce a JSON object with EXACTLY this structure:
     "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed",
     "currency": "INR" | "other" | "not-disclosed",
 
+    "canonical_facts": {{
+      "cash_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "interest_expense_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "operating_cash_flow_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "debt_repayment_cr": {{"value": <objects-of-offer allocation exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}},
+      "capex_cr": {{"value": <objects-of-offer allocation exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}}
+    }},
+
     "financials": [
       {{
         "period": "<the period end EXACTLY as DD-Mon-YY, 2-digit year, e.g. 31-Mar-26>",

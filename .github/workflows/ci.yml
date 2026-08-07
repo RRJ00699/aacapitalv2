@@ -34,6 +34,8 @@ jobs:
       # SUBPROC_COV wraps subprocess integration tests in coverage; --cov (no
       # arg) defers to .coveragerc so the CORE denominator stays honest.
       - run: SUBPROC_COV=1 python -m pytest _scripts/tests/ -q --cov --cov-report=term
+      - name: Canonical pipeline tests
+        run: python -m pytest pipeline -q
       - name: Compile-check all scripts
         run: python -m py_compile _scripts/*.py _scripts/ipo/*.py
   security:

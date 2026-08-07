@@ -63,7 +63,7 @@ def _latest_financials(cur, ipo_id):
     # off-format value sorts last rather than erroring the whole query.
     cur.execute("""SELECT period,basis,revenue,ebitda,pat,net_worth,total_debt,total_assets
                    FROM financial_statements WHERE ipo_id=%s
-                   ORDER BY (basis='consolidated') DESC,
+                   ORDER BY (basis ILIKE '%consolidat%') DESC,
                             CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$'
                                  THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST""",(ipo_id,))
     rows=cur.fetchall()
@@ -156,7 +156,9 @@ def compute_valuation(conn, ipo_id):
 
     used["pe_source"] = pe_source
     used["pb_source"] = pb_source
-    if eps is not None: used["rhp_eps"] = eps
+    if eps is not None:
+        used["rhp_eps"] = eps
+        used["rhp_eps_field"] = eps_field
     if nav is not None: used["rhp_nav"] = nav
     # ---- rev_cagr_3y needs >=3 periods, ALL OF ONE BASIS ----
     # allrows is consolidated-first, newest-date-first. Restrict the CAGR series to the
@@ -322,7 +324,7 @@ def selftest():
       WITH latest AS (
         SELECT DISTINCT ON (ipo_id) ipo_id, pat
         FROM financial_statements
-        ORDER BY ipo_id, (basis='consolidated') DESC,
+        ORDER BY ipo_id, (basis ILIKE '%consolidat%') DESC,
                  CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$'
                       THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST
       )
@@ -370,7 +372,7 @@ def selftest():
     chk("RHP PE names WHICH eps was used", "eps_post" in vb["inputs_used"]["pe_source"])
     chk("RHP PB labelled rhp_computed", vb["inputs_used"]["pb_source"].startswith("rhp_computed"))
     chk("eps/nav recorded in inputs_used for audit",
-        vb["inputs_used"].get("rhp_eps")==5.0 and vb["inputs_used"].get("rhp_nav")==25.0)
+        vb["inputs_used"].get("rhp_eps")==5.0 and vb["inputs_used"].get("rhp_eps_field")=="eps_post" and vb["inputs_used"].get("rhp_nav")==25.0)
     chk("upgrading provenance changed the ratio (proxy 2.0 -> real 4.0)", va["pb"]!=vb["pb"])
 
     # (c) eps_pre is the documented fallback and says so

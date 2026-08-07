@@ -8,10 +8,12 @@
 // + decisions + rhp_findings + insights + source_facts(brlm_names) + listing_outcomes
 // + market_candles (first-5-session floor/ceiling).
 import { fairValue } from "@/lib/fair-value";
+import { calculateProForma } from "@/lib/intelligence/ipo-profile";
+import { attachCanonicalInputs, buildCanonicalProFormaInputs } from "@/lib/intelligence/canonical-inputs";
 import type { SqlClient } from "./sql";
 
 export async function fetchCards(sql: SqlClient) {
-  return await sql`
+  const rows=await sql`
     SELECT i.id AS ipo_id, i.isin, i.name_display AS company_name, i.listing_date,
            iss.open_date, iss.close_date, iss.issue_size_cr, iss.issue_price,
            iss.ofs_cr, iss.fresh_cr AS fresh_issue_cr, iss.band_hi AS band_high,
@@ -23,7 +25,6 @@ export async function fetchCards(sql: SqlClient) {
            v.roe, v.roce, v.de AS debt_equity, v.rev_cagr_3y AS revenue_cagr_3y, v.ofs_pct,
            v.fair_value_lo, v.fair_value_hi, v.quality_promoter,
            v.inputs_used->>'pe_source' AS pe_source, v.inputs_used->>'pb_source' AS pb_source,
-           (v.inputs_used->>'rhp_eps')::numeric AS eps_post,
            d.fundamental_verdict AS verdict,
            CASE d.fundamental_verdict WHEN 'JUNK' THEN 'reject' WHEN 'WATCH' THEN 'watch'
                 WHEN 'GOOD' THEN 'accept' END AS rhp_gate,
@@ -64,6 +65,7 @@ export async function fetchCards(sql: SqlClient) {
     ORDER BY
       CASE WHEN i.listing_date >= CURRENT_DATE OR iss.close_date >= CURRENT_DATE THEN 0 ELSE 1 END,
       COALESCE(i.listing_date, iss.open_date) DESC`;
+  return attachCanonicalInputs(sql,rows);
 }
 
 export async function fetchDl(sql: SqlClient) {
@@ -173,13 +175,15 @@ export function enrichCards(cards: Record<string, unknown>[]) {
     else if (setup === "core-lite") verdict_line = "Core-lite — mega opening positive. Solid buy-at-open.";
     else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : "No buy-at-open rules met — watch only.";
 
-    return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
+    const {inputs}=buildCanonicalProFormaInputs(c); const intelligence=calculateProForma(inputs);
+    const intelligence_summary=intelligence.status==="AVAILABLE"?{status:"AVAILABLE",reported:{pat_cr:intelligence.reported_pat_cr,eps:intelligence.reported_eps,pe:intelligence.reported_pe},pro_forma:{pat_cr:intelligence.pro_forma_pat_cr,eps:intelligence.pro_forma_eps,pe:intelligence.pro_forma_pe,net_debt_cr:intelligence.net_debt_cr},known_transformations:[],fair_value:intelligence.fair_value,margin_of_safety_pct:intelligence.margin_of_safety_pct,red_flags:c.junk_signals??[],rhp_verdict:c.verdict??null}:{status:"UNAVAILABLE",reason:"Canonical financial evidence is insufficient.",missing_inputs:intelligence.missing_inputs};
+    return { ...c, intelligence_summary, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
       playbook_passed: passed, playbook_verdict: verdict_line,
       house_stack: houseStack, house_stack_parts: stackParts,
       house_stack_hit: stackParts.filter((x) => x.pass).length,
       house_stack_stat: houseStack ? "72.7% win · +17.2% median · D30 (n=55)"
         : `${stackParts.filter((x) => x.pass).length}/3 — baseline 62.2% win`,
-      ...fairValue(c) } as Record<string, unknown>;
+      ...fairValue({...c,eps_post:c.rhp_eps}) } as Record<string, unknown>;
   });
 
   const investable: Record<string, unknown>[] = [];
@@ -197,7 +201,7 @@ export function enrichCards(cards: Record<string, unknown>[]) {
   // verdict exists ONLY when RHP is confirmed; otherwise INCOMPLETE with no verdict.
   const withResearch = investable.map((c) => {
     const rhpStatus = (c.verdict != null || c.red_flag_count != null) ? "CONFIRMED" : "PENDING";
-    const fvReady = c.eps_post != null || c.ipo_pe != null;
+    const fvReady = c.rhp_eps != null || c.ipo_pe != null;
     const gate = String(c.rhp_gate ?? "").toLowerCase();
     const cq = rhpStatus === "CONFIRMED"
       ? { status: "CONFIRMED", verdict: gate === "reject" ? "JUNK" : gate === "watch" ? "WATCH" : gate ? "GOOD" : "WATCH" }

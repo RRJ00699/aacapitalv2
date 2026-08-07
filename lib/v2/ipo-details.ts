@@ -1,4 +1,6 @@
 import type { SqlClient } from "./sql";
+import { buildIpoProfile, calculateProForma } from "@/lib/intelligence/ipo-profile";
+import { attachCanonicalInputs, buildCanonicalProFormaInputs } from "@/lib/intelligence/canonical-inputs";
 
 export const DETAILS_SCHEMA_VERSION = "ipo-details-v1" as const;
 export const DETAILS_GMP_LAST_UPDATED = "2026-07-24";
@@ -38,9 +40,24 @@ export function detailsFromRow(row: Record<string, unknown>, generatedAt = new D
     ? (outcomePending ? pending(`Listing outcome ${name} is pending until the IPO lists.`, "listing_outcomes") : missing(`Listing outcome ${name} is unavailable because no computed outcome is stored.`, "listing_outcomes"))
     : field(value as T, "listing_outcomes", row.outcome_computed_at);
 
+  const canonicalIsin = typeof row.isin === "string" && /^IN[A-Z0-9]{9}[0-9]$/i.test(row.isin) ? row.isin.toUpperCase() : null;
+  const {inputs:proFormaInputs,provenance:inputProvenance}=buildCanonicalProFormaInputs({...row,issue_price:issuePrice});
+  const proForma = calculateProForma(proFormaInputs);
+  const meaningful = proForma.status === "AVAILABLE";
+  const intelligenceProfile = canonicalIsin && Number.isInteger(Number(row.ipo_id)) && Number(row.ipo_id) > 0 && meaningful ? buildIpoProfile({ ipo_id: Number(row.ipo_id), isin: canonicalIsin,
+    identity: { company_name: String(row.company_name), symbol: row.sym ?? null, listing_date: row.listing_date ?? null },
+    company: { name: String(row.company_name), classification: "VERIFIED_FACT", source: "ipo" }, promoters: [], business: {},
+    issue: { issue_price: issuePrice, band_low: row.band_lo ?? null, band_high: row.band_hi ?? null, issue_size_cr: row.issue_size_cr ?? null, fresh_issue_cr: row.fresh_cr ?? null, ofs_cr: row.ofs_cr ?? null },
+    timetable: { listing_date: row.listing_date ?? null }, objects: [], expenses: {}, selling_shareholders: [], shareholding: {}, reservation: {}, anchor: [], subscriptions: [],
+    financials: { reported_pat_cr: proFormaInputs.reported_pat_cr, reported_debt_cr: proFormaInputs.reported_debt_cr, cash_cr: proFormaInputs.cash_cr, ebitda_cr: proFormaInputs.ebitda_cr },
+    kpis: { canonical_roce: proFormaInputs.canonical_roce }, peers: [], documents: evidence.map((e:any)=>e.document).filter(Boolean),
+    rhp_analysis: { verdict, findings, red_flags: junk }, sbi_analysis: { state: "UNKNOWN", reason: "No verified SBI extraction in this snapshot." }, economic_transformations: [],
+    valuation: proForma, listing: {}, market: {}, provenance: { verified_evidence: evidence, pro_forma_inputs:inputProvenance, canonical_owners: { financials:"financial_statements", valuation:"valuation", facts:"source_facts" }, ai_may_overwrite_verified_facts: false },
+  }, generatedAt) : null;
   return {
     schema_version: DETAILS_SCHEMA_VERSION, generated_at: generatedAt,
-    identity: { isin: String(row.isin).toUpperCase(), symbol: row.sym ? String(row.sym) : null, company_name: String(row.company_name), listing_date: field(row.listing_date ? String(row.listing_date) : null, "ipo") },
+    intelligence_profile: intelligenceProfile,
+    identity: { isin: canonicalIsin, symbol: row.sym ? String(row.sym) : null, company_name: String(row.company_name), listing_date: field(row.listing_date ? String(row.listing_date) : null, "ipo") },
     issue: {
       issue_price: field(issuePrice, "ipo_issue"), band_low: field(row.band_lo == null ? null : Number(row.band_lo), "ipo_issue"), band_high: field(row.band_hi == null ? null : Number(row.band_hi), "ipo_issue"),
       issue_size_cr: field(row.issue_size_cr == null ? null : Number(row.issue_size_cr), "ipo_issue"), fresh_issue_cr: field(row.fresh_cr == null ? null : Number(row.fresh_cr), "ipo_issue"), ofs_cr: field(row.ofs_cr == null ? null : Number(row.ofs_cr), "ipo_issue"),
@@ -61,10 +78,11 @@ export function detailsFromRow(row: Record<string, unknown>, generatedAt = new D
 
 export async function fetchDetailsRows(sql: SqlClient, ipoIds: Array<string | number>) {
   if (!ipoIds.length) return [];
-  return sql`
+  const rows=await sql`
     SELECT i.id AS ipo_id, i.isin, UPPER(COALESCE(i.symbol,'')) AS sym, i.name_display AS company_name, i.listing_date,
       iss.issue_price,iss.band_lo,iss.band_hi,iss.issue_size_cr,iss.fresh_cr,iss.ofs_cr,iss.lot_size,iss.face_value,
       v.score,v.score_band,v.engine_version,v.computed_at AS valuation_computed_at,v.pe,v.pb,v.peer_median_pe,v.fair_value_lo,v.fair_value_hi,v.inputs_used,v.missing_inputs,v.inputs_used->>'pe_source' AS pe_source,v.inputs_used->>'pb_source' AS pb_source,
+      v.roce,v.inputs_used->>'rhp_eps' AS rhp_eps,v.inputs_used->>'rhp_eps_field' AS rhp_eps_field,
       rf.findings,rf.model AS analysis_model,rf.prompt_version AS analysis_prompt_version,rf.confidence AS analysis_confidence,rf.analyzed_at,rf.red_flag_count,rf.junk_signals,
       de.fundamental_verdict,de.reasons AS decision_reasons,de.evidence_refs AS decision_evidence,de.decided_at,
       lo.listing_open,lo.gap_pct,lo.d1_close,lo.best_close,lo.worst_close,lo.pool,lo.hold_positive_vs_open,lo.winner_35,lo.ceiling_20,lo.computed_at AS outcome_computed_at,lo.dataset_version,
@@ -74,4 +92,5 @@ export async function fetchDetailsRows(sql: SqlClient, ipoIds: Array<string | nu
     LEFT JOIN LATERAL (SELECT * FROM rhp_findings x WHERE x.ipo_id=i.id ORDER BY x.analyzed_at DESC LIMIT 1) rf ON true
     LEFT JOIN LATERAL (SELECT * FROM decisions x WHERE x.ipo_id=i.id ORDER BY x.decided_at DESC LIMIT 1) de ON true
     LEFT JOIN listing_outcomes lo ON lo.ipo_id=i.id WHERE i.id = ANY(${ipoIds})`;
+  return attachCanonicalInputs(sql,rows);
 }
