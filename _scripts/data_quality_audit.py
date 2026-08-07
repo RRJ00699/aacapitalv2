@@ -106,7 +106,7 @@ def main() -> int:
     if worst:
         print("\nBACKFILL PRIORITY (worst coverage first):")
         for pctv, label in sorted(worst):
-            print(f"  {label}: {pctv:.1f}% -> NSE archive / official docs (see docs/DETAILS_AND_REVIEW.md matrix)")
+            print(f"  {label}: {pctv:.1f}% -> NSE archive / official docs (see docs/specifications/DETAILS_AND_REVIEW.md matrix)")
     print("\nCandle gaps -> run: venv/bin/python _scripts/backfill_listing_window_candles.py --apply")
     conn.close()
     return 0

@@ -125,7 +125,7 @@ def main():
     # imported, not copied, so this join can never drift from the dedup/unique
     # canon. Replaces the rapidfuzz>=88 fuzzy match (RULE 2 violation) which
     # also MISSED 'Ltd' vs 'Limited' (scored 85.7).
-    u = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
+    u = os.getenv("DATABASE_URL")
     if not u: sys.exit("Set DATABASE_URL")
     conn = psycopg2.connect(u); cur = conn.cursor()
     cur.execute("""CREATE TABLE IF NOT EXISTS ipo_research_notes(

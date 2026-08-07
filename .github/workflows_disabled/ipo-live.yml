@@ -87,10 +87,10 @@ jobs:
             python _scripts/refresh_kite_token.py || true
             timeout 14100 python _scripts/ipo/kite_ticker_ipo.py $ARGS --write-db --interval 5
             echo "chunk $chunk ended (rc=$?) — computing floor/ceiling levels"
-            python _scripts/ipo/analyze_listing_day.py --auto-today || true
+            python research/backtests/ipo/analyze_listing_day.py --auto-today || true
           done
           echo "=== final level analysis pass ==="
-          python _scripts/ipo/analyze_listing_day.py --auto-today || true
+          python research/backtests/ipo/analyze_listing_day.py --auto-today || true
           echo "capture window complete"
 
       - name: Nothing to capture

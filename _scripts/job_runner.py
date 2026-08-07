@@ -85,7 +85,7 @@ JOBS = {
     "pipeline_weekly": ["_scripts/run_ipo_pipeline_lean.py", "--weekly"],
     "ipo_lifecycle":   ["pipeline/nse_lifecycle.py", "--write"],
     "news":            ["_scripts/fetch_ipo_news.py", "--apply"],
-    "consolidate":     ["_scripts/consolidate_master.py", "--apply"],
+    "consolidate":     ["compatibility/consolidated/consolidate_master.py", "--apply"],
     "peer_pe_notes":   ["_scripts/derive_peer_pe_from_notes.py", "--apply"],
     "peer_pe":         ["_scripts/fetch_peer_pe.py", "--apply"],
     "vm_verify":       ["_scripts/vm_verify.py"],

@@ -130,6 +130,7 @@ _archive/_scripts/score_management_commentary.py	SUPERSEDED	imports, string path
 _archive/_scripts/scrape_amfi.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _archive/_scripts/scrape_mf_yahoo.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _archive/_scripts/scrape_shareholding.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+_archive/_scripts/screener-pipeline.ts.txt	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _archive/_scripts/smart_money_avoidance_backtest.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _archive/_scripts/smart_money_backtest.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _archive/_scripts/snapshot_convergence.py	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
@@ -238,17 +239,10 @@ _scripts/.deploy-trigger	UNKNOWN	tracked-file inventory; retained pending comple
 _scripts/VERIFY_V2.md	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/__init__.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/add_password_hash.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/analyze_brlm_rate.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/analyze_junk.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/analyze_qib_pattern.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/anchor_quality_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/anchor_quality_d5.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/anchor_quality_regression.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/anchor_threshold_test.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/archive/screener-pipeline.ts.txt	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/audit_candles.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/backfill/download-screener-csv.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/backfill_anchors_analysis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/backfill_anchors_and_test.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/backfill_anchors_api.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/backfill_anchors_slug.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -258,32 +252,9 @@ _scripts/backfill_listing_window_candles.py	UNKNOWN	tracked-file inventory; reta
 _scripts/backfill_market_regimes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/backfill_master_computables.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/backfill_price_candles.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/backtest_dna_drawdown.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/backtest_journey_exits.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/backtest_quality_score.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/backtest_regime.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/backup_critical_tables.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/base_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/build_ipo_consolidated.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/build_ipo_consolidated_v2.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/check-env.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/check-neon-storage.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/check_candle_storage.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_consolidated_row.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_data_contract.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_date_sanity.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_dupes.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_fairvalue_data.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_freshness.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_fv_table.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_grades.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_ids.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_ingest_gain.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_laser_rhp.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_missing_scores.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_neon_schema.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_value_sanity.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/check_write_constraints.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/checkcols.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/chittorgarh_recon.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/cir_forward_test.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -295,15 +266,12 @@ _scripts/compute_flags.py	UNKNOWN	tracked-file inventory; retained pending compl
 _scripts/compute_journal_outcomes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/compute_quality_score.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/compute_verdicts.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/consolidate_master.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/cross_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/data_quality_audit.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/dedup_merge.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/dedup_merge.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/dedupe_master.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/deepen_candles_to_10yr.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/derive_peer_pe_from_notes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/diagnose_neon_compute.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/download_sbi_notes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/download_sebi_rhps_playwright.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/dump_sector_map.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -311,12 +279,7 @@ _scripts/engines/ipo_probability_engine.py	UNKNOWN	tracked-file inventory; retai
 _scripts/engines/market_regime.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/enrich_ipo_chittorgarh.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/enrich_promoter_holding.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/exit_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/exit_backtest_v2.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/exit_backtest_v3.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/exit_rule_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/explain_profitlock.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/factor_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/fetch_delivery_bhavcopy.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/fetch_insider_trades.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/fetch_ipo_news.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -328,25 +291,17 @@ _scripts/find_sub_cols.py	UNKNOWN	tracked-file inventory; retained pending compl
 _scripts/find_tickers.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/fix_dupes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/fix_symbol_mismaps.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/flags_horizon_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/git_sync.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/guardrails_canon.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/import_golden_master.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/insights_fanout.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/ipo/analyze_listing_day.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/ipo/backfill_brlm_names.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/backfill_ipo_ohlc.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/ipo/backtest_dip_defense.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/ipo/backtest_recovery_classes.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/ipo/backtest_regime_split.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/ipo/backtest_strategies.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/ipo/backtest_thesis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/ipo/compute_brlm_scores.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/dedup_ipo_intelligence.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/dedup_ipos.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/enrich_from_reports.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/enrich_ipo_chittorgarh.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/ipo/export_ipo_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/ipo/fetch_ipo_post_listing_returns.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/fetch_nse_ipos.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/fill_listing_open_from_candles.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -375,7 +330,6 @@ _scripts/ipo/run_ipo_pipeline.ps1	UNKNOWN	tracked-file inventory; retained pendi
 _scripts/ipo/score_ipos_live.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/setup_ipo_scheduler.ps1	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo/sync_ipo_calendar.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/ipo/verify_resolved_symbols.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/ipo_autoupdate.patch	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo_candle_backfill.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/ipo_daily_levels.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -395,6 +349,7 @@ _scripts/lib/db.ts	UNKNOWN	tracked-file inventory; retained pending complete run
 _scripts/lib/http_resilience.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/lib/indicators.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/lib/notify.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
+_scripts/lib/quality_factors.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/lib/stage_state.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/lineage_registry.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/listing_day_execution_engine.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -408,32 +363,25 @@ _scripts/migrations/20260617_prod_ready_tables.sql	IN_USE	imports, string paths,
 _scripts/migrations/20260806_document_ledger.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/migrations/create_multibagger_similarity.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/migrations/management_commentary_schema.sql	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/ml/__init__.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/neon_sizes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/neon_sleep_sentinel.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/nse_anchor_backfill.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/nse_preopen_capture.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/ofs_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/parse_sbi_notes.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/pattern_mining.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/pipeline_watchdog.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/preflight_listing_day.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/price-history-route.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/probe_ipomatrix.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/prod/__init__.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/prod/__pycache__/env_utils.cpython-312.pyc	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/prod/env_utils.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/prod/kite_sync_and_predict.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/promoter_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/prune_dead_columns.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/purge_candles_after_lockin.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/purge_ipo_ticks.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/purge_old_candles.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/real_return_analysis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/reconcile_listing_dates.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/reconcile_missing_candles.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/refresh_kite_token.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/regime_mid_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/research_bundle.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/rhp_auto.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/rhp_sections.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -459,7 +407,7 @@ _scripts/sync_trade_journal.py	UNKNOWN	tracked-file inventory; retained pending 
 _scripts/tests/conftest.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/contract_schema.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/fixture_nse_preopen.json	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/tests/helpers/intelligence_sql_probe.ts	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
+_scripts/tests/helpers/intelligence_sql_probe.ts	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/route_harness/run_route.mjs	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/route_harness/stubs.mjs	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_admin_console_jobs.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
@@ -482,14 +430,14 @@ _scripts/tests/test_features_e2e.py	IN_USE	imports, string paths, scripts, workf
 _scripts/tests/test_fetch_peer_pe.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_gate_and_schema_sync.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_house_stack.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/tests/test_intelligence_pr308.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/tests/test_intelligence_sql_integration.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
+_scripts/tests/test_intelligence_pr308.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+_scripts/tests/test_intelligence_sql_integration.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_ipo_gold_view.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_ipo_score.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_job_lists_in_sync.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_job_runner.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_job_whitelist_integrity.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/tests/test_journey_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+_scripts/tests/test_journey_backtest.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_junk_floor_enforced.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_kite_15m.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/tests/test_kite_outcomes.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
@@ -548,8 +496,6 @@ _scripts/triage_known_gaps.sql	IN_USE	imports, string paths, scripts, workflows,
 _scripts/update_kite_token.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/update_nifty_value.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/upgrade_trade_journal.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-_scripts/verify_laser_live.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-_scripts/verify_live_feed.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 _scripts/vm_verify.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/wayback_preopen_harvest.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 _scripts/z.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -599,6 +545,9 @@ app/layout.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, 
 app/login/page.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 app/page.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 auth.ts	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+compatibility/consolidated/build_ipo_consolidated.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+compatibility/consolidated/build_ipo_consolidated_v2.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+compatibility/consolidated/consolidate_master.py	COMPATIBILITY	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 components/Footer.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 components/ServiceWorkerRegister.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 components/app-shell/AppNav.tsx	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
@@ -873,46 +822,46 @@ data/research_notes/Zinka Logistics Solutions Ltd_IPO Note.pdf	UNKNOWN	tracked-f
 data/research_notes/iValue Infosolutions Ltd_IPO Note.pdf	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 data/research_notes/ideaForge Technology Limited_IPO NOTE_26-06-2023.pdf	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 dip_defense.csv	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-docs/AACAPITAL_KICKSTART_AUDIT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/AACAPITAL_PRODUCT_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/ARCHITECTURE_DECISIONS.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/ARCHITECTURE_STATE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/ASSET_LIGHT_ARCHITECTURE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/CURRENT_PR_IMPLEMENTATION_AUDIT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/CURRENT_STATE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/DETAILS_AND_REVIEW.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/FRUSTRATION_TRACKER.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/IPO_INTELLIGENCE_V1.md	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
-docs/NSE_PREOPEN_CAPTURE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/PIPELINE_RUNTIME_AUDIT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/PROVENANCE_DESIGN.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/QUALITY_SCORE_SPEC.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/R2_DOCUMENT_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/SESSION_2026-07-24.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/TEST_CONTRACT_AUDIT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/UAT_FRAMEWORK.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/UAT_TRACKER.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/UI_EVIDENCE_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/UI_REQUIREMENTS.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/V2_SCHEMA.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-docs/VM_CRON_RUNBOOK.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/architecture/ARCHITECTURE_DECISIONS.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/architecture/ARCHITECTURE_STATE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/architecture/ASSET_LIGHT_ARCHITECTURE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/architecture/CANONICAL_SPINE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/architecture/CURRENT_STATE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/archive/AACAPITAL_KICKSTART_AUDIT.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/AACapital_Handover_v3.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/APPLY_ROOT_HOTFIX.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/ARCHITECTURE_TARGET.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/BACKFILL_2006_RUNBOOK.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/archive/CURRENT_PR_IMPLEMENTATION_AUDIT.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/INCIDENT_2026-07-16.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/IPO_ENGINE_README.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/IPO_FEATURE_DECISION_README.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/PATCH_README.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/archive/PIPELINE_RUNTIME_AUDIT.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/README_equity_era.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/ROUTE_ARCHIVE_DECISIONS.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/SCRIPT_ARCHIVE_CANDIDATES.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/archive/SCRIPT_BUCKET_B.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/archive/SESSION_2026-07-24.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/archive/TEST_CONTRACT_AUDIT.md	SUPERSEDED	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/decisions/CLEANUP_PHASE2_EVIDENCE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/decisions/SPINE_CLEANUP_REPORT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/repository-inventory.tsv	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
+docs/runbooks/FRUSTRATION_TRACKER.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/runbooks/NSE_PREOPEN_CAPTURE.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 docs/runbooks/PRODUCTION_JOBS.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/runbooks/UAT_FRAMEWORK.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/runbooks/UAT_TRACKER.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/runbooks/VM_CRON_RUNBOOK.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/DETAILS_AND_REVIEW.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/PROVENANCE_DESIGN.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/QUALITY_SCORE_SPEC.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/R2_DOCUMENT_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/UI_EVIDENCE_CONTRACT.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/UI_REQUIREMENTS.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+docs/specifications/V2_SCHEMA.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 eslint.config.mjs	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 factor_report.csv	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 forensic.csv	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
@@ -980,12 +929,6 @@ package-lock.json	IN_USE	imports, string paths, scripts, workflows, tests, route
 package.json	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 pipeline/.gitignore	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 pipeline/README.md	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/download_sbi_notes.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/download_sebi_rhps_playwright.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/kite_connect.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/parse_sbi_notes.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/refresh_kite_token.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
-pipeline/_scripts/update_kite_token.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 pipeline/build/build_snapshots.ts	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 pipeline/build/journey_universe.ts	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 pipeline/capture_preopen.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
@@ -1052,10 +995,62 @@ public/window.svg	UNKNOWN	tracked-file inventory; retained pending complete runt
 pytest.ini	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 real_return_analysis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 requirements.txt	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
+research/backtests/analyze_brlm_rate.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/analyze_junk.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/analyze_qib_pattern.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/anchor_quality_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/backfill_anchors_analysis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/backtest_dna_drawdown.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/backtest_journey_exits.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/backtest_quality_score.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/backtest_regime.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/base_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/cross_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/exit_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/exit_backtest_v2.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/exit_backtest_v3.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/exit_rule_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/factor_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/flags_horizon_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/analyze_listing_day.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/backtest_dip_defense.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/backtest_recovery_classes.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/backtest_regime_split.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/backtest_strategies.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/backtest_thesis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ipo/export_ipo_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ml/__init__.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/ofs_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/pattern_mining.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/promoter_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/real_return_analysis.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+research/backtests/regime_mid_backtest.py	RESEARCH	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 run_abcapital_fix.ps1	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 sector_map.csv	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 setup_vm_cron.sh	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 tests/contracts/test_repository_spine.py	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/audit_candles.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_candle_storage.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_consolidated_row.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_data_contract.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_date_sanity.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_dupes.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_fairvalue_data.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_freshness.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_fv_table.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_grades.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_ids.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_ingest_gain.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_laser_rhp.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_missing_scores.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_neon_schema.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_value_sanity.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/check_write_constraints.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/diagnose_neon_compute.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/ipo/verify_resolved_symbols.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/probe_ipomatrix.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/verify_laser_live.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
+tools/diagnostics/verify_live_feed.py	DIAGNOSTIC	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 topout_online.py	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence
 tsconfig.json	IN_USE	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 uat-report/EXAMPLE-failure.html	UNKNOWN	tracked-file inventory; retained pending complete runtime-caller evidence

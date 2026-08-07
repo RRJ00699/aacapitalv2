@@ -119,3 +119,34 @@ def test_live_subprocess_and_workflow_paths_exist():
     candidates = set(re.findall(r"(?:pipeline|_scripts)/[A-Za-z0-9_./-]+\.(?:py|ts|mjs)", corpus))
     missing = sorted(path for path in candidates if not (ROOT / path).exists())
     assert not missing
+
+
+def test_duplicate_pipeline_script_tree_is_gone():
+    duplicate_dir = ROOT / "pipeline" / "_scripts"
+    assert not duplicate_dir.exists() or not any(duplicate_dir.iterdir())
+
+
+def test_classified_scripts_live_outside_production_script_tree():
+    inventory = text("docs/repository-inventory.tsv")
+    forbidden = []
+    for line in inventory.splitlines()[1:]:
+        path, classification, *_ = line.split("\t")
+        if path.startswith("_scripts/") and classification in {"RESEARCH", "DIAGNOSTIC", "SUPERSEDED"}:
+            forbidden.append((path, classification))
+    assert not forbidden
+
+
+def test_consolidated_compatibility_has_explicit_live_callers():
+    runner = text("_scripts/job_runner.py")
+    lean = text("_scripts/run_ipo_pipeline_lean.py")
+    assert "compatibility/consolidated/consolidate_master.py" in runner
+    assert "../compatibility/consolidated/consolidate_master.py" in lean
+    assert "../compatibility/consolidated/build_ipo_consolidated_v2.py" in lean
+    for name in ("consolidate_master.py", "build_ipo_consolidated.py", "build_ipo_consolidated_v2.py"):
+        assert not (ROOT / "_scripts" / name).exists()
+
+
+def test_current_docs_use_the_architecture_hierarchy():
+    root_docs = sorted(path.name for path in (ROOT / "docs").glob("*.md"))
+    # IPO_INTELLIGENCE_V1 remains UNKNOWN and therefore cannot be moved by cleanup.
+    assert root_docs == ["IPO_INTELLIGENCE_V1.md"]

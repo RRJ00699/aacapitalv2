@@ -6,14 +6,14 @@ THE mission metric: fundamentally-strong vs junk, BEFORE listing, from data we
 already hold. Factor definitions live in ONE place — backtest_quality_score.py
 — and are imported here so the backtest and production can never drift.
 
-v1 = SPEC candidate weights (docs/QUALITY_SCORE_SPEC.md). Calibration: run
+v1 = SPEC candidate weights (docs/specifications/QUALITY_SCORE_SPEC.md). Calibration: run
 backtest_quality_score.py, review the table, adjust THERE; this script inherits.
 Writes ipo_intelligence.quality_score / quality_conf (additive columns).
 Run:  python _scripts/compute_quality_score.py --apply    (no flag = preview)
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from backtest_quality_score import factors  # ONE factor definition
+from lib.quality_factors import factors  # ONE production-owned factor definition
 
 import psycopg2
 

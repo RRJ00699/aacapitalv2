@@ -3,7 +3,7 @@
 > This file is retained for historical reference only.
 > It is not an implementation specification.
 > Current product rules are defined in:
-> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+> `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`
 
 # Bucket B — IPO-domain scripts with no automated caller (116)
 
@@ -38,7 +38,7 @@ never run; those move to `_archive/_scripts/` in Phase 3b. Anything unmarked sta
 | 19 | `backtest_regime.py` | the 10yr verdict said the breakout setups have edge ONLY in uptrends. |
 | 20 | `backtest_regime_split.py` | is the edge real, or just one bull market? |
 | 21 | `backtest_strategies.py` | AACapital: does ANY decidable post-listing rule make money? |
-| 22 | `backtest_thesis.py` | _scripts/ipo/backtest_thesis.py |
+| 22 | `backtest_thesis.py` | research/backtests/ipo/backtest_thesis.py |
 | 23 | `build_purge_plan.py` | READ ONLY — measures bloat + EMITS the purge SQL (you review + run it). Drops nothing it |
 | 24 | `check_candle_storage.py` | READ ONLY — are we storing daily candles for the whole 1400-stock universe again?""" |
 | 25 | `check_consolidated_row.py` | eyeball one ipo_consolidated row end-to-end (read-only). |

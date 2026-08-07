@@ -21,10 +21,14 @@ pytestmark = pytest.mark.unit
 
 CORE_IMPORT_SAFE = [
     "ipo_score", "compute_verdicts", "compute_flags", "parse_sbi_notes",
-    "check_value_sanity", "sync_issue_details", "schema_sync",
-    "build_ipo_consolidated_v2", "fetch_peer_pe", "compute_quality_score",
+    "sync_issue_details", "schema_sync", "fetch_peer_pe", "compute_quality_score",
     "run_ipo_pipeline_lean",
 ]
+
+MOVED_IMPORT_SAFE = {
+    "check_value_sanity": ROOT / "tools" / "diagnostics" / "check_value_sanity.py",
+    "build_ipo_consolidated_v2": ROOT / "compatibility" / "consolidated" / "build_ipo_consolidated_v2.py",
+}
 
 @pytest.mark.parametrize("mod", CORE_IMPORT_SAFE)
 def test_core_module_imports_cleanly(mod, monkeypatch):
@@ -37,3 +41,13 @@ def test_core_module_imports_cleanly(mod, monkeypatch):
     assert sys.stdout is out and sys.stderr is err, \
         f"{mod} re-wraps stdio at import (rhp_sonnet bug class — move it into main())"
     assert callable(getattr(m, "main", None)), f"{mod} has no main() entrypoint"
+
+
+@pytest.mark.parametrize("mod,path", MOVED_IMPORT_SAFE.items())
+def test_moved_core_module_imports_cleanly(mod, path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://import-test-never-connect")
+    monkeypatch.setattr(sys, "argv", [mod])
+    spec = importlib.util.spec_from_file_location(f"coreimp_{mod}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert callable(getattr(module, "main", None))

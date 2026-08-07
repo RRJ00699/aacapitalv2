@@ -22,7 +22,7 @@ PROBABLY_DEAD and cannot safely be moved without runtime-caller evidence.
 The machine-readable per-file classification is `docs/repository-inventory.tsv`.
 CONFIRMED_DEAD means all import, subprocess, string path, package script, cron, Admin,
 workflow, test, snapshot, route-link, documentation, and runtime callers were checked.
-No phase-2 file met that bar, so this change deletes nothing.
+Six duplicate files met that bar and were deleted after their live root `_scripts` owners were verified; UNKNOWN files remain untouched.
 
 ## 2. Complete route map
 
@@ -159,21 +159,120 @@ Do not migrate research/compatibility tables until a consumer explicitly claims 
 
 ## 9. Change manifest, impact, and rollback
 
-- Files moved/renamed/archived/deleted: **none**. UNKNOWN and PROBABLY_DEAD files were
-  retained. Existing PR #307 archival remains the rollback record for tracker removal.
-- Compatibility wrappers retained: root redirects and all evidenced Admin/script
-  entrypoints.
-- Legacy architectures removed in phase 2: the remaining production
-  `NEON_DATABASE_URL` fallback; no data architecture was redesigned.
-- Runtime/cost: zero public DB wake added; deterministic credential selection prevents
-  accidental writer use of an old Neon alias. Tests are static/offline.
-- Cloudflare/GitHub: no binding, workflow, secret, schedule, deployment, or production
-  state changed.
-- Rollback: revert the cleanup commit. No data/object rollback is needed.
-- Known risks: real schema smoke, real publication, workflow dispatch, production
-  health, and browser acceptance are **UNKNOWN** until an owner runs them with approved
-  read-only/non-production credentials after merge.
-- Manual activation: none.
+**VERIFIED before/after:** tracked files 1,072 → 1,067; production-oriented files
+486 → 425; `_scripts` files 319 → 264; `pipeline/_scripts` files 6 → 0.
+Research and diagnostic implementations moved out of production; moves preserve history.
+
+### Exact move manifest
+
+| Old path | New path | Classification | Caller evidence / risk |
+|---|---|---|---|
+| `_scripts/build_ipo_consolidated.py` | `compatibility/consolidated/build_ipo_consolidated.py` | COMPATIBILITY | Lean pipeline/Admin/tests updated to explicit compatibility path; production behavior retained. |
+| `_scripts/build_ipo_consolidated_v2.py` | `compatibility/consolidated/build_ipo_consolidated_v2.py` | COMPATIBILITY | Lean pipeline/Admin/tests updated to explicit compatibility path; production behavior retained. |
+| `_scripts/consolidate_master.py` | `compatibility/consolidated/consolidate_master.py` | COMPATIBILITY | Lean pipeline/Admin/tests updated to explicit compatibility path; production behavior retained. |
+| `docs/ARCHITECTURE_DECISIONS.md` | `docs/architecture/ARCHITECTURE_DECISIONS.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/ARCHITECTURE_STATE.md` | `docs/architecture/ARCHITECTURE_STATE.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/ASSET_LIGHT_ARCHITECTURE.md` | `docs/architecture/ASSET_LIGHT_ARCHITECTURE.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/CURRENT_STATE.md` | `docs/architecture/CURRENT_STATE.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/AACAPITAL_KICKSTART_AUDIT.md` | `docs/archive/AACAPITAL_KICKSTART_AUDIT.md` | SUPERSEDED | Historical evidence only; references updated. |
+| `docs/CURRENT_PR_IMPLEMENTATION_AUDIT.md` | `docs/archive/CURRENT_PR_IMPLEMENTATION_AUDIT.md` | SUPERSEDED | Historical evidence only; references updated. |
+| `docs/PIPELINE_RUNTIME_AUDIT.md` | `docs/archive/PIPELINE_RUNTIME_AUDIT.md` | SUPERSEDED | Historical evidence only; references updated. |
+| `docs/SESSION_2026-07-24.md` | `docs/archive/SESSION_2026-07-24.md` | SUPERSEDED | Historical evidence only; references updated. |
+| `docs/TEST_CONTRACT_AUDIT.md` | `docs/archive/TEST_CONTRACT_AUDIT.md` | SUPERSEDED | Historical evidence only; references updated. |
+| `docs/FRUSTRATION_TRACKER.md` | `docs/runbooks/FRUSTRATION_TRACKER.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/NSE_PREOPEN_CAPTURE.md` | `docs/runbooks/NSE_PREOPEN_CAPTURE.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/UAT_FRAMEWORK.md` | `docs/runbooks/UAT_FRAMEWORK.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/UAT_TRACKER.md` | `docs/runbooks/UAT_TRACKER.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/VM_CRON_RUNBOOK.md` | `docs/runbooks/VM_CRON_RUNBOOK.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/AACAPITAL_PRODUCT_CONTRACT.md` | `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/DETAILS_AND_REVIEW.md` | `docs/specifications/DETAILS_AND_REVIEW.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/PROVENANCE_DESIGN.md` | `docs/specifications/PROVENANCE_DESIGN.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/QUALITY_SCORE_SPEC.md` | `docs/specifications/QUALITY_SCORE_SPEC.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/R2_DOCUMENT_CONTRACT.md` | `docs/specifications/R2_DOCUMENT_CONTRACT.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/UI_EVIDENCE_CONTRACT.md` | `docs/specifications/UI_EVIDENCE_CONTRACT.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/UI_REQUIREMENTS.md` | `docs/specifications/UI_REQUIREMENTS.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/V2_SCHEMA.md` | `docs/specifications/V2_SCHEMA.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `_scripts/analyze_brlm_rate.py` | `research/backtests/analyze_brlm_rate.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/analyze_junk.py` | `research/backtests/analyze_junk.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/analyze_qib_pattern.py` | `research/backtests/analyze_qib_pattern.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/anchor_quality_backtest.py` | `research/backtests/anchor_quality_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/backfill_anchors_analysis.py` | `research/backtests/backfill_anchors_analysis.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/backtest_dna_drawdown.py` | `research/backtests/backtest_dna_drawdown.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/backtest_journey_exits.py` | `research/backtests/backtest_journey_exits.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/backtest_quality_score.py` | `research/backtests/backtest_quality_score.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/backtest_regime.py` | `research/backtests/backtest_regime.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/base_backtest.py` | `research/backtests/base_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/cross_backtest.py` | `research/backtests/cross_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/exit_backtest.py` | `research/backtests/exit_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/exit_backtest_v2.py` | `research/backtests/exit_backtest_v2.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/exit_backtest_v3.py` | `research/backtests/exit_backtest_v3.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/exit_rule_backtest.py` | `research/backtests/exit_rule_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/factor_backtest.py` | `research/backtests/factor_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/flags_horizon_backtest.py` | `research/backtests/flags_horizon_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/analyze_listing_day.py` | `research/backtests/ipo/analyze_listing_day.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/backtest_dip_defense.py` | `research/backtests/ipo/backtest_dip_defense.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/backtest_recovery_classes.py` | `research/backtests/ipo/backtest_recovery_classes.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/backtest_regime_split.py` | `research/backtests/ipo/backtest_regime_split.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/backtest_strategies.py` | `research/backtests/ipo/backtest_strategies.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/backtest_thesis.py` | `research/backtests/ipo/backtest_thesis.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ipo/export_ipo_backtest.py` | `research/backtests/ipo/export_ipo_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ml/__init__.py` | `research/backtests/ml/__init__.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/ofs_backtest.py` | `research/backtests/ofs_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/pattern_mining.py` | `research/backtests/pattern_mining.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/promoter_backtest.py` | `research/backtests/promoter_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/real_return_analysis.py` | `research/backtests/real_return_analysis.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/regime_mid_backtest.py` | `research/backtests/regime_mid_backtest.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
+| `_scripts/audit_candles.py` | `tools/diagnostics/audit_candles.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_candle_storage.py` | `tools/diagnostics/check_candle_storage.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_consolidated_row.py` | `tools/diagnostics/check_consolidated_row.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_data_contract.py` | `tools/diagnostics/check_data_contract.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_date_sanity.py` | `tools/diagnostics/check_date_sanity.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_dupes.py` | `tools/diagnostics/check_dupes.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_fairvalue_data.py` | `tools/diagnostics/check_fairvalue_data.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_freshness.py` | `tools/diagnostics/check_freshness.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_fv_table.py` | `tools/diagnostics/check_fv_table.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_grades.py` | `tools/diagnostics/check_grades.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_ids.py` | `tools/diagnostics/check_ids.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_ingest_gain.py` | `tools/diagnostics/check_ingest_gain.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_laser_rhp.py` | `tools/diagnostics/check_laser_rhp.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_missing_scores.py` | `tools/diagnostics/check_missing_scores.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_neon_schema.py` | `tools/diagnostics/check_neon_schema.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_value_sanity.py` | `tools/diagnostics/check_value_sanity.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/check_write_constraints.py` | `tools/diagnostics/check_write_constraints.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/diagnose_neon_compute.py` | `tools/diagnostics/diagnose_neon_compute.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/ipo/verify_resolved_symbols.py` | `tools/diagnostics/ipo/verify_resolved_symbols.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/probe_ipomatrix.py` | `tools/diagnostics/probe_ipomatrix.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/verify_laser_live.py` | `tools/diagnostics/verify_laser_live.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+| `_scripts/verify_live_feed.py` | `tools/diagnostics/verify_live_feed.py` | DIAGNOSTIC | Operator-only; all string/docs/test references updated; no scheduled caller. |
+
+| `_scripts/archive/screener-pipeline.ts.txt` | `_archive/_scripts/screener-pipeline.ts.txt` | SUPERSEDED | No runtime caller; already inert `.txt` archive; moved out of production scripts. |
+
+### Exact deletion manifest
+
+| Deleted path | Classification | Caller evidence | Replacement | Rollback |
+|---|---|---|---|---|
+| `pipeline/_scripts/download_sbi_notes.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/download_sbi_notes.py`; stale-path contract rejects old callers. | `_scripts/download_sbi_notes.py` | Revert cleanup commit. |
+| `pipeline/_scripts/download_sebi_rhps_playwright.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/download_sebi_rhps_playwright.py`; stale-path contract rejects old callers. | `_scripts/download_sebi_rhps_playwright.py` | Revert cleanup commit. |
+| `pipeline/_scripts/kite_connect.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/kite_connect.py`; stale-path contract rejects old callers. | `_scripts/kite_connect.py` | Revert cleanup commit. |
+| `pipeline/_scripts/parse_sbi_notes.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/parse_sbi_notes.py`; stale-path contract rejects old callers. | `_scripts/parse_sbi_notes.py` | Revert cleanup commit. |
+| `pipeline/_scripts/refresh_kite_token.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/refresh_kite_token.py`; stale-path contract rejects old callers. | `_scripts/refresh_kite_token.py` | Revert cleanup commit. |
+| `pipeline/_scripts/update_kite_token.py` | CONFIRMED_DEAD duplicate | Workflows, cron, Admin runner and imports resolve `_scripts/update_kite_token.py`; stale-path contract rejects old callers. | `_scripts/update_kite_token.py` | Revert cleanup commit. |
+
+Compatibility wrappers retained: **none for the deleted duplicate tree**. The existing
+root redirects remain product compatibility routes. Quality-factor calculations now have one production owner in `_scripts/lib/quality_factors.py`; the backtest consumes it rather than owning a duplicate. Consolidated/V1 implementations
+are visibly isolated under `compatibility/consolidated`; Admin and the lean pipeline
+point there directly rather than through shadow copies.
+
+Runtime/cost: zero public DB wake added. Moving offline research/diagnostics changes no
+scheduled runtime. Duplicate removal changes no live entrypoint. Cloudflare bindings,
+KV keys, R2 objects, workflows, secrets, schedules, and deployments are unchanged.
+Rollback is `git revert <cleanup-head>`; no data/object rollback is needed.
+
+Known risks: operator bookmarks using old research/diagnostic paths must use the new
+manifest paths. Real schema smoke, real publication, workflow dispatch, production
+health, and browser acceptance remain **UNKNOWN** without owner credentials/access.
+Manual activation: none.
 
 **MERGE RECOMMENDATION: UNKNOWN pending all local gates and owner-run production-parity
-checks.** Passing local tests alone does not establish production health.
+checks.** The repository reduction is now material, but tests alone do not establish
+production health.

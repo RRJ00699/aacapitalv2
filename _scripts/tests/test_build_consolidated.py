@@ -1,4 +1,4 @@
-"""Integration tests for _scripts/build_ipo_consolidated_v2.py main() — the
+"""Integration tests for compatibility/consolidated/build_ipo_consolidated_v2.py main() — the
 nightly builder of the table the API reads. Subprocess vs embedded PG.
 
 The builder SELF-HEALS: missing source columns become NULL (loudly), missing
@@ -18,7 +18,7 @@ def _run(uri):
     env.pop("NEON_DATABASE_URL", None)
     for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
         env.pop(k)
-    script = ROOT / "_scripts" / "build_ipo_consolidated_v2.py"
+    script = ROOT / "compatibility" / "consolidated" / "build_ipo_consolidated_v2.py"
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(script)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(script)])
@@ -129,6 +129,6 @@ def test_missing_db_url_exits_loud():
     env = {k: v for k, v in os.environ.items()
            if k not in ("DATABASE_URL", "NEON_DATABASE_URL")}
     env["PYTHONIOENCODING"] = "utf-8"
-    r = subprocess.run([sys.executable, str(ROOT / "_scripts" / "build_ipo_consolidated_v2.py")],
+    r = subprocess.run([sys.executable, str(ROOT / "compatibility" / "consolidated" / "build_ipo_consolidated_v2.py")],
                        capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
     assert r.returncode != 0 and "DATABASE_URL" in (r.stdout + r.stderr)

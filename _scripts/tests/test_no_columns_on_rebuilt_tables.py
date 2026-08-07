@@ -20,6 +20,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "_scripts"
+COMPATIBILITY_BUILDERS = ROOT / "compatibility" / "consolidated"
 pytestmark = pytest.mark.unit
 
 # tables that a build_* script drops/recreates -> anything ALTERed in is transient
@@ -28,7 +29,7 @@ REBUILT = ["ipo_consolidated"]
 
 def _rebuilders():
     out = []
-    for p in SCRIPTS.rglob("build_*.py"):
+    for p in COMPATIBILITY_BUILDERS.rglob("build_*.py"):
         if "_archive" in p.parts:
             continue
         src = p.read_text(encoding="utf-8", errors="ignore")

@@ -3,7 +3,7 @@
 > This file is retained for historical reference only.
 > It is not an implementation specification.
 > Current product rules are defined in:
-> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+> `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`
 
 # 2006 Backfill Runbook — clean revalidation, zero code change
 
@@ -16,7 +16,7 @@ NO code change — that's the point Rakesh set: "backfill, rerun tests, clean re
 ## Order of operations (after buying IPOMatrix 2006 access)
 1. **Backfill fundamentals** (fill-empty, safe to rerun):
    ```
-   IPOMATRIX_TOKEN=<paid> python _scripts/backfill_anchors_analysis.py --apply
+   IPOMATRIX_TOKEN=<paid> python research/backtests/backfill_anchors_analysis.py --apply
    IPOMATRIX_TOKEN=<paid> python _scripts/backfill_eps_post.py --apply
    # + roe/cagr/de backfill once the paid endpoint is confirmed to serve them
    ```
@@ -34,8 +34,8 @@ NO code change — that's the point Rakesh set: "backfill, rerun tests, clean re
 4. **Revalidate — the clean result Rakesh wants:**
    ```
    python _scripts/ipo_score.py --backtest             # bands must stay monotonic on the BIGGER n
-   python _scripts/backtest_quality_score.py           # quality factor table on 20yr
-   python _scripts/backtest_journey_exits.py           # START=2006 exit discipline over full history
+   python research/backtests/backtest_quality_score.py           # quality factor table on 20yr
+   python research/backtests/backtest_journey_exits.py           # START=2006 exit discipline over full history
    python -m pytest _scripts/tests/ -q                 # all green on larger data
    ```
 

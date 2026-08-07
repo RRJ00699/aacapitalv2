@@ -85,11 +85,13 @@ def test_layers_not_blended():
 def test_single_authority_and_stamps():
     assert not os.path.exists(os.path.join(REPO, "docs", "AACAPITAL_IPO_OPERATING_CONTRACT.md")), \
         "a second contract must never exist"
-    for d in ("UI_EVIDENCE_CONTRACT.md", "CURRENT_PR_IMPLEMENTATION_AUDIT.md",
-              "PIPELINE_RUNTIME_AUDIT.md", "VM_CRON_RUNBOOK.md"):
-        s = _read("docs", d)
-        assert "Authority: docs/AACAPITAL_PRODUCT_CONTRACT.md" in s
-    c = _read("docs", "AACAPITAL_PRODUCT_CONTRACT.md")
+    for d in (("specifications", "UI_EVIDENCE_CONTRACT.md"),
+              ("archive", "CURRENT_PR_IMPLEMENTATION_AUDIT.md"),
+              ("archive", "PIPELINE_RUNTIME_AUDIT.md"),
+              ("runbooks", "VM_CRON_RUNBOOK.md")):
+        s = _read("docs", *d)
+        assert "Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md" in s
+    c = _read("docs", "specifications", "AACAPITAL_PRODUCT_CONTRACT.md")
     for sec in ("## 9. Evidence, provenance", "## 10. Three decision layers", "## 11. Fair-value"):
         assert sec in c
 

@@ -10,13 +10,13 @@ include =
     */_scripts/compute_verdicts.py
     */_scripts/compute_flags.py
     */_scripts/parse_sbi_notes.py
-    */_scripts/check_value_sanity.py
-    */_scripts/check_dupes.py
-    */_scripts/check_data_contract.py
+    */tools/diagnostics/check_value_sanity.py
+    */tools/diagnostics/check_dupes.py
+    */tools/diagnostics/check_data_contract.py
     */_scripts/sync_issue_details.py
     */_scripts/schema_sync.py
     */_scripts/rhp_sonnet.py
-    */_scripts/build_ipo_consolidated_v2.py
+    */compatibility/consolidated/build_ipo_consolidated_v2.py
     */_scripts/fetch_peer_pe.py
     */_scripts/compute_quality_score.py
     */_scripts/run_ipo_pipeline_lean.py
