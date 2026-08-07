@@ -38,6 +38,10 @@ FILE_BUILD = "nse_fetch 2026-08-01d — never store an all-zero final snapshot"
 
 NSE_BASE = "https://www.nseindia.com"
 API = NSE_BASE + "/api/ipo-detail?symbol={sym}&series=EQ"
+DISCOVERY_APIS = (
+    ("current", NSE_BASE + "/api/ipo-current-issue"),
+    ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
+)
 HEADERS = {
     "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
@@ -236,6 +240,76 @@ def fetch_one(session, symbol):
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}")
     return r.json()
+
+
+def _first(item, *keys):
+    for key in keys:
+        value = item.get(key)
+        if value is not None and str(value).strip() not in ("", "-", "--"):
+            return str(value).strip()
+    return None
+
+
+def _discovery_date(value):
+    if not value: return None
+    value = str(value).split("T", 1)[0].strip()
+    parsed = _date(value)
+    if parsed: return parsed
+    try: return dt.date.fromisoformat(value)
+    except ValueError: return None
+
+
+def parse_discovery_item(item):
+    """Normalize one official NSE current/upcoming row; never infer identity."""
+    name = _first(item, "companyName", "issuerName", "name", "company")
+    symbol = _first(item, "symbol", "ticker")
+    isin = _first(item, "isin", "ISIN", "issueIsin")
+    if not name: return None
+    category = (_first(item, "category", "issueType", "series") or "").upper()
+    if "SME" in category: return None
+    price = _first(item, "priceBand", "priceRange", "issuePrice", "price") or ""
+    prices = [_num(v) for v in re.findall(r"[\d,.]+", price)]
+    prices = [v for v in prices if v is not None]
+    lot = _num(_first(item, "lotSize", "marketLot", "minBidQuantity"))
+    issue_size = _num(_first(item, "issueSizeCr"))
+    isin = isin.upper() if isin and re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin.upper()) else None
+    return {"name": name, "symbol": symbol.upper() if symbol else None,
+            "isin": isin,
+            "open_date": _discovery_date(_first(item, "issueStartDate", "openDate",
+                "bidOpenDate", "issueOpenDate", "startDate")),
+            "close_date": _discovery_date(_first(item, "issueEndDate", "closeDate",
+                "bidCloseDate", "issueCloseDate", "endDate")),
+            "listing_date": _discovery_date(_first(item, "listingDate", "dateOfListing")),
+            "band_lo": min(prices) if prices else None,
+            "band_hi": max(prices) if prices else None,
+            "lot_size": int(lot) if lot else None,
+            "issue_size_cr": issue_size}
+
+
+def fetch_discovery(session):
+    """Fetch the two official mainboard sets with the already-primed NSE session."""
+    rows, errors, calls = [], [], 0
+    for label, url in DISCOVERY_APIS:
+        calls += 1
+        try:
+            response = session.get(url, headers=HEADERS, timeout=15)
+            if response.status_code != 200: raise RuntimeError(f"HTTP {response.status_code}")
+            payload = response.json()
+            items = payload if isinstance(payload, list) else next(
+                (payload.get(k) for k in ("data", "issues", "records", "list")
+                 if isinstance(payload.get(k), list)), [])
+            for item in items:
+                parsed = parse_discovery_item(item)
+                if parsed: rows.append(parsed)
+        except Exception as exc:
+            errors.append(f"{label}:{type(exc).__name__}:{str(exc)[:100]}")
+    unique = {}
+    for index, row in enumerate(rows):
+        key = ("isin", row["isin"]) if row.get("isin") else (
+              ("symbol", row["symbol"]) if row.get("symbol") else
+              ("unresolved", row["name"], index))
+        if key not in unique: unique[key] = row
+    return list(unique.values()), calls, errors
 
 
 def apply_to_db(conn, ipo_id, payload, source="nse", *, subscription_final=True,
