@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
 let _neonSql: NeonQueryFunction<false, false> | null = null;
 const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL!);
   return _neonSql(strings, ...values);
 }) as NeonQueryFunction<false, false>;
 
@@ -17,7 +17,6 @@ export async function POST(req: NextRequest) {
     const { note } = await req.json();
     const n = String(note || "").slice(0, 200).trim();
     if (!n) return NextResponse.json({ error: "empty" }, { status: 400 });
-    await sql`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS note TEXT`;
     const upd = await sql`
       UPDATE access_requests SET note = ${n}
       WHERE email = (SELECT email FROM access_requests

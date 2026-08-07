@@ -9,25 +9,15 @@ export const dynamic = "force-dynamic";
 // runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
 let _neonSql: NeonQueryFunction<false, false> | null = null;
 const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL!);
   return _neonSql(strings, ...values);
 }) as NeonQueryFunction<false, false>;
-
-async function ensure() {
-  await sql`CREATE TABLE IF NOT EXISTS allowed_users (
-    email TEXT PRIMARY KEY, added_by TEXT, added_at TIMESTAMPTZ DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS access_requests (
-    email TEXT PRIMARY KEY, name TEXT, status TEXT NOT NULL DEFAULT 'pending',
-    requested_at TIMESTAMPTZ DEFAULT now(), decided_at TIMESTAMPTZ, decided_by TEXT)`;
-}
 
 export async function GET() {
   const gate = await requireUser(); if (gate) return gate;
   const admin = await getAdminEmail();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   try {
-    await ensure();
-    await sql`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS note TEXT`;
     const requests = await sql`SELECT email, name, status, requested_at, note
       FROM access_requests ORDER BY requested_at DESC LIMIT 50`;
     const allowed = await sql`SELECT email, added_by, added_at
@@ -41,7 +31,6 @@ export async function POST(req: NextRequest) {
   const admin = await getAdminEmail();
   if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   try {
-    await ensure();
     const { email, action } = await req.json();
     const e = String(email || "").toLowerCase().trim();
     if (!e || !["approve", "deny", "revoke"].includes(action))

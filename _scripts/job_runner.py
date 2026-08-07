@@ -71,7 +71,7 @@ def _clear_flag():
         pass
 
 
-DB = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
+DB = os.getenv("DATABASE_URL")
 
 # WHITELIST — the only commands the UI can trigger. Add here to expose a new button.
 # IPO Power House — IPO-focused jobs only.
@@ -109,19 +109,11 @@ JOBS = {
 }
 
 def ensure_table(cur):
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS job_runs (
-            id           BIGSERIAL PRIMARY KEY,
-            job          TEXT NOT NULL,
-            status       TEXT NOT NULL DEFAULT 'queued',   -- queued|running|done|failed
-            requested_by TEXT,
-            requested_at TIMESTAMPTZ DEFAULT now(),
-            started_at   TIMESTAMPTZ,
-            finished_at  TIMESTAMPTZ,
-            exit_code    INT,
-            error        TEXT,
-            log_tail     TEXT
-        )""")
+    """Compatibility sentinel for tools which delimit the job catalog here.
+
+    Schema provisioning is explicit; this no-op is deliberately never called.
+    """
+    return None
 
 def claim_one(cur):
     # atomic claim so two runners never double-execute
@@ -149,7 +141,6 @@ def main():
     if not DB:
         print("no DATABASE_URL"); return
     conn = psycopg2.connect(DB); conn.autocommit = False; cur = conn.cursor()
-    ensure_table(cur); conn.commit()
     processed = 0
     while True:
         claimed = claim_one(cur); conn.commit()

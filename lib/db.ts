@@ -24,9 +24,9 @@ let _client: ReturnType<typeof neon> | null = null
 
 function getClient() {
   if (_client) return _client
-  const neonConnectionString = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL
+  const neonConnectionString = process.env.DATABASE_URL
   if (!neonConnectionString) {
-    throw new Error('\n[db] DATABASE_URL or NEON_DATABASE_URL is required for AACapital cloud intelligence tables.\n')
+    throw new Error('\n[db] DATABASE_URL is required for AACapital production database access.\n')
   }
   // neon() is stateless (no pool/socket), safe per-request on edge.
   _client = neon(neonConnectionString)
@@ -93,7 +93,7 @@ export function fixtureAwareNeon(url?: string) {
   return (async (strings: TemplateStringsArray, ...values: QueryValue[]) => {
     const fx = fixtureRows(strings.join(" "))
     if (fx !== null) return fx
-    if (!_r) _r = neon(url || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!)
+    if (!_r) _r = neon(url || process.env.DATABASE_URL!)
     return (await (_r as any)(strings, ...values)) as any[]
   }) as unknown as ReturnType<typeof neon<false, false>>
 }

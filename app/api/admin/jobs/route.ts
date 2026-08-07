@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 // runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
 let _neonSql: NeonQueryFunction<false, false> | null = null;
 const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL!);
   return _neonSql(strings, ...values);
 }) as NeonQueryFunction<false, false>;
 
@@ -40,24 +40,6 @@ const ALLOWED_JOBS = new Set([
   "schema", "verdicts", "score", "quality", "smoke", "sbi_haiku",
   "ipomatrix", "breadth",   // had a button + runner entry but the API rejected it too
 ]);
-
-// Same DDL job_runner.py uses, so the first enqueue works even before the VM
-// has run once. IF NOT EXISTS => idempotent, safe to call every POST.
-async function ensureTable() {
-  await sql`
-    CREATE TABLE IF NOT EXISTS job_runs (
-      id           BIGSERIAL PRIMARY KEY,
-      job          TEXT NOT NULL,
-      status       TEXT NOT NULL DEFAULT 'queued',
-      requested_by TEXT,
-      requested_at TIMESTAMPTZ DEFAULT now(),
-      started_at   TIMESTAMPTZ,
-      finished_at  TIMESTAMPTZ,
-      exit_code    INT,
-      error        TEXT,
-      log_tail     TEXT
-    )`;
-}
 
 export async function GET() {
   const gate = await requireUser(); if (gate) return gate;
@@ -90,7 +72,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await ensureTable();
     // don't double-queue: block if this job is already queued or running
     const pending = await sql`
       SELECT id FROM job_runs

@@ -109,7 +109,6 @@ QUERY_CEILING = {
     "app/api/market/global/route.ts": 5,  # +1: india_breadth read (U16, 2026-07-22)
     "app/api/market/snapshot/route.ts": 2,
     "app/api/settings/route.ts": 2,
-    "app/api/tracker/route.ts": 0,
 }
 
 @pytest.mark.parametrize("route,ceiling", sorted(QUERY_CEILING.items()))

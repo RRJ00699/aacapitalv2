@@ -22,7 +22,7 @@ export type SqlClient = (
 ) => Promise<Record<string, unknown>[]>;
 
 function liveSql(): SqlClient {
-  return neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!) as unknown as SqlClient;
+  return neon(process.env.DATABASE_URL!) as unknown as SqlClient;
 }
 
 // The allowlist IS the gate: allowed_users is the only lookup, so a non-allowlisted

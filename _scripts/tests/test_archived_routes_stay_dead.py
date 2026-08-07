@@ -31,6 +31,8 @@ ARCHIVED = [
     ("/api/ipo/scrape",           "_archive/routes/api-ipo-scrape-route.ts.txt"),
     ("/api/ipo/upload",           "_archive/routes/api-ipo-upload-route.ts.txt"),
     ("/api/ipo/subscription",     "_archive/routes/api-ipo-subscription-route.ts.txt"),
+    # Spine cleanup — distraction_log was deliberately dropped and tracker is not product.
+    ("/api/tracker",              "_archive/routes/api-tracker-route.ts.txt"),
     # Phase 3 — 2026-07-20 audit cleanup (zero callers across app/components/
     # _scripts/.github; levels+intelligence never fetched by any UI; pipeline/
     # status queried archived equity tables; db/init verified equity tables).
@@ -46,6 +48,8 @@ ARCHIVED = [
 ARCHIVED_PAGES = [
     ("app/today/page.tsx",                    "_archive/pages/app-today-page.tsx.txt"),
     ("components/features/today-screen.tsx",  "_archive/pages/today-screen.tsx.txt"),
+    ("app/dashboard/tracker/page.tsx",          "_archive/pages/dashboard-tracker-page.tsx.txt"),
+    ("app/dashboard/tracker/TrackerClient.tsx", "_archive/pages/TrackerClient.tsx.txt"),
     # Phase 3 — 2026-07-20: the pre-cutover command center. /dashboard/ipo was
     # reachable only via non-admin redirects (now pointed at /dashboard/ipo2 per
     # the cutover note in app/ipo/page.tsx); the component chain below existed
@@ -85,8 +89,6 @@ ARCHIVED_LIB = [
 
 KEPT_DESPITE_NO_UI_REF = [
     "app/api/ipo/monitor/route.ts",      # "listed weak BUT strong quality" — owner: keep
-    "app/dashboard/tracker/page.tsx",    # interruption log — owner: keep, wired into Admin
-    "app/api/tracker/route.ts",          # its backend (distraction_log)
     # market-regime/route.ts REMOVED from KEPT: PR #282 DELETED it (dead route, no live
     # consumer — full-universe price_candles has no canonical V2 source anyway). Owner
     # confirmed in the CI-fix PR that it is correctly gone, superseding the old

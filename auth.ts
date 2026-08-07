@@ -17,12 +17,9 @@ function emailList(v: string | undefined) {
 
 async function dbAllowedOrRequest(email: string, name: string | null): Promise<boolean> {
   try {
-    const sql = neon(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL!);
+    const sql = neon(process.env.DATABASE_URL!);
     const hit = await sql`SELECT 1 FROM allowed_users WHERE email = ${email} LIMIT 1`;
     if (hit.length) return true;
-    await sql`CREATE TABLE IF NOT EXISTS access_requests (
-      email TEXT PRIMARY KEY, name TEXT, status TEXT NOT NULL DEFAULT 'pending',
-      requested_at TIMESTAMPTZ DEFAULT now(), decided_at TIMESTAMPTZ, decided_by TEXT)`;
     await sql`INSERT INTO access_requests (email, name)
               VALUES (${email}, ${name})
               ON CONFLICT (email) DO UPDATE
