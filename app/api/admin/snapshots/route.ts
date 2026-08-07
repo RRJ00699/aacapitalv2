@@ -28,8 +28,6 @@ function safeExceptionMessage(error: unknown, additionalSecrets: string[] = []):
   let message = error instanceof Error ? error.message : String(error);
   const secrets = [
     process.env.SNAPSHOT_PUBLISH_KEY,
-    process.env.DATABASE_URL,
-    process.env.NEON_DATABASE_URL,
     ...additionalSecrets,
   ].filter((value): value is string => Boolean(value));
   for (const secret of secrets) message = message.split(secret).join(REDACTED);

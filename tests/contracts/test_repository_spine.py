@@ -62,3 +62,60 @@ def test_confirmed_dead_tracker_is_not_served_or_referenced():
             if path.suffix in {".ts", ".tsx"} and ("/api/tracker" in path.read_text(errors="ignore") or "/dashboard/tracker" in path.read_text(errors="ignore")):
                 hits.append(str(path.relative_to(ROOT)))
     assert not hits
+
+
+def test_production_code_has_no_legacy_neon_url_fallback():
+    """NEON_DATABASE_URL is not a production credential alias.
+
+    Tests may clear the old variable to prove absence; production app/lib/pipeline
+    code must neither read it nor silently fall back to it.
+    """
+    hits = []
+    for base in ("app", "lib", "pipeline"):
+        for path in (ROOT / base).rglob("*"):
+            if path.suffix not in {".py", ".ts", ".tsx"} or "test" in path.name:
+                continue
+            if "NEON_DATABASE_URL" in path.read_text(encoding="utf-8", errors="ignore"):
+                hits.append(str(path.relative_to(ROOT)))
+    assert not hits
+
+
+def test_command_and_details_share_canonical_intelligence_inputs():
+    for path in ("lib/v2/ipo-command.ts", "lib/v2/ipo-details.ts"):
+        source = text(path)
+        assert 'from "@/lib/intelligence/canonical-inputs"' in source
+        assert "buildCanonicalProFormaInputs" in source
+
+
+def test_canonical_profile_contract_and_economic_engine_remain_single_owned():
+    profile = text("lib/intelligence/ipo-profile.ts")
+    schema = text("lib/intelligence/ipo-profile.schema.json")
+    assert 'IPO_PROFILE_SCHEMA_VERSION = "ipo-profile:v1"' in profile
+    assert '"const": "ipo-profile:v1"' in schema
+    assert "calculateProForma" in profile
+
+
+def test_snapshot_publication_is_zero_wake_and_keeps_previous_pointer():
+    route = text("app/api/admin/snapshots/route.ts")
+    snapshot = text("lib/versioned-snapshot.ts")
+    assert "@neondatabase/serverless" not in route
+    assert "DATABASE_URL" not in route
+    assert 'pointer(name, "previous")' in snapshot
+    assert 'pointer(name, "active")' in snapshot
+
+
+def test_extraction_and_valuation_owners_are_explicit():
+    assert "rhp_sections" in text("pipeline/rhp_sonnet.py")
+    assert "from rhp_writer import route_extraction" in text("pipeline/rhp_sonnet.py")
+    assert (ROOT / "pipeline/score_engine.py").is_file()
+    assert (ROOT / "lib/intelligence/ipo-profile.ts").is_file()
+
+
+def test_live_subprocess_and_workflow_paths_exist():
+    corpus = "\n".join(text(path) for path in (
+        "_scripts/job_runner.py", ".github/workflows/pipeline.yml",
+        ".github/workflows/preopen-capture.yml", ".github/workflows/sbi-notes.yml",
+    ))
+    candidates = set(re.findall(r"(?:pipeline|_scripts)/[A-Za-z0-9_./-]+\.(?:py|ts|mjs)", corpus))
+    missing = sorted(path for path in candidates if not (ROOT / path).exists())
+    assert not missing

@@ -437,7 +437,7 @@ def main():
     if a.year_min:
         try:
             import psycopg2
-            _c=psycopg2.connect(os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL"),connect_timeout=20)
+            _c=psycopg2.connect(os.environ.get("DATABASE_URL"),connect_timeout=20)
             _cur=_c.cursor();_cur.execute("SELECT company_name,listing_date FROM ipo_intelligence WHERE listing_date IS NOT NULL")
             def _norm(x): return re.sub(r'[^a-z0-9]+',' ',re.sub(r'\b(red herring|prospectus|limited|ltd|private|pvt|inc|corporation|corp|company|co)\b','',(x or '').lower())).strip()
             datemap={}

@@ -1,5 +1,7 @@
 # Production job map
 
+Status: CURRENT — verified static production caller map.
+
 Evidence status below is **VERIFIED** from the workflow, cron, Admin API/UI, VM runner,
 and package scripts at this revision.
 
