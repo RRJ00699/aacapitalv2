@@ -3,7 +3,7 @@
 > This file is retained for historical reference only.
 > It is not an implementation specification.
 > Current product rules are defined in:
-> `docs/AACAPITAL_PRODUCT_CONTRACT.md`
+> `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`
 
 # AACapital root-level Python import hotfix
 

@@ -86,7 +86,7 @@ jobs:
 
       - name: Rebuild IPO consolidated (one-stop wide table)
         continue-on-error: true
-        run: python _scripts/build_ipo_consolidated_v2.py
+        run: python compatibility/consolidated/build_ipo_consolidated_v2.py
 
       - name: Market snapshot + IPO predictions (market_snapshot)
         run: python _scripts/prod/kite_sync_and_predict.py --mode all

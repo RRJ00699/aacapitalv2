@@ -42,14 +42,14 @@ function requirePublishKey(): string {
 function requireDatabaseUrl(schemaSmoke = false): string {
   const url = schemaSmoke
     ? process.env.NEON_READONLY_DATABASE_URL
-    : process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
+    : process.env.DATABASE_URL;
   if (!url) throw new Error(schemaSmoke ? "NEON_READONLY_DATABASE_URL is required for schema smoke" : "DATABASE_URL is required");
   return url;
 }
 
 function safeErrorMessage(error: unknown): string {
   let message = error instanceof Error ? error.message : String(error);
-  for (const secret of [process.env.DATABASE_URL, process.env.NEON_DATABASE_URL, process.env.NEON_READONLY_DATABASE_URL]) {
+  for (const secret of [process.env.DATABASE_URL, process.env.NEON_READONLY_DATABASE_URL]) {
     if (secret) message = message.split(secret).join("[REDACTED]");
   }
   return message;

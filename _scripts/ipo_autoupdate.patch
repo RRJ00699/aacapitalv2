@@ -1,7 +1,7 @@
-diff --git a/_scripts/ipo/analyze_listing_day.py b/_scripts/ipo/analyze_listing_day.py
+diff --git a/research/backtests/ipo/analyze_listing_day.py b/research/backtests/ipo/analyze_listing_day.py
 index 215e069..a4c9117 100644
---- a/_scripts/ipo/analyze_listing_day.py
-+++ b/_scripts/ipo/analyze_listing_day.py
+--- a/research/backtests/ipo/analyze_listing_day.py
++++ b/research/backtests/ipo/analyze_listing_day.py
 @@ -227,7 +227,7 @@ def analyze(conn, symbol, d):
          note = "Circuit-locked tape — no two-sided market, no reliable floor. Treat as operator play; stand aside."
      elif floor_price is None:

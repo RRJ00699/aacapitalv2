@@ -42,6 +42,6 @@ if ($DryRun) {
 else {
     Step 1 "Fetch NSE IPOs"                  "python _scripts\ipo\fetch_nse_ipos.py"
     Step 2 "Enrich new IPOs from Chittorgarh" "python _scripts\ipo\enrich_ipo_chittorgarh.py --auto --apply"
-    Step 3 "Rebuild IPO consolidated"        "python _scripts\build_ipo_consolidated_v2.py"
+    Step 3 "Rebuild IPO consolidated"        "python compatibility\consolidated\build_ipo_consolidated_v2.py"
     Write-Host "`nPipeline complete in $([int]((Get-Date)-$t0).TotalSeconds)s." -ForegroundColor Green
 }

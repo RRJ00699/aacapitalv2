@@ -1,5 +1,7 @@
 # Spine cleanup evidence report
 
+Status: CURRENT — PR #307 cleanup evidence retained as the phase-2 baseline.
+
 ## Baseline and tree
 
 Base was owner-verified `46c1e42f60a9a1f2d5956afc0486049b2175d41d` on local branch

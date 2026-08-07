@@ -1,6 +1,6 @@
 import psycopg2, os
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 token = os.environ.get("KITE_ACCESS_TOKEN", "")
 
 if not token:

@@ -96,7 +96,7 @@ def main():
     """, [ids])
     conn.commit()
     print(f"\nAPPLIED — set listing_open for {cur.rowcount} row(s).")
-    print("Now rebuild: python _scripts/build_ipo_consolidated_v2.py  (gap_bucket will resolve)")
+    print("Now rebuild: python compatibility/consolidated/build_ipo_consolidated_v2.py  (gap_bucket will resolve)")
     conn.close()
 
 

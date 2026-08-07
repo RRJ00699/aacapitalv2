@@ -2,7 +2,7 @@
 """_scripts/lib/stage_state.py — PR-C: per-IPO pipeline stage truth.
 
 record() upserts ipo_stage_state (created by schema_sync). Stages/states per
-docs/PROVENANCE_DESIGN.md §2-3; states: CONFIRMED / PARTIAL / PENDING /
+docs/specifications/PROVENANCE_DESIGN.md §2-3; states: CONFIRMED / PARTIAL / PENDING /
 FAILED. NEVER raises — observability must not break the pipeline. attempt_count
 increments on every non-CONFIRMED write; next_retry_at (minutes) lets fetchers
 skip an IPO until its backoff elapses (bounded retries, one failed IPO never

@@ -32,7 +32,7 @@ except Exception:
 log = logging.getLogger(__name__)
 
 API_KEY      = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 def get_token_from_db() -> str:

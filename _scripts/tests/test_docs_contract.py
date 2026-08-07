@@ -2,7 +2,7 @@
 """Docs-cleanup contract tests (2026-07-20). Offline.
 
 Guards the documentation single-source-of-truth:
-  * docs/AACAPITAL_PRODUCT_CONTRACT.md exists, is marked AUTHORITATIVE, and
+  * docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md exists, is marked AUTHORITATIVE, and
     carries the required sections + the locked MID 4-15 rule + rejected register
   * every file in docs/archive/ carries the ARCHIVED header pointing at the contract
   * README is IPO-only (no equity-era "200 equities"/AMFI claims) and links the contract
@@ -22,7 +22,7 @@ def _read(p):
 
 
 def test_contract_exists_and_is_authoritative():
-    p = os.path.join(DOCS, "AACAPITAL_PRODUCT_CONTRACT.md")
+    p = os.path.join(DOCS, "specifications", "AACAPITAL_PRODUCT_CONTRACT.md")
     assert os.path.exists(p)
     src = _read(p)
     assert "AUTHORITATIVE" in src

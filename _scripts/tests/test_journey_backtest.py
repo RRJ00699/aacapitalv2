@@ -2,7 +2,9 @@
 """Offline tests for the Journey exit simulation — no DB, synthetic candles."""
 import importlib.util, os
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("bj", os.path.join(HERE, "..", "backtest_journey_exits.py"))
+spec = importlib.util.spec_from_file_location(
+    "bj", os.path.join(HERE, "..", "..", "research", "backtests", "backtest_journey_exits.py")
+)
 bj = importlib.util.module_from_spec(spec); spec.loader.exec_module(bj)
 
 def test_trail_exits_at_stop_not_wick():

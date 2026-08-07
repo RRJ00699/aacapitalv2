@@ -7,7 +7,7 @@ IPOs: pre-listing research → listing-day entry decision → post-listing
 hold/exit discipline. The app informs; the owner trades manually.
 **"Research signal, not a buy call."**
 
-**Authoritative product rules:** [`docs/AACAPITAL_PRODUCT_CONTRACT.md`](docs/AACAPITAL_PRODUCT_CONTRACT.md)
+**Authoritative product rules:** [`docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`](docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md)
 (where any other doc disagrees, the contract wins).
 
 ## Architecture
@@ -18,7 +18,7 @@ hold/exit discipline. The app informs; the owner trades manually.
 - **Data** — Neon Postgres. Source table `ipo_intelligence`; derived
   `ipo_consolidated` (see `SCHEMA.md`). **Zero-idle rule:** user reads serve
   from Cloudflare KV; Neon wakes only for pipeline writes/warms
-  (`docs/ASSET_LIGHT_ARCHITECTURE.md`).
+  (`docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`).
 - **Pipelines** — Python in `_scripts/`, run 2×/day by cron on the VM
   (`run_ipo_pipeline_lean.py`; spec in `PIPELINE_SPEC.md`). Flow: NSE
   discovery → enrichment (Chittorgarh/NSE/SEBI/SBI/IPOMatrix) → RHP + SBI

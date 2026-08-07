@@ -4,7 +4,7 @@
 
 ENDPOINT (repo-precedented, same family as fetch_nse_ipos FEEDS; wayback
 harvester targets it; OWNER MUST browser-verify once before enabling cron —
-ritual in docs/NSE_PREOPEN_CAPTURE.md):
+ritual in docs/runbooks/NSE_PREOPEN_CAPTURE.md):
   page: https://www.nseindia.com/market-data/pre-open-market-cm-and-emerge-market
   api : https://www.nseindia.com/api/market-data-pre-open?key=IPO
 

@@ -68,7 +68,7 @@ def test_stepboard_suppresses_missed_mid_run():
 
 
 def test_runbook_documents_kite_maintenance_window():
-    src = open(os.path.join(REPO, "docs", "VM_CRON_RUNBOOK.md"), encoding="utf-8").read()
+    src = open(os.path.join(REPO, "docs", "runbooks", "VM_CRON_RUNBOOK.md"), encoding="utf-8").read()
     assert "23:30" in src and "market regime" in src
 
 

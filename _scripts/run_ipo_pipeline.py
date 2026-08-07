@@ -131,7 +131,7 @@ def main():
     # [IPO-only] removed non-IPO step (writes to dropped table):
     #step("convergence snapshot (history)", ["snapshot_convergence.py"])
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py","--apply"])
-    ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
+    ok&=step("rebuild consolidated",        ["../compatibility/consolidated/build_ipo_consolidated_v2.py"])
     # REMOVED: OBIR floor/ceiling compute (no value, burned CU-hrs) — 2026-07-10
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner", ["compute_flags.py","--apply"])

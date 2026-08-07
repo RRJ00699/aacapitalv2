@@ -25,7 +25,7 @@ Two modes:
 
 After this, run:
   python _scripts/ipo/backfill_ipo_ohlc.py            # fills listing_open/OHLC/gains
-  python _scripts/ipo/analyze_listing_day.py --auto-today   # gap now resolves
+  python research/backtests/ipo/analyze_listing_day.py --auto-today   # gap now resolves
 
 Usage:
   python _scripts/ipo/resolve_ipo_symbols.py --auto                  # dry-run report

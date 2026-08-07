@@ -53,7 +53,7 @@ for the rest.
 
 ## Documentation conflicts resolved
 
-Covered in PR #260 (`docs/AACAPITAL_PRODUCT_CONTRACT.md` is authoritative;
+Covered in PR #260 (`docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md` is authoritative;
 equity-era README archived). This pass removes the last *code* carrying the
 rejected 10/30 gap bands and the LQI-era route.
 

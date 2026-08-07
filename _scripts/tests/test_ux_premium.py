@@ -131,7 +131,7 @@ def test_u6_upcoming_drops_already_listed():
 
 
 def test_uat_tracker_is_the_single_registry():
-    doc = _read("docs", "UAT_TRACKER.md")
+    doc = _read("docs", "runbooks", "UAT_TRACKER.md")
     for item in ("U1", "U8", "F2", "no more zombies"):
         assert item in doc
 
@@ -142,7 +142,7 @@ def test_uat_framework_files_exist():
     for p in (("playwright.config.ts",), ("uat", "serve.mjs"), ("uat", "smoke.mjs"),
               ("uat", "fixtures", "seed.json"), ("uat", "tests", "_base.ts"),
               ("uat", "tests", "journeys.spec.ts"), ("uat", "tests", "a11y.spec.ts"),
-              ("uat", "tests", "smoke.spec.ts"), ("docs", "UAT_FRAMEWORK.md")):
+              ("uat", "tests", "smoke.spec.ts"), ("docs", "runbooks", "UAT_FRAMEWORK.md")):
         assert os.path.exists(os.path.join(REPO, *p)), f"missing {'/'.join(p)}"
     import json
     pkg = json.load(open(os.path.join(REPO, "package.json")))
@@ -318,14 +318,14 @@ def test_golden_table_is_durable_plus_one_object_view():
 
 
 def test_consolidation_is_fill_empty_strong_key_and_automated():
-    src = _read("_scripts", "consolidate_master.py")
+    src = _read("compatibility", "consolidated", "consolidate_master.py")
     assert "COALESCE(g.{col}" in src and "WHERE g.{col} IS NULL" in src, "fill-empty-only"
     assert "regexp_replace(lower(" in src and "symbol_final" in src, "strong keys only"
     assert "jsonb_agg(jsonb_build_object('d', p.date" in src, "candles materialize into the golden table"
     assert "jsonb_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
     assert "n.headline NOT LIKE '<%%'" in src, "placeholder rows never reach the golden table"
     lean = _read("_scripts", "run_ipo_pipeline_lean.py")
-    assert '"consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
+    assert '"../compatibility/consolidated/consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
     jr = _read("_scripts", "job_runner.py")
     assert '"consolidate"' in jr
 

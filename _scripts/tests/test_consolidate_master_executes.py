@@ -9,7 +9,7 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "compatibility", "consolidated"))
 
 
 def test_full_job_runs_and_fills_golden(pg_uri, monkeypatch, capsys):

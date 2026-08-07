@@ -158,7 +158,7 @@ def main():
     # NSE discovery trigger FIRST: a freshly-announced IPO enters ipo_intelligence
     # before enrichment. Dedup-safe (upsert by company_name, RULE 1). Non-hard.
     step("schema sync (single owner of DDL)", ["schema_sync.py"])
-    step("write-constraint guard (A)",      ["check_write_constraints.py"])
+    step("write-constraint guard (A)",      ["../tools/diagnostics/check_write_constraints.py"])
     step("lineage registry (P2)",          ["lineage_registry.py"])
     step("NSE discovery (new IPOs)",        ["ipo/fetch_nse_ipos.py"])
     # REMOVED 2026-07-23 (owner): Chittorgarh and IPOMatrix are the SAME
@@ -207,7 +207,7 @@ def main():
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
     step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
     step("street news discovery (free RSS)", ["fetch_ipo_news.py", "--apply"])
-    step("golden table consolidation", ["consolidate_master.py", "--apply"])
+    step("golden table consolidation", ["../compatibility/consolidated/consolidate_master.py", "--apply"])
     step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
 
     # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──
@@ -238,7 +238,7 @@ def main():
 
     # ── BUILD + VERDICTS ──
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py"])
-    ok&=step("rebuild consolidated",        ["build_ipo_consolidated_v2.py"])
+    ok&=step("rebuild consolidated",        ["../compatibility/consolidated/build_ipo_consolidated_v2.py"])
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner",        ["compute_flags.py","--apply"])
     step("Quality score (pre-list)",      ["compute_quality_score.py","--apply"])
@@ -261,10 +261,10 @@ def main():
         # script is written and reviewed.
 
     # ── HEALTH GATE LAST ──
-    gate=step("health-check (gate)",        ["check_data_contract.py"], hard=False)
-    step("value-sanity report",             ["check_value_sanity.py"])
-    step("date sanity gate (D)",           ["check_date_sanity.py"])
-    step("freshness monitor (P2)",         ["check_freshness.py"])
+    gate=step("health-check (gate)",        ["../tools/diagnostics/check_data_contract.py"], hard=False)
+    step("value-sanity report",             ["../tools/diagnostics/check_value_sanity.py"])
+    step("date sanity gate (D)",           ["../tools/diagnostics/check_date_sanity.py"])
+    step("freshness monitor (P2)",         ["../tools/diagnostics/check_freshness.py"])
     step("smoke probe (live API)",         ["smoke_probe.py"])
 
     if ok and gate:

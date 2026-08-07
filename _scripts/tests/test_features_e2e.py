@@ -29,7 +29,7 @@ def test_cum_volume_empty_feed():
     print("  PASS cum-volume empty feed -> 'awaiting' (correct on non-listing days)")
 
 def test_quality_score_accurate_when_fed():
-    from backtest_quality_score import factors
+    from lib.quality_factors import factors
     rhp = {"db_fields": {"quality_gate": "clean", "criminal_litigation": False,
         "numbers_integrity_flag": "ok", "related_party_concern": False,
         "customer_concentration_high": False}}
@@ -47,7 +47,7 @@ def test_quality_score_accurate_when_fed():
     print(f"  PASS quality junk IPO fully fed: {s2}/100 (correctly low)")
 
 def test_quality_score_honest_when_starved():
-    from backtest_quality_score import factors
+    from lib.quality_factors import factors
     starved = (None, None, None, 100, 900, None, None, None, None, None, None, None)
     f, score, conf = factors(starved)
     assert conf < 25, f"starved conf {conf} should be <25 -> skipped by compute"

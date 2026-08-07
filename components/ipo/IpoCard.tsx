@@ -265,7 +265,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   // Pre-scoring IPOs now get an honest awaiting dial instead.
   // vscore (0-100, verdict engine) once listed; BEFORE listing, the dial now
   // shows the pre-list QUALITY score (computed from RHP forensics + promoter +
-  // structure + valuation + fundamentals — docs/QUALITY_SCORE_SPEC.md, v1
+  // structure + valuation + fundamentals — docs/specifications/QUALITY_SCORE_SPEC.md, v1
   // weights pending calibration). "scores at listing" only when neither exists.
   const q = c.quality_score as number | null;
   const score = (c.vscore ?? q) as number | null;

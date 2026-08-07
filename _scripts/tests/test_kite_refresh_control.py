@@ -134,17 +134,13 @@ def test_legacy_database_write_requires_explicit_rollback_flag(monkeypatch):
     assert any("kite_session" in query for query, _ in executed)
 
 
-@pytest.mark.parametrize("entry", [
-    "_scripts/refresh_kite_token.py",
-    "pipeline/_scripts/refresh_kite_token.py",
-])
-def test_historical_entry_points_execute_canonical_logic(entry):
+def test_canonical_entry_point_executes_canonical_logic():
     env = os.environ.copy()
     env["KITE_REFRESH_TEST_MODE"] = "1"
     for name in ("EXECUTE_CLOUDFLARE_SECRET_ROTATION", "KITE_REFRESH_VALIDATE_ONLY",
                  "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE"):
         env.pop(name, None)
-    result = subprocess.run([sys.executable, entry], cwd=ROOT, env=env,
+    result = subprocess.run([sys.executable, "_scripts/refresh_kite_token.py"], cwd=ROOT, env=env,
                             capture_output=True, text=True, check=False)
     assert result.returncode == 0
     assert result.stdout.strip() == "KITE_REFRESH_STATUS=SKIPPED_NOT_ACTIVATED"

@@ -1049,7 +1049,7 @@ function IpoCommand() {
       {err && <div style={{margin:"6px 0"}}><ErrorState title="API error" detail={String(err)} onRetry={()=>window.location.reload()}/></div>}
       {view==="details" && d && (()=>{
         // U11 partial: cards + post rows; a full-universe index endpoint is
-        // the follow-up (docs/UAT_TRACKER.md) so EVERY historical IPO appears.
+        // the follow-up (docs/runbooks/UAT_TRACKER.md) so EVERY historical IPO appears.
         const seen=new Set<string>();
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
@@ -1084,7 +1084,7 @@ function IpoCommand() {
         );})()}
       {view==="review" && d && (()=>{
         // U11 partial: cards + post rows; a full-universe index endpoint is
-        // the follow-up (docs/UAT_TRACKER.md) so EVERY historical IPO appears.
+        // the follow-up (docs/runbooks/UAT_TRACKER.md) so EVERY historical IPO appears.
         const seen=new Set<string>();
         const all=([...(d.cards||[]), ...((d as R).post as R[]||[])] as R[]).filter(c=>{
           const k=String((c as R).sym||(c as R).company_name||"").toUpperCase();
