@@ -207,7 +207,6 @@ def main():
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
     step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
     step("street news discovery (free RSS)", ["fetch_ipo_news.py", "--apply"])
-    step("golden table consolidation", ["../compatibility/consolidated/consolidate_master.py", "--apply"])
     step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
 
     # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──
@@ -238,7 +237,6 @@ def main():
 
     # ── BUILD + VERDICTS ──
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py"])
-    ok&=step("rebuild consolidated",        ["../compatibility/consolidated/build_ipo_consolidated_v2.py"])
     step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner",        ["compute_flags.py","--apply"])
     step("Quality score (pre-list)",      ["compute_quality_score.py","--apply"])

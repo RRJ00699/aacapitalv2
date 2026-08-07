@@ -317,17 +317,16 @@ def test_golden_table_is_durable_plus_one_object_view():
     assert "ALTER TABLE ipo_consolidated ADD COLUMN" not in ddl
 
 
-def test_consolidation_is_fill_empty_strong_key_and_automated():
+def test_consolidation_is_retained_for_rollback_but_not_automated():
     src = _read("compatibility", "consolidated", "consolidate_master.py")
     assert "COALESCE(g.{col}" in src and "WHERE g.{col} IS NULL" in src, "fill-empty-only"
     assert "regexp_replace(lower(" in src and "symbol_final" in src, "strong keys only"
     assert "jsonb_agg(jsonb_build_object('d', p.date" in src, "candles materialize into the golden table"
     assert "jsonb_array_length(g.candles_json), 0) < sub.n" in src, "series grows daily, never shrinks"
     assert "n.headline NOT LIKE '<%%'" in src, "placeholder rows never reach the golden table"
-    lean = _read("_scripts", "run_ipo_pipeline_lean.py")
-    assert '"../compatibility/consolidated/consolidate_master.py", "--apply"' in lean, "AUTOMATED: runs every pipeline cycle"
-    jr = _read("_scripts", "job_runner.py")
-    assert '"consolidate"' in jr
+    production_callers = _read("_scripts", "run_ipo_pipeline_lean.py") + _read("_scripts", "job_runner.py")
+    assert "compatibility/consolidated/" not in production_callers
+    assert '"consolidate"' not in production_callers
 
 
 def test_golden_fields_flow_to_command_and_details():

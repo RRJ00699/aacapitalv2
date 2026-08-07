@@ -136,12 +136,11 @@ def test_classified_scripts_live_outside_production_script_tree():
     assert not forbidden
 
 
-def test_consolidated_compatibility_has_explicit_live_callers():
+def test_consolidated_compatibility_is_not_called_by_production():
     runner = text("_scripts/job_runner.py")
     lean = text("_scripts/run_ipo_pipeline_lean.py")
-    assert "compatibility/consolidated/consolidate_master.py" in runner
-    assert "../compatibility/consolidated/consolidate_master.py" in lean
-    assert "../compatibility/consolidated/build_ipo_consolidated_v2.py" in lean
+    assert "compatibility/consolidated/" not in runner
+    assert "../compatibility/consolidated/" not in lean
     for name in ("consolidate_master.py", "build_ipo_consolidated.py", "build_ipo_consolidated_v2.py"):
         assert not (ROOT / "_scripts" / name).exists()
 

@@ -54,9 +54,8 @@ def test_daily_run_order_contracts(orch):
     ran, fail, mp, tmp = orch
     code = _main(mp)
     assert code == 0
-    # the load-bearing ordering (SCHEMA gap fix): sync BEFORE rebuild BEFORE verdicts
-    assert ran.index("sync_issue_details.py") < ran.index("build_ipo_consolidated_v2.py") \
-           < ran.index("compute_verdicts.py")
+    # Canonical issue details must be synchronized before derived verdicts.
+    assert ran.index("sync_issue_details.py") < ran.index("compute_verdicts.py")
     assert ran[0] == "schema_sync.py"                # DDL owner runs FIRST
     assert ran.index("check_data_contract.py") > ran.index("compute_flags.py")  # gate LAST block
     assert "purge_candles_after_lockin.py" not in ran     # weekly-only
@@ -82,14 +81,11 @@ def test_weekly_flag_adds_purges(orch):
     assert "purge_stale_data.py" not in ran
     assert "purge_stale_data" not in (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
 
-def test_consolidated_failure_exits_2_with_warning(orch):
-    ran, fail, mp, tmp = orch
-    fail["build_ipo_consolidated_v2.py"] = 1
-    code = _main(mp)
-    assert code == 2                                  # cron sees the red
-    log = (tmp / "p.log").read_text(encoding="utf-8", errors="replace")
-    assert "COMPLETED WITH WARNINGS" in log
-    assert "rebuild consolidated exited 1" in log
+def test_legacy_consolidation_is_not_run(orch):
+    ran, _fail, mp, _tmp = orch
+    assert _main(mp) == 0
+    assert "consolidate_master.py" not in ran
+    assert "build_ipo_consolidated_v2.py" not in ran
 
 def test_non_hard_step_failure_does_not_stop_run(orch):
     ran, fail, mp, tmp = orch

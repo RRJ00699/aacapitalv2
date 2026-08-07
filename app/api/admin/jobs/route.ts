@@ -26,13 +26,12 @@ const ALLOWED_JOBS = new Set([
   // theses, coverage, backfills) removed to keep the daily pipeline IPO-only.
   "pipeline", "pipeline_weekly",   // main IPO pipeline (lean — 2026-07-21)
   "ipo_lifecycle",
-  "peer_pe", "peer_pe_notes", "news", "consolidate", "vm_verify",          // fair-value input fetch · reality report
+  "peer_pe", "peer_pe_notes", "news", "vm_verify",          // fair-value input fetch · reality report
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
   "sbi_download", "sbi_parse",     // SBI research notes (street view)
   // IPO daily levels
   // candle sync (post-listing dashboard)
-  "rhp_auto",                      // RHP forensic gate
   "sync",                          // git sync (utility)
   // Added 2026-07-18: these existed in job_runner.py AND had console buttons,
   // but this route rejected them with "unknown job '<name>'" — a THIRD
