@@ -9,5 +9,5 @@ test("eps_post derives post-issue shares with explicit provenance",()=>{
 });
 test("canonical SQL uses latest change-log fact and recognizes Restated Consolidated",async()=>{
   let query="";const sql=(async(strings:TemplateStringsArray)=>{query=strings.join("?");return[]}) as any;
-  await fetchCanonicalInputRows(sql,[1]);assert.match(query,/DISTINCT ON \(ipo_id,field\)/);assert.match(query,/ORDER BY ipo_id,field,fetched_at DESC/);assert.match(query,/basis ILIKE '%consolidat%'/);
+  await fetchCanonicalInputRows(sql,[1]);assert.match(query,/WITH requested AS/);assert.match(query,/FROM requested r/);assert.match(query,/DISTINCT ON \(ipo_id,field\)/);assert.match(query,/ORDER BY ipo_id,field,fetched_at DESC/);assert.match(query,/basis ILIKE '%consolidat%'/);
 });

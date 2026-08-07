@@ -194,11 +194,11 @@ Produce a JSON object with EXACTLY this structure:
     "currency": "INR" | "other" | "not-disclosed",
 
     "canonical_facts": {{
-      "cash_cr": {{"value": <latest cash and cash equivalents number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
-      "interest_expense_cr": {{"value": <latest finance cost/interest expense number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
-      "operating_cash_flow_cr": {{"value": <latest net cash from operating activities number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
-      "debt_repayment_cr": {{"value": <fresh-offer proceeds explicitly allocated to debt repayment/refinancing or null>, "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}},
-      "capex_cr": {{"value": <fresh-offer proceeds explicitly allocated to capital expenditure or null>, "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}}
+      "cash_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "interest_expense_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "operating_cash_flow_cr": {{"value": <number exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "debt_repayment_cr": {{"value": <objects-of-offer allocation exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}},
+      "capex_cr": {{"value": <objects-of-offer allocation exactly as printed or null>, "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed", "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}}
     }},
 
     "financials": [

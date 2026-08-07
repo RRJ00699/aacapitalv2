@@ -25,8 +25,6 @@ export async function fetchCards(sql: SqlClient) {
            v.roe, v.roce, v.de AS debt_equity, v.rev_cagr_3y AS revenue_cagr_3y, v.ofs_pct,
            v.fair_value_lo, v.fair_value_hi, v.quality_promoter,
            v.inputs_used->>'pe_source' AS pe_source, v.inputs_used->>'pb_source' AS pb_source,
-           v.inputs_used->>'rhp_eps' AS eps_post,v.inputs_used->>'rhp_eps' AS rhp_eps,
-           v.inputs_used->>'rhp_eps_field' AS rhp_eps_field,
            d.fundamental_verdict AS verdict,
            CASE d.fundamental_verdict WHEN 'JUNK' THEN 'reject' WHEN 'WATCH' THEN 'watch'
                 WHEN 'GOOD' THEN 'accept' END AS rhp_gate,
@@ -185,7 +183,7 @@ export function enrichCards(cards: Record<string, unknown>[]) {
       house_stack_hit: stackParts.filter((x) => x.pass).length,
       house_stack_stat: houseStack ? "72.7% win · +17.2% median · D30 (n=55)"
         : `${stackParts.filter((x) => x.pass).length}/3 — baseline 62.2% win`,
-      ...fairValue(c) } as Record<string, unknown>;
+      ...fairValue({...c,eps_post:c.rhp_eps}) } as Record<string, unknown>;
   });
 
   const investable: Record<string, unknown>[] = [];
@@ -203,7 +201,7 @@ export function enrichCards(cards: Record<string, unknown>[]) {
   // verdict exists ONLY when RHP is confirmed; otherwise INCOMPLETE with no verdict.
   const withResearch = investable.map((c) => {
     const rhpStatus = (c.verdict != null || c.red_flag_count != null) ? "CONFIRMED" : "PENDING";
-    const fvReady = c.eps_post != null || c.ipo_pe != null;
+    const fvReady = c.rhp_eps != null || c.ipo_pe != null;
     const gate = String(c.rhp_gate ?? "").toLowerCase();
     const cq = rhpStatus === "CONFIRMED"
       ? { status: "CONFIRMED", verdict: gate === "reject" ? "JUNK" : gate === "watch" ? "WATCH" : gate ? "GOOD" : "WATCH" }

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from pipeline.intelligence import AI_FIELDS, SCHEMA_PATH, build_profile, canonical_anchor_facts, profile_schema, validate_profile
+from pipeline.rhp_writer import normalize_canonical_fact
 
 BASE=dict(ipo_id=1,isin="INE000000001",identity={"name":"Fixture"},company={"name":"Fixture"},issue={"price":100},
           documents=[],financials={"pat":20},kpis={},valuation={"status":"AVAILABLE"},generated_at="2026-08-07T00:00:00Z")
@@ -35,3 +36,12 @@ def test_score_engine_persists_eps_field_provenance():
     source=(Path(__file__).with_name("score_engine.py")).read_text()
     assert 'used["rhp_eps_field"] = eps_field' in source
     assert "basis ILIKE '%consolidat%'" in source
+
+def test_mixed_per_fact_units_and_missing_unit_rejection():
+    cash={"value":500,"unit_as_printed":"million","page":10,"excerpt":"Cash 500"}
+    debt={"value":650,"unit_as_printed":"crore","page":20,"excerpt":"Debt repayment 650"}
+    capex={"value":125,"unit_as_printed":"crore","page":20,"excerpt":"Capex 125"}
+    assert normalize_canonical_fact(cash)==(50.0,None)
+    assert normalize_canonical_fact(debt)==(650.0,None)
+    assert normalize_canonical_fact(capex)==(125.0,None)
+    assert normalize_canonical_fact({"value":999,"page":20,"excerpt":"Capex 999"})==(None,"missing_unit_as_printed")

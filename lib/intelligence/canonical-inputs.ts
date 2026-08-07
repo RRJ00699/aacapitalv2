@@ -8,7 +8,7 @@ export const PRO_FORMA_SOURCE_FACT_FIELDS = ["cash_cr","interest_expense_cr","de
 export async function fetchCanonicalInputRows(sql: SqlClient, ipoIds: Array<string|number>) {
   if (!ipoIds.length) return [];
   return sql`
-    WITH latest_financial AS (
+    WITH requested AS (SELECT unnest(${ipoIds}::int[]) AS ipo_id), latest_financial AS (
       SELECT DISTINCT ON (ipo_id) ipo_id,period,basis,pat,total_debt,ebitda,net_worth
       FROM financial_statements WHERE ipo_id = ANY(${ipoIds})
       ORDER BY ipo_id,(basis ILIKE '%consolidat%') DESC,
@@ -20,12 +20,17 @@ export async function fetchCanonicalInputRows(sql: SqlClient, ipoIds: Array<stri
     ), facts AS (
       SELECT ipo_id,jsonb_object_agg(field,value) AS values_by_field FROM latest_fact GROUP BY ipo_id
     )
-    SELECT f.ipo_id,f.period AS financial_period,f.basis AS financial_basis,
+    SELECT r.ipo_id,f.period AS financial_period,f.basis AS financial_basis,
       f.pat AS reported_pat_cr,f.total_debt AS reported_debt_cr,f.ebitda AS ebitda_cr,f.net_worth AS net_worth_cr,
       x.values_by_field->>'cash_cr' AS cash_cr,x.values_by_field->>'interest_expense_cr' AS interest_expense_cr,
       x.values_by_field->>'debt_repayment_cr' AS debt_repayment_cr,x.values_by_field->>'operating_cash_flow_cr' AS operating_cash_flow_cr,
-      x.values_by_field->>'capex_cr' AS capex_cr
-    FROM latest_financial f LEFT JOIN facts x ON x.ipo_id=f.ipo_id`;
+      x.values_by_field->>'capex_cr' AS capex_cr,iss.issue_price,
+      v.roce,v.peer_median_pe,v.inputs_used->>'rhp_eps' AS rhp_eps,v.inputs_used->>'rhp_eps_field' AS rhp_eps_field
+    FROM requested r
+    LEFT JOIN latest_financial f ON f.ipo_id=r.ipo_id LEFT JOIN facts x ON x.ipo_id=r.ipo_id
+    LEFT JOIN ipo_issue iss ON iss.ipo_id=r.ipo_id
+    LEFT JOIN LATERAL (SELECT roce,peer_median_pe,inputs_used FROM valuation vv WHERE vv.ipo_id=r.ipo_id
+      AND vv.engine_version LIKE 'v2-score-%' ORDER BY computed_at DESC LIMIT 1) v ON true`;
 }
 
 const numeric = (value: unknown): number|undefined => value == null || value === "" || !Number.isFinite(Number(value)) ? undefined : Number(value);

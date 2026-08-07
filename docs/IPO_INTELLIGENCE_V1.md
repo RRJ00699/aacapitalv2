@@ -32,6 +32,8 @@ Details attaches a profile only when there is a verified ISIN and the canonical 
 
 The approved RHP structured extraction owns page-cited `cash_cr`, `interest_expense_cr`, `operating_cash_flow_cr`, `debt_repayment_cr`, and `capex_cr`; `rhp_writer` performs unit normalization and appends changes to `source_facts`. Readers select the newest correction with `DISTINCT ON (ipo_id, field) ... ORDER BY fetched_at DESC`. Post-issue shares are derived only when `valuation.inputs_used.rhp_eps_field = eps_post`; the provenance records PAT period/basis and warns that PAT and RHP EPS periods may not align perfectly.
 
+Each `canonical_facts` entry now carries its own `value`, `unit_as_printed`, `page`, and `excerpt`. The model reports the value and unit exactly as printed and never converts them; `rhp_writer` validates all four fields and normalizes each fact independently. It never falls back to the financial-statements section unit.
+
 The shared input builder owns the read model: reported PAT/debt/EBITDA/equity and period/basis come from the latest `financial_statements` row (preferring any basis matching `ILIKE '%consolidat%'`); cash, interest expense, debt repayment, OCF, and capex come from the latest `source_facts` correction; issue price comes from `ipo_issue`; canonical ROCE/peer P/E and EPS provenance come from `valuation`. Cash, OCF, capex, EBITDA, equity, ROCE, and peer P/E are optional and only suppress the dependent output. Debt repayment is optional, but a positive repayment makes interest expense necessary for deterministic PAT.
 
 ROCE is not recomputed by the intelligence engine. It is consumed from canonical `valuation.roce`. Pro-forma formulas cover debt after verified repayment, interest saving, PAT, EPS, P/E, EV/EBITDA, FCF, peer-P/E fair value, and margin of safety.
@@ -39,6 +41,8 @@ ROCE is not recomputed by the intelligence engine. It is consumed from canonical
 ## Coverage and activation
 
 No representative-corpus extraction coverage measurement has been completed. Any structural or field coverage percentage is therefore **[Unverified]** and intentionally omitted. The engine makes no paid model call; deterministic model cost is ₹0/IPO, while storage/compute/KV cost is plan- and corpus-dependent **[Unverified]**.
+
+The `canonical_facts` shape changes model output, but previously completed `v2-full` extractions do not automatically gain these facts: the document/model/prompt-version idempotency key may skip them. Historical re-extraction requires an explicit prompt-version bump plus a targeted owner-approved run. That bump and paid run are an **OWNER COST DECISION**. Before any rerun, measure one real RHP using the current baseline prompt and the new prompt, recording input/output tokens, actual cost, and delta. The expected incremental estimate is **+$0.005–$0.01/RHP [Unverified]**; no paid re-extraction was initiated in this PR.
 
 Bounded offline generation uses:
 
