@@ -18,3 +18,9 @@ def test_ci_runs_bounded_pipeline_tests():
 
 def test_details_sql_does_not_hide_null_isin():
     assert "isin IS NOT NULL" not in read("lib/v2/ipo-details.ts")
+
+def test_command_and_details_share_canonical_input_builder_and_do_not_infer_transformations():
+    command=read("lib/v2/ipo-command.ts");details=read("lib/v2/ipo-details.ts")
+    assert "buildCanonicalProFormaInputs" in command and "buildCanonicalProFormaInputs" in details
+    assert 'Number(c.debt_repayment_cr)>0' not in command
+    assert "known_transformations:[]" in command

@@ -193,6 +193,14 @@ Produce a JSON object with EXACTLY this structure:
     "unit_as_printed": "crore" | "million" | "lakh" | "thousand" | "absolute" | "not-disclosed",
     "currency": "INR" | "other" | "not-disclosed",
 
+    "canonical_facts": {{
+      "cash_cr": {{"value": <latest cash and cash equivalents number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "interest_expense_cr": {{"value": <latest finance cost/interest expense number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "operating_cash_flow_cr": {{"value": <latest net cash from operating activities number or null>, "page": <int or null>, "excerpt": "<verbatim support under 25 words>"}},
+      "debt_repayment_cr": {{"value": <fresh-offer proceeds explicitly allocated to debt repayment/refinancing or null>, "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}},
+      "capex_cr": {{"value": <fresh-offer proceeds explicitly allocated to capital expenditure or null>, "page": <int or null>, "excerpt": "<verbatim objects-of-offer support under 25 words>"}}
+    }},
+
     "financials": [
       {{
         "period": "<the period end EXACTLY as DD-Mon-YY, 2-digit year, e.g. 31-Mar-26>",

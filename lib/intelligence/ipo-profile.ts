@@ -28,7 +28,8 @@ export function classifyTransformation(type: TransformationType, evidence: Evide
 
 /** Deterministic valuation; absent evidence is explicit and never replaced by assumptions. */
 export function calculateProForma(i: ValuationInputs) {
-  const required: (keyof ValuationInputs)[] = ["reported_debt_cr", "cash_cr", "reported_pat_cr", "post_issue_shares_cr", "issue_price"];
+  const required: (keyof ValuationInputs)[] = ["reported_debt_cr", "reported_pat_cr", "post_issue_shares_cr", "issue_price"];
+  if (finite(i.debt_repayment_cr) && i.debt_repayment_cr > 0 && !finite(i.interest_expense_cr)) required.push("interest_expense_cr");
   const missing = required.filter(k => !finite(i[k]));
   if (missing.length) return insufficient(missing);
   const debtRepaid = Math.min(i.reported_debt_cr!, finite(i.debt_repayment_cr) ? i.debt_repayment_cr : 0);
@@ -42,17 +43,18 @@ export function calculateProForma(i: ValuationInputs) {
   const reportedPe = reportedEps > 0 ? i.issue_price! / reportedEps : null;
   const proFormaPe = proFormaEps > 0 ? i.issue_price! / proFormaEps : null;
   const marketCap = i.issue_price! * i.post_issue_shares_cr!;
-  const enterpriseValue = marketCap + postDebt - i.cash_cr!;
+  const enterpriseValue = finite(i.cash_cr) ? marketCap + postDebt - i.cash_cr : null;
   const fairValue = finite(i.peer_pe) && proFormaEps > 0 ? i.peer_pe * proFormaEps : null;
   return { status: "AVAILABLE" as const, classification: "DETERMINISTIC_PRO_FORMA" as const,
-    reported_debt_cr: rounded(i.reported_debt_cr!), post_ipo_debt_cr: rounded(postDebt), cash_cr: rounded(i.cash_cr!), net_debt_cr: rounded(postDebt - i.cash_cr!),
+    reported_debt_cr: rounded(i.reported_debt_cr!), post_ipo_debt_cr: rounded(postDebt), cash_cr: finite(i.cash_cr)?rounded(i.cash_cr):null, net_debt_cr: finite(i.cash_cr)?rounded(postDebt-i.cash_cr):null,
     interest_savings_cr: rounded(savings), reported_pat_cr: rounded(i.reported_pat_cr!), pro_forma_pat_cr: rounded(proFormaPat), post_issue_shares_cr: rounded(i.post_issue_shares_cr!),
     reported_eps: rounded(reportedEps), pro_forma_eps: rounded(proFormaEps), reported_pe: reportedPe == null ? null : rounded(reportedPe), pro_forma_pe: proFormaPe == null ? null : rounded(proFormaPe),
-    ev_ebitda: finite(i.ebitda_cr) && i.ebitda_cr > 0 ? rounded(enterpriseValue / i.ebitda_cr) : null,
+    ev_ebitda: enterpriseValue != null && finite(i.ebitda_cr) && i.ebitda_cr > 0 ? rounded(enterpriseValue / i.ebitda_cr) : null,
     roe: finite(i.equity_cr) && i.equity_cr > 0 ? rounded(proFormaPat / i.equity_cr * 100) : null,
     roce: finite(i.canonical_roce) ? rounded(i.canonical_roce) : null,
     fcf_cr: finite(i.operating_cash_flow_cr) && finite(i.capex_cr) ? rounded(i.operating_cash_flow_cr - i.capex_cr) : null,
     fair_value: fairValue == null ? null : rounded(fairValue), margin_of_safety_pct: fairValue == null ? null : rounded((fairValue - i.issue_price!) / fairValue * 100),
+    missing_inputs:[...(!finite(i.cash_cr)?["cash_cr_for_net_debt_and_ev"]:[]),...(!finite(i.operating_cash_flow_cr)||!finite(i.capex_cr)?["operating_cash_flow_cr_and_capex_cr_for_fcf"]:[])],
     formulas: { interest_savings: "interest_expense * debt_repaid / reported_debt", pro_forma_pat: "reported_PAT + interest_savings * (1-tax_rate)", eps: "PAT / post_issue_shares", pe: "issue_price / EPS", ev_ebitda: "(market_cap + post_debt - cash) / EBITDA", fcf: "operating_cash_flow - capex", roce: "canonical valuation.roce (not recomputed)" } };
 }
 

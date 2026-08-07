@@ -37,7 +37,7 @@ test("multiple and historical profiles use the identical canonical builder",()=>
   assert.equal(rows.length,3); assert.ok(rows.every(x=>x.schema_version==="ipo-profile:v1")); assert.equal((rows[2].identity as any).historical,true);
 });
 
-test("missing valuation inputs return INSUFFICIENT_DATA",()=>assert.deepEqual(calculateProForma({issue_price:100}),{status:"INSUFFICIENT_DATA",missing_inputs:["reported_debt_cr","cash_cr","reported_pat_cr","post_issue_shares_cr"]}));
+test("missing valuation inputs return INSUFFICIENT_DATA without making cash permanently mandatory",()=>assert.deepEqual(calculateProForma({issue_price:100}),{status:"INSUFFICIENT_DATA",missing_inputs:["reported_debt_cr","reported_pat_cr","post_issue_shares_cr"]}));
 
 test("ROCE is consumed only from canonical valuation ownership",()=>{
   const result=calculateProForma({reported_debt_cr:10,cash_cr:2,reported_pat_cr:5,post_issue_shares_cr:1,issue_price:50,ebitda_cr:100,canonical_roce:17.2});

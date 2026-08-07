@@ -247,7 +247,7 @@ def check_completeness(conn, ipo_id, today=None):
 
     # --- column-level checks inside the multi-row tables that matter ---
     cur.execute(f"""SELECT {', '.join(FINANCIAL_FIELDS)} FROM financial_statements
-                     WHERE ipo_id=%s ORDER BY (basis='consolidated') DESC, period DESC
+                     WHERE ipo_id=%s ORDER BY (basis ILIKE '%consolidat%') DESC, period DESC
                      LIMIT 1""", (ipo_id,))
     f = cur.fetchone()
     if f:

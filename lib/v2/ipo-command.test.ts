@@ -35,9 +35,9 @@ test("enrichCards: pe_source/pb_source pass through untouched (disclosure)", () 
 });
 
 test("Command Center intelligence summary uses canonical financial inputs",()=>{
-  const {investable}=enrichCards([{issue_size_cr:500,issue_price:100,reported_debt_cr:100,cash_cr:20,debt_repayment_cr:50,interest_expense_cr:10,reported_pat_cr:25,eps_post:5,ebitda_cr:50,roce:18,peer_median_pe:12,verdict:"GOOD",junk_signals:[]}]);
+  const {investable}=enrichCards([{issue_size_cr:500,issue_price:100,reported_debt_cr:100,cash_cr:20,debt_repayment_cr:50,interest_expense_cr:10,reported_pat_cr:25,rhp_eps:5,rhp_eps_field:"eps_post",ebitda_cr:50,roce:18,peer_median_pe:12,verdict:"GOOD",junk_signals:[]}]);
   const summary=(investable[0] as any).intelligence_summary;
-  assert.equal(summary.status,"AVAILABLE"); assert.equal(summary.pro_forma.net_debt_cr,30); assert.deepEqual(summary.known_transformations,["DEBT_REPAYMENT"]);
+  assert.equal(summary.status,"AVAILABLE"); assert.equal(summary.pro_forma.net_debt_cr,30); assert.deepEqual(summary.known_transformations,[]);
 });
 
 test("Command Center intelligence summary is honestly unavailable without canonical inputs",()=>{

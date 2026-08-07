@@ -30,3 +30,8 @@ def test_profile_generation_is_idempotent_with_fixed_timestamp():
 
 def test_ai_coverage_is_bounded_to_five_qualitative_fields():
     assert AI_FIELDS == {"qualitative_risk","governance","rhp_verdict","sbi_verdict","business_quality"}
+
+def test_score_engine_persists_eps_field_provenance():
+    source=(Path(__file__).with_name("score_engine.py")).read_text()
+    assert 'used["rhp_eps_field"] = eps_field' in source
+    assert "basis ILIKE '%consolidat%'" in source
