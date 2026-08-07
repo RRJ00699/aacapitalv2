@@ -1,6 +1,6 @@
 // lib/security/ratelimit.ts
 // Neon-backed rate limiter for AI routes.
-// Self-healing: creates the table on first call.
+// The table is provisioned by explicit migration tooling, never request code.
 // On infra failure it ALLOWS the request — never blocks real users on a DB hiccup.
 
 import { neon } from "@neondatabase/serverless"
@@ -26,15 +26,6 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   try {
     const sql = db()
-
-    // Self-healing table creation
-    await sql`
-      CREATE TABLE IF NOT EXISTS rate_limit_log (
-        id         BIGSERIAL    PRIMARY KEY,
-        key        TEXT         NOT NULL,
-        created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      )
-    `
 
     // Count requests in the last hour for this key
     const rows = await sql`

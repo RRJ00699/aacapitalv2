@@ -83,34 +83,6 @@ function StatusPill({ status }: { status: string }) {
 }
 
 
-function FrustrationTracker() {
-  // docs/FRUSTRATION_TRACKER.md is the source of truth; latest entries
-  // mirrored here so the log is one click away in Admin (owner ask
-  // 2026-07-22). Newest first.
-  const entries: { d: string; items: string[] }[] = [
-    { d: "2026-07-22 (Wed)", items: [
-      "Assistant claimed 'Saturday' on a Wednesday — fabricated weekday theory for the missed 17:00 ntfy ping; real cron miss still to diagnose. Dates now come from the machine, never narrative memory.",
-      "smoke ipo_research_notes.company_name fix landed a cycle late after the owner flagged it (alias nw + parser regression test now in branch).",
-      "Local consolidate crashed pre-Schema-sync (UndefinedColumn) — jobs now introspect and degrade instead of tracebacking.",
-      "Cumulative patch conflicted with the owner's already-pushed branch; the missing commit was the crash fix itself. Patches now state their base; ntfy result now printed in the log.",
-    ]},
-  ];
-  return (
-    <div style={{ border: "1px solid var(--t-border)", borderRadius: 12, padding: "12px 14px", marginTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", color: "var(--t-red)" }}>Frustration tracker</div>
-      {entries.map(e => (
-        <div key={e.d} style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--t-text)" }}>{e.d}</div>
-          <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
-            {e.items.map((it, i) => <li key={i} style={{ fontSize: 11.5, color: "var(--t-sub)", marginTop: 3 }}>{it}</li>)}
-          </ul>
-        </div>
-      ))}
-      <div style={{ fontSize: 10.5, color: "var(--t-dim)", marginTop: 8 }}>Full log: docs/FRUSTRATION_TRACKER.md</div>
-    </div>
-  );
-}
-
 export default function AdminConsoleClient({ adminEmail }: { adminEmail: string }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
@@ -192,11 +164,6 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⚙️ Settings</a>
           <a href="/dashboard/access" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
-          {/* Tracker was orphaned (no nav entry, reachable only by typing the
-              URL). Owner 2026-07-18: keep it and surface it here — it is a
-              working interruption log, admin-only, and Admin is where it belongs. */}
-          <a href="/dashboard/tracker" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
-            background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⏱️ Tracker</a>
           <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
         </div>
         {/* Refresh removed (Rakesh 2026-07-17): gave no feedback and the list
@@ -211,7 +178,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
           background: C.amberBg, border: `1px solid ${C.amberBd}`, color: C.amber,
           borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 16,
         }}>
-          job_runs table not found yet — it’s created on first enqueue, but nothing runs until{" "}
+          job_runs table is unavailable — provision it with explicit migration tooling; nothing runs until{" "}
           <code>job_runner.py</code> is scheduled on the VM (cron, every minute).
         </div>
       )}
@@ -328,7 +295,6 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
           {toast}
         </div>
       )}
-      <FrustrationTracker />
     </div>
   );
 }
