@@ -1,6 +1,6 @@
 # Phase 3 data-eviction manifest
 
-**Status:** **STOP — export and owner approval required. No data has been deleted.**
+**Status:** **EXECUTED — 2026-08-07**
 
 Inventory captured on 2026-08-07 from commit `0cc02f5`. Counts exclude CSV header rows. Byte counts are exact filesystem sizes, not allocated disk sizes. “IPO-universe” means an IPO observation or IPO document; the sector-map split uses exact `nse_symbol` membership in `ipo_backtest_export/ipo_meta.csv`. No Neon query or write was made.
 
@@ -18,7 +18,7 @@ Inventory captured on 2026-08-07 from commit `0cc02f5`. Counts exclude CSV heade
 | `sector_map.csv` | 1 | 35,969 | 1,051 | no date column | written by `_scripts/dump_sector_map.py`; no read caller | 168 exact IPO-symbol matches | 883 unmatched symbols | owner export directory | Owner archive; do not create a new Neon table. |
 | `ipo_master.xlsx` | 1 | 75,182 | 0 worksheet rows (template-only workbook) | no populated dates | fallback read candidate in `_scripts/sync_ipo_master.py`; no caller evidence for that script in enabled workflows, package scripts, pipeline, or Admin jobs | 0 | 0 | owner export directory | Owner archive after approval. |
 
-Totals: **274 files, 154,418,057 bytes, 160,252 CSV rows, and 241 PDF documents**. Proposed tracked deletion remains **zero files** until the owner runs and verifies the export.
+Totals before execution: **274 files, 154,418,057 bytes, 160,252 CSV rows, and 241 PDF documents**. The approved archive-only targets were removed after the owner export was verified. `data/research_notes/` was retained.
 
 ## Caller verification
 
@@ -33,6 +33,22 @@ Therefore `data/research_notes/` is **not approved for deletion** in the post-ex
 
 ## Owner export and verification
 
+**Verified export destination:** `C:\aacapital-exports\2026-08-07`
+
+The owner reported these individually verified SHA256 values:
+
+| Exported file | SHA256 |
+|---|---|
+| `data.zip` | `11E9FB68C3A6B10DA5109F02A463AF854A975605719392DF7ECA67E0BB436ED7` |
+| `ipo_backtest_export.zip` | `4CB13E1A46FF1375EF2B30C59DAE19A991B14A704A7374E31CF92600A0E2089B` |
+| `_output.zip` | `8AD2C677235E333557C6483056893D1770B08CE99AADF4E3ABF4BBEFCF6DEA14` |
+| `dip_defense.csv` | `5624342BB19D20C253D5121F3047FF24191C6DC457438C44EB876DA9303A5C83` |
+| `factor_report.csv` | `34E2F744CA6E3DA53ED819F85EEC62A2E30CB29B3510B4F332BE6C017F12A7C5` |
+| `forensic.csv` | `ECFBC4688B08FE7F5C52DEF512ABD00A4302254898C87A04BEFFEDBF7E524B2C` |
+| `ipo_factors.csv` | `7ABA4C6A3C897188EFC5B72D2DE471F612EC5DA262D72572B9083A3ACC190716` |
+| `sector_map.csv` | `80E84ECF82A880A419BFCC1F71EA5904F65ECA035FF2FF1BD99120C76C6ED3B8` |
+| `ipo_master.xlsx` | `0E2D51B6A82479542A357D6C88C94DF0F1185E39119F3D33528E00943D9EF867` |
+
 From a Windows PowerShell prompt at the repository root:
 
 ```powershell
@@ -41,12 +57,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\_scripts\export_phase3_dat
 
 The script creates the destination, archives directories, copies standalone reports, compares exported file counts and uncompressed bytes with the sources, prints CSV row counts, and prints SHA256 for every output. Any verification mismatch exits non-zero.
 
-## Approval checkpoint
+## Retained live lane and follow-up
 
-Return the script output and explicitly approve the exact targets to delete. Until then:
+**`data/research_notes/` status:** **BLOCKED-LIVE**
 
-- no `git rm` is authorized;
-- no `.gitignore` change is applied;
-- no new Neon table is proposed;
-- no R2 object is changed or deleted.
+**Reason:** active SBI/cron callers.
 
+**Open follow-up:** migrate the SBI/research-note lane before removal. This execution did not propose a new Neon table or change or delete an R2 object.
