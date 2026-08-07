@@ -355,8 +355,8 @@ def main():
     #    is permanent weight that a later delete does not reclaim. The data lives in the
     #    DB and the provenance in documents.sha256 + url, so the file is re-fetchable.
     # 3. NSE
-    steps.append(run("3. NSE issue + subscription",
-                     [py, "nse_fetch.py", "--ids", ids,
+    steps.append(run("3. NSE per-IPO lifecycle",
+                     [py, "nse_lifecycle.py", "--limit", str(a.limit),
                       "--dry-run" if dry else "--write"], dry, 900))
     # 4. RHP extraction — the only paid step, gated on the remaining budget
     if remaining <= 0:

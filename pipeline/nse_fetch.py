@@ -238,7 +238,8 @@ def fetch_one(session, symbol):
     return r.json()
 
 
-def apply_to_db(conn, ipo_id, payload, source="nse"):
+def apply_to_db(conn, ipo_id, payload, source="nse", *, subscription_final=True,
+                apply_issue=True, apply_subscription=True):
     """Route parsed NSE data through the TESTED fill_v2 writers. Returns a report.
 
     SUBSCRIPTION IS APPEND-ONLY. subscription_snapshots carries UNIQUE(ipo_id) WHERE
@@ -257,8 +258,8 @@ def apply_to_db(conn, ipo_id, payload, source="nse"):
     from fill_ipo import upsert_ipo
     issue, extras, notes = parse_issue_info(payload)
     subs = parse_bid_details(payload)
-    rep = {"ipo_id": ipo_id, "issue_fields": sorted(issue.keys()),
-           "subs_fields": sorted(subs.keys()), "extras": sorted(extras.keys()),
+    rep = {"ipo_id": ipo_id, "issue_fields": sorted(issue.keys()) if apply_issue else [],
+           "subs_fields": sorted(subs.keys()) if apply_subscription else [], "extras": sorted(extras.keys()),
            "notes": notes, "subs_action": "none", "subs_diff": [], "spine": []}
 
     # IDENTITY SPINE FIRST. metaInfo carries the ISIN and it was previously only logged
@@ -268,13 +269,13 @@ def apply_to_db(conn, ipo_id, payload, source="nse"):
     cur = conn.cursor()
     cur.execute("SELECT isin, name_display, name_norm FROM ipo WHERE id=%s", (ipo_id,))
     row = cur.fetchone()
-    if row and not row[0] and extras.get("isin"):
+    if apply_issue and row and not row[0] and extras.get("isin"):
         upsert_ipo(conn, dict(isin=extras["isin"], name_display=row[1],
                               name_norm=row[2], industry=extras.get("industry"),
                               listing_date=extras.get("listing_date")), source=source)
         rep["spine"].append(f"isin={extras['isin']}")
 
-    if issue:
+    if apply_issue and issue:
         upsert_ipo_issue(conn, ipo_id, issue, source=source)
 
     # AN ALL-ZERO PAYLOAD MEANS "NOT REPORTED YET", NOT "ZERO DEMAND".
@@ -287,17 +288,17 @@ def apply_to_db(conn, ipo_id, payload, source="nse"):
     # Caught on the 08-01 cron run: Propshop and Metalic both got a zero-filled final row.
     meaningful = any((subs.get(c) or 0) > 0
                      for c in ("qib_x", "nii_x", "retail_x", "total_x", "mf_shares_bid"))
-    if subs and not meaningful:
+    if apply_subscription and subs and not meaningful:
         rep["subs_action"] = "skipped_all_zero_not_reported_yet"
         subs = {}
 
-    if subs:
+    if apply_subscription and subs:
         cols = ["qib_x", "nii_x", "bnii_x", "snii_x", "retail_x", "total_x", "mf_shares_bid"]
         cur.execute(f"""SELECT captured_at, {', '.join(cols)} FROM subscription_snapshots
                          WHERE ipo_id=%s AND is_final ORDER BY captured_at DESC LIMIT 1""",
                     (ipo_id,))
         existing = cur.fetchone()
-        if existing:
+        if subscription_final and existing:
             rep["subs_action"] = "skipped_final_exists"
             for col, stored in zip(cols, existing[1:]):
                 fresh = subs.get(col)
@@ -305,13 +306,17 @@ def apply_to_db(conn, ipo_id, payload, source="nse"):
                     continue
                 if abs(float(stored) - float(fresh)) > 0.01:
                     rep["subs_diff"].append(f"{col}: stored={stored} nse={fresh}")
-        else:
+        elif subscription_final:
             cur.execute("SELECT now()")
             upsert_subscription(conn, ipo_id, cur.fetchone()[0], subs, is_final=True)
             rep["subs_action"] = "inserted_final"
+        else:
+            cur.execute("SELECT now()")
+            upsert_subscription(conn, ipo_id, cur.fetchone()[0], subs, is_final=False)
+            rep["subs_action"] = "inserted_forward"
 
     for k in ("anchor_portion_shares", "brlm_names", "industry"):
-        if extras.get(k) is not None:
+        if apply_issue and extras.get(k) is not None:
             log_source_fact(conn, ipo_id, k, extras[k], source)
     return rep
 
