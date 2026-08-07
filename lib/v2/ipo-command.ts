@@ -8,6 +8,7 @@
 // + decisions + rhp_findings + insights + source_facts(brlm_names) + listing_outcomes
 // + market_candles (first-5-session floor/ceiling).
 import { fairValue } from "@/lib/fair-value";
+import { calculateProForma } from "@/lib/intelligence/ipo-profile";
 import type { SqlClient } from "./sql";
 
 export async function fetchCards(sql: SqlClient) {
@@ -24,6 +25,8 @@ export async function fetchCards(sql: SqlClient) {
            v.fair_value_lo, v.fair_value_hi, v.quality_promoter,
            v.inputs_used->>'pe_source' AS pe_source, v.inputs_used->>'pb_source' AS pb_source,
            (v.inputs_used->>'rhp_eps')::numeric AS eps_post,
+           fs.pat AS reported_pat_cr,fs.total_debt AS reported_debt_cr,fs.ebitda AS ebitda_cr,
+           sf.cash_cr,sf.interest_expense_cr,sf.debt_repayment_cr,
            d.fundamental_verdict AS verdict,
            CASE d.fundamental_verdict WHEN 'JUNK' THEN 'reject' WHEN 'WATCH' THEN 'watch'
                 WHEN 'GOOD' THEN 'accept' END AS rhp_gate,
@@ -47,6 +50,12 @@ export async function fetchCards(sql: SqlClient) {
                               ofs_pct, fair_value_lo, fair_value_hi, quality_promoter, inputs_used
                        FROM valuation vv WHERE vv.ipo_id = i.id AND vv.engine_version LIKE 'v2-score-%'
                        ORDER BY computed_at DESC LIMIT 1) v ON true
+    LEFT JOIN LATERAL (SELECT pat,total_debt,ebitda FROM financial_statements x WHERE x.ipo_id=i.id ORDER BY (basis='consolidated') DESC, CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$' THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST LIMIT 1) fs ON true
+    LEFT JOIN LATERAL (SELECT
+      MAX(CASE WHEN field='cash_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS cash_cr,
+      MAX(CASE WHEN field='interest_expense_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS interest_expense_cr,
+      MAX(CASE WHEN field='debt_repayment_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS debt_repayment_cr
+      FROM source_facts x WHERE x.ipo_id=i.id) sf ON true
     LEFT JOIN LATERAL (SELECT fundamental_verdict FROM decisions dd WHERE dd.ipo_id = i.id
                        ORDER BY decided_at DESC LIMIT 1) d ON true
     LEFT JOIN listing_outcomes lo ON lo.ipo_id = i.id
@@ -173,7 +182,10 @@ export function enrichCards(cards: Record<string, unknown>[]) {
     else if (setup === "core-lite") verdict_line = "Core-lite — mega opening positive. Solid buy-at-open.";
     else verdict_line = passedLabels.length ? `Passes: ${passedLabels.join(" · ")}.` : "No buy-at-open rules met — watch only.";
 
-    return { ...c, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
+    const num=(x:unknown)=>x==null||x===""||!Number.isFinite(Number(x))?undefined:Number(x); const pat=num(c.reported_pat_cr),eps=num(c.eps_post);
+    const intelligence=calculateProForma({reported_debt_cr:num(c.reported_debt_cr),cash_cr:num(c.cash_cr),debt_repayment_cr:num(c.debt_repayment_cr),interest_expense_cr:num(c.interest_expense_cr),reported_pat_cr:pat,post_issue_shares_cr:pat!=null&&eps!=null&&eps>0?pat/eps:undefined,issue_price:num(c.issue_price),ebitda_cr:num(c.ebitda_cr),canonical_roce:num(c.roce),peer_pe:num(c.peer_median_pe)});
+    const intelligence_summary=intelligence.status==="AVAILABLE"?{status:"AVAILABLE",reported:{pat_cr:intelligence.reported_pat_cr,eps:intelligence.reported_eps,pe:intelligence.reported_pe},pro_forma:{pat_cr:intelligence.pro_forma_pat_cr,eps:intelligence.pro_forma_eps,pe:intelligence.pro_forma_pe,net_debt_cr:intelligence.net_debt_cr},known_transformations:Number(c.debt_repayment_cr)>0?["DEBT_REPAYMENT"]:[],fair_value:intelligence.fair_value,margin_of_safety_pct:intelligence.margin_of_safety_pct,red_flags:c.junk_signals??[],rhp_verdict:c.verdict??null}:{status:"UNAVAILABLE",reason:"Canonical financial evidence is insufficient."};
+    return { ...c, intelligence_summary, playbook_rules: rules, playbook_avoid: avoid, playbook_setup: setup,
       playbook_passed: passed, playbook_verdict: verdict_line,
       house_stack: houseStack, house_stack_parts: stackParts,
       house_stack_hit: stackParts.filter((x) => x.pass).length,

@@ -1,11 +1,12 @@
 /** Canonical, vendor-independent IPO intelligence contract and pure economic engine. */
+import profileSchema from "./ipo-profile.schema.json";
 export const IPO_PROFILE_SCHEMA_VERSION = "ipo-profile:v1" as const;
-export type EvidenceClass = "VERIFIED_FACT" | "DETERMINISTIC_PRO_FORMA" | "SCENARIO_OPTIONALITY";
+export type EvidenceClass = "VERIFIED_FACT" | "DETERMINISTIC_PRO_FORMA" | "SCENARIO_OPTIONALITY" | "UNVERIFIED_UNKNOWN";
 export type TransformationType = "DEBT_REPAYMENT" | "DEBT_REFINANCING" | "CAPEX" | "CAPACITY_ADDITION" | "ACQUISITION" | "MERGER" | "RELATED_BUSINESS_COMBINATION" | "SUBSIDIARY_CONSOLIDATION" | "WORKING_CAPITAL" | "ASSET_SALE" | "NEW_FACILITY" | "GEOGRAPHIC_EXPANSION" | "SHARE_DILUTION" | "OFS";
 
 export type Evidence<T = unknown> = { classification: EvidenceClass; value: T; source_document_id?: number; page?: number; excerpt?: string };
 export type Transformation = { type: TransformationType; classification: EvidenceClass; amount_cr?: number | null; status: "KNOWN" | "OPTIONAL" | "INSUFFICIENT_DATA"; evidence: Evidence[] };
-export type ValuationInputs = { reported_debt_cr?: number; cash_cr?: number; debt_repayment_cr?: number; interest_expense_cr?: number; reported_pat_cr?: number; post_issue_shares_cr?: number; issue_price?: number; ebitda_cr?: number; equity_cr?: number; capital_employed_cr?: number; tax_rate?: number; peer_pe?: number; capex_cr?: number; operating_cash_flow_cr?: number };
+export type ValuationInputs = { reported_debt_cr?: number; cash_cr?: number; debt_repayment_cr?: number; interest_expense_cr?: number; reported_pat_cr?: number; post_issue_shares_cr?: number; issue_price?: number; ebitda_cr?: number; equity_cr?: number; canonical_roce?: number; tax_rate?: number; peer_pe?: number; capex_cr?: number; operating_cash_flow_cr?: number };
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const rounded = (v: number) => Math.round(v * 10000) / 10000;
@@ -18,9 +19,9 @@ export function classifyTransformation(type: TransformationType, evidence: Evide
   const scenarioOnly = type === "ACQUISITION" || type === "MERGER" || type === "RELATED_BUSINESS_COMBINATION" || type === "CAPACITY_ADDITION" || type === "GEOGRAPHIC_EXPANSION";
   return {
     type,
-    classification: deterministic ? "DETERMINISTIC_PRO_FORMA" : scenarioOnly ? "SCENARIO_OPTIONALITY" : "VERIFIED_FACT",
+    classification: deterministic ? "DETERMINISTIC_PRO_FORMA" : scenarioOnly && evidence.length > 0 ? "SCENARIO_OPTIONALITY" : verified.length > 0 ? "VERIFIED_FACT" : "UNVERIFIED_UNKNOWN",
     amount_cr: finite(amountCr) ? amountCr : null,
-    status: deterministic ? "KNOWN" : scenarioOnly ? "OPTIONAL" : "INSUFFICIENT_DATA",
+    status: deterministic ? "KNOWN" : scenarioOnly && evidence.length > 0 ? "OPTIONAL" : "INSUFFICIENT_DATA",
     evidence,
   };
 }
@@ -49,16 +50,20 @@ export function calculateProForma(i: ValuationInputs) {
     reported_eps: rounded(reportedEps), pro_forma_eps: rounded(proFormaEps), reported_pe: reportedPe == null ? null : rounded(reportedPe), pro_forma_pe: proFormaPe == null ? null : rounded(proFormaPe),
     ev_ebitda: finite(i.ebitda_cr) && i.ebitda_cr > 0 ? rounded(enterpriseValue / i.ebitda_cr) : null,
     roe: finite(i.equity_cr) && i.equity_cr > 0 ? rounded(proFormaPat / i.equity_cr * 100) : null,
-    roce: finite(i.capital_employed_cr) && i.capital_employed_cr > 0 && finite(i.ebitda_cr) ? rounded(i.ebitda_cr / i.capital_employed_cr * 100) : null,
+    roce: finite(i.canonical_roce) ? rounded(i.canonical_roce) : null,
     fcf_cr: finite(i.operating_cash_flow_cr) && finite(i.capex_cr) ? rounded(i.operating_cash_flow_cr - i.capex_cr) : null,
     fair_value: fairValue == null ? null : rounded(fairValue), margin_of_safety_pct: fairValue == null ? null : rounded((fairValue - i.issue_price!) / fairValue * 100),
-    formulas: { interest_savings: "interest_expense * debt_repaid / reported_debt", pro_forma_pat: "reported_PAT + interest_savings * (1-tax_rate)", eps: "PAT / post_issue_shares", pe: "issue_price / EPS", ev_ebitda: "(market_cap + post_debt - cash) / EBITDA", fcf: "operating_cash_flow - capex" } };
+    formulas: { interest_savings: "interest_expense * debt_repaid / reported_debt", pro_forma_pat: "reported_PAT + interest_savings * (1-tax_rate)", eps: "PAT / post_issue_shares", pe: "issue_price / EPS", ev_ebitda: "(market_cap + post_debt - cash) / EBITDA", fcf: "operating_cash_flow - capex", roce: "canonical valuation.roce (not recomputed)" } };
 }
 
 export function buildIpoProfile(input: Record<string, unknown>, generatedAt = new Date().toISOString()) {
   if (!Number.isInteger(input.ipo_id) || Number(input.ipo_id) <= 0) throw new Error("ipo_id must be a positive integer");
   if (!/^IN[A-Z0-9]{9}[0-9]$/.test(String(input.isin || ""))) throw new Error("a verified ISIN is required");
   const section = (name: string, fallback: unknown = {}) => input[name] ?? fallback;
-  return { schema_version: IPO_PROFILE_SCHEMA_VERSION, ipo_id: input.ipo_id, isin: input.isin,
+  const profile = { schema_version: IPO_PROFILE_SCHEMA_VERSION, ipo_id: input.ipo_id, isin: input.isin,
     identity: section("identity"), company: section("company"), promoters: section("promoters", []), business: section("business"), issue: section("issue"), timetable: section("timetable"), objects: section("objects", []), expenses: section("expenses"), selling_shareholders: section("selling_shareholders", []), shareholding: section("shareholding"), reservation: section("reservation"), anchor: section("anchor", []), subscriptions: section("subscriptions", []), financials: section("financials"), kpis: section("kpis"), peers: section("peers", []), documents: section("documents", []), rhp_analysis: section("rhp_analysis"), sbi_analysis: section("sbi_analysis"), economic_transformations: section("economic_transformations", []), valuation: section("valuation"), listing: section("listing"), market: section("market"), provenance: section("provenance", {}), generated_at: generatedAt };
+  const missing = profileSchema.required.filter(key => !(key in profile));
+  const extra = Object.keys(profile).filter(key => !(key in profileSchema.properties));
+  if (missing.length || extra.length) throw new Error(`ipo-profile schema mismatch: missing=${missing.join(",")} extra=${extra.join(",")}`);
+  return profile;
 }

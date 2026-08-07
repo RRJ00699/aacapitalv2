@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aacapital.example/schemas/ipo-profile-v1.json",
+  "title": "AACapital IPO Profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "ipo_id", "isin", "identity", "company", "promoters", "business", "issue", "timetable", "objects", "expenses", "selling_shareholders", "shareholding", "reservation", "anchor", "subscriptions", "financials", "kpis", "peers", "documents", "rhp_analysis", "sbi_analysis", "economic_transformations", "valuation", "listing", "market", "provenance", "generated_at"],
+  "properties": {
+    "schema_version": { "const": "ipo-profile:v1" },
+    "ipo_id": { "type": "integer", "minimum": 1 },
+    "isin": { "type": "string", "pattern": "^IN[A-Z0-9]{9}[0-9]$" },
+    "identity": { "type": "object" }, "company": { "type": "object" },
+    "promoters": { "type": "array" }, "business": { "type": "object" }, "issue": { "type": "object" },
+    "timetable": { "type": "object" }, "objects": { "type": "array" }, "expenses": { "type": "object" },
+    "selling_shareholders": { "type": "array" }, "shareholding": { "type": "object" }, "reservation": { "type": "object" },
+    "anchor": { "type": "array" }, "subscriptions": { "type": "array" }, "financials": { "type": "object" },
+    "kpis": { "type": "object" }, "peers": { "type": "array" }, "documents": { "type": "array" },
+    "rhp_analysis": { "type": "object" }, "sbi_analysis": { "type": "object" }, "economic_transformations": { "type": "array" },
+    "valuation": { "type": "object" }, "listing": { "type": "object" }, "market": { "type": "object" },
+    "provenance": { "type": "object" }, "generated_at": { "type": "string" }
+  }
+}

@@ -1,8 +1,8 @@
-"""Deterministic PDF extraction and offline ipo-profile:v1 assembly.
+"""Bounded offline ipo-profile:v1 producer over canonical V2 facts only.
 
-The production caller must pass bytes returned by the verified document-store read.
-No model is invoked here; optional qualitative analysis is merged only into the five
-AI-owned fields and cannot replace facts carrying document/page provenance.
+Extraction ownership is deliberately outside this module:
+RHP/SBI -> approved AI extraction writers; anchor -> official anchor document writer.
+This module neither reads PDFs nor parses financial facts from prose.
 """
 from __future__ import annotations
 
@@ -10,102 +10,68 @@ import argparse
 import datetime as dt
 import json
 import re
-from dataclasses import dataclass
-from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-import fitz
-
-SCHEMA_VERSION = "ipo-profile:v1"
+SCHEMA_PATH = Path(__file__).parents[1] / "lib" / "intelligence" / "ipo-profile.schema.json"
 AI_FIELDS = frozenset({"qualitative_risk", "governance", "rhp_verdict", "sbi_verdict", "business_quality"})
-MONEY = re.compile(r"(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)\s*(?:crore|cr)", re.I)
 
-@dataclass(frozen=True)
-class Page:
-    number: int
-    text: str
+def profile_schema() -> dict[str, Any]:
+    """The checked-in JSON Schema is the sole cross-runtime contract owner."""
+    return json.loads(SCHEMA_PATH.read_text())
 
-def verified_pdf_pages(body: bytes, *, expected_sha256: str) -> list[Page]:
-    """Hash-check an R2 response before parsing; this is the extraction trust boundary."""
-    import hashlib
-    if hashlib.sha256(body).hexdigest() != expected_sha256:
-        raise ValueError("verified object read failed: sha256 mismatch")
-    if not body.startswith(b"%PDF-"):
-        raise ValueError("verified object read failed: invalid PDF")
-    with fitz.open(stream=body, filetype="pdf") as document:
-        return [Page(i + 1, page.get_text("text")) for i, page in enumerate(document)]
+def validate_profile(profile: dict[str, Any]) -> None:
+    """Dependency-free validation of the closed v1 shape defined by JSON Schema."""
+    schema = profile_schema()
+    missing = set(schema["required"]) - set(profile)
+    extra = set(profile) - set(schema["properties"])
+    if missing or extra:
+        raise ValueError(f"profile schema mismatch; missing={sorted(missing)} extra={sorted(extra)}")
+    if profile["schema_version"] != schema["properties"]["schema_version"]["const"]:
+        raise ValueError("profile schema_version mismatch")
+    if not isinstance(profile["ipo_id"], int) or profile["ipo_id"] <= 0:
+        raise ValueError("verified ipo_id is required")
+    if not re.fullmatch(schema["properties"]["isin"]["pattern"], profile["isin"]):
+        raise ValueError("verified ISIN is required")
+    for name, definition in schema["properties"].items():
+        expected = definition.get("type")
+        if expected == "object" and not isinstance(profile[name], dict): raise ValueError(f"{name} must be object")
+        if expected == "array" and not isinstance(profile[name], list): raise ValueError(f"{name} must be array")
 
-def _fact(value: Any, doc_id: int, page: Page, excerpt: str) -> dict[str, Any]:
-    return {"classification": "VERIFIED_FACT", "value": value, "provenance": {"document_id": doc_id, "page": page.number, "excerpt": excerpt.strip()[:500]}}
+def canonical_anchor_facts(documents: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Accept anchor rows only when provenance resolves to an official anchor document."""
+    anchor_ids = {d["id"] for d in documents if d.get("doc_type") == "anchor" and d.get("verified") is True}
+    return [f for f in facts if f.get("document_id") in anchor_ids]
 
-def _first(pages: Iterable[Page], pattern: str, doc_id: int, flags=re.I) -> dict[str, Any] | None:
-    rx = re.compile(pattern, flags)
-    for page in pages:
-        match = rx.search(page.text)
-        if match:
-            return _fact(match.group(1).strip(), doc_id, page, match.group(0))
-    return None
-
-def extract_rhp(pages: list[Page], doc_id: int) -> dict[str, Any]:
-    """Conservative labels-first extraction. Missing labels remain UNKNOWN."""
-    fields = {
-        "company": _first(pages, r"(?:name of (?:our )?company|issuer)\s*[:\-]\s*([^\n]+)", doc_id),
-        "fresh_issue": _first(pages, r"fresh issue[^\n]{0,80}?(?:₹|Rs\.?|INR)\s*([\d,.]+\s*(?:crore|cr))", doc_id),
-        "ofs": _first(pages, r"offer for sale[^\n]{0,80}?(?:₹|Rs\.?|INR)\s*([\d,.]+\s*(?:crore|cr))", doc_id),
-        "eps": _first(pages, r"(?:diluted\s+)?EPS\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.()\-]+)", doc_id),
-        "nav": _first(pages, r"(?:NAV|net asset value per equity share)\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.()\-]+)", doc_id),
-        "ronw": _first(pages, r"(?:RoNW|return on net worth)\s*[:\-]?\s*([\d,.()\-]+%?)", doc_id),
-        "debt": _first(pages, r"(?:total borrowings|total debt)\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.()\-]+)", doc_id),
-        "cash": _first(pages, r"cash and cash equivalents\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.()\-]+)", doc_id),
-        "interest_expense": _first(pages, r"(?:finance costs|interest expense)\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.()\-]+)", doc_id),
-    }
-    # Evidence-rich sections are retained without pretending prose is a numeric fact.
-    sections = {}
-    for key, heading in {"objects":"objects of the offer", "litigation":"outstanding litigation", "contingent_liabilities":"contingent liabilities", "related_businesses":"related party transactions", "peers":"comparison with listed industry peers"}.items():
-        hit = _first(pages, rf"({heading}[^\n]*(?:\n[^\n]+){{0,8}})", doc_id)
-        if hit: sections[key] = hit
-    return {**{k:v for k,v in fields.items() if v}, **sections}
-
-def extract_anchor(pages: list[Page], doc_id: int) -> list[dict[str, Any]]:
-    rows=[]
-    rx=re.compile(r"^\s*(.+?)\s{2,}([\d,]+)\s{2,}(?:₹|Rs\.?)?\s*([\d,.]+)\s{2,}([\d.]+%)\s*$")
-    for page in pages:
-        for line in page.text.splitlines():
-            match=rx.match(line)
-            if match:
-                rows.append(_fact({"investor":match[1],"shares":int(match[2].replace(",","")),"amount":match[3],"allocation_pct":match[4]},doc_id,page,line))
-    return rows
-
-def extract_sbi(pages: list[Page], doc_id: int) -> dict[str, Any]:
-    return {k:v for k,v in {
-        "rating":_first(pages,r"(?:recommendation|rating)\s*[:\-]\s*([^\n]+)",doc_id),
-        "fair_value":_first(pages,r"(?:fair value|target price)\s*[:\-]?\s*(?:₹|Rs\.?)?\s*([\d,.]+)",doc_id),
-        "valuation_observation":_first(pages,r"(at the (?:upper|lower) price band[^\n]+)",doc_id),
-    }.items() if v}
-
-def build_profile(*, ipo_id: int, isin: str, identity: dict[str, Any], documents: list[dict[str, Any]], rhp: dict[str, Any] | None=None, anchor: list[dict[str, Any]] | None=None, sbi: dict[str, Any] | None=None, ai: dict[str, Any] | None=None, generated_at: str | None=None) -> dict[str, Any]:
-    if ipo_id <= 0 or not re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin): raise ValueError("verified ipo_id and ISIN are required")
-    rejected=set(ai or {})-AI_FIELDS
+def build_profile(*, ipo_id: int, isin: str, identity: dict[str, Any], company: dict[str, Any], issue: dict[str, Any],
+                  documents: list[dict[str, Any]], financials: dict[str, Any], kpis: dict[str, Any], valuation: dict[str, Any],
+                  transformations: list[dict[str, Any]] | None = None, anchor_facts: list[dict[str, Any]] | None = None,
+                  rhp_analysis: dict[str, Any] | None = None, sbi_analysis: dict[str, Any] | None = None,
+                  ai: dict[str, Any] | None = None, generated_at: str | None = None, **sections: Any) -> dict[str, Any]:
+    rejected = set(ai or {}) - AI_FIELDS
     if rejected: raise ValueError(f"AI attempted to write deterministic fields: {sorted(rejected)}")
-    rhp=rhp or {}; sbi=sbi or {}
-    empty={"state":"UNKNOWN","reason":"not deterministically extracted"}
-    return {"schema_version":SCHEMA_VERSION,"ipo_id":ipo_id,"isin":isin,"identity":identity,"company":rhp.get("company",empty),"promoters":[],"business":empty,"issue":{"fresh":rhp.get("fresh_issue",empty),"ofs":rhp.get("ofs",empty)},"timetable":{},"objects":rhp.get("objects",empty),"expenses":empty,"selling_shareholders":[],"shareholding":empty,"reservation":empty,"anchor":anchor or [],"subscriptions":[],"financials":{"debt":rhp.get("debt",empty),"cash":rhp.get("cash",empty),"interest_expense":rhp.get("interest_expense",empty)},"kpis":{"eps":rhp.get("eps",empty),"nav":rhp.get("nav",empty),"ronw":rhp.get("ronw",empty)},"peers":rhp.get("peers",empty),"documents":documents,"rhp_analysis":{k:v for k,v in (ai or {}).items() if k in {"qualitative_risk","governance","rhp_verdict","business_quality"}},"sbi_analysis":{**sbi,**({"sbi_verdict":ai["sbi_verdict"]} if ai and "sbi_verdict" in ai else {})},"economic_transformations":[],"valuation":{"status":"INSUFFICIENT_DATA"},"listing":{},"market":{},"provenance":{"deterministic":True,"ai_fields":sorted(set(ai or {}))},"generated_at":generated_at or dt.datetime.now(dt.timezone.utc).isoformat()}
+    profile = {"schema_version":"ipo-profile:v1","ipo_id":ipo_id,"isin":isin,"identity":identity,"company":company,
+      "promoters":sections.get("promoters",[]),"business":sections.get("business",{}),"issue":issue,"timetable":sections.get("timetable",{}),
+      "objects":sections.get("objects",[]),"expenses":sections.get("expenses",{}),"selling_shareholders":sections.get("selling_shareholders",[]),
+      "shareholding":sections.get("shareholding",{}),"reservation":sections.get("reservation",{}),
+      "anchor":canonical_anchor_facts(documents,anchor_facts or []),"subscriptions":sections.get("subscriptions",[]),
+      "financials":financials,"kpis":kpis,"peers":sections.get("peers",[]),"documents":documents,
+      "rhp_analysis":{**(rhp_analysis or {}),**{k:v for k,v in (ai or {}).items() if k in {"qualitative_risk","governance","rhp_verdict","business_quality"}}},
+      "sbi_analysis":{**(sbi_analysis or {}),**({"sbi_verdict":ai["sbi_verdict"]} if ai and "sbi_verdict" in ai else {})},
+      "economic_transformations":transformations or [],"valuation":valuation,"listing":sections.get("listing",{}),"market":sections.get("market",{}),
+      "provenance":{"fact_owners":{"financials":"financial_statements","valuation":"valuation","rhp":"rhp_findings/insights/source_facts","sbi":"ipo_research_notes","anchor":"documents(doc_type=anchor)"}},
+      "generated_at":generated_at or dt.datetime.now(dt.timezone.utc).isoformat()}
+    validate_profile(profile)
+    return profile
 
 def main() -> None:
-    parser=argparse.ArgumentParser(description="Bounded offline ipo-profile:v1 builder")
-    parser.add_argument("--input",type=Path,required=True,help="JSON array of already verified/extracted IPO inputs")
-    parser.add_argument("--output",type=Path)
-    parser.add_argument("--ipo-id",type=int)
-    parser.add_argument("--limit",type=int,default=25)
-    parser.add_argument("--dry-run",action="store_true")
+    parser=argparse.ArgumentParser(description="Bounded canonical-fact ipo-profile:v1 builder")
+    parser.add_argument("--input",type=Path,required=True); parser.add_argument("--output",type=Path)
+    parser.add_argument("--ipo-id",type=int); parser.add_argument("--limit",type=int,default=25); parser.add_argument("--dry-run",action="store_true")
     args=parser.parse_args()
     if not 1 <= args.limit <= 100: parser.error("--limit must be between 1 and 100")
-    rows=json.loads(args.input.read_text())
-    selected=[r for r in rows if args.ipo_id is None or r["ipo_id"]==args.ipo_id][:args.limit]
-    profiles=[build_profile(**r) for r in selected]
-    report={"selected":len(selected),"profiles":profiles if not args.dry_run else [],"dry_run":args.dry_run}
-    rendered=json.dumps(report,indent=2)
+    rows=json.loads(args.input.read_text()); selected=[r for r in rows if args.ipo_id is None or r["ipo_id"]==args.ipo_id][:args.limit]
+    profiles=[build_profile(**r) for r in selected]; rendered=json.dumps({"selected":len(selected),"profiles":[] if args.dry_run else profiles,"dry_run":args.dry_run},indent=2)
     if args.output and not args.dry_run: args.output.write_text(rendered)
     print(rendered)
 

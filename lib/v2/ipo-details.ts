@@ -11,6 +11,7 @@ const field = <T>(value: T | null | undefined, source: string, asOf: unknown = n
     : { state: "AVAILABLE", value, reason: null, source, as_of: asOf ? String(asOf) : null };
 const pending = <T>(reason: string, source: string): DetailField<T> => ({ state: "PENDING", value: null, reason, source, as_of: null });
 const missing = <T>(reason: string, source: string): DetailField<T> => ({ state: "MISSING", value: null, reason, source, as_of: null });
+const numberOrUndefined = (value: unknown): number | undefined => value == null || value === "" || !Number.isFinite(Number(value)) ? undefined : Number(value);
 
 export function detailsFromRow(row: Record<string, unknown>, generatedAt = new Date().toISOString()) {
   const findings = row.findings && typeof row.findings === "object" ? row.findings as Record<string, unknown> : null;
@@ -39,19 +40,28 @@ export function detailsFromRow(row: Record<string, unknown>, generatedAt = new D
     ? (outcomePending ? pending(`Listing outcome ${name} is pending until the IPO lists.`, "listing_outcomes") : missing(`Listing outcome ${name} is unavailable because no computed outcome is stored.`, "listing_outcomes"))
     : field(value as T, "listing_outcomes", row.outcome_computed_at);
 
-  const intelligenceProfile = Number.isInteger(Number(row.ipo_id)) && Number(row.ipo_id) > 0 ? buildIpoProfile({ ipo_id: Number(row.ipo_id), isin: String(row.isin).toUpperCase(),
+  const canonicalIsin = typeof row.isin === "string" && /^IN[A-Z0-9]{9}[0-9]$/i.test(row.isin) ? row.isin.toUpperCase() : null;
+  const proFormaInputs = { reported_debt_cr: numberOrUndefined(row.reported_debt_cr), cash_cr: numberOrUndefined(row.cash_cr),
+    debt_repayment_cr: numberOrUndefined(row.debt_repayment_cr), interest_expense_cr: numberOrUndefined(row.interest_expense_cr),
+    reported_pat_cr: numberOrUndefined(row.reported_pat_cr), post_issue_shares_cr: numberOrUndefined(row.post_issue_shares_cr),
+    issue_price: issuePrice ?? undefined, ebitda_cr: numberOrUndefined(row.ebitda_cr), equity_cr: numberOrUndefined(row.net_worth_cr),
+    canonical_roce: numberOrUndefined(row.roce), peer_pe: numberOrUndefined(row.peer_median_pe), operating_cash_flow_cr: numberOrUndefined(row.operating_cash_flow_cr), capex_cr: numberOrUndefined(row.capex_cr) };
+  const proForma = calculateProForma(proFormaInputs);
+  const meaningful = proForma.status === "AVAILABLE";
+  const intelligenceProfile = canonicalIsin && Number.isInteger(Number(row.ipo_id)) && Number(row.ipo_id) > 0 && meaningful ? buildIpoProfile({ ipo_id: Number(row.ipo_id), isin: canonicalIsin,
     identity: { company_name: String(row.company_name), symbol: row.sym ?? null, listing_date: row.listing_date ?? null },
     company: { name: String(row.company_name), classification: "VERIFIED_FACT", source: "ipo" }, promoters: [], business: {},
     issue: { issue_price: issuePrice, band_low: row.band_lo ?? null, band_high: row.band_hi ?? null, issue_size_cr: row.issue_size_cr ?? null, fresh_issue_cr: row.fresh_cr ?? null, ofs_cr: row.ofs_cr ?? null },
     timetable: { listing_date: row.listing_date ?? null }, objects: [], expenses: {}, selling_shareholders: [], shareholding: {}, reservation: {}, anchor: [], subscriptions: [],
-    financials: {}, kpis: {}, peers: [], documents: evidence.map((e:any)=>e.document).filter(Boolean),
+    financials: { reported_pat_cr: proFormaInputs.reported_pat_cr, reported_debt_cr: proFormaInputs.reported_debt_cr, cash_cr: proFormaInputs.cash_cr, ebitda_cr: proFormaInputs.ebitda_cr },
+    kpis: { canonical_roce: proFormaInputs.canonical_roce }, peers: [], documents: evidence.map((e:any)=>e.document).filter(Boolean),
     rhp_analysis: { verdict, findings, red_flags: junk }, sbi_analysis: { state: "UNKNOWN", reason: "No verified SBI extraction in this snapshot." }, economic_transformations: [],
-    valuation: calculateProForma({ issue_price: issuePrice ?? undefined }), listing: {}, market: {}, provenance: { verified_evidence: evidence, ai_may_overwrite_verified_facts: false },
+    valuation: proForma, listing: {}, market: {}, provenance: { verified_evidence: evidence, canonical_owners: { financials:"financial_statements", valuation:"valuation", facts:"source_facts" }, ai_may_overwrite_verified_facts: false },
   }, generatedAt) : null;
   return {
     schema_version: DETAILS_SCHEMA_VERSION, generated_at: generatedAt,
     intelligence_profile: intelligenceProfile,
-    identity: { isin: String(row.isin).toUpperCase(), symbol: row.sym ? String(row.sym) : null, company_name: String(row.company_name), listing_date: field(row.listing_date ? String(row.listing_date) : null, "ipo") },
+    identity: { isin: canonicalIsin, symbol: row.sym ? String(row.sym) : null, company_name: String(row.company_name), listing_date: field(row.listing_date ? String(row.listing_date) : null, "ipo") },
     issue: {
       issue_price: field(issuePrice, "ipo_issue"), band_low: field(row.band_lo == null ? null : Number(row.band_lo), "ipo_issue"), band_high: field(row.band_hi == null ? null : Number(row.band_hi), "ipo_issue"),
       issue_size_cr: field(row.issue_size_cr == null ? null : Number(row.issue_size_cr), "ipo_issue"), fresh_issue_cr: field(row.fresh_cr == null ? null : Number(row.fresh_cr), "ipo_issue"), ofs_cr: field(row.ofs_cr == null ? null : Number(row.ofs_cr), "ipo_issue"),
@@ -76,12 +86,23 @@ export async function fetchDetailsRows(sql: SqlClient, ipoIds: Array<string | nu
     SELECT i.id AS ipo_id, i.isin, UPPER(COALESCE(i.symbol,'')) AS sym, i.name_display AS company_name, i.listing_date,
       iss.issue_price,iss.band_lo,iss.band_hi,iss.issue_size_cr,iss.fresh_cr,iss.ofs_cr,iss.lot_size,iss.face_value,
       v.score,v.score_band,v.engine_version,v.computed_at AS valuation_computed_at,v.pe,v.pb,v.peer_median_pe,v.fair_value_lo,v.fair_value_hi,v.inputs_used,v.missing_inputs,v.inputs_used->>'pe_source' AS pe_source,v.inputs_used->>'pb_source' AS pb_source,
+      v.roce,fs.pat AS reported_pat_cr,fs.total_debt AS reported_debt_cr,fs.ebitda AS ebitda_cr,fs.net_worth AS net_worth_cr,
+      sf.cash_cr,sf.interest_expense_cr,sf.debt_repayment_cr,sf.operating_cash_flow_cr,sf.capex_cr,
+      CASE WHEN fs.pat IS NOT NULL AND (v.inputs_used->>'rhp_eps') ~ '^-?[0-9]+(\.[0-9]+)?$' THEN fs.pat / NULLIF((v.inputs_used->>'rhp_eps')::numeric,0) END AS post_issue_shares_cr,
       rf.findings,rf.model AS analysis_model,rf.prompt_version AS analysis_prompt_version,rf.confidence AS analysis_confidence,rf.analyzed_at,rf.red_flag_count,rf.junk_signals,
       de.fundamental_verdict,de.reasons AS decision_reasons,de.evidence_refs AS decision_evidence,de.decided_at,
       lo.listing_open,lo.gap_pct,lo.d1_close,lo.best_close,lo.worst_close,lo.pool,lo.hold_positive_vs_open,lo.winner_35,lo.ceiling_20,lo.computed_at AS outcome_computed_at,lo.dataset_version,
       COALESCE((SELECT json_agg(json_build_object('excerpt',s.excerpt,'page_number',s.page_number,'doc_id',s.doc_id,'document',json_build_object('doc_type',doc.doc_type,'url',doc.url,'sha256',doc.sha256,'page_count',doc.page_count),'category',s.category,'direction',s.direction,'source_type',s.source_type) ORDER BY s.id) FROM insights s JOIN documents doc ON doc.id=s.doc_id WHERE s.ipo_id=i.id AND s.is_current AND s.excerpt IS NOT NULL AND s.page_number IS NOT NULL), '[]'::json) AS verified_evidence
     FROM ipo i JOIN ipo_issue iss ON iss.ipo_id=i.id
     LEFT JOIN LATERAL (SELECT * FROM valuation x WHERE x.ipo_id=i.id AND x.engine_version LIKE 'v2-score-%' ORDER BY x.computed_at DESC LIMIT 1) v ON true
+    LEFT JOIN LATERAL (SELECT pat,total_debt,ebitda,net_worth FROM financial_statements x WHERE x.ipo_id=i.id ORDER BY (basis='consolidated') DESC, CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$' THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST LIMIT 1) fs ON true
+    LEFT JOIN LATERAL (SELECT
+      MAX(CASE WHEN field='cash_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS cash_cr,
+      MAX(CASE WHEN field='interest_expense_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS interest_expense_cr,
+      MAX(CASE WHEN field='debt_repayment_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS debt_repayment_cr,
+      MAX(CASE WHEN field='operating_cash_flow_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS operating_cash_flow_cr,
+      MAX(CASE WHEN field='capex_cr' AND value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN value::numeric END) AS capex_cr
+      FROM source_facts x WHERE x.ipo_id=i.id) sf ON true
     LEFT JOIN LATERAL (SELECT * FROM rhp_findings x WHERE x.ipo_id=i.id ORDER BY x.analyzed_at DESC LIMIT 1) rf ON true
     LEFT JOIN LATERAL (SELECT * FROM decisions x WHERE x.ipo_id=i.id ORDER BY x.decided_at DESC LIMIT 1) de ON true
     LEFT JOIN listing_outcomes lo ON lo.ipo_id=i.id WHERE i.id = ANY(${ipoIds})`;

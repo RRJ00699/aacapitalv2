@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildIpoProfile, calculateProForma, classifyTransformation } from "./ipo-profile";
+import schema from "./ipo-profile.schema.json";
 
 const fact = (value: unknown) => ({ classification: "VERIFIED_FACT" as const, value, source_document_id: 7, page: 42 });
 
@@ -24,9 +25,26 @@ test("capex without earnings guidance never becomes earnings", () => {
 
 test("acquisition intent with insufficient terms is optionality",()=>assert.equal(classifyTransformation("ACQUISITION",[fact("intends to acquire")]).status,"OPTIONAL"));
 
+test("evidence classification never upgrades missing or unverified evidence",()=>{
+  assert.equal(classifyTransformation("DEBT_REPAYMENT",[]).classification,"UNVERIFIED_UNKNOWN");
+  assert.equal(classifyTransformation("DEBT_REPAYMENT",[{classification:"UNVERIFIED_UNKNOWN",value:"claim"}]).classification,"UNVERIFIED_UNKNOWN");
+  assert.equal(classifyTransformation("DEBT_REPAYMENT",[fact("repayment")]).classification,"VERIFIED_FACT");
+  assert.equal(classifyTransformation("MERGER",[{classification:"UNVERIFIED_UNKNOWN",value:"intent"}]).classification,"SCENARIO_OPTIONALITY");
+});
+
 test("multiple and historical profiles use the identical canonical builder",()=>{
   const rows=([[1,"INE000000001"],[2,"INE000000002"],[99,"INE000000099"]] as Array<[number,string]>).map(([ipo_id,isin])=>buildIpoProfile({ipo_id,isin,identity:{historical:ipo_id===99}}));
   assert.equal(rows.length,3); assert.ok(rows.every(x=>x.schema_version==="ipo-profile:v1")); assert.equal((rows[2].identity as any).historical,true);
 });
 
 test("missing valuation inputs return INSUFFICIENT_DATA",()=>assert.deepEqual(calculateProForma({issue_price:100}),{status:"INSUFFICIENT_DATA",missing_inputs:["reported_debt_cr","cash_cr","reported_pat_cr","post_issue_shares_cr"]}));
+
+test("ROCE is consumed only from canonical valuation ownership",()=>{
+  const result=calculateProForma({reported_debt_cr:10,cash_cr:2,reported_pat_cr:5,post_issue_shares_cr:1,issue_price:50,ebitda_cr:100,canonical_roce:17.2});
+  assert.equal(result.status,"AVAILABLE"); if(result.status==="AVAILABLE"){assert.equal(result.roce,17.2);assert.equal(result.formulas.roce,"canonical valuation.roce (not recomputed)");}
+});
+
+test("TypeScript builder validates against the shared canonical schema",()=>{
+  const profile=buildIpoProfile({ipo_id:1,isin:"INE000000001"});
+  assert.deepEqual(Object.keys(profile).sort(),schema.required.slice().sort());
+});
