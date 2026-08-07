@@ -24,7 +24,6 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → SBI → Haiku/Sonnet → score → verdicts → consolidated → gates", heavy: true },
   { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Lean pipeline plus the post-lock candle purge", heavy: true },
   { key: "ipo_lifecycle",   label: "Run IPO lifecycle", desc: "Per-IPO NSE issue, forward subscription, anchor allocation and listing-day pre-open actions" },
-  { key: "consolidate",     label: "Golden table consolidation", desc: "Fill-empty into ipo_consolidated: intelligence scalars, RHP Sonnet + SBI Haiku JSON, street article, candles_json (listing→lock-in)" },
   { key: "news",            label: "Street news discovery", desc: "Whitelisted RSS (Reuters preferred, ET/MC/BS/Mint fallback) → one article per IPO; manual override wins" },
   { key: "peer_pe_notes",   label: "Peer P/E from SBI notes", desc: "Median of the Haiku-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
   { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
@@ -34,7 +33,6 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
   { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
   { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
-  { key: "rhp_auto",        label: "RHP auto (new IPOs)",   desc: "SEBI download → Sonnet extract (mainboard, $1 cap) → ipo_rhp_intel → purge PDF after anchor lock-in", heavy: true },
     { key: "ipomatrix",       label: "IPOMatrix enrich",     desc: "Fill anchors/structure for new IPOs from IPOMatrix JSON (needs fresh cookie)", heavy: false },
   { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
   // Added 2026-07-18: these were in job_runner's whitelist but had NO button, so
