@@ -36,6 +36,8 @@ jobs:
       - run: SUBPROC_COV=1 python -m pytest _scripts/tests/ -q --cov --cov-report=term
       - name: Canonical pipeline tests
         run: python -m pytest pipeline -q
+      - name: Repository contract tests
+        run: python -m pytest tests -q
       - name: Compile-check all scripts
         run: python -m py_compile _scripts/*.py _scripts/ipo/*.py
   security:

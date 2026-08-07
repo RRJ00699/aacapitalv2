@@ -44,9 +44,15 @@ next-env.d.ts
 .env*
 
 # data files — local only
-/data/*.csv
-/data/**/*.xlsx
-/data/**/*.xls
+/data/*
+!/data/research_notes/
+!/data/research_notes/**
+
+/_output/
+/ipo_backtest_export/
+
+/*.csv*
+/*.xlsx
 *.zip
 
 __pycache__/
