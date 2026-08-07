@@ -1,4 +1,5 @@
 import type { SqlClient } from "./sql";
+import { buildIpoProfile, calculateProForma } from "@/lib/intelligence/ipo-profile";
 
 export const DETAILS_SCHEMA_VERSION = "ipo-details-v1" as const;
 export const DETAILS_GMP_LAST_UPDATED = "2026-07-24";
@@ -38,8 +39,18 @@ export function detailsFromRow(row: Record<string, unknown>, generatedAt = new D
     ? (outcomePending ? pending(`Listing outcome ${name} is pending until the IPO lists.`, "listing_outcomes") : missing(`Listing outcome ${name} is unavailable because no computed outcome is stored.`, "listing_outcomes"))
     : field(value as T, "listing_outcomes", row.outcome_computed_at);
 
+  const intelligenceProfile = Number.isInteger(Number(row.ipo_id)) && Number(row.ipo_id) > 0 ? buildIpoProfile({ ipo_id: Number(row.ipo_id), isin: String(row.isin).toUpperCase(),
+    identity: { company_name: String(row.company_name), symbol: row.sym ?? null, listing_date: row.listing_date ?? null },
+    company: { name: String(row.company_name), classification: "VERIFIED_FACT", source: "ipo" }, promoters: [], business: {},
+    issue: { issue_price: issuePrice, band_low: row.band_lo ?? null, band_high: row.band_hi ?? null, issue_size_cr: row.issue_size_cr ?? null, fresh_issue_cr: row.fresh_cr ?? null, ofs_cr: row.ofs_cr ?? null },
+    timetable: { listing_date: row.listing_date ?? null }, objects: [], expenses: {}, selling_shareholders: [], shareholding: {}, reservation: {}, anchor: [], subscriptions: [],
+    financials: {}, kpis: {}, peers: [], documents: evidence.map((e:any)=>e.document).filter(Boolean),
+    rhp_analysis: { verdict, findings, red_flags: junk }, sbi_analysis: { state: "UNKNOWN", reason: "No verified SBI extraction in this snapshot." }, economic_transformations: [],
+    valuation: calculateProForma({ issue_price: issuePrice ?? undefined }), listing: {}, market: {}, provenance: { verified_evidence: evidence, ai_may_overwrite_verified_facts: false },
+  }, generatedAt) : null;
   return {
     schema_version: DETAILS_SCHEMA_VERSION, generated_at: generatedAt,
+    intelligence_profile: intelligenceProfile,
     identity: { isin: String(row.isin).toUpperCase(), symbol: row.sym ? String(row.sym) : null, company_name: String(row.company_name), listing_date: field(row.listing_date ? String(row.listing_date) : null, "ipo") },
     issue: {
       issue_price: field(issuePrice, "ipo_issue"), band_low: field(row.band_lo == null ? null : Number(row.band_lo), "ipo_issue"), band_high: field(row.band_hi == null ? null : Number(row.band_hi), "ipo_issue"),
