@@ -20,6 +20,8 @@ def _read(*p):
 def test_targets_require_mainboard_and_real_dates():
     src = _read("fetch_new_rhps.py")
     assert "FROM ipo i" in src
+    assert "LEFT JOIN ipo_issue issue ON issue.ipo_id = i.id" in src
+    assert "i.name_display" in src
     assert "i.is_mainboard = true" in src
     assert "listing_date IS NULL\n" not in src.split("NOT EXISTS")[0], \
         "NULL-dated junk rows must no longer qualify as targets"

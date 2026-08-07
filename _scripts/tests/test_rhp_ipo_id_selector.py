@@ -1,5 +1,7 @@
 """The owner activation selector must make an RHP run provably one-IPO bounded."""
 import importlib.util
+import io
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,7 +60,7 @@ def test_exact_one_selector_uses_neon_id_and_returns_one(monkeypatch):
     assert cursor.params == (45, 45, 45, 304)
 
 
-@pytest.mark.parametrize("reason", ["nonexistent", "ineligible"])
+@pytest.mark.parametrize("reason", ["nonexistent", "ineligible", "already-stored"])
 def test_missing_or_ineligible_exact_id_fails_nonzero(monkeypatch, reason):
     with pytest.raises(SystemExit, match="missing, ineligible") as error:
         run_query(monkeypatch, [], ipo_id=999)
@@ -90,3 +92,32 @@ def test_scheduled_query_without_selector_is_unchanged_and_unbounded(monkeypatch
 def test_selector_requires_positive_integer(value):
     with pytest.raises(Exception, match="positive integer"):
         load_module()._positive_ipo_id(value)
+
+
+def test_windows_import_never_replaces_or_closes_stdout(monkeypatch):
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, "platform", "win32")
+    load_module()
+    assert sys.stdout is stream
+    assert not stream.closed
+    stream.write("capture remains writable")
+
+
+def test_exact_selector_compiles_against_live_readonly_schema():
+    url = os.environ.get("NEON_READONLY_DATABASE_URL")
+    if not url:
+        pytest.skip("NEON_READONLY_DATABASE_URL not available")
+    import psycopg2
+
+    module = load_module()
+    sql, params = module.selector_query(45, ipo_id=1)
+    conn = psycopg2.connect(url, connect_timeout=20)
+    try:
+        conn.set_session(readonly=True, autocommit=False)
+        cur = conn.cursor()
+        cur.execute("EXPLAIN " + sql, params)
+        assert cur.fetchall()
+        conn.rollback()
+    finally:
+        conn.close()

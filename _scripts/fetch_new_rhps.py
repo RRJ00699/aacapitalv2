@@ -16,14 +16,36 @@ Fast: one page load, a handful of targeted downloads. Never walks history.
   python _scripts/fetch_new_rhps.py --days 45  # how far back counts as "new" (default 45)
 """
 import os
-import re, sys, io, re, argparse, unicodedata
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+import re, sys, re, argparse, unicodedata
 
 BASE = "https://www.sebi.gov.in"
 LISTING_URL = f"{BASE}/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=11"
 SKIP_TITLE_RE = re.compile(r"abridged|corrigendum|addendum|notice|advertisement", re.I)
 OUT_DIR = "rhps"
+
+SELECTOR_SQL = """
+        SELECT i.id, i.name_display, i.isin,
+               COALESCE(i.listing_date, issue.open_date, CURRENT_DATE)
+        FROM ipo i
+        LEFT JOIN ipo_issue issue ON issue.ipo_id = i.id
+        WHERE i.is_mainboard = true
+          AND (
+                (i.listing_date IS NOT NULL AND i.listing_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (issue.close_date IS NOT NULL AND issue.close_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (issue.open_date IS NOT NULL AND issue.open_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM ipo_stage_state st
+              WHERE st.ipo_id = i.id AND st.stage = 'RHP_DOWNLOADED'
+                AND st.next_retry_at IS NOT NULL AND st.next_retry_at > NOW())
+          AND NOT EXISTS (
+              SELECT 1 FROM documents d
+              WHERE d.ipo_id = i.id AND d.doc_type = 'rhp'
+                AND d.object_key IS NOT NULL)
+"""
 
 def norm(s):
     """Doc-word pre-strip (rhp/drhp/prospectus/red herring/the/india — SEBI
@@ -56,42 +78,25 @@ def _positive_ipo_id(value):
     return ipo_id
 
 
+def _configure_cli_stdout():
+    """Use UTF-8 on Windows CLI runs without replacing the stdout object."""
+    if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def selector_query(days, ipo_id=None):
+    id_predicate = " AND i.id = %s" if ipo_id is not None else ""
+    params = (days, days, days, ipo_id) if ipo_id is not None else (days, days, days)
+    return SELECTOR_SQL + id_predicate, params
+
+
 def new_ipos_without_rhp(days, ipo_id=None):
     import psycopg2
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("no DATABASE_URL")
     c = psycopg2.connect(DB, connect_timeout=20); cur = c.cursor()
-    # new = a REAL mainboard IPO in the recent/upcoming window, AND no
-    # extraction yet. Baseline 2026-07-21: rows like NTPC / Standard Chartered
-    # PLC / Shipping Corp (discovery junk with NULL dates) were PERMANENT
-    # targets under the old "listing_date IS NULL OR ..." clause — they drove
-    # the SEBI over-matching. A target must now (a) be mainboard, (b) carry at
-    # least one real IPO date inside [-days, +60d]. Historical RHPs live on the
-    # owner's local machine — only NEW IPOs need fetching (owner 2026-07-21).
-    id_predicate = " AND i.id = %s" if ipo_id is not None else ""
-    cur.execute("""
-        SELECT i.id, i.name, i.isin, COALESCE(i.listing_date, i.open_date, CURRENT_DATE)
-        FROM ipo i
-        WHERE i.is_mainboard = true
-          AND (
-                (i.listing_date IS NOT NULL AND i.listing_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-             OR (i.close_date IS NOT NULL AND i.close_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-             OR (i.open_date IS NOT NULL AND i.open_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-          )
-          -- PR-C: honor per-IPO retry backoff (bounded retries; one failed
-          -- IPO never blocks another — its next_retry_at only gates ITSELF)
-          AND NOT EXISTS (
-              SELECT 1 FROM ipo_stage_state st
-              WHERE st.ipo_id = i.id AND st.stage = 'RHP_DOWNLOADED'
-                AND st.next_retry_at IS NOT NULL AND st.next_retry_at > NOW())
-          AND NOT EXISTS (
-              SELECT 1 FROM documents d
-              WHERE d.ipo_id = i.id AND d.doc_type = 'rhp'
-                AND d.object_key IS NOT NULL)
-    """ + id_predicate, (days, days, days, ipo_id) if ipo_id is not None else (days, days, days))
+    sql, params = selector_query(days, ipo_id)
+    cur.execute(sql, params)
     names = cur.fetchall()
     c.close()
     if ipo_id is not None:
@@ -379,4 +384,5 @@ def _download_matched(matched):
         sys.exit(1)
 
 if __name__ == "__main__":
+    _configure_cli_stdout()
     main()
