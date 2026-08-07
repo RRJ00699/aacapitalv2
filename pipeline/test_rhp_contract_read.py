@@ -43,10 +43,11 @@ def test_selects_neon_object_key_and_exact_get_without_list(monkeypatch):
     conn = Conn(row())
     calls = []
     monkeypatch.setattr(r2, "get_document", lambda key: calls.append(key) or PDF)
-    path, source, _, doc_id = drive.resolve_rhp(conn, 99)
+    result = drive.resolve_rhp(conn, 99)
     try:
         assert calls == ["documents/rhp/INEFIX/fixture.pdf"]
-        assert doc_id == 17 and source == "r2-contract-v1"
+        assert result.doc_id == 17 and result.source == "r2-contract-v1"
+        assert result.status == "verified"
         assert "object_key IS NOT NULL" in conn.cur.sql
         assert "byte_size IS NOT NULL" in conn.cur.sql
         assert "object_contract_version='1'" in conn.cur.sql
@@ -54,7 +55,7 @@ def test_selects_neon_object_key_and_exact_get_without_list(monkeypatch):
         assert "url" not in conn.cur.sql.lower()
         assert not hasattr(r2.R2DocumentStore, "list_documents")
     finally:
-        os.remove(path)
+        os.remove(result.path)
 
 @pytest.mark.parametrize(("ledger_row", "content", "message"), [
     (row(sha256="0" * 64), PDF, "sha256"),
@@ -68,14 +69,41 @@ def test_contract_mismatch_rejects_before_sonnet(monkeypatch, ledger_row, conten
 
 def test_missing_object_key_is_explicit_and_performs_no_r2_operation(monkeypatch):
     monkeypatch.setattr(r2, "get_document", lambda key: pytest.fail("unexpected R2 GET"))
-    assert drive.resolve_rhp(Conn(None), 99) == (None, "missing_object_key", None, None)
+    result = drive.resolve_rhp(Conn(None), 99)
+    assert result.status == "missing_object_key"
+    assert result.path is None and result.source is None and result.base is None
+    assert result.doc_id is None
 
 
 def test_duplicate_tuple_is_checked_by_doc_id_model_prompt(monkeypatch):
+    import rhp_sonnet
     conn = Conn((1,))
     assert drive.rhp_already_done(conn, 17) is True
     assert "doc_id=%s" in conn.cur.sql and "model=%s" in conn.cur.sql
-    assert conn.cur.params == (17, "claude-sonnet-4-6", "v2-full")
+    assert conn.cur.params == (17, rhp_sonnet.MODEL, rhp_sonnet.PROMPT_VERSION)
+
+
+def test_completed_tuple_is_skipped_before_r2_get(monkeypatch):
+    monkeypatch.setattr(drive, "select_rhp", lambda *_: drive.RHPResolution(
+        status="selected", path=None, source="r2-contract-v1", base="ipo99", doc_id=17))
+    monkeypatch.setattr(drive, "rhp_already_done", lambda *_: True)
+    monkeypatch.setattr(drive, "fetch_rhp", lambda *_: pytest.fail("unexpected R2 GET"))
+    result = drive.step_rhp(object(), 99, "Fixture", True, 0, 1)
+    assert result["status"] == "skipped"
+    assert result["why"] == "document/model/prompt extraction exists"
+
+
+def test_payable_count_uses_current_doc_and_dedup_without_r2_get(monkeypatch):
+    documents = {
+        1: drive.RHPResolution("selected", None, "r2-contract-v1", "ipo1", 11),
+        2: drive.RHPResolution("selected", None, "r2-contract-v1", "ipo2", 22),
+        3: drive.RHPResolution("missing_object_key", None, None, None, None),
+    }
+    monkeypatch.setattr(drive, "select_rhp", lambda _conn, ipo_id: documents[ipo_id])
+    monkeypatch.setattr(drive, "rhp_already_done", lambda _conn, doc_id: doc_id == 11)
+    monkeypatch.setattr(r2, "get_document", lambda *_: pytest.fail("unexpected R2 GET"))
+    targets = [(1, "ONE", "One"), (2, "TWO", "Two"), (3, "THREE", "Three")]
+    assert drive.payable_rhp_count(object(), targets) == 1
 
 def test_complete_details_publication_and_consumer_keep_doc_evidence():
     root = os.path.dirname(os.path.dirname(__file__))

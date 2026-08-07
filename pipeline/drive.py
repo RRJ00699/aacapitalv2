@@ -29,6 +29,7 @@ with --rhp, and --max-spend caps the run. Default is a dry run that spends nothi
   python drive.py --ids 710 --write --rhp --max-spend 0.50
 """
 import os, sys, io, json, time, argparse, urllib.request, datetime as dt
+from dataclasses import dataclass, replace
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     except Exception: pass
@@ -38,6 +39,21 @@ FILE_BUILD = "drive 2026-08-01c — quiet ntfy + stage-aware pending"
 MANIFEST = "drive_manifest.json"
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "aacapital-access")
 RHP_COST_EST = 0.134          # measured on Indo-MIM 08-01 (21282 in / 4701 out)
+
+
+@dataclass(frozen=True)
+class RHPResolution:
+    """Explicit state carried from ledger selection through exact-object verification."""
+    status: str
+    path: str | None
+    source: str | None
+    base: str | None
+    doc_id: int | None
+    object_key: str | None = None
+    sha256: str | None = None
+    byte_size: int | None = None
+    content_type: str | None = None
+    contract_version: str | None = None
 
 
 # ---------------------------------------------------------------- manifest
@@ -90,10 +106,11 @@ def step_nse(conn, ipo_id, symbol, session, write):
 
 def rhp_already_done(conn, doc_id):
     """The ledger document/model/prompt tuple is the paid-call idempotency key."""
+    import rhp_sonnet
     cur = conn.cursor()
     cur.execute("""SELECT 1 FROM rhp_findings
                     WHERE doc_id=%s AND model=%s AND prompt_version=%s LIMIT 1""",
-                (doc_id, "claude-sonnet-4-6", "v2-full"))
+                (doc_id, rhp_sonnet.MODEL, rhp_sonnet.PROMPT_VERSION))
     return cur.fetchone() is not None
 
 
@@ -121,13 +138,8 @@ def find_local_rhp(ipo_id, name, rhp_dir="rhps"):
     return hits[0] if hits else None
 
 
-def resolve_rhp(conn, ipo_id, name=None, rhp_dir="rhps", ignore_local=False):
-    """Resolve only the current verified contract-v1 ledger row and exact object key.
-
-    ``ignore_local`` remains accepted for CLI compatibility but contract-v1 extraction
-    never consults local filenames or ``documents.url``.
-    """
-    import r2, tempfile, hashlib
+def select_rhp(conn, ipo_id):
+    """Select current contract-v1 metadata without reading any R2 bytes."""
     cur = conn.cursor()
     cur.execute("""SELECT id, object_key, sha256, byte_size, content_type,
                           object_contract_version
@@ -139,33 +151,57 @@ def resolve_rhp(conn, ipo_id, name=None, rhp_dir="rhps", ignore_local=False):
                     ORDER BY fetched_at DESC, id DESC LIMIT 1""", (ipo_id,))
     row = cur.fetchone()
     if not row:
-        return None, "missing_object_key", None, None
+        return RHPResolution(status="missing_object_key", path=None, source=None,
+                             base=None, doc_id=None)
     doc_id, object_key, sha, byte_size, content_type, contract_version = row
-    if content_type != "application/pdf" or str(contract_version) != "1":
+    return RHPResolution(
+        status="selected", path=None, source="r2-contract-v1", base=f"ipo{ipo_id}",
+        doc_id=doc_id, object_key=object_key, sha256=sha, byte_size=byte_size,
+        content_type=content_type, contract_version=str(contract_version),
+    )
+
+
+def fetch_rhp(selected):
+    """GET and verify the exact object described by a selected ledger result."""
+    if selected.status != "selected":
+        return selected
+    import r2, tempfile, hashlib
+    if selected.content_type != "application/pdf" or selected.contract_version != "1":
         raise ValueError("document ledger contract mismatch")
-    content = r2.get_document(object_key)  # exact-key GET; R2 LIST is never used
+    content = r2.get_document(selected.object_key)  # exact-key GET; R2 LIST is never used
     if not content.startswith(b"%PDF-"):
         raise ValueError("document bytes are not a PDF")
-    if len(content) != byte_size:
+    if len(content) != selected.byte_size:
         raise ValueError("document byte-size mismatch")
     got = hashlib.sha256(content).hexdigest()
-    if not sha or got != sha:
+    if not selected.sha256 or got != selected.sha256:
         raise ValueError("document sha256 mismatch")
     fd, tmp = tempfile.mkstemp(suffix=".pdf"); os.close(fd)
     with open(tmp, "wb") as fh: fh.write(content)
-    print(f"  [r2] verified contract-v1 RHP for ipo {ipo_id}, doc_id={doc_id}")
-    return tmp, "r2-contract-v1", f"ipo{ipo_id}", doc_id
+    print(f"  [r2] verified contract-v1 RHP, doc_id={selected.doc_id}")
+    return replace(selected, status="verified", path=tmp)
+
+
+def resolve_rhp(conn, ipo_id, name=None, rhp_dir="rhps", ignore_local=False):
+    """Select and fetch the current verified contract-v1 ledger object.
+
+    ``ignore_local`` remains accepted for CLI compatibility but contract-v1 extraction
+    never consults local filenames or ``documents.url``.
+    """
+    return fetch_rhp(select_rhp(conn, ipo_id))
 
 
 def step_rhp(conn, ipo_id, name, write, spent, max_spend, ignore_local=False):
     """RHP extraction + routing. THE ONLY STEP THAT COSTS MONEY."""
-    pdf = src = base = doc_id = None
-    pdf, src, base, doc_id = resolve_rhp(conn, ipo_id, name, ignore_local=ignore_local)
-    if not pdf:
+    resolution = select_rhp(conn, ipo_id)
+    if resolution.status != "selected":
         return {"step": "rhp", "status": "skipped",
                 "why": "no current fully verified contract-v1 document (missing object_key is legacy)"}
-    if rhp_already_done(conn, doc_id):
+    if rhp_already_done(conn, resolution.doc_id):
         return {"step": "rhp", "status": "skipped", "why": "document/model/prompt extraction exists"}
+    resolution = fetch_rhp(resolution)
+    pdf, src, base, doc_id = (resolution.path, resolution.source, resolution.base,
+                              resolution.doc_id)
     try:
         if spent + RHP_COST_EST > max_spend:
             return {"step": "rhp", "status": "skipped",
@@ -207,6 +243,16 @@ def step_rhp(conn, ipo_id, name, write, spent, max_spend, ignore_local=False):
         if src == "r2-contract-v1" and pdf and os.path.exists(pdf):
             try: os.remove(pdf)
             except OSError: pass
+
+
+def payable_rhp_count(conn, targets):
+    """Count targets requiring a paid call, without downloading their documents."""
+    count = 0
+    for ipo_id, _symbol, _name in targets:
+        selected = select_rhp(conn, ipo_id)
+        if selected.status == "selected" and not rhp_already_done(conn, selected.doc_id):
+            count += 1
+    return count
 
 
 def step_derived(conn, ipo_id, write):
@@ -268,8 +314,7 @@ def main():
     print(f"  {len(targets)} IPOs · mode={'WRITE' if write else 'DRY-RUN'} · "
           f"RHP={'ON (paid)' if a.rhp else 'OFF (free run)'} · cap=${a.max_spend}")
     if a.rhp and write:
-        # Exact payable count is resolved per current ledger document in step_rhp.
-        n_pay = len(targets)
+        n_pay = payable_rhp_count(conn, targets)
         print(f"  COST: up to {n_pay} RHP calls x ${RHP_COST_EST} = "
               f"${n_pay * RHP_COST_EST:.2f} (hard cap ${a.max_spend})")
     print()

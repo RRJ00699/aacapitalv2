@@ -7,12 +7,16 @@ Processes recent-first. Returns a rich, source-cited forensic summary + structur
   python rhp_sonnet.py --pdf rhps/laser.pdf                 # single
   python rhp_sonnet.py --dir rhps --year-min 2021 --cap 20  # batch recent-first, capped
 """
-import os,sys,json,argparse,glob,urllib.request,time,io,re
+import os,sys,json,argparse,glob,urllib.request,time,re
 import hashlib
-try:
-    sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding="utf-8",errors="replace")
-    sys.stderr=io.TextIOWrapper(sys.stderr.buffer,encoding="utf-8",errors="replace")
-except Exception: pass
+
+
+def _configure_cli_streams():
+    """Use UTF-8 for direct CLI runs without replacing importers' capture streams."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
 
 MODEL="claude-sonnet-4-6"
 IN_RATE=3.00/1_000_000    # $ per input token
@@ -597,6 +601,7 @@ def selftest():
     return ok
 
 if __name__=="__main__":
+    _configure_cli_streams()
     if "--selftest" in sys.argv:
         sys.exit(0 if selftest() else 1)
     main()
