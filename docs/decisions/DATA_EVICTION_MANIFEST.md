@@ -66,3 +66,36 @@ The script creates the destination, archives directories, copies standalone repo
 **Reason:** active SBI/cron callers.
 
 **Open follow-up:** migrate the SBI/research-note lane before removal. This execution did not propose a new Neon table or change or delete an R2 object.
+
+## Phase 4 root-launcher archive evidence
+
+**OWNER ARCHIVE VERIFIED — 2026-08-07**
+
+Before the 11 approved root launchers were removed from Git, the owner ran the
+Phase-4 export and reported the following verified output:
+
+| Verification | Owner-verified value |
+|---|---:|
+| Source file count | 11 |
+| Source byte count | 21,312 |
+| ZIP entry count | 11 |
+| ZIP uncompressed byte count | 21,312 |
+| ZIP SHA256 | `95a9a2f3a2e540176a098954e9fd75416fc785b328cade9de166de1c96796824` |
+
+- **Manifest:** `C:\aacapital-exports\cleanup-phase4\2026-08-07\manifest-sha256.tsv`
+- **Archive:** `C:\aacapital-exports\cleanup-phase4\2026-08-07\cleanup-phase4-root-launchers.zip`
+
+The 11 launcher deletions are authorized and recoverable from both Git history
+and the verified owner-local ZIP plus SHA256 manifest.
+
+## PR #314 scope boundary
+
+PR #314 is a bounded root-layout and documentation cleanup. It does **not**
+claim final repository cleanup completion. The following work is explicitly
+**not completed in #314**:
+
+- `_scripts` quarantine;
+- approximately 145 V1-referencing `_scripts` files remain;
+- runtime V1 migration, which remains the next cleanup PR;
+- the SBI / `research_notes` lane, which remains deferred; and
+- D1 migration and public-route database cleanup, which remain deferred.
