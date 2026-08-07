@@ -351,7 +351,7 @@ def upsert(company, fields, apply):
         log.info(f"  (skipped, no such column: {skipped})")
     if not writable:
         conn.close(); return
-    # STRONG KEY FIRST (SCHEMA.md RULE 2 / owner rule: exact normalized name over
+    # STRONG KEY FIRST (docs/archive/SCHEMA_V1.md RULE 2 / owner rule: exact normalized name over
     # fuzzy containment). The old path went straight to ILIKE '%company%', which
     # can resolve to exactly ONE row that is the WRONG row (e.g. "%Laser%"
     # matching a different Laser entity) and then UPDATEs it. Canon-equality is

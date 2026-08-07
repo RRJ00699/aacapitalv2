@@ -66,7 +66,7 @@ pipeline we maintain.
 | ops: `job_runs`, `pipeline_steps`, `pipeline_failures` | observability | pipeline | Settings |
 
 **Everything else is archived.** No new table without a business case in
-IPO_BUSINESS_REQUIREMENTS.md.
+docs/specifications/IPO_BUSINESS_REQUIREMENTS.md.
 
 ---
 

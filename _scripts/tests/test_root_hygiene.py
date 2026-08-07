@@ -25,7 +25,8 @@ RELOCATED = [
     "missing_financials_to_fetch.txt", "sbi_api.json", "build_errors.txt",
 ]
 
-KEPT_AT_ROOT = ["link_brlm_scores.py", "load_instrument_tokens.py", "real_return_analysis.py"]
+RELOCATED_LIVE = ["_scripts/link_brlm_scores.py", "_scripts/load_instrument_tokens.py",
+                  "research/backtests/legacy_real_return_analysis.py"]
 
 
 def test_relocated_clutter_not_at_root():
@@ -38,7 +39,7 @@ def test_relocated_clutter_preserved_in_archive():
     assert not missing, f"relocated files missing from _archive/ (nothing deleted rule): {missing}"
 
 
-def test_referenced_root_scripts_kept():
-    """Regression guard: scripts referenced as run-commands must stay at root."""
-    gone = [f for f in KEPT_AT_ROOT if not (ROOT / f).exists()]
-    assert not gone, f"a still-referenced root script was archived: {gone}"
+def test_referenced_root_scripts_relocated_with_updated_callers():
+    """Referenced tools remain tracked in their final operational/research zones."""
+    missing = [f for f in RELOCATED_LIVE if not (ROOT / f).exists()]
+    assert not missing, f"a referenced script was lost during relocation: {missing}"

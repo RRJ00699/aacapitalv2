@@ -7,7 +7,7 @@ import React, { useState } from "react";
    • SETUP line — the tested playbook engine (STACK/CORE/core-lite/avoid)
    • GMP strip — day-before % (the r=+0.74 predictor) + hi–lo range + band
    • EDGE grid — anchors · OFS mix · PE vs peer · QIB · band, colored by
-     the locked thresholds from IPO_BUSINESS_REQUIREMENTS.md §5
+     the locked thresholds from docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §5
    • FV empty-state — shows fair_note reason, never a fake number
    • RHP expand — + governance flag chips when present in full_json
    All --t-* vars → light/dark/PWA identical. Bindings: route.ts payload only.

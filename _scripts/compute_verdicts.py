@@ -2,7 +2,7 @@
 """
 compute_verdicts.py — the master verdict engine (TRADE / WATCH / CAUTION / AVOID).
 
-Rebuilt from the LOCKED, backtest-proven logic (IPO_BUSINESS_REQUIREMENTS.md):
+Rebuilt from the LOCKED, backtest-proven logic (docs/specifications/IPO_BUSINESS_REQUIREMENTS.md):
   - Score bands are monotonic on clean data: AVOID 60% / NEUTRAL 73% /
     FAVORABLE 79% / STRONG 81% win. The band is the quantitative signal.
   - RHP forensic gate (ipo_rhp_intel) is the governance junk-detector.

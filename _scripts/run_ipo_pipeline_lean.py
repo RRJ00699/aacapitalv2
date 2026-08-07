@@ -3,7 +3,7 @@
 run_ipo_pipeline_lean.py — the LEAN IPO data workflow.
 
 Runs ONLY the steps that feed LIVE (canonical) tables from APPROVED sources,
-per DATA_ARCHITECTURE.md. Cut vs the old run_ipo_pipeline.py:
+per docs/architecture/DATA_ARCHITECTURE.md. Cut vs the old run_ipo_pipeline.py:
   - fetch_institutional_deals (institutional_large_deals — not IPO-needed)
   - fetch_insider_trades (insider_transactions — not IPO-needed)
   - compute_convergence_ranking + snapshot_convergence (abandoned engine bloat)
@@ -220,7 +220,7 @@ def main():
     step("d10 outcome precompute",          ["compute_d10.py"])
     step("reconcile listing dates",         ["reconcile_listing_dates.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     # REMOVED 2026-07-18 (dead step): "close-in-range strength" — CIR is REJECTED
-    # in IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
+    # in docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §5 as pure leakage; no route or compute reads
     # the CIR columns. Script archived to _archive/. (close_in_range.py)
     step("master computables backfill",     ["backfill_master_computables.py"])
     # FIXED 2026-07-21 (owner pipeline run): this called a peer-PE script name
