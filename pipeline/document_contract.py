@@ -13,7 +13,7 @@ from typing import Any, BinaryIO, Mapping
 CONTRACT_VERSION = "1"
 PDF_CONTENT_TYPE = "application/pdf"
 MAX_PDF_BYTES = 100 * 1024 * 1024
-_MIN_PDF_BYTES = {"rhp": 100 * 1024, "sbi": 10 * 1024}
+_MIN_PDF_BYTES = {"rhp": 100 * 1024, "sbi": 10 * 1024, "anchor": 10 * 1024}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ISIN_RE = re.compile(r"^IN[A-Z0-9]{9}[0-9]$")
 
@@ -35,7 +35,7 @@ class ValidatedPDF:
 def normalize_document_type(value: str) -> str:
     """Return the canonical storage type; only owner-approved types are valid."""
     if not isinstance(value, str) or value.strip().lower() not in _MIN_PDF_BYTES:
-        raise ValueError("document type must be 'rhp' or 'sbi'")
+        raise ValueError("document type must be 'rhp', 'sbi', or 'anchor'")
     return value.strip().lower()
 
 
