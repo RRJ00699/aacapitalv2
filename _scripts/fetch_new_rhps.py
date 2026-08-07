@@ -16,13 +16,36 @@ Fast: one page load, a handful of targeted downloads. Never walks history.
   python _scripts/fetch_new_rhps.py --days 45  # how far back counts as "new" (default 45)
 """
 import os
-import re, sys, io, re, argparse, unicodedata
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+import re, sys, re, argparse, unicodedata
 
 BASE = "https://www.sebi.gov.in"
 LISTING_URL = f"{BASE}/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=11"
 SKIP_TITLE_RE = re.compile(r"abridged|corrigendum|addendum|notice|advertisement", re.I)
 OUT_DIR = "rhps"
+
+SELECTOR_SQL = """
+        SELECT i.id, i.name_display, i.isin,
+               COALESCE(i.listing_date, issue.open_date, CURRENT_DATE)
+        FROM ipo i
+        LEFT JOIN ipo_issue issue ON issue.ipo_id = i.id
+        WHERE i.is_mainboard = true
+          AND (
+                (i.listing_date IS NOT NULL AND i.listing_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (issue.close_date IS NOT NULL AND issue.close_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+             OR (issue.open_date IS NOT NULL AND issue.open_date
+                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM ipo_stage_state st
+              WHERE st.ipo_id = i.id AND st.stage = 'RHP_DOWNLOADED'
+                AND st.next_retry_at IS NOT NULL AND st.next_retry_at > NOW())
+          AND NOT EXISTS (
+              SELECT 1 FROM documents d
+              WHERE d.ipo_id = i.id AND d.doc_type = 'rhp'
+                AND d.object_key IS NOT NULL)
+"""
 
 def norm(s):
     """Doc-word pre-strip (rhp/drhp/prospectus/red herring/the/india — SEBI
@@ -45,64 +68,62 @@ def slugify(name):
     s = re.sub(r"\b(limited|ltd|rhp|drhp|prospectus)\b\.?", "", s, flags=re.I)
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "unknown"
 
-def new_ipos_without_rhp(days):
+def _positive_ipo_id(value):
+    try:
+        ipo_id = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("--ipo-id must be a positive integer") from None
+    if ipo_id <= 0:
+        raise argparse.ArgumentTypeError("--ipo-id must be a positive integer")
+    return ipo_id
+
+
+def _configure_cli_stdout():
+    """Use UTF-8 on Windows CLI runs without replacing the stdout object."""
+    if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def selector_query(days, ipo_id=None):
+    id_predicate = " AND i.id = %s" if ipo_id is not None else ""
+    params = (days, days, days, ipo_id) if ipo_id is not None else (days, days, days)
+    return SELECTOR_SQL + id_predicate, params
+
+
+def new_ipos_without_rhp(days, ipo_id=None):
     import psycopg2
     DB = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
     if not DB: sys.exit("no DATABASE_URL")
     c = psycopg2.connect(DB, connect_timeout=20); cur = c.cursor()
-    # new = a REAL mainboard IPO in the recent/upcoming window, AND no
-    # extraction yet. Baseline 2026-07-21: rows like NTPC / Standard Chartered
-    # PLC / Shipping Corp (discovery junk with NULL dates) were PERMANENT
-    # targets under the old "listing_date IS NULL OR ..." clause — they drove
-    # the SEBI over-matching. A target must now (a) be mainboard, (b) carry at
-    # least one real IPO date inside [-days, +60d]. Historical RHPs live on the
-    # owner's local machine — only NEW IPOs need fetching (owner 2026-07-21).
-    cur.execute("""
-        SELECT ii.company_name
-        FROM ipo_intelligence ii
-        WHERE COALESCE(ii.is_sme, false) = false
-          AND (
-                (ii.listing_date IS NOT NULL AND ii.listing_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-             OR (ii.close_date IS NOT NULL AND ii.close_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-             OR (ii.open_date IS NOT NULL AND ii.open_date
-                     BETWEEN CURRENT_DATE - INTERVAL '%s days' AND CURRENT_DATE + INTERVAL '60 days')
-          )
-          -- PR-C: honor per-IPO retry backoff (bounded retries; one failed
-          -- IPO never blocks another — its next_retry_at only gates ITSELF)
-          AND NOT EXISTS (
-              SELECT 1 FROM ipo_stage_state st
-              WHERE st.ipo_id = ii.id AND st.stage = 'RHP_DOWNLOADED'
-                AND st.next_retry_at IS NOT NULL AND st.next_retry_at > NOW())
-          AND NOT EXISTS (
-              SELECT 1 FROM ipo_rhp_intel r
-              WHERE lower(regexp_replace(r.company_name,'[^a-zA-Z0-9]','','g'))
-                  = lower(regexp_replace(ii.company_name,'[^a-zA-Z0-9]','','g'))
-                -- PLACEHOLDER GUARD (2026-07-20): a row in ipo_rhp_intel does
-                -- NOT mean the RHP was read. fetch/store create rows before
-                -- extraction, so Xtranet, Indo-MIM and Lohia were EXCLUDED from
-                -- the target list while their full_json was NULL — the fetcher
-                -- reported "0 match(es), 30 still pending" across all 12 pages
-                -- while their RHPs sat on SEBI page 1. Only a real extraction
-                -- counts as "already have it".
-                AND r.full_json IS NOT NULL)
-    """, (days, days, days))
-    names = [r[0] for r in cur.fetchall()]
+    sql, params = selector_query(days, ipo_id)
+    cur.execute(sql, params)
+    names = cur.fetchall()
     c.close()
+    if ipo_id is not None:
+        if not names:
+            sys.exit(f"ipo_id {ipo_id} is missing, ineligible, outside the active date window, or already stored")
+        if len(names) != 1:
+            sys.exit(f"ipo_id {ipo_id} returned {len(names)} eligible rows; refusing an unbounded run")
     return names
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--days", type=int, default=45)
+    ap.add_argument("--ipo-id", type=_positive_ipo_id,
+                    help="process exactly one normally eligible Neon ipo.id")
     a = ap.parse_args()
 
-    targets = new_ipos_without_rhp(a.days)
+    targets = new_ipos_without_rhp(a.days, ipo_id=a.ipo_id)
     print(f"NEW IPOs (last {a.days}d) without an RHP: {len(targets)}")
     if not targets:
         print("nothing to fetch — all recent IPOs already have RHPs."); return
-    tset = {norm(t): t for t in targets}
+    if a.ipo_id is not None:
+        selected = targets[0]
+        print(f"BOUNDED IPO: id={selected[0]} isin={selected[2] or '(unresolved)'} name={selected[1]}")
+    # Names are used only to discover the official filing. Object ownership always
+    # comes from this Neon-selected ipo.id/isin tuple, never from the name or filename.
+    tset = {norm(t[1]): t for t in targets}
 
     try:
         from playwright.sync_api import sync_playwright
@@ -155,14 +176,14 @@ def main():
                 # the title be exactly the company) — /public-issues/ also
                 # carries other filings.
                 is_rhp_doc = bool(re.search(r"red herring|prospectus", title, re.I))
-                hit = next((orig for k, orig in pending.items()
+                hit = next((owner for k, owner in pending.items()
                             if k and (k in ntitle or ntitle.startswith(k))
                             and (is_rhp_doc or ntitle == k)), None)
                 if hit:
                     matched.append((hit, title, url))
                     hits_here += 1
-                    print(f"  ✓ MATCH (p{page_no}): {hit!r}  <-  SEBI '{title[:46]}'")
-                    pending = {k: v for k, v in pending.items() if v != hit}
+                    print(f"  ✓ MATCH (p{page_no}): ipo_id={hit[0]} {hit[1]!r}  <-  SEBI '{title[:46]}'")
+                    pending = {k: v for k, v in pending.items() if v[0] != hit[0]}
             print(f"  page {page_no}: {len(listings)} filings, {hits_here} match(es), "
                   f"{len(pending)} still pending")
             if not pending:
@@ -235,6 +256,28 @@ def _prune_empty_dirs():
         pass
 
 
+def _store_download(owner, source_url, temporary_path, destination, page_count, content_type):
+    """Hand the complete storage transaction to the sole orchestration layer."""
+    import psycopg2 as _pg
+    pipeline_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pipeline")
+    if pipeline_dir not in sys.path:
+        sys.path.insert(0, pipeline_dir)
+    from document_ledger import store_document
+
+    ipo_id, _company, isin, document_date = owner
+    conn = _pg.connect(os.environ["DATABASE_URL"])
+    try:
+        with open(temporary_path, "rb") as content:
+            return store_document(
+                conn, ipo_id=ipo_id, isin=isin, doc_type="rhp",
+                document_date=document_date, source_url=source_url, content=content,
+                content_type=content_type, page_count=page_count, temporary_path=temporary_path,
+                retain_path=destination,
+            )
+    finally:
+        conn.close()
+
+
 def _download_matched(matched):
     from playwright.sync_api import sync_playwright
     import pypdf
@@ -245,7 +288,8 @@ def _download_matched(matched):
         br = pw.chromium.launch(headless=True)
         ctx = br.new_context(accept_downloads=True)
         pg = ctx.new_page()
-        for company, title, url in matched:
+        for owner, title, url in matched:
+            ipo_id, company, isin, document_date = owner
             slug = slugify(company)
             d = os.path.join(OUT_DIR, slug); os.makedirs(d, exist_ok=True)
             dest = os.path.join(d, "rhp.pdf")
@@ -279,13 +323,17 @@ def _download_matched(matched):
                     try:
                         r = pg.request.get(direct, timeout=120000)
                         if r.ok and r.body()[:5] == b"%PDF-":
-                            with open(dest, "wb") as fh: fh.write(r.body())
+                            content_type = r.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                            temp = dest + ".download"
+                            with open(temp, "wb") as fh: fh.write(r.body())
+                            n = None
                             try:
-                                n = len(pypdf.PdfReader(dest).pages)
+                                n = len(pypdf.PdfReader(temp).pages)
                                 if n < 40:
-                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); _stage(company, "FAILED", f"{n}pp — not a full RHP"); continue
+                                    print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(temp); _stage(company, "FAILED", f"{n}pp — not a full RHP"); continue
                             except Exception:
                                 pass
+                            _store_download(owner, direct, temp, dest, n, content_type)
                             print(f"  ✓ {company} -> {dest}  (direct)"); got += 1; _persist_rhp_url(company, url); _stage(company, "CONFIRMED"); continue
                         print(f"  · {company}: direct url not a PDF, falling back to viewer")
                     except Exception as e:
@@ -309,15 +357,13 @@ def _download_matched(matched):
                     if dl: break
                 if not dl:
                     print(f"  ✗ {company} (no download control)"); _stage(company, "FAILED", "no download control"); continue
-                dl.save_as(dest)
-                # verify it's a real RHP (>40 pages)
-                try:
-                    n = len(pypdf.PdfReader(dest).pages)
-                    if n < 40:
-                        print(f"  ✗ {company} ({n}pp — not a full RHP)"); os.remove(dest); _stage(company, "FAILED", f"{n}pp — not a full RHP"); continue
-                except Exception:
-                    pass
-                print(f"  ✓ {company} -> {dest}"); got += 1; _persist_rhp_url(company, url); _stage(company, "CONFIRMED")
+                # Playwright Download does not expose response headers. Contract-v1
+                # refuses to invent MIME evidence, so the viewer fallback is retained
+                # for discovery diagnostics but cannot create a ledger object.
+                print(f"  ✗ {company} (viewer download MIME is not verifiable)")
+                dl.cancel()
+                _stage(company, "FAILED", "viewer download MIME is not verifiable")
+                continue
             except Exception as e:
                 print(f"  ✗ {company} ({type(e).__name__})"); _stage(company, "FAILED", f"{type(e).__name__}: {str(e)[:150]}")
         br.close()
@@ -338,4 +384,5 @@ def _download_matched(matched):
         sys.exit(1)
 
 if __name__ == "__main__":
+    _configure_cli_stdout()
     main()

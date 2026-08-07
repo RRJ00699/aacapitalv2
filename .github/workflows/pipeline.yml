@@ -61,13 +61,12 @@ jobs:
           KITE_TOTP_SECRET:  ${{ secrets.KITE_TOTP_SECRET }}
           NTFY_TOPIC:        ${{ secrets.NTFY_TOPIC }}
           SKIP_SNAPSHOT_PUBLISH: "1"
-          # R2 document store (r2.py). Account id + bucket names are repo VARIABLES; the
-          # access key pair are repo SECRETS. Absent -> r2.py degrades to a no-op.
+          # Private contract-v1 document store. These credentials are pipeline-only and
+          # are never exposed to the public Next.js Worker.
           R2_ACCOUNT_ID:        ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_RHP:        ${{ vars.R2_BUCKET_RHP }}
-          R2_BUCKET_SBI:        ${{ vars.R2_BUCKET_SBI }}
+          R2_DOCUMENT_BUCKET:   ${{ vars.R2_DOCUMENT_BUCKET }}
         run: |
           # Phase 1: skip downloads on the runner by default; dispatch skip_download=false
           # to test runner-side SEBI/SBI scraping.
@@ -105,11 +104,10 @@ jobs:
         run: python publish_snapshot_with_ledger.py
 
       # DOCUMENTS LIVE IN R2, NOT GIT. Every extracted PDF is uploaded to Cloudflare R2
-      # (content-addressed by sha256; documents.url = r2://<bucket>/<sha256>.pdf), so
+      # (immutable contract-v1 key in documents.object_key; documents.url stays legacy), so
       # nothing is committed back and the runner's ephemeral disk no longer matters —
       # extraction re-fetches from R2 when a local copy is absent. PR A defines one
       # private bucket and permanent retention for immutable RHP/SBI source objects;
-      # legacy bucket variables remain in this pre-cutover workflow until PR B.
       # PHASE 1 (this workflow): downloads (SEBI/SBI Playwright scraping) still run on the
       # laptop — a datacenter IP scraping 1,000+ filings is likelier to be throttled, and
       # a silently-failing scheduled job is the worst way to learn that. Flip skip_download

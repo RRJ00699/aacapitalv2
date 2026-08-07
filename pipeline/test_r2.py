@@ -354,7 +354,7 @@ def test_legacy_put_document_caller_map_is_explicit():
             continue
         if "r2.put_document(" in path.read_text(encoding="utf-8"):
             callers.append(path.relative_to(ROOT).as_posix())
-    assert callers == ["pipeline/fill_v2.py"]
+    assert callers == []
 
 
 class ProbeClient:

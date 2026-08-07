@@ -60,7 +60,7 @@ def test_placeholder_rows_do_not_block_the_target_list():
     ipo_rhp_intel — including EMPTY placeholder rows. Xtranet, Indo-MIM and
     Lohia were therefore never searched for, while the log reported
     "0 match(es), 30 still pending" across all 12 SEBI pages and their RHPs sat
-    on page 1 the whole time. Only a real extraction counts as "already have it".
+    on page 1 the whole time. Only a verified contract-v1 ledger object now counts.
     """
-    assert "r.full_json IS NOT NULL" in _src(), \
-        "placeholder rows still count as 'already have the RHP'"
+    assert "d.object_key IS NOT NULL" in _src(), \
+        "an unverified/placeholder document still counts as an R2-stored RHP"

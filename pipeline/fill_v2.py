@@ -105,37 +105,29 @@ def upsert_financials(conn, ipo_id, period, basis, record, source="ipomatrix"):
 
 # ============================================================ 4. documents (dedup by hash)
 def upsert_document(conn, ipo_id, doc_type, content_bytes=None, url=None, sha256=None,
-                    page_count=None):
-    """File registry, dedup by sha256 (identical file stored once). Returns doc_id."""
-    cur=conn.cursor()
-    if sha256 is None and content_bytes is not None:
-        sha256=hashlib.sha256(content_bytes).hexdigest()
-    if sha256 is None:
-        raise ValueError("documents: need content_bytes or sha256")
-    # Store the file in R2 (content-addressed by sha256) and PREFER the r2:// key as the
-    # url so the document is re-fetchable on an ephemeral runner. No-op when R2 is not
-    # configured — the url then stays whatever the caller passed (e.g. the source URL).
-    if content_bytes is not None:
-        import r2
-        r2_url = r2.put_document(doc_type, sha256, content_bytes)
-        if r2_url:
-            url = r2_url
-    cur.execute("SELECT id, url FROM documents WHERE sha256=%s",(sha256,))
-    r=cur.fetchone()
-    if r:
-        # backfill an r2:// url onto a row that predates R2 (url was NULL)
-        if url and not r[1]:
-            cur.execute("UPDATE documents SET url=%s WHERE id=%s AND url IS NULL",(url, r[0]))
-            conn.commit()
-        return r[0]  # already stored
-    cur.execute("""INSERT INTO documents(ipo_id,doc_type,url,sha256,page_count,fetched_at)
-                   VALUES(%s,%s,%s,%s,%s,now())
-                   ON CONFLICT (sha256) DO NOTHING RETURNING id""",
-                (ipo_id,doc_type,url,sha256,page_count))
-    r=cur.fetchone(); conn.commit()
-    if r: return r[0]
-    cur.execute("SELECT id FROM documents WHERE sha256=%s",(sha256,))
-    return cur.fetchone()[0]
+                    page_count=None, document_date=None):
+    """Compatibility facade; document_ledger owns all storage and DB writes."""
+    if content_bytes is None:
+        raise ValueError("documents: contract-v1 storage requires content bytes")
+    if sha256 is not None and hashlib.sha256(content_bytes).hexdigest() != sha256:
+        raise ValueError("documents: supplied sha256 does not match content")
+    cur = conn.cursor()
+    cur.execute("SELECT isin FROM ipo WHERE id=%s", (ipo_id,))
+    owner = cur.fetchone()
+    cur.close()
+    if not owner:
+        conn.rollback()
+        raise ValueError("documents: ipo_id is not present in the Neon ownership spine")
+    # End the ownership SELECT before any R2 operation; the ledger transaction starts
+    # only after the orchestration layer has verified the immutable object.
+    conn.commit()
+    from document_ledger import store_document
+    stored = store_document(
+        conn, ipo_id=ipo_id, isin=owner[0], doc_type=doc_type,
+        document_date=document_date or dt.datetime.now(dt.timezone.utc).date(),
+        source_url=url, content=content_bytes, page_count=page_count,
+    )
+    return stored.id
 
 # ============================================================ 5. source_facts (change-log)
 def log_source_fact(conn, ipo_id, field, value, source, doc_id=None, confidence=1.0):
