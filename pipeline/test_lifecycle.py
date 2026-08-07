@@ -2,7 +2,8 @@ import datetime as dt
 import unittest
 
 from lifecycle import IPOWindow, plan_run
-from nse_lifecycle import _find_anchor_url
+from nse_lifecycle import (_exclusion_reasons, _find_anchor_url,
+                           _inside_target_window, build_diagnostics)
 
 
 class LifecycleTest(unittest.TestCase):
@@ -30,6 +31,42 @@ class LifecycleTest(unittest.TestCase):
         payload = {"reports": [{"label": "Anchor Allocation Report",
                                  "download": "/content/anchor-allocation.pdf"}]}
         self.assertEqual(_find_anchor_url(payload), "/content/anchor-allocation.pdf")
+
+    def test_diagnostics_explain_zero_action_live_rows_and_missing_upcoming(self):
+        today = dt.date(2026, 8, 7)
+        rows = [
+            IPOWindow(757, "VPRPL-BE", "Historical", today - dt.timedelta(days=5),
+                      today - dt.timedelta(days=3), today - dt.timedelta(days=1), True, True, True),
+            IPOWindow(347, None, "No symbol", None, None,
+                      today - dt.timedelta(days=1), True, True, True),
+            IPOWindow(900, None, "Missing dates", None, None, None),
+            IPOWindow(901, "FUTURE", "Expected upcoming", today + dt.timedelta(days=8),
+                      today + dt.timedelta(days=10), today + dt.timedelta(days=15)),
+        ]
+        diagnostic = build_diagnostics(rows, today)
+        by_id = {row["ipo_id"]: row for row in diagnostic["candidates"]}
+        self.assertEqual(by_id[757]["planned_actions"], [])
+        self.assertIn("historical_listing_buffer", by_id[757]["exclusion_reason"])
+        self.assertIn("already_complete", by_id[757]["exclusion_reason"])
+        self.assertIn("missing_symbol", by_id[347]["exclusion_reason"])
+        self.assertEqual(by_id[347]["planned_actions"], [])
+        self.assertIn("missing_dates", by_id[900]["exclusion_reason"])
+        self.assertIn("outside_window", by_id[901]["exclusion_reason"])
+        self.assertEqual(diagnostic["aggregate_counts"]["eligible_candidates"], 2)
+        self.assertEqual(diagnostic["aggregate_counts"]["missing_symbol"], 2)
+
+    def test_target_window_predicate_matches_live_sql_boundaries(self):
+        today = dt.date(2026, 8, 7)
+        listing_yesterday = IPOWindow(1, "A", "A", None, None,
+                                      today - dt.timedelta(days=1))
+        issue_tomorrow = IPOWindow(2, "B", "B", today + dt.timedelta(days=1),
+                                   today + dt.timedelta(days=4), None)
+        old = IPOWindow(3, "C", "C", today - dt.timedelta(days=8),
+                        today - dt.timedelta(days=4), today - dt.timedelta(days=3))
+        self.assertTrue(_inside_target_window(listing_yesterday, today))
+        self.assertTrue(_inside_target_window(issue_tomorrow, today))
+        self.assertFalse(_inside_target_window(old, today))
+        self.assertIn("outside_window", _exclusion_reasons(old, today, []))
 
 
 if __name__ == "__main__": unittest.main()

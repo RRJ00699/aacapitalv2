@@ -14,6 +14,8 @@ from document_ledger import store_document
 from lifecycle import IPOWindow, plan_run
 from nse_fetch import apply_to_db, fetch_one, parse_issue_info, prime
 
+DIAGNOSTIC_LOOKBACK_DAYS = 30
+
 
 def _find_anchor_url(value):
     """Find NSE's anchor-allocation PDF without depending on JSON nesting."""
@@ -52,14 +54,102 @@ def _targets(conn, today, limit):
     return [IPOWindow(*row) for row in cur.fetchall()]
 
 
+def _diagnostic_candidates(conn, today):
+    """Read-only superset used to explain both inclusion and exclusion.
+
+    Status catches upcoming rows whose lifecycle dates have not reached ``ipo_issue``;
+    the date lookback catches recent historical rows that can enter the live SQL's
+    one-day listing buffer.  This query never supplies work to ``run``.
+    """
+    cur = conn.cursor()
+    cur.execute("""SELECT i.id, i.symbol, i.name_display, ii.open_date, ii.close_date,
+                          i.listing_date,
+                          (ii.band_lo IS NOT NULL AND ii.band_hi IS NOT NULL
+                           AND ii.lot_size IS NOT NULL) AS issue_complete,
+                          EXISTS (SELECT 1 FROM documents d
+                                   WHERE d.ipo_id=i.id AND d.doc_type='anchor') AS anchor_banked,
+                          EXISTS (SELECT 1 FROM subscription_snapshots s
+                                   WHERE s.ipo_id=i.id AND s.is_final) AS final_subscription_banked
+                     FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
+                    WHERE COALESCE(i.is_mainboard,TRUE)=TRUE
+                      AND (UPPER(COALESCE(i.status,'')) IN ('UPCOMING','OPEN')
+                           OR i.listing_date >= %s - %s
+                           OR ii.open_date >= %s - %s
+                           OR ii.close_date >= %s - %s)
+                    ORDER BY COALESCE(ii.open_date,i.listing_date) DESC NULLS LAST,i.id""",
+                (today, DIAGNOSTIC_LOOKBACK_DAYS, today, DIAGNOSTIC_LOOKBACK_DAYS,
+                 today, DIAGNOSTIC_LOOKBACK_DAYS))
+    return [IPOWindow(*row) for row in cur.fetchall()]
+
+
+def _inside_target_window(ipo, today):
+    listing_match = (ipo.listing_date is not None
+                     and today - dt.timedelta(days=1) <= ipo.listing_date <= today)
+    issue_match = (ipo.open_date is not None
+                   and ipo.open_date <= today + dt.timedelta(days=1)
+                   and (ipo.close_date or today) >= today - dt.timedelta(days=1))
+    return listing_match or issue_match
+
+
+def _exclusion_reasons(ipo, today, actions):
+    reasons = []
+    inside = _inside_target_window(ipo, today)
+    if not inside: reasons.append("outside_window")
+    if not ipo.symbol: reasons.append("missing_symbol")
+    if not any((ipo.open_date, ipo.close_date, ipo.listing_date)):
+        reasons.append("missing_dates")
+    elif (ipo.open_date is None) != (ipo.close_date is None):
+        reasons.append("incomplete_issue_dates")
+    if ipo.listing_date == today - dt.timedelta(days=1) and not actions:
+        reasons.append("historical_listing_buffer")
+    if (inside and not actions and ipo.issue_complete and ipo.anchor_banked
+            and ipo.final_subscription_banked):
+        reasons.append("already_complete")
+    return reasons
+
+
+def build_diagnostics(candidates, today):
+    """Return stable JSON diagnostics without network, writes, or R2 access."""
+    counts = {key: 0 for key in ("eligible_candidates", "missing_symbol", "missing_dates",
+        "already_complete", "outside_window", "planned_issue",
+        "planned_subscription_forward", "planned_subscription_final", "planned_anchor",
+        "planned_preopen")}
+    rows = []
+    action_counts = {"nse_issue_metadata": "planned_issue",
+                     "subscription_forward": "planned_subscription_forward",
+                     "subscription_final": "planned_subscription_final",
+                     "anchor_discovery": "planned_anchor",
+                     "preopen_capture": "planned_preopen"}
+    for plan in plan_run(candidates, today):
+        ipo = plan.ipo
+        inside = _inside_target_window(ipo, today)
+        actions = list(plan.actions) if inside else []
+        reasons = _exclusion_reasons(ipo, today, actions)
+        counts["eligible_candidates"] += int(inside)
+        counts["missing_symbol"] += int(not ipo.symbol)
+        counts["missing_dates"] += int(not any((ipo.open_date, ipo.close_date, ipo.listing_date)))
+        counts["outside_window"] += int(not inside)
+        counts["already_complete"] += int("already_complete" in reasons)
+        for action in actions: counts[action_counts[action]] += 1
+        rows.append({"ipo_id": ipo.ipo_id, "name": ipo.name, "symbol": ipo.symbol,
+            "open_date": ipo.open_date, "close_date": ipo.close_date,
+            "listing_date": ipo.listing_date, "issue_complete": ipo.issue_complete,
+            "anchor_banked": ipo.anchor_banked,
+            "final_subscription_banked": ipo.final_subscription_banked,
+            "planned_actions": actions,
+            "exclusion_reason": reasons or None})
+    return {"aggregate_counts": counts, "candidates": rows}
+
+
 def _absolute_url(url):
     if url.startswith("//"): return "https:" + url
     if url.startswith("/"): return "https://www.nseindia.com" + url
     return url
 
 
-def run(conn, session, plans, *, write):
-    metrics = {"nse_calls": 0, "db_target_queries": 1, "db_write_operations": 0,
+def run(conn, session, plans, *, write, db_target_queries=1):
+    metrics = {"nse_calls": 0, "db_target_queries": db_target_queries,
+               "db_write_operations": 0,
                "r2_puts": 0, "preopen_runs": 0, "ipos": []}
     preopen = False
     for plan in plans:
@@ -121,8 +211,13 @@ def main():
     from curl_cffi import requests as cffi
     today = args.today or dt.datetime.now(dt.timezone(dt.timedelta(hours=5, minutes=30))).date()
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    plans = plan_run(_targets(conn, today, args.limit), today)
-    metrics = run(conn, prime(cffi), plans, write=args.write)
+    targets = _targets(conn, today, args.limit)
+    if args.dry_run:
+        print(json.dumps({"lifecycle_diagnostics": build_diagnostics(
+            _diagnostic_candidates(conn, today), today)}, default=str, indent=2, sort_keys=True))
+    plans = plan_run(targets, today)
+    metrics = run(conn, prime(cffi), plans, write=args.write,
+                  db_target_queries=2 if args.dry_run else 1)
     conn.close(); print(json.dumps(metrics, default=str, indent=2, sort_keys=True))
     failed = any(any(str(result).startswith("failed:") for result in ipo["results"])
                  for ipo in metrics["ipos"])
