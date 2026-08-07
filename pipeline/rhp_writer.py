@@ -86,7 +86,7 @@ def _r(x):
     return x
 
 
-def write_rhp_valuation(conn, ipo_id, kpi, doc_id=None, source="rhp"):
+def write_rhp_valuation(conn, ipo_id, kpi, doc_id=None, source="rhp", commit=True):
     """Write ONE valuation row of RHP-reported ratios under engine_version='v2-rhp-1'.
 
     kpi = dict which may contain any of VAL_RATIOS + SCALAR_KPIS. Absent or
@@ -140,11 +140,11 @@ def write_rhp_valuation(conn, ipo_id, kpi, doc_id=None, source="rhp"):
          ratios["roce"], ratios["de"], ratios["rev_cagr_3y"], ratios["peer_median_pe"],
          json.dumps(inputs_used), sorted(set(missing))))
     row = cur.fetchone()
-    conn.commit()
+    if commit: conn.commit()
 
     # scalar KPIs with no valuation column -> source_facts (change-logged, not duplicated)
     for k, v in scalars.items():
-        log_source_fact(conn, ipo_id, k, v, source)
+        log_source_fact(conn, ipo_id, k, v, source, commit=commit)
 
     return dict(valuation_id=(row[0] if row else None),
                 written=bool(row),
@@ -236,7 +236,7 @@ def _derive_flags(db_fields):
     return len(set(reds)), sorted(set(junk))
 
 
-def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="rhp"):
+def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="rhp", commit=True):
     """Route ONE parsed v2-full extraction into the V2 tables.
 
     Everything goes through the already-tested writers — this function decides WHERE
@@ -265,7 +265,7 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
         conn, ipo_id, doc_id, data, model, prompt_version,
         red_flag_count=red, junk_signals=sigs,
         confidence=conf_map.get(data.get("confidence")),
-        cost_usd=(data.get("_meta") or {}).get("cost_usd"))
+        cost_usd=(data.get("_meta") or {}).get("cost_usd"), commit=False)
 
     # ---- 2. financial_statements: one row per period+basis, unit-normalised ----
     MONEY = [("revenue_from_operations", "revenue"), ("total_income", "total_income"),
@@ -287,7 +287,7 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
             rep["skipped"].append({"why": "no convertible figures", "period": period,
                                    "notes": notes})
             continue
-        upsert_financials(conn, ipo_id, period, basis, rec, source=source)
+        upsert_financials(conn, ipo_id, period, basis, rec, source=source, commit=False)
         rep["financials"].append({"period": period, "basis": basis,
                                   "fields": sorted(rec.keys()), "notes": notes})
 
@@ -307,9 +307,9 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
         median_pe = None
     if peer_rows:
         # every peer row preserved verbatim, median or not
-        log_source_fact(conn, ipo_id, "peer_analysis", json.dumps(peer_rows), source)
+        log_source_fact(conn, ipo_id, "peer_analysis", json.dumps(peer_rows), source, commit=False)
         if peers.get("as_of_date"):
-            log_source_fact(conn, ipo_id, "peer_analysis_as_of", peers["as_of_date"], source)
+            log_source_fact(conn, ipo_id, "peer_analysis_as_of", peers["as_of_date"], source, commit=False)
         rep["peers_stored"] = len(peer_rows)
         rep["peer_median_note"] = median_note
 
@@ -323,7 +323,7 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
             eps_pre=kpi.get("eps_basic_pre"), eps_post=kpi.get("eps_post"),
             ebitda_margin_pct=kpi.get("ebitda_margin_pct"),
             pat_margin_pct=kpi.get("pat_margin_pct"),
-        ), doc_id=doc_id, source=source)
+        ), doc_id=doc_id, source=source, commit=False)
         if median_note:
             rep["valuation"]["missing_inputs"] = sorted(
                 set(rep["valuation"]["missing_inputs"]) | {median_note})
@@ -358,8 +358,10 @@ def route_extraction(conn, ipo_id, doc_id, data, model, prompt_version, source="
     if items:
         n, sup, run_id = upsert_insights(conn, ipo_id, items, model=model,
                                          prompt_version=prompt_version, doc_id=doc_id,
-                                         source_type="RHP")
+                                         source_type="RHP", commit=False)
         rep["insights"] = n; rep["insights_superseded"] = sup; rep["run_id"] = run_id
+    if commit:
+        conn.commit()
     return rep
 
 

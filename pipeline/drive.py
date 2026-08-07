@@ -88,11 +88,12 @@ def step_nse(conn, ipo_id, symbol, session, write):
             "subs": rep["subs_action"], "diffs": len(rep["subs_diff"])}
 
 
-def rhp_already_done(conn, ipo_id):
-    """A v2-full extraction already stored for this IPO -> never pay twice."""
+def rhp_already_done(conn, doc_id):
+    """The ledger document/model/prompt tuple is the paid-call idempotency key."""
     cur = conn.cursor()
-    cur.execute("""SELECT 1 FROM rhp_findings WHERE ipo_id=%s AND prompt_version='v2-full'
-                   LIMIT 1""", (ipo_id,))
+    cur.execute("""SELECT 1 FROM rhp_findings
+                    WHERE doc_id=%s AND model=%s AND prompt_version=%s LIMIT 1""",
+                (doc_id, "claude-sonnet-4-6", "v2-full"))
     return cur.fetchone() is not None
 
 
@@ -120,47 +121,51 @@ def find_local_rhp(ipo_id, name, rhp_dir="rhps"):
     return hits[0] if hits else None
 
 
-def resolve_rhp(conn, ipo_id, name, rhp_dir="rhps", ignore_local=False):
-    """Locate the IPO's RHP PDF for extraction. Returns (path, source, base) or
-    (None, None, None). Local disk first (the laptop fast path) UNLESS ignore_local; then
-    R2 via the r2:// url in `documents` (the runner path, and re-fetch after a purge).
-    A fetched file is a temp the CALLER must delete (source == 'r2')."""
-    if not ignore_local:
-        p = find_local_rhp(ipo_id, name, rhp_dir)
-        if p:
-            return p, "local", os.path.basename(os.path.dirname(p))
+def resolve_rhp(conn, ipo_id, name=None, rhp_dir="rhps", ignore_local=False):
+    """Resolve only the current verified contract-v1 ledger row and exact object key.
+
+    ``ignore_local`` remains accepted for CLI compatibility but contract-v1 extraction
+    never consults local filenames or ``documents.url``.
+    """
     import r2, tempfile, hashlib
     cur = conn.cursor()
-    cur.execute("""SELECT url, sha256 FROM documents
-                    WHERE ipo_id=%s AND doc_type='rhp' AND url LIKE 'r2://%%'
-                    ORDER BY fetched_at DESC LIMIT 1""", (ipo_id,))
+    cur.execute("""SELECT id, object_key, sha256, byte_size, content_type,
+                          object_contract_version
+                     FROM documents
+                    WHERE ipo_id=%s AND doc_type='rhp'
+                      AND object_key IS NOT NULL AND byte_size IS NOT NULL
+                      AND content_type='application/pdf'
+                      AND object_contract_version='1'
+                    ORDER BY fetched_at DESC, id DESC LIMIT 1""", (ipo_id,))
     row = cur.fetchone()
     if not row:
-        return None, None, None
-    url, sha = row
+        return None, "missing_object_key", None, None
+    doc_id, object_key, sha, byte_size, content_type, contract_version = row
+    if content_type != "application/pdf" or str(contract_version) != "1":
+        raise ValueError("document ledger contract mismatch")
+    content = r2.get_document(object_key)  # exact-key GET; R2 LIST is never used
+    if not content.startswith(b"%PDF-"):
+        raise ValueError("document bytes are not a PDF")
+    if len(content) != byte_size:
+        raise ValueError("document byte-size mismatch")
+    got = hashlib.sha256(content).hexdigest()
+    if not sha or got != sha:
+        raise ValueError("document sha256 mismatch")
     fd, tmp = tempfile.mkstemp(suffix=".pdf"); os.close(fd)
-    if not r2.get_to_file(url, tmp):
-        try: os.remove(tmp)
-        except OSError: pass
-        return None, None, None
-    got = hashlib.sha256(open(tmp, "rb").read()).hexdigest()
-    if sha and got != sha:
-        print(f"  [r2] sha256 MISMATCH ipo {ipo_id}: stored {sha[:12]} != fetched {got[:12]}")
-        try: os.remove(tmp)
-        except OSError: pass
-        return None, None, None
-    print(f"  [r2] RHP for ipo {ipo_id} fetched from {url} (sha256 ok, {os.path.getsize(tmp)//1024}KB)")
-    return tmp, "r2", f"ipo{ipo_id}"
+    with open(tmp, "wb") as fh: fh.write(content)
+    print(f"  [r2] verified contract-v1 RHP for ipo {ipo_id}, doc_id={doc_id}")
+    return tmp, "r2-contract-v1", f"ipo{ipo_id}", doc_id
 
 
 def step_rhp(conn, ipo_id, name, write, spent, max_spend, ignore_local=False):
     """RHP extraction + routing. THE ONLY STEP THAT COSTS MONEY."""
-    if rhp_already_done(conn, ipo_id):
-        return {"step": "rhp", "status": "skipped", "why": "v2-full extraction exists"}
-    pdf, src, base = resolve_rhp(conn, ipo_id, name, ignore_local=ignore_local)
+    pdf = src = base = doc_id = None
+    pdf, src, base, doc_id = resolve_rhp(conn, ipo_id, name, ignore_local=ignore_local)
     if not pdf:
         return {"step": "rhp", "status": "skipped",
-                "why": "no local PDF (rhp_map.json) and no r2:// document to fetch"}
+                "why": "no current fully verified contract-v1 document (missing object_key is legacy)"}
+    if rhp_already_done(conn, doc_id):
+        return {"step": "rhp", "status": "skipped", "why": "document/model/prompt extraction exists"}
     try:
         if spent + RHP_COST_EST > max_spend:
             return {"step": "rhp", "status": "skipped",
@@ -193,12 +198,13 @@ def step_rhp(conn, ipo_id, name, write, spent, max_spend, ignore_local=False):
                              encoding="utf-8"), indent=2, ensure_ascii=False)
         if "structured" not in data:
             return {"step": "rhp", "status": "failed", "why": "no structured block", "cost": cost}
-        rep = rhp_sonnet.route_to_db(pdf, ipo_id, data, "rhp_v2full", base)
+        rep = rhp_sonnet.route_to_db(pdf, ipo_id, data, "rhp_v2full", base,
+                                     doc_id=doc_id, conn=conn)
         return {"step": "rhp", "status": "ok", "cost": round(cost, 4), "source": src,
                 "financials": len(rep["financials"]), "insights": rep["insights"]}
     finally:
         # a fetched R2 copy is a temp file — never leave it lying around
-        if src == "r2" and pdf and os.path.exists(pdf):
+        if src == "r2-contract-v1" and pdf and os.path.exists(pdf):
             try: os.remove(pdf)
             except OSError: pass
 
@@ -262,7 +268,8 @@ def main():
     print(f"  {len(targets)} IPOs · mode={'WRITE' if write else 'DRY-RUN'} · "
           f"RHP={'ON (paid)' if a.rhp else 'OFF (free run)'} · cap=${a.max_spend}")
     if a.rhp and write:
-        n_pay = sum(1 for t in targets if not rhp_already_done(conn, t[0]))
+        # Exact payable count is resolved per current ledger document in step_rhp.
+        n_pay = len(targets)
         print(f"  COST: up to {n_pay} RHP calls x ${RHP_COST_EST} = "
               f"${n_pay * RHP_COST_EST:.2f} (hard cap ${a.max_spend})")
     print()

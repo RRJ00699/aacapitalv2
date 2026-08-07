@@ -23,7 +23,7 @@ from fill_ipo import upsert_ipo, resolve_ipo_id, _log_fact, _norm
 
 # ============================================================ helpers
 def _coalesce_update(conn, table, match_cols, match_vals, fields, source=None, ipo_id=None,
-                     insert_defaults=None):
+                     insert_defaults=None, commit=True):
     """COALESCE-empty-only upsert.
     match_cols/match_vals = the REAL unique key (used to find the row AND on insert).
     insert_defaults = dict of NOT-NULL columns set ONLY on insert, never used to match
@@ -49,7 +49,8 @@ def _coalesce_update(conn, table, match_cols, match_vals, fields, source=None, i
     if source and ipo_id:
         for f in fields:
             _log_fact(cur, ipo_id, f, fields[f], source)
-    conn.commit(); return action
+    if commit: conn.commit()
+    return action
 
 # ============================================================ 1. ipo_issue
 def upsert_ipo_issue(conn, ipo_id, record, source="nse"):
@@ -87,7 +88,7 @@ def upsert_subscription(conn, ipo_id, captured_at, record, is_final=False):
     conn.commit(); return "ok"
 
 # ============================================================ 3. financial_statements
-def upsert_financials(conn, ipo_id, period, basis, record, source="ipomatrix"):
+def upsert_financials(conn, ipo_id, period, basis, record, source="ipomatrix", commit=True):
     """Multi-period financials, key=(ipo_id,period,basis). COALESCE-empty-only.
     source+fetched_at are insert-only (NOT part of the dedup key).
 
@@ -101,7 +102,8 @@ def upsert_financials(conn, ipo_id, period, basis, record, source="ipomatrix"):
         {k:record.get(k) for k in ["revenue","total_income","ebitda","pat","net_worth",
                                    "total_debt","total_assets"]
          if record.get(k) is not None},
-        insert_defaults={"source":source, "fetched_at":dt.datetime.now(dt.timezone.utc)})
+        insert_defaults={"source":source, "fetched_at":dt.datetime.now(dt.timezone.utc)},
+        commit=commit)
 
 # ============================================================ 4. documents (dedup by hash)
 def upsert_document(conn, ipo_id, doc_type, content_bytes=None, url=None, sha256=None,
@@ -138,9 +140,10 @@ def upsert_document(conn, ipo_id, doc_type, content_bytes=None, url=None, sha256
     return cur.fetchone()[0]
 
 # ============================================================ 5. source_facts (change-log)
-def log_source_fact(conn, ipo_id, field, value, source, doc_id=None, confidence=1.0):
+def log_source_fact(conn, ipo_id, field, value, source, doc_id=None, confidence=1.0, commit=True):
     """Provenance, insert ONLY on change. Thin wrapper over the shared _log_fact."""
-    cur=conn.cursor(); _log_fact(cur, ipo_id, field, value, source); conn.commit()
+    cur=conn.cursor(); _log_fact(cur, ipo_id, field, value, source)
+    if commit: conn.commit()
 
 # ============================================================ 6. listing_outcomes
 def upsert_listing_outcome(conn, ipo_id, record, dataset_version="v2"):
@@ -247,7 +250,7 @@ def upsert_decision(*a, **k):
 # doc_id rather than inherit that hole.
 def upsert_rhp_findings(conn, ipo_id, doc_id, findings, model, prompt_version,
                         red_flag_count=None, junk_signals=None, confidence=None,
-                        cost_usd=None):
+                        cost_usd=None, commit=True):
     """One Sonnet extraction RUN for one document. Key=(doc_id,model,prompt_version).
 
     RECOMPUTE semantics (engine output, like valuation) — a re-run of the SAME
@@ -279,7 +282,7 @@ def upsert_rhp_findings(conn, ipo_id, doc_id, findings, model, prompt_version,
         (ipo_id, doc_id, model, prompt_version, _json.dumps(findings),
          red_flag_count, junk_signals, confidence, cost_usd))
     rid, was_insert = cur.fetchone()
-    conn.commit()
+    if commit: conn.commit()
     return rid, ("inserted" if was_insert else "updated")
 
 # ============================================================ 12. insights (renderable claims)
@@ -297,7 +300,7 @@ DIRECTIONS   = {"positive", "negative", "neutral", "incomplete"}
 SOURCE_TYPES = {"RHP", "SBI", "STRUCTURED", "HOUSE_RULE"}
 
 def upsert_insights(conn, ipo_id, items, model=None, prompt_version=None,
-                    doc_id=None, source_type="RHP", run_id=None):
+                    doc_id=None, source_type="RHP", run_id=None, commit=True):
     """Write a batch of renderable claims for one IPO, superseding the previous batch
     from the SAME (ipo_id, source_type, prompt_version).
 
@@ -352,7 +355,7 @@ def upsert_insights(conn, ipo_id, items, model=None, prompt_version=None,
           (ipo_id, doc_id, category, statement, direction, source_type, page_number,
            excerpt, model, prompt_version, run_id, confidence, is_current, created_at)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE, now())""", clean)
-    conn.commit()
+    if commit: conn.commit()
     return len(clean), superseded, run_id
 
 # ============================================================ SELFTEST
