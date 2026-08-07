@@ -24,7 +24,7 @@ if __name__=="__main__":
     except Exception: pass
 import psycopg2
 sys.path.insert(0,".")
-from topout_online import run_ipo, get_kite, f, _window
+from research.backtests.topout_online import run_ipo, get_kite, f, _window
 
 def stage2_confirm(r, bars, N=8):
     """After a CAUTION fire, decide PARABOLIC vs CONFIRMED two ways.

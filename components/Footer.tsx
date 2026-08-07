@@ -61,8 +61,8 @@ export default function Footer({
 
         <div>
           <h4 style={head}>Company</h4>
-          <a style={link} href="https://github.com/RRJ00699/aacapitalv2/blob/main/IPO_BUSINESS_REQUIREMENTS.md" target="_blank" rel="noreferrer">About</a>
-          <a style={link} href="https://github.com/RRJ00699/aacapitalv2/blob/main/IPO_BUSINESS_REQUIREMENTS.md" target="_blank" rel="noreferrer">Methodology &amp; rating spec</a>
+          <a style={link} href="https://github.com/RRJ00699/aacapitalv2/blob/main/docs/specifications/IPO_BUSINESS_REQUIREMENTS.md" target="_blank" rel="noreferrer">About</a>
+          <a style={link} href="https://github.com/RRJ00699/aacapitalv2/blob/main/docs/specifications/IPO_BUSINESS_REQUIREMENTS.md" target="_blank" rel="noreferrer">Methodology &amp; rating spec</a>
           <a style={link} href="mailto:rakesh.reddy@aacapitalprivatelimited.com">Contact</a>
           <a style={link} href="#">Disclosures</a>
         </div>

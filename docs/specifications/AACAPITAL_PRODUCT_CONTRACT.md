@@ -22,7 +22,7 @@ for Indian mainboard IPOs, covering:
 - **Post-listing monitoring** — track the position after listing
 - **Disciplined exit management** — hold / reduce / exit by locked rules
 
-Core thesis (owner, 2026-07-18, `IPO_BUSINESS_REQUIREMENTS.md §1`): allotment
+Core thesis (owner, 2026-07-18, `docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §1`): allotment
 is a lottery; the edge is buying at the listing **open** on the right IPOs and
 selling with discipline. Motto: **"research signal, not a buy call."** The app
 informs; the owner trades manually.
@@ -51,7 +51,7 @@ Entry redirects: `/` and `/ipo` → `/dashboard/ipo2` (`app/page.tsx:3`,
 - Portfolio/brokerage execution (the app never places orders)
 - Fabricated fair values or presenting unavailable data as estimated fact
 - SME IPOs and issues under ₹200cr as *tradeable* candidates (research display
-  only; the <₹200cr floor is a LOCKED avoid — `IPO_BUSINESS_REQUIREMENTS.md`,
+  only; the <₹200cr floor is a LOCKED avoid — `docs/specifications/IPO_BUSINESS_REQUIREMENTS.md`,
   `app/api/ipo-command/route.ts:261`)
 
 Old equity-era code (`lib/intelligence/*`, `lib/watchlist.ts`,
@@ -76,7 +76,7 @@ do not merge them into one number.
 | LQI "Strong Buy/Avoid" | superseded verdict | — | — | **DISABLED/REJECTED** (code comments: "disproven LQI", `app/dashboard/ipo/page.tsx:6`) |
 
 Missing-data rule: absent inputs render as "—"/"pending", never as estimates
-(`IPO_BUSINESS_REQUIREMENTS.md`; e.g. live-preopen rule details show
+(`docs/specifications/IPO_BUSINESS_REQUIREMENTS.md`; e.g. live-preopen rule details show
 "band pending" / "size pending").
 
 ## 5. Approved data sources (production)
@@ -93,7 +93,7 @@ Missing-data rule: absent inputs render as "—"/"pending", never as estimates
 | Anthropic API | RHP/SBI extraction | `rhp_sonnet.py` / `sbi_haiku_extract.py` | pipeline | **$3/day + $0.50/day caps** (`rhp_auto.py`) | cap-deferred queue, run log |
 
 Storage: Neon Postgres (source `ipo_intelligence`, derived `ipo_consolidated`,
-per `SCHEMA.md`). Serving: Cloudflare KV (`ipo-command:v1` + `:stale`,
+per `docs/archive/SCHEMA_V1.md`). Serving: Cloudflare KV (`ipo-command:v1` + `:stale`,
 `live:tick:*`, `journey:candles:*`, `cumvol:*`) — reads are KV-first; Neon
 wakes for writes/warms (`docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`, Phase-2 branch).
 
@@ -119,7 +119,7 @@ AND window close (`cum-volume/route.ts`, Phase-2 fix).
 **Evidence bars** (`docs/architecture/CURRENT_STATE.md §0`): backtest-before-build;
 **n≥30 = SIGNAL** (below = indicative only); leakage checks required (CIR
 lesson); executable prices only — never theoretical allotment returns.
-**Data-write rules** (`SCHEMA.md`): strong-key joins (ISIN > exact normalized
+**Data-write rules** (`docs/archive/SCHEMA_V1.md`): strong-key joins (ISIN > exact normalized
 name), never fuzzy; raw scraped facts fill-EMPTY-only (COALESCE); derived may
 UPDATE; fix `ipo_intelligence` (source), never `ipo_consolidated`; QIB is the
 only accepted demand proxy pre-open — GMP is context, not gap.
@@ -136,17 +136,17 @@ Rejected / zero-weight factors must NOT silently return to production scoring.
 | Old gap bands (LOW <10 / MID 10–30 / HIGH >30) | REJECTED | Superseded by validated 4–15 MID | `real_return_analysis.py:46,142` asserts; audit 2026-07-20 (residue in `lib/ipoSignal.ts:36` pending cleanup) | 2026-07-20 |
 | GMP as listing-gap proxy | REJECTED (context only) | QIB is the only accepted pre-open demand proxy | owner rule 2026-07-20; `ipo-command` gmp_hint wording | 2026-07-20 |
 | Insider PIT feed | PARKED | NSE blocks datacenter IPs (empty 200s) | `docs/AACapital_Handover_v3.md` addendum 07-05 | 2026-07-05 |
-| Allotment-return framing | REJECTED | Non-executable; product trades the market event | `IPO_BUSINESS_REQUIREMENTS.md §1` | 2026-07-18 |
+| Allotment-return framing | REJECTED | Non-executable; product trades the market event | `docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §1` | 2026-07-18 |
 | Equity/AMFI/commentary scoring | REJECTED (product non-goal) | IPO-only scope | §3; old README (archived) | 2026-07-20 |
 
 ## 8. Documentation authority & change process
 
 - `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md` (this file) is **authoritative**.
-- Supporting CURRENT docs: `IPO_BUSINESS_REQUIREMENTS.md` (rating detail),
-  `docs/architecture/CURRENT_STATE.md` (session state), `SCHEMA.md`, `DATA_ARCHITECTURE.md`,
-  `PIPELINE_SPEC.md`, `docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`,
+- Supporting CURRENT docs: `docs/specifications/IPO_BUSINESS_REQUIREMENTS.md` (rating detail),
+  `docs/architecture/CURRENT_STATE.md` (session state), `docs/archive/SCHEMA_V1.md`, `docs/architecture/DATA_ARCHITECTURE.md`,
+  `docs/specifications/PIPELINE_SPEC.md`, `docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`,
   `docs/specifications/QUALITY_SCORE_SPEC.md`, `docs/specifications/UI_REQUIREMENTS.md`,
-  `docs/runbooks/NSE_PREOPEN_CAPTURE.md`, `FEATURE_TRACKER.md`.
+  `docs/runbooks/NSE_PREOPEN_CAPTURE.md`, `docs/archive/FEATURE_TRACKER.md`.
 - `docs/archive/**` is historical only, never an implementation spec.
 - Any product-rule change requires, in order: (1) evidence, (2) backtest or
   validation meeting the n≥30 bar, (3) update to this contract, (4) code

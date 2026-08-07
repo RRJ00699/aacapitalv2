@@ -40,7 +40,7 @@ def test_empty_row_scores_zero_with_pending():
     assert set(pending) == {"anchors", "peerPE"}
 
 def test_mid_gap_scores_zero_dead_factor():
-    """MID gap is DEAD (IPO_BUSINESS_REQUIREMENTS.md §5): the original +2 was
+    """MID gap is DEAD (docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §5): the original +2 was
     measured on polluted data and collapsed to a coin-flip on clean data.
     Scoring it inflated the band on every MID-gap IPO.
 

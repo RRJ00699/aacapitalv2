@@ -1,3 +1,5 @@
+> **ARCHIVED DOCUMENT.** Historical evidence only. Current authority: `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`.
+
 Status: CURRENT
 
 # CLEANUP REPORT — 2026-07-20 (dead-code pass)

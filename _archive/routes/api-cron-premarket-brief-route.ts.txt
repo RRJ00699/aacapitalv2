@@ -2,7 +2,7 @@
 // RETIRED. This route was part of the abandoned early-vision engine
 // (ipo_master / predictions / feature_store / similarity + the
 // multibagger-discovery and convergence-score endpoints). Per the
-// canonical data architecture (DATA_ARCHITECTURE.md), those tables are
+// canonical data architecture (docs/architecture/DATA_ARCHITECTURE.md), those tables are
 // FROZEN — no backend route may read them. This route is not wired into
 // the pipeline or job_runner and is not called by the UI, so it is
 // neutralized rather than repointed. The frozen tables stay in the DB
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json(
-    { ok: false, disabled: true, reason: "premarket-brief retired — see DATA_ARCHITECTURE.md" },
+    { ok: false, disabled: true, reason: "premarket-brief retired — see docs/architecture/DATA_ARCHITECTURE.md" },
     { status: 410 }
   );
 }

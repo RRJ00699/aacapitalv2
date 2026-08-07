@@ -9,7 +9,7 @@ Handles the messy export format: auto-detects the header row (it differs per fil
 
 Place the files in data/Ipo_reports/ then:
     python _scripts/ipo/backfill_brlm_names.py
-    python link_brlm_scores.py
+    python _scripts/link_brlm_scores.py
 """
 import os, re, glob, sys, psycopg2
 import pandas as pd
@@ -98,5 +98,5 @@ print(f"backfilled brlm_names on {total} IPOs  "
       f"(by NSE symbol: {by_symbol_hits}, by company: {by_company_hits}, fuzzy: {fuzzy_hits})")
 for c, l in samples:
     print(f"  {str(c)[:38]:38s} -> {l}")
-print("\nNext: python link_brlm_scores.py")
+print("\nNext: python _scripts/link_brlm_scores.py")
 conn.close()

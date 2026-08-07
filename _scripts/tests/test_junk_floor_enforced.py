@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Rs.200cr junk floor must EXCLUDE, not merely label.
 
-IPO_BUSINESS_REQUIREMENTS.md §2 (owner-locked): issue size < Rs.200cr is
+docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §2 (owner-locked): issue size < Rs.200cr is
 "RULED OUT — below this floor, don't touch". Until 2026-07-18 the engine only
 appended an avoid-reason (compute_verdicts.py:61) and the IPO still rendered
 beside real candidates — the opposite of "filter junk, focus on good companies".

@@ -5,7 +5,7 @@ sbi_haiku_extract has been storing peer_comparison [{name, pe, pb, ronw}] in
 ipo_research_notes.full_json — its own docstring calls it "THE missing FV-v2
 witness" — but NOTHING consumed it. This step does: median of the note's
 valid peer P/Es -> ipo_intelligence.peer_median_pe, FILL-EMPTY ONLY
-(SCHEMA.md golden rule), exact normalized-name/symbol join (strong keys).
+(docs/archive/SCHEMA_V1.md golden rule), exact normalized-name/symbol join (strong keys).
 
 Runs AFTER the Haiku step and BEFORE fetch_peer_pe (Screener), so:
   SBI-note peers (analyst-curated) fill first; Screener fills the remainder.
