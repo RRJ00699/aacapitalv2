@@ -1,6 +1,14 @@
 # Authoritative `_scripts` Caller Graph
 
-**Evidence status:** VERIFIED by `tools/scripts_caller_graph.py`; the analyzer reads source without importing or executing production modules.
+**Status: CURRENT**
+
+**Command:**
+
+```text
+python tools/scripts_caller_graph.py --production
+```
+
+The totals below are the exact output of that command. The analyzer reads source without importing or executing production modules.
 
 ## Root caller set
 
@@ -37,19 +45,37 @@
 
 Python AST handling covers `import`, `from ... import ...`, constants passed to wrapper functions such as `step()`, subprocess/Popen/check-call/check-output argument lists, Python-executable command arrays, `os.system` command strings, explicit `_scripts/...` paths, bare script names resolved relative to `_scripts`, and shell/batch/PowerShell references. Reachability is recursively closed over every discovered edge. Docstrings and comments are excluded from executable path evidence.
 
-## Authoritative totals
+## Production totals
 
 | Measure | Count |
 |---|---:|
-| Production files evaluated | 174 |
+| TOTAL | 174 |
 | KEEP | 54 |
 | UNREACHABLE | 120 |
 | UNKNOWN | 0 |
-| V1-bearing total | 122 |
-| KEPT with V1 | 36 |
-| UNREACHABLE with V1 | 86 |
+| V1_TOTAL | 122 |
+| KEPT_WITH_V1 | 36 |
+| UNREACHABLE_WITH_V1 | 86 |
 
-Tests and test fixtures under `_scripts/tests/` are approved test infrastructure and excluded from production-file totals. Non-executable documentation/data sidecars are also excluded. No file was moved or deleted.
+Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. No file was moved or deleted.
+
+## Raw all-tracked totals
+
+| Measure | Count |
+|---|---:|
+| TOTAL | 267 |
+| KEEP | 56 |
+| UNREACHABLE | 211 |
+| UNKNOWN | 0 |
+| V1_TOTAL | 154 |
+| KEPT_WITH_V1 | 36 |
+| UNREACHABLE_WITH_V1 | 118 |
+
+## Limitations and backstops
+
+- Conservative string matching may over-keep files when a script-looking string is not executed.
+- F-string and other dynamically assembled paths may be under-detected.
+- Path-existence contracts and caller contracts remain the backstop; these limitations are not resolved by this graph.
 
 ## Complete `run_ipo_pipeline_lean.py` dependency closure
 

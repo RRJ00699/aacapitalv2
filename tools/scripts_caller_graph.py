@@ -12,11 +12,13 @@ import ast
 import json
 import re
 import subprocess
+import warnings
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 SCRIPT_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".sh", ".ps1", ".bat", ".cmd"}
+PRODUCTION_SUFFIXES = SCRIPT_SUFFIXES | {".sql"}
 V1_TABLES = ("ipo_intelligence", "ipo_consolidated", "ipo_golden", "ipo_master", "ipo_rhp_intel", "price_candles", "ipo_verdicts", "ipo_flags")
 PATH_TOKEN = re.compile(r"(?<![A-Za-z0-9_.-])((?:_scripts/|\.\.?/)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:py|js|mjs|cjs|ts|tsx|sh|ps1|bat|cmd))(?![A-Za-z0-9_.-])")
 
@@ -49,6 +51,27 @@ class Result:
                     seen.add(child); queue.append((child, chain + [child]))
         return []
 
+    def production(self) -> "Result":
+        """Return the documented production view without changing graph edges.
+
+        Production excludes ``_scripts/tests/**`` and tracked sidecars whose
+        suffix is not in ``PRODUCTION_SUFFIXES``. In this repository those
+        sidecars are the extensionless deploy trigger plus .md, .patch, .csv,
+        and .pyc files.
+        """
+        files = {
+            path for path in self.files
+            if not path.startswith("_scripts/tests/")
+            and PurePosixPath(path).suffix in PRODUCTION_SUFFIXES
+        }
+        return Result(
+            files=files,
+            roots={path: evidence for path, evidence in self.roots.items() if path in files},
+            edges=self.edges,
+            keep=self.keep & files,
+            predecessors=self.predecessors,
+        )
+
 
 def tracked_scripts(repo: Path) -> set[str]:
     try:
@@ -77,6 +100,12 @@ def _module_index(files: set[str]) -> dict[str, str]:
         if parts[-1] == "__init__":
             out[".".join(parts[:-1])] = rel
     return out
+
+
+def _parse_python(source: str) -> ast.AST:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        return ast.parse(source)
 
 
 def _resolve_token(token: str, caller: str, files: set[str]) -> str | None:
@@ -109,7 +138,7 @@ def _python_edges(repo: Path, caller: str, files: set[str], modules: dict[str, s
     source = (repo / caller).read_text(encoding="utf-8", errors="ignore")
     edges = set()
     try:
-        tree = ast.parse(source)
+        tree = _parse_python(source)
     except SyntaxError:
         tree = None
     if tree is not None:
@@ -176,7 +205,7 @@ def analyze(repo: Path) -> Result:
     if runner in files:
         source = (repo / runner).read_text(encoding="utf-8", errors="ignore")
         try:
-            tree = ast.parse(source)
+            tree = _parse_python(source)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "JOBS" for t in node.targets):
                     for job, command in ast.literal_eval(node.value).items():
@@ -213,10 +242,49 @@ def v1_references(path: Path) -> list[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("--repo", type=Path, default=Path.cwd()); parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(); result = analyze(args.repo)
-    payload = {"keep": sorted(result.keep), "unreachable": sorted(result.files-result.keep), "roots": {k: sorted(v) for k,v in sorted(result.roots.items())},
-               "edges": [edge.__dict__ for edge in sorted(result.edges, key=lambda e:(e.caller,e.callee,e.kind))]}
-    print(json.dumps(payload, indent=2) if args.json else f"KEEP={len(result.keep)} UNREACHABLE={len(result.files-result.keep)}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--production", action="store_true")
+    args = parser.parse_args()
+    raw = analyze(args.repo)
+    production = raw.production()
+
+    repo = args.repo.resolve()
+
+    def summary(result: Result) -> dict[str, int]:
+        v1_files = {path for path in result.files if v1_references(repo / path)}
+        return {
+            "total": len(result.files),
+            "keep": len(result.keep),
+            "unreachable": len(result.files - result.keep),
+            "unknown": 0,
+            "v1_total": len(v1_files),
+            "kept_with_v1": len(v1_files & result.keep),
+            "unreachable_with_v1": len(v1_files - result.keep),
+        }
+
+    selected = production if args.production else raw
+    payload = {
+        "mode": "production" if args.production else "raw",
+        "production_totals": summary(production),
+        "raw_all_tracked_totals": summary(raw),
+        "keep": sorted(selected.keep),
+        "unreachable": sorted(selected.files - selected.keep),
+        "roots": {key: sorted(value) for key, value in sorted(selected.roots.items())},
+        "edges": [edge.__dict__ for edge in sorted(raw.edges, key=lambda edge: (edge.caller, edge.callee, edge.kind))],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return
+    if args.production:
+        prod = payload["production_totals"]
+        print("PRODUCTION TOTALS")
+        print(f"TOTAL={prod['total']} KEEP={prod['keep']} UNREACHABLE={prod['unreachable']} UNKNOWN={prod['unknown']}")
+        print(f"V1_TOTAL={prod['v1_total']} KEPT_WITH_V1={prod['kept_with_v1']} UNREACHABLE_WITH_V1={prod['unreachable_with_v1']}")
+    raw_totals = payload["raw_all_tracked_totals"]
+    print("RAW ALL-TRACKED TOTALS")
+    print(f"TOTAL={raw_totals['total']} KEEP={raw_totals['keep']} UNREACHABLE={raw_totals['unreachable']} UNKNOWN={raw_totals['unknown']}")
+    print(f"V1_TOTAL={raw_totals['v1_total']} KEPT_WITH_V1={raw_totals['kept_with_v1']} UNREACHABLE_WITH_V1={raw_totals['unreachable_with_v1']}")
 
 if __name__ == "__main__": main()
