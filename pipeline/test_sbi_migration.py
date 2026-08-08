@@ -1,6 +1,8 @@
 import hashlib
 import json
 import pathlib
+import runpy
+import sys
 
 import pytest
 
@@ -82,6 +84,47 @@ def test_remote_preflight_has_zero_write_and_model_budget(tmp_path):
     budget = verify.preflight(verify.local_inventory(tmp_path))
     assert budget["tracked_pdf_count"] == 1
     assert budget["r2_put_count"] == budget["neon_writes"] == budget["sonnet_calls"] == 0
+
+
+def test_script_mode_imports_start_up_and_reach_real_remote_classification(monkeypatch):
+    """The documented file command must not depend on repo-root package imports."""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    pipeline_dir = root / "pipeline"
+    script = pipeline_dir / "sbi_migration_verify.py"
+    script_path = str(script)
+    search_path = [str(pipeline_dir)] + [
+        entry for entry in sys.path
+        if entry and pathlib.Path(entry).resolve() != root
+        and pathlib.Path(entry).resolve() != pipeline_dir
+    ]
+    monkeypatch.setattr(sys, "path", search_path)
+    for name in ("fill_ipo", "sbi_ingest", "sbi_sonnet", "document_ledger",
+                 "document_contract", "r2"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    namespace = runpy.run_path(script_path, run_name="sbi_migration_verify_script_mode")
+    assert callable(namespace["company_from_filename"])
+    assert callable(namespace["_norm"])
+
+    class Cursor:
+        def __init__(self):
+            self.result = None
+        def execute(self, sql, params):
+            self.result = (7, "INE000TEST01") if "FROM ipo WHERE name_norm" in sql else None
+        def fetchone(self):
+            return self.result
+        def close(self):
+            pass
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    row = {"local_path": "data/research_notes/Example Ltd_IPO Note.pdf",
+           "local_sha256": "a" * 64, "bytes": 1}
+    result = namespace["verify_remote"](
+        row, Connection(), object(), namespace["OperationCounter"]())
+    assert result["status"] == "LEDGER_MISSING"
+    assert "ModuleNotFoundError" not in result.get("error", "")
 
 
 def test_production_lane_has_no_legacy_parser_or_tracked_runtime_path():

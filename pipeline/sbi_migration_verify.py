@@ -11,6 +11,15 @@ import time
 from collections import Counter
 from pathlib import Path
 
+try:
+    from .fill_ipo import _norm
+    from .sbi_ingest import company_from_filename
+    from .sbi_sonnet import MODEL, PROMPT_VERSION
+except ImportError:
+    from fill_ipo import _norm
+    from sbi_ingest import company_from_filename
+    from sbi_sonnet import MODEL, PROMPT_VERSION
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DIR = ROOT / "data" / "research_notes"
 STATUSES = (
@@ -47,8 +56,6 @@ def _read(cur, counter, sql, params):
 
 def verify_remote(row, conn, store, counter):
     """Classify one PDF. Exceptions are isolated so every input gets one status."""
-    from pipeline.sbi_ingest import company_from_filename
-    from pipeline.sbi_sonnet import MODEL, PROMPT_VERSION
     row.update({"ipo_id": None, "isin": None, "documents_id": None,
                 "documents_sha256": None, "documents_object_key": None,
                 "r2_object_exists": None, "r2_sha_status": "NOT_CHECKED",
@@ -124,7 +131,6 @@ def verify_remote(row, conn, store, counter):
 
 
 def _normalise(value):
-    from pipeline.fill_ipo import _norm
     return _norm(value)
 
 
