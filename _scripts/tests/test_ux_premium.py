@@ -196,7 +196,7 @@ def test_u8_ticker_falls_back_to_consolidated_strong_key():
     blank until the evening enrich, launcher tracked 5 names and missed the
     one listing. Discovery now unions ipo_consolidated's strong key for the
     same window."""
-    src = _read("_scripts", "ipo", "kite_ticker_ipo.py")
+    src = _read("compatibility", "scripts", "ipo", "kite_ticker_ipo.py")
     assert "FROM ipo_consolidated" in src
     assert "COALESCE(NULLIF(btrim(symbol_final),''), NULLIF(btrim(nse_symbol),''), btrim(symbol))" in src
     assert "consolidated fallback unavailable" in src, "fallback must degrade gracefully"
@@ -205,7 +205,7 @@ def test_u8_ticker_falls_back_to_consolidated_strong_key():
 # ── Phase 10 slice 1: data foundation scripts ─────────────────────────────
 
 def test_phase10_backfill_is_fill_empty_only_and_gated():
-    src = _read("_scripts", "backfill_listing_window_candles.py")
+    src = _read("compatibility", "scripts", "backfill_listing_window_candles.py")
     assert "ON CONFLICT (symbol, date) DO NOTHING" in src, "fill-empty-only: never overwrite"
     assert "h >= max(o, cl) and lo <= min(o, cl)" in src, "OHLC sanity gate before write"
     assert "REIT|InvIT" in src and "issue_size_cr >= 200" in src, "eligible universe only"
@@ -215,7 +215,7 @@ def test_phase10_backfill_is_fill_empty_only_and_gated():
 
 
 def test_phase10_audit_is_read_only():
-    src = _read("_scripts", "data_quality_audit.py")
+    src = _read("compatibility", "scripts", "data_quality_audit.py")
     for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "CREATE TABLE"):
         assert verb not in src, f"audit must be read-only, found {verb}"
     assert "99.9" in src and "blank BOTH symbol columns" in src
@@ -246,14 +246,14 @@ def test_playwright_projects_all_run_on_chromium():
 
 
 def test_audit_is_information_schema_driven_two_table():
-    src = _read("_scripts", "data_quality_audit.py")
+    src = _read("compatibility", "scripts", "data_quality_audit.py")
     assert "information_schema.columns" in src, "never assume a column exists (final_qib crash)"
     assert '("ipo_consolidated", "final_qib"' in src and '("ipo_intelligence", "nse_symbol"' in src
     assert "serving table" in src, "owner design: consolidated serves, intelligence sources"
 
 
 def test_backfill_clamps_window_and_reads_aliases():
-    src = _read("_scripts", "backfill_listing_window_candles.py")
+    src = _read("compatibility", "scripts", "backfill_listing_window_candles.py")
     assert "INTERVAL '45 days'" in src, "one dirty lock date (FUSION) must not break a fetch"
     assert "symbol_aliases" in src and 'aliases.get(sym, "")' in src
     ddl = _read("_scripts", "schema_sync.py")
@@ -389,7 +389,7 @@ def test_chittorgarh_steps_removed_from_pipeline():
 
 
 def test_nse_anchor_backfill_reuses_proven_session_and_lands_durably():
-    src = _read("_scripts", "nse_anchor_backfill.py")
+    src = _read("compatibility", "scripts", "nse_anchor_backfill.py")
     assert 'impersonate="chrome124"' in src and "all-upcoming-issues-ipo" in src, \
         "reuses nse_preopen_capture's proven priming pattern (owner directive)"
     assert "Anchor\\s+investor\\s+portion" in src and "ON CONFLICT (symbol)" in src

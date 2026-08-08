@@ -2,6 +2,7 @@
 import ast
 import pathlib
 import re
+import json
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -112,10 +113,11 @@ def test_extraction_and_valuation_owners_are_explicit():
 
 
 def test_live_subprocess_and_workflow_paths_exist():
-    corpus = "\n".join(text(path) for path in (
-        "_scripts/job_runner.py", ".github/workflows/pipeline.yml",
-        ".github/workflows/preopen-capture.yml", ".github/workflows/sbi-notes.yml",
-    ))
+    workflow_paths = sorted((ROOT / ".github/workflows").glob("*.y*ml"))
+    pipeline_paths = sorted(path for path in (ROOT / "pipeline").rglob("*") if path.is_file())
+    corpus = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in workflow_paths + pipeline_paths)
+    corpus += "\n" + text("_scripts/job_runner.py")
+    corpus += "\n" + "\n".join(json.loads(text("package.json")).get("scripts", {}).values())
     candidates = set(re.findall(r"(?:pipeline|_scripts)/[A-Za-z0-9_./-]+\.(?:py|ts|mjs)", corpus))
     missing = sorted(path for path in candidates if not (ROOT / path).exists())
     assert not missing

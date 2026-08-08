@@ -49,15 +49,17 @@ Python AST handling covers `import`, `from ... import ...`, constants passed to 
 
 | Measure | Count |
 |---|---:|
-| TOTAL | 174 |
+| TOTAL | 54 |
 | KEEP | 54 |
-| UNREACHABLE | 120 |
+| UNREACHABLE | 0 |
 | UNKNOWN | 0 |
-| V1_TOTAL | 122 |
+| V1_TOTAL | 36 |
 | KEPT_WITH_V1 | 36 |
-| UNREACHABLE_WITH_V1 | 86 |
+| UNREACHABLE_WITH_V1 | 0 |
 
-Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. No file was moved or deleted.
+Before the Phase 4B quarantine, the same production graph reported TOTAL=174, KEEP=54, UNREACHABLE=120, V1_TOTAL=122, KEPT_WITH_V1=36, and UNREACHABLE_WITH_V1=86. The 120 mechanically unreachable files were moved without source rewrites.
+
+Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. The production view now contains only the 54 caller-evidenced KEEP files; quarantined files are outside `_scripts`.
 
 ## Raw all-tracked totals
 
@@ -204,7 +206,7 @@ The closure contains 47 production files, including the root:
 
 ## Safe quarantine candidate count
 
-**120 production files** are mechanically UNREACHABLE and therefore constitute the maximum safe quarantine candidate set for the follow-up decision. This document does not authorize or perform those moves.
+**0 production files** remain mechanically UNREACHABLE under `_scripts`; all 120 Phase 4B candidates were quarantined while the 54 KEEP files remained in place.
 
 ## Method and regression
 

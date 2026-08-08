@@ -46,7 +46,7 @@ def test_rebuilt_tables_are_actually_rebuilt():
 
 
 def test_listing_tape_has_its_own_table():
-    s = (SCRIPTS / "backfill_listing_minutes.py").read_text(encoding="utf-8")
+    s = (ROOT / "compatibility/scripts/backfill_listing_minutes.py").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS ipo_listing_tape" in s, \
         "listing tape must own its table, not ALTER columns onto a rebuilt one"
     assert "UPDATE ipo_consolidated SET" not in s, \

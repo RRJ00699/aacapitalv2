@@ -19,7 +19,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.unit
 
-PIPELINES = ["_scripts/run_ipo_pipeline_lean.py", "_scripts/run_ipo_pipeline.py"]
+PIPELINES = ["_scripts/run_ipo_pipeline_lean.py", "compatibility/scripts/run_ipo_pipeline.py"]
 DEAD_SCRIPTS = ["close_in_range.py", "match_anchor_deals.py"]
 KEPT_SCRIPT = "fetch_delivery_bhavcopy.py"   # delivery feeds the post-listing route
 

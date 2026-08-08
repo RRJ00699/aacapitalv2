@@ -25,7 +25,7 @@ def test_stale_twin_survives_neon_sleep():
     assert ":stale" in src and "STALE" in src, "7d stale twin = zero-idle guarantee"
 
 def test_loadtest_script_cannot_wake_neon():
-    src = _read("_scripts", "loadtest_k6.js")
+    src = _read("_archive", "scripts", "loadtest_k6.js")
     assert 'p(95)<200' in src and "rate<0.001" in src
     assert "MISS" in src, "the load test itself must assert KV serving"
 
