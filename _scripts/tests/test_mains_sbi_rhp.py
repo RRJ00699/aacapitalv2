@@ -1,5 +1,4 @@
-"""Main-path tests for parse_sbi_notes and rhp_sonnet — the last two big
-uncovered mains. ZERO spend, ZERO network: PDFs are generated with fitz,
+"""Main-path tests for rhp_sonnet. The legacy SBI regex main is archived. ZERO spend, ZERO network: PDFs are generated with fitz,
 the Sonnet API is a stub that counts calls, DB is embedded PG.
 """
 import sys, os, io, json, types, pathlib, subprocess
@@ -23,109 +22,6 @@ def _make_pdf(path, lines):
 NOTE_LINES = ["Kusumgar Ltd IPO", "Price Band Rs 133 - 140 per share",
               "Fresh Issue (Rs Cr) 500.00", "Offer for Sale (Rs Cr) 250.00",
               "We recommend investors to SUBSCRIBE to the issue."]
-
-
-# ================= parse_sbi_notes main =================
-
-def _run_sbi(uri_or_none, tmp, *args):
-    env = dict(os.environ)
-    env.pop("NEON_DATABASE_URL", None)
-    if uri_or_none: env["DATABASE_URL"] = uri_or_none
-    else: env.pop("DATABASE_URL", None)
-    for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
-        env.pop(k)
-    if os.environ.get("SUBPROC_COV"):
-        env["COVERAGE_FILE"] = str(ROOT / ".coverage")   # cwd=tmp: data must land in repo
-    s = ROOT / "_scripts" / "parse_sbi_notes.py"
-    cmd = ([sys.executable, "-m", "coverage", "run", "-p",
-            f"--rcfile={ROOT}/.coveragerc", str(s)]
-           if os.environ.get("SUBPROC_COV") else [sys.executable, str(s)])
-    env["PYTHONIOENCODING"] = "utf-8"        # child writes UTF-8 (em-dash in the dry-run line)
-    return subprocess.run([*cmd, *args], capture_output=True, text=True,
-                          encoding="utf-8", env=env, timeout=120, cwd=tmp)
-
-def test_sbi_main_no_pdfs_exits_loud(tmp_path):
-    r = _run_sbi(None, tmp_path, "--dir", str(tmp_path / "empty"))
-    assert r.returncode != 0 and "no PDFs" in (r.stdout + r.stderr)
-
-def test_sbi_main_dry_run_parses_and_stops(tmp_path):
-    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
-    r = _run_sbi(None, tmp_path, "--dir", str(tmp_path / "notes"))
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "parsed 1 notes" in r.stdout
-    assert "dry-run — add --write-db to persist." in r.stdout
-
-def test_sbi_main_debug_prints_json_first_file_only(tmp_path):
-    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
-    _make_pdf(tmp_path / "notes" / "Zeta Ltd_IPO Note.pdf", NOTE_LINES)
-    r = _run_sbi(None, tmp_path, "--dir", str(tmp_path / "notes"), "--debug")
-    assert '"company": "Kusumgar Ltd"' in r.stdout
-    assert "Zeta" not in r.stdout                        # debug = first file, then return
-
-@pytest.mark.db
-def test_sbi_main_write_db_fuzzy_attach_and_fill_empty(tmp_path, pg_uri):
-    """Ledger #9 FIX: symbol attach is now the byte-identical schema_sync
-    _canon SQL join (imported, cannot drift) — RULE 2 strong-key, no fuzz.
-    Exact-canon match attaches + fills empties; COALESCE-gated; upserts."""
-    import psycopg2
-    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
-    cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
-        CREATE TABLE ipo_intelligence (company_name TEXT, nse_symbol TEXT,
-            sbi_rating TEXT, peer_median_pe NUMERIC)""")
-    cur.execute("""INSERT INTO ipo_intelligence VALUES
-        ('Kusumgar Ltd', 'KUSUM', 'PreExisting', NULL),
-        ('Kusumgar Textiles Limited', 'KUSTEX', NULL, NULL),
-        ('Totally Different Co', 'DIFF', NULL, NULL)""")
-    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
-    r = _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "ipo_research_notes: 1 rows" in r.stdout
-    cur.execute("SELECT nse_symbol, rating FROM ipo_research_notes")
-    nse, rating = cur.fetchone()
-    assert nse == "KUSUM"                                # canon-exact attach
-    assert rating == "Subscribe"
-    cur.execute("SELECT sbi_rating FROM ipo_intelligence WHERE nse_symbol='KUSUM'")
-    assert cur.fetchone()[0] == "PreExisting"            # COALESCE: not clobbered
-    # rerun -> upsert, still 1 row
-    r2 = _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
-    cur.execute("SELECT COUNT(*) FROM ipo_research_notes")
-    assert cur.fetchone()[0] == 1
-    c.close()
-
-@pytest.mark.db
-def test_sbi_canon_attaches_ltd_vs_limited(tmp_path, pg_uri):
-    """Ledger #9 FIX flipped: 'X Ltd' note vs 'X Limited' row — the exact case
-    rapidfuzz missed (85.7 < 88) — now canon-attaches, and the enrichment
-    that used to silently skip lands."""
-    import psycopg2
-    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
-    cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
-        CREATE TABLE ipo_intelligence (company_name TEXT, nse_symbol TEXT,
-            sbi_rating TEXT, peer_median_pe NUMERIC)""")
-    cur.execute("INSERT INTO ipo_intelligence VALUES ('Kusumgar Limited','KUSUM',NULL,NULL)")
-    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
-    _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
-    cur.execute("SELECT nse_symbol FROM ipo_research_notes")
-    assert cur.fetchone()[0] == "KUSUM"                  # attaches now
-    cur.execute("SELECT sbi_rating FROM ipo_intelligence")
-    assert cur.fetchone()[0] == "Subscribe"              # enrichment lands
-    c.close()
-
-@pytest.mark.db
-def test_sbi_canon_never_cross_matches_different_companies(tmp_path, pg_uri):
-    """RULE 2 negative case: a different company that merely shares words
-    must NOT attach (the CSM->SRS false-match class fuzzy joins invite)."""
-    import psycopg2
-    c = psycopg2.connect(pg_uri); c.autocommit = True; cur = c.cursor()
-    cur.execute("""DROP SCHEMA public CASCADE; CREATE SCHEMA public;
-        CREATE TABLE ipo_intelligence (company_name TEXT, nse_symbol TEXT,
-            sbi_rating TEXT, peer_median_pe NUMERIC)""")
-    cur.execute("INSERT INTO ipo_intelligence VALUES ('Kusumgar Textiles Ltd','WRONG',NULL,NULL)")
-    _make_pdf(tmp_path / "notes" / "Kusumgar Ltd_IPO Note.pdf", NOTE_LINES)
-    _run_sbi(pg_uri, tmp_path, "--dir", str(tmp_path / "notes"), "--write-db")
-    cur.execute("SELECT nse_symbol FROM ipo_research_notes")
-    assert cur.fetchone()[0] is None                     # no cross-match
-    c.close()
 
 
 # ================= rhp_sonnet main (in-process, mocked API) =================

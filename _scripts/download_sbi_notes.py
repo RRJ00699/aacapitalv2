@@ -7,7 +7,7 @@ download; we catch it. Resilient: a missing/slow note is skipped (Escape + conti
   python _scripts\\download_sbi_notes.py --out data\\research_notes                 # all
   python _scripts\\download_sbi_notes.py --out data\\research_notes --start-page 27 # resume/mop-up
 """
-import argparse, os, re, sys
+import argparse, os, re, sys, tempfile
 
 RESEARCH_URL = "https://www.sbisecurities.in/research/fundamental"
 
@@ -22,7 +22,8 @@ def goto_page(pg, target):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="data/research_notes")
+    ap.add_argument("--out", default=os.path.join(tempfile.gettempdir(), "aacapital-sbi-notes"),
+                    help="temporary working directory (never a tracked data directory)")
     ap.add_argument("--pages", type=int, default=0)
     ap.add_argument("--start-page", type=int, default=1)
     a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)

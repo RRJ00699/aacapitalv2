@@ -205,7 +205,8 @@ def main():
 
     # ── SBI RESEARCH NOTES (structured scrape/parse — NOT sent to Sonnet) ──
     step("download SBI notes (new only)",   ["download_sbi_notes.py"])
-    step("parse SBI notes -> DB",           ["parse_sbi_notes.py"])
+    # SBI regex parsing is retired. The owner-gated canonical lane stores immutable
+    # documents before Sonnet extraction; it is intentionally not auto-activated here.
     step("street news discovery (free RSS)", ["fetch_ipo_news.py", "--apply"])
     step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
 

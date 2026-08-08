@@ -50,7 +50,7 @@ LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete
 # R2 source objects have permanent retention. SBI notes are tracked separately; neither
 # source-document type has an R2 deletion path.
 RHP_DIRS = ["rhps"]
-SBI_DIR = "data/research_notes"
+SBI_DIR = os.path.join(os.environ.get("RUNNER_TEMP", os.path.abspath(".tmp")), "sbi-notes")
 
 
 # The cron works the LIVE WINDOW, not history. An IPO is "active" while there is still
@@ -319,12 +319,9 @@ def main():
     if not a.skip_download:
         steps.append(run("2b. download SBI notes",
                          [py, os.path.join("_scripts", "download_sbi_notes.py"),
-                          "--out", "data/research_notes"], dry, 1200))
-        # 2c REMOVED 08-01. parse_sbi_notes.py is a V1 regex/pdfplumber parser that
-        # re-derives PE and peer names from the PDFs. Sonnet already reads documents far
-        # more reliably, and this was the ONLY step failing on every run. SBI notes are
-        # downloaded and kept for the UI; their CONTENT will be extracted the same way
-        # RHPs are, not by regex.
+                          "--out", SBI_DIR], dry, 1200))
+        # Legacy regex step retired. Canonical extraction starts only after the
+        # owner-gated ledger/R2 ingest has established immutable provenance.
 
     # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
     cap = with_db(get_cap)
