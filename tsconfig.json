@@ -43,6 +43,8 @@
     "_scripts",
     "_scripts/**/*",
     "_archive",
-    "_archive/**/*"
+    "_archive/**/*",
+    "compatibility",
+    "compatibility/**/*"
   ]
 }

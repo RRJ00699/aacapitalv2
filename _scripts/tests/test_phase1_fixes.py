@@ -52,7 +52,7 @@ def test_lean_pipeline_writers_apply():
 
 
 def test_full_pipeline_writers_apply():
-    src = _read(ROOT, "run_ipo_pipeline.py")
+    src = _read(ROOT, "../compatibility/scripts/run_ipo_pipeline.py")
     for script in ("fill_listing_open_from_candles.py", "reconcile_listing_dates.py"):
         calls = _step_args(src, script)
         assert calls, f"{script} step missing from full pipeline"

@@ -25,7 +25,7 @@ RELOCATED = [
     "missing_financials_to_fetch.txt", "sbi_api.json", "build_errors.txt",
 ]
 
-RELOCATED_LIVE = ["_scripts/link_brlm_scores.py", "_scripts/load_instrument_tokens.py",
+RELOCATED_LIVE = ["compatibility/scripts/link_brlm_scores.py", "_archive/scripts/load_instrument_tokens.py",
                   "research/backtests/legacy_real_return_analysis.py"]
 
 
