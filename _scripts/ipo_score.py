@@ -41,7 +41,7 @@ def band_of(s):
 def score_row(r):
     s, why = 0, []
     gb = (r.get("gap_bucket") or "").upper()
-    # MID GAP REMOVED 2026-07-18. IPO_BUSINESS_REQUIREMENTS.md §5 lists MID gap
+    # MID GAP REMOVED 2026-07-18. docs/specifications/IPO_BUSINESS_REQUIREMENTS.md §5 lists MID gap
     # as DEAD: the original +2 (84.1% win, n=69) was measured on POLLUTED data
     # and COLLAPSED to a coin-flip once the data was rebuilt. Scoring it inflated
     # the band on every MID-gap IPO — the single highest-value correctness fix in

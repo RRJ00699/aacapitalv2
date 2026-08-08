@@ -1,3 +1,9 @@
+# V1 — SUPERSEDED BY docs/specifications/V2_SCHEMA.md
+
+> **ARCHIVED DOCUMENT.** Historical evidence only. Current authority: `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`.
+
+> Historical reference only. Do not use this document as the production schema contract.
+
 Status: CURRENT
 
 # AACapital — Database Schema & Hard Rules

@@ -524,7 +524,7 @@ CREATE TABLE subscription_history (id SERIAL PRIMARY KEY, ipo_name TEXT,
     notes TEXT, recorded_at TIMESTAMPTZ, UNIQUE(ipo_name, day));
 CREATE TABLE user_settings (key TEXT PRIMARY KEY, value JSONB,
     updated_at TIMESTAMPTZ);
--- prod tables from SCHEMA.md inventory referenced by routes --
+-- prod tables from docs/archive/SCHEMA_V1.md inventory referenced by routes --
 CREATE TABLE ipo_daily_levels (symbol TEXT, date DATE, t INT, close NUMERIC,
     floor NUMERIC, ceiling NUMERIC, poc NUMERIC, cushion NUMERIC,
     broke_floor BOOLEAN, broke_ceiling BOOLEAN);

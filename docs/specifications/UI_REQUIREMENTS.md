@@ -4,7 +4,7 @@ Status: CURRENT
 
 **Purpose:** the single authoritative record of the frontend — design system, every
 screen's structure, every data binding, and the process rules that keep UI PRs safe.
-Companion to IPO_BUSINESS_REQUIREMENTS.md (the rating spec). Built from the shipped
+Companion to docs/specifications/IPO_BUSINESS_REQUIREMENTS.md (the rating spec). Built from the shipped
 code (UI PRs #139–#145 + recovery), not memory. Read this before changing any screen.
 
 Owner: Jammula Rakesh Reddy · US-CST · listings IST · primary device: iPhone PWA (~380px).
@@ -104,7 +104,7 @@ Sora title, lion stays) · **legacy /dashboard/ipo = FROZEN rollback surface, ne
   {discoveryPrice, buyQty, sellQty, leanPct} | null, rules_passed, rules_total,
   confidence, deadline_ist, last_eval_ist }] }. Poll 60s gated 8:55–10:20 IST.
   NOT served yet: cum_volume_1029_1100 (tile awaiting, "endpoint pending").
-- Locked numbers on screens come from IPO_BUSINESS_REQUIREMENTS.md or an
+- Locked numbers on screens come from docs/specifications/IPO_BUSINESS_REQUIREMENTS.md or an
   owner-executed clean run (e.g. GMP hint +54.5% recomputed 2026-07-15). NEVER
   hardcode a different figure; UI PRs NEVER touch app/api/ipo-command/route.ts.
 

@@ -23,7 +23,7 @@ the primary source would just copy today's mess into a new DB.
 5. **Clean flow** — raw scrape → normalized staging → validated consolidated. The app only
    ever reads the validated layer.
 
-## Target schema (from IPO_BUSINESS_REQUIREMENTS.md)
+## Target schema (from docs/specifications/IPO_BUSINESS_REQUIREMENTS.md)
 Three layers, not one sprawling table:
 
 **Layer 1 — `ipo_master` (identity, immutable per IPO)**

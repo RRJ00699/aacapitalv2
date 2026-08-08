@@ -3,7 +3,7 @@ AACapital -- Load Instrument Tokens
 Downloads all NSE instruments from Kite and inserts into instrument_master.
 Required before running ipo_candle_backfill.py.
 
-Run: python load_instrument_tokens.py
+Run: python _scripts/load_instrument_tokens.py
 """
 
 import os

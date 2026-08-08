@@ -1,3 +1,5 @@
+> **ARCHIVED DOCUMENT.** Historical evidence only. Current authority: `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`.
+
 Status: RESEARCH — NOT PRODUCTION
 
 # Untested theses — N=118 IPOs with SBI note + price data

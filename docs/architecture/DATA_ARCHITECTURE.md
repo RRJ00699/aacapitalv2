@@ -90,11 +90,11 @@ job writes them. They receive no further updates.
 1. **Cron feeds only §1 LIVE tables**, only from §2 APPROVED SOURCES.
 2. **No backend route reads a §3 FROZEN table.** (The one offender —
    `cron/premarket-brief` reading `ipo_master` — is neutralized; that cron is dead anyway.)
-3. **One owning source per field** (per SCHEMA.md): IPOMatrix for identity/anchors/
+3. **One owning source per field** (per docs/archive/SCHEMA_V1.md): IPOMatrix for identity/anchors/
    PE/OFS/band/symbols; Screener for EPS/peer P/E; InvestorGain for GMP; Kite for
    candles/ticks; NSE for delivery; SBI/RHP for forensic.
 4. **Strong-key joins only** (ISIN > exact normalized name), **fill-empty-only**,
-   **preview before write**, **assistant drafts SQL / owner runs** — all per SCHEMA.md.
+   **preview before write**, **assistant drafts SQL / owner runs** — all per docs/archive/SCHEMA_V1.md.
 5. **UI reads the live core** (ipo_consolidated + the computed/enrichment tables),
    which is fed from IPOMatrix as the accurate source of truth.
 6. Frozen tables are never dropped by this contract — they simply stop being touched.

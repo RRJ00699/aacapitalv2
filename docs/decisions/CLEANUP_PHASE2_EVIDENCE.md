@@ -191,7 +191,7 @@ Research and diagnostic implementations moved out of production; moves preserve 
 | `docs/R2_DOCUMENT_CONTRACT.md` | `docs/specifications/R2_DOCUMENT_CONTRACT.md` | IN_USE | Current documentation hierarchy; references updated. |
 | `docs/UI_EVIDENCE_CONTRACT.md` | `docs/specifications/UI_EVIDENCE_CONTRACT.md` | IN_USE | Current documentation hierarchy; references updated. |
 | `docs/UI_REQUIREMENTS.md` | `docs/specifications/UI_REQUIREMENTS.md` | IN_USE | Current documentation hierarchy; references updated. |
-| `docs/V2_SCHEMA.md` | `docs/specifications/V2_SCHEMA.md` | IN_USE | Current documentation hierarchy; references updated. |
+| `docs/V2_docs/archive/SCHEMA_V1.md` | `docs/specifications/V2_docs/archive/SCHEMA_V1.md` | IN_USE | Current documentation hierarchy; references updated. |
 | `_scripts/analyze_brlm_rate.py` | `research/backtests/analyze_brlm_rate.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
 | `_scripts/analyze_junk.py` | `research/backtests/analyze_junk.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |
 | `_scripts/analyze_qib_pattern.py` | `research/backtests/analyze_qib_pattern.py` | RESEARCH | No production caller; documentation paths updated; offline import/runtime risk only. |

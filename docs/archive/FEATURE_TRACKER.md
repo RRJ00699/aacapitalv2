@@ -1,3 +1,5 @@
+> **ARCHIVED DOCUMENT.** Historical evidence only. Current authority: `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`.
+
 Status: CURRENT
 
 # AACapital — Feature Tracker (every ask, nothing buried)

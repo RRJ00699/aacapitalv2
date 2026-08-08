@@ -5,7 +5,7 @@ ALL of them (78 across these years), aggregated.
 
 Pipeline (matches your existing flow):
     python _scripts/ipo/load_brlm_scores.py     # rebuild brlm_scores from the files
-    python link_brlm_scores.py                  # your existing: recalibrate score + link to ipo_intelligence
+    python _scripts/link_brlm_scores.py                  # your existing: recalibrate score + link to ipo_intelligence
 
 Place the six Lead_Managers_*.xlsx in data/Ipo_reports/ (alongside your other Chittorgarh exports).
 """
@@ -82,7 +82,7 @@ def main():
     print("Top 5 by IPO count:")
     for name, count, avg, pctneg, amt in rows[:5]:
         print(f"  {name[:34]:34s} n={count:3d}  avg_listing={avg:5.1f}%  neg={pctneg:4.1f}%")
-    print("\nNext: python link_brlm_scores.py   (recalibrates score + links to ipo_intelligence)")
+    print("\nNext: python _scripts/link_brlm_scores.py   (recalibrates score + links to ipo_intelligence)")
     conn.close()
 
 if __name__ == "__main__":

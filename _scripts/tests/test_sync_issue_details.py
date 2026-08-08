@@ -1,5 +1,5 @@
 """Integration tests for _scripts/sync_issue_details.py — the fix for the
-SCHEMA.md pipeline gap (NULL sector/nse_symbol -> peer P/E + fair value
+docs/archive/SCHEMA_V1.md pipeline gap (NULL sector/nse_symbol -> peer P/E + fair value
 silently fail; root cause 2026-07-15).
 
 Verifies every rule the script claims, as a subprocess vs embedded PG:

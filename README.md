@@ -10,20 +10,28 @@ hold/exit discipline. The app informs; the owner trades manually.
 **Authoritative product rules:** [`docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md`](docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md)
 (where any other doc disagrees, the contract wins).
 
-## Architecture
+## Repository zones
 
-- **UI/API** — Next.js (`app/`), deployed via OpenNext on Cloudflare
-  (`wrangler.jsonc`, `open-next.config.ts`). Main page:
-  `/dashboard/ipo2` (Command · Live · Post views) + `/dashboard/journey`.
-- **Data** — Neon Postgres. Source table `ipo_intelligence`; derived
-  `ipo_consolidated` (see `SCHEMA.md`). **Zero-idle rule:** user reads serve
-  from Cloudflare KV; Neon wakes only for pipeline writes/warms
-  (`docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`).
-- **Pipelines** — Python in `_scripts/`, run 2×/day by cron on the VM
-  (`run_ipo_pipeline_lean.py`; spec in `PIPELINE_SPEC.md`). Flow: NSE
-  discovery → enrichment (Chittorgarh/NSE/SEBI/SBI/IPOMatrix) → RHP + SBI
-  PDF extraction (Sonnet $3/day + Haiku $0.50/day caps) → scores/verdicts →
-  consolidated rebuild → KV cache warm.
+This repository intentionally keeps its current layout; an `apps/web` or
+`packages/*` conversion belongs in a future repository.
+
+- **FRONTEND — `app/`, `components/`, `lib/`**: product UI, routes, and web/domain
+  helpers. Public surfaces are KV-only and zero-wake: they may not use `psycopg`,
+  `@neondatabase`, `DATABASE_URL`, or `@/lib/db`.
+- **BACKEND — `pipeline/`**: the canonical database boundary for the offline
+  production pipeline. It owns document ingestion and extraction, lifecycle,
+  valuation, intelligence, and snapshot construction.
+- **EDGE — `workers/`**: Cloudflare edge responsibilities only.
+- **OPS — `_scripts/`**: caller-evidenced operational tooling only. Its keep set
+  and caller chain are recorded in `docs/repository-inventory.tsv`.
+- **QUARANTINE — `compatibility/`, `_archive/`**: runnable compatibility or
+  historical reference. Production code must never import from either zone.
+- **KNOWLEDGE — `docs/`, `research/`**: architecture, decisions, runbooks,
+  specifications, and offline research/backtests; never production entrypoints.
+
+Public reads remain Cloudflare KV-only. Neon wakes only for explicit offline
+pipeline work and publication, as described in
+`docs/architecture/ASSET_LIGHT_ARCHITECTURE.md`.
 - **Listing day** — Kite token auto-refresh (TOTP, 08:00 IST) → tick capture
   (`_scripts/ipo/kite_ticker_ipo.py`) → KV `live:tick:*` → Live view.
 - **Alerts** — ntfy.sh push (`_scripts/lib/notify.py`): URGENT on Kite token
@@ -68,13 +76,3 @@ they preview only.
 - Rejected/zero-weight factors stay rejected
   (contract §7) unless the §8 evidence process is followed.
 - PRs merge only after typecheck + tests pass and owner review.
-
-## Repo map
-
-```
-app/            Next.js UI + API routes (production)
-components/     shared UI (production)
-lib/            shared TS logic; lib/kv-cache.ts = KV helper
-_scripts/       Python pipelines, scrapers, backtests, tests (_scripts/tests)
-docs/           current documentation · docs/archive = history only
-```

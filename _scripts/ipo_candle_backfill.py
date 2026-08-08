@@ -93,7 +93,7 @@ def main():
     log.info(f"Instrument tokens loaded: {len(token_map)}")
 
     if not token_map:
-        log.error("instrument_master is empty — run: python load_instrument_tokens.py first")
+        log.error("instrument_master is empty — run: python _scripts/load_instrument_tokens.py first")
         conn.close()
         return
 

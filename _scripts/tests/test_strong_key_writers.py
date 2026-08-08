@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write paths must resolve their target row by STRONG KEY, not fuzzy containment.
 
-SCHEMA.md RULE 2 / owner rule: ISIN or exact normalized name, never fuzzy.
+docs/archive/SCHEMA_V1.md RULE 2 / owner rule: ISIN or exact normalized name, never fuzzy.
 
 2026-07-18: `enrich_ipo_chittorgarh.py` resolved its UPDATE target with
 `WHERE company_name ILIKE '%<company>%'`. It guarded on "exactly one hit", but a
