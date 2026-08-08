@@ -2,6 +2,48 @@
 
 **Status: PREPARED — OWNER APPROVAL REQUIRED FOR REAL INGEST**
 
+## REMOTE VERIFICATION — 2026-08-08
+
+**Checkpoint status: BLOCKED — production read credentials were not available in
+the execution environment. No remote request and no mutation was made.**
+
+- **VERIFIED — base:** `97adcf028f90edee51b4fe89a492814d49bfe891` is the merge
+  commit for PR #319.
+- **VERIFIED — command:**
+  `SBI_OWNER_APPROVED=YES python pipeline/sbi_migration_verify.py --verify-remote --owner-approved`.
+- **VERIFIED — preflight inventory:** 241 tracked PDFs; 137,109,346 bytes;
+  482 minimum / 964 maximum expected Neon read queries; 0–241 expected R2 HEADs;
+  241 maximum R2 GETs; zero R2 PUTs; zero Neon writes; zero Sonnet calls. Runtime
+  was stated as greater than 60 seconds before execution.
+- **VERIFIED — execution result:** the command stopped before connecting because
+  `DATABASE_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
+  `R2_DOCUMENT_BUCKET` were unset. Actual remote operations: 0 R2 HEAD, 0 R2 GET,
+  and 0 Neon reads. Remote runtime and the eight aggregate status counts are
+  **UNKNOWN**, because classifying absent credentials as per-PDF remote errors would
+  incorrectly claim that verification ran.
+- **UNKNOWN — aggregate counts:** `TOTAL=241`; `VERIFIED_ALREADY_PRESENT`,
+  `LEDGER_MISSING`, `OBJECT_KEY_MISSING`, `R2_OBJECT_MISSING`, `SHA_MISMATCH`,
+  `IPO_UNRESOLVED`, `EXTRACTION_MISSING`, and `REMOTE_CHECK_ERROR` cannot be
+  truthfully populated until the credentialed read-only command completes.
+- **UNKNOWN — exception lists:** unresolved IPO identities and SHA mismatches were
+  not queried; therefore both the unresolved list and mismatch list remain UNKNOWN,
+  not empty.
+- **UNKNOWN — next ingest scope:** required uploads, ledger repairs, post-upload R2
+  GETs, Neon writes, and Sonnet extractions depend on the blocked verification result.
+  No ingest scope is approved by this checkpoint.
+- **UNKNOWN — token and cost inventory:** no Anthropic call was made. A no-call
+  estimate must extract text locally page-by-page (for example with `pdftotext`),
+  count UTF-8 characters and words, apply a documented conservative token range,
+  add the fixed system-prompt/output allowance, and multiply input/output ranges by
+  the owner-approved Sonnet price card. Tokens per note, cost per note, total cost,
+  and total ingest runtime remain UNKNOWN until that inventory and price card exist.
+- **VERIFIED — retention:** `data/research_notes` remains tracked and is not
+  `READY FOR DELETION`; no PDF has three-way SHA proof from this run.
+- **Exact owner decision required next:** provide the approved production read-only
+  Neon credential and R2 read credentials to the execution environment and authorize
+  rerunning only the command above. Do **not** approve ingest, upload, extraction, or
+  deletion until its complete 241-row result is reviewed.
+
 ## Evidence and safety boundary
 
 - **VERIFIED (local):** 241 tracked PDF files, 137,109,346 bytes.

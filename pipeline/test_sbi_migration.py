@@ -68,6 +68,22 @@ def test_local_verifier_hashes_pdf_without_remote_io(tmp_path):
     assert verify.aggregate(rows)["TOTAL"] == 1
 
 
+def test_verifier_reports_every_required_status_without_collapsing_categories():
+    rows = [{"status": status} for status in verify.STATUSES]
+    counts = verify.aggregate(rows)
+    assert counts["TOTAL"] == len(verify.STATUSES)
+    assert set(counts) == {"TOTAL", *verify.STATUSES}
+    assert all(counts[status] == 1 for status in verify.STATUSES)
+
+
+def test_remote_preflight_has_zero_write_and_model_budget(tmp_path):
+    note = tmp_path / "note.pdf"
+    note.write_bytes(b"%PDF-1.7\nfixture\n%%EOF")
+    budget = verify.preflight(verify.local_inventory(tmp_path))
+    assert budget["tracked_pdf_count"] == 1
+    assert budget["r2_put_count"] == budget["neon_writes"] == budget["sonnet_calls"] == 0
+
+
 def test_production_lane_has_no_legacy_parser_or_tracked_runtime_path():
     root = pathlib.Path(__file__).resolve().parents[1]
     production = "\n".join((root / p).read_text(encoding="utf-8") for p in (
