@@ -18,7 +18,7 @@ fills whatever has newly appeared.
 | 1 | Kite token (TOTP) | `_scripts/refresh_kite_token.py` |
 | 2a | Download RHPs | `_scripts/download_sebi_rhps_playwright.py` |
 | 2b | Download SBI notes | `_scripts/download_sbi_notes.py` |
-| 2c | Parse SBI notes | `_scripts/parse_sbi_notes.py` |
+| 2c | SBI canonical ingest | `pipeline/sbi_ingest.py` (owner-gated ledger/R2 writes) |
 | 3 | NSE issue + subscription | `nse_fetch.py` |
 | 4 | RHP extraction (PAID) | `drive.py --rhp` |
 | 5 | Vendor fallback | `ipomatrix_fallback.py` |

@@ -25,7 +25,6 @@ The totals below are the exact output of that command. The analyzer reads source
 - `_scripts/job_runner.py` — documented VM cron entrypoint
 - `_scripts/kite_connect.py` — pipeline import: pipeline/capture_preopen.py; pipeline import: pipeline/kite_fetch.py; pipeline path/import: pipeline/kite_fetch.py
 - `_scripts/market_breadth.py` — _scripts/job_runner.py JOBS[breadth]
-- `_scripts/parse_sbi_notes.py` — _scripts/job_runner.py JOBS[sbi_parse]; enabled workflow: .github/workflows/sbi-notes.yml
 - `_scripts/prod/kite_sync_and_predict.py` — package.json script: package.json
 - `_scripts/refresh_kite_token.py` — _scripts/job_runner.py JOBS[token]; pipeline import: pipeline/kite_fetch.py; pipeline path/import: pipeline/cron.py; pipeline path/import: pipeline/kite_fetch.py
 - `_scripts/run_ipo_pipeline_lean.py` — _scripts/job_runner.py JOBS[pipeline]; _scripts/job_runner.py JOBS[pipeline_weekly]
@@ -49,17 +48,17 @@ Python AST handling covers `import`, `from ... import ...`, constants passed to 
 
 | Measure | Count |
 |---|---:|
-| TOTAL | 54 |
-| KEEP | 54 |
+| TOTAL | 53 |
+| KEEP | 53 |
 | UNREACHABLE | 0 |
 | UNKNOWN | 0 |
-| V1_TOTAL | 36 |
-| KEPT_WITH_V1 | 36 |
+| V1_TOTAL | 35 |
+| KEPT_WITH_V1 | 35 |
 | UNREACHABLE_WITH_V1 | 0 |
 
 Before the Phase 4B quarantine, the same production graph reported TOTAL=174, KEEP=54, UNREACHABLE=120, V1_TOTAL=122, KEPT_WITH_V1=36, and UNREACHABLE_WITH_V1=86. The 120 mechanically unreachable files were moved without source rewrites.
 
-Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. The production view now contains only the 54 caller-evidenced KEEP files; quarantined files are outside `_scripts`.
+Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. The production view now contains only the 53 caller-evidenced KEEP files; quarantined files are outside `_scripts`.
 
 ## Raw all-tracked totals
 
@@ -70,7 +69,7 @@ Production mode excludes exactly `_scripts/tests/**` and tracked files whose suf
 | UNREACHABLE | 211 |
 | UNKNOWN | 0 |
 | V1_TOTAL | 154 |
-| KEPT_WITH_V1 | 36 |
+| KEPT_WITH_V1 | 35 |
 | UNREACHABLE_WITH_V1 | 118 |
 
 ## Limitations and backstops
@@ -206,7 +205,7 @@ The closure contains 47 production files, including the root:
 
 ## Safe quarantine candidate count
 
-**0 production files** remain mechanically UNREACHABLE under `_scripts`; all 120 Phase 4B candidates were quarantined while the 54 KEEP files remained in place.
+**0 production files** remain mechanically UNREACHABLE under `_scripts`; all 120 Phase 4B candidates were quarantined while the 53 KEEP files remained in place.
 
 ## Method and regression
 

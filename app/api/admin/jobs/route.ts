@@ -29,7 +29,7 @@ const ALLOWED_JOBS = new Set([
   "peer_pe", "peer_pe_notes", "news", "vm_verify",          // fair-value input fetch · reality report
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
-  "sbi_download", "sbi_parse",     // SBI research notes (street view)
+  "sbi_download",                  // temporary SBI discovery; canonical ingest is owner-gated
   // IPO daily levels
   // candle sync (post-listing dashboard)
   "sync",                          // git sync (utility)

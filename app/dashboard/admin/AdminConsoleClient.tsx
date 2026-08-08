@@ -31,8 +31,7 @@ const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
   { key: "breadth",         label: "Market breadth",        desc: "NIFTY advances/declines from NSE → Domestic panel (U16)" },
   { key: "token",           label: "Refresh Kite token",    desc: "TOTP re-auth → platform_config" },
-  { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull the latest SBI research PDFs", heavy: true },
-  { key: "sbi_parse",       label: "Parse SBI notes",       desc: "Parse downloaded PDFs → ipo_research_notes" },
+  { key: "sbi_download",    label: "Download SBI notes",    desc: "Pull SBI PDFs into a temporary working directory; canonical ingest remains owner-gated", heavy: true },
     { key: "ipomatrix",       label: "IPOMatrix enrich",     desc: "Fill anchors/structure for new IPOs from IPOMatrix JSON (needs fresh cookie)", heavy: false },
   { key: "sync",            label: "Sync code from GitHub", desc: "git reset to origin/main — pulls merged PRs onto the VM instantly" },
   // Added 2026-07-18: these were in job_runner's whitelist but had NO button, so

@@ -18,7 +18,7 @@ def _inventory():
 def test_every_production_script_is_caller_evidenced_keep():
     result = graph.analyze(ROOT).production()
     assert result.files == result.keep
-    assert len(result.keep) == 54
+    assert len(result.keep) == 53
     classifications = {row["path"]: row["classification"] for row in _inventory()}
     assert {path: classifications.get(path) for path in result.files} == {
         path: "KEEP" for path in result.files

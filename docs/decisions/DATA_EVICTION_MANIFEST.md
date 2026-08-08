@@ -99,3 +99,22 @@ claim final repository cleanup completion. The following work is explicitly
 - runtime V1 migration, which remains the next cleanup PR;
 - the SBI / `research_notes` lane, which remains deferred; and
 - D1 migration and public-route database cleanup, which remain deferred.
+
+## SBI R2 migration checkpoint — 2026-08-08
+
+**`data/research_notes/` status: PREPARED — NOT READY FOR DELETION**
+
+| Evidence | Count |
+|---|---:|
+| Local tracked PDFs / bytes | 241 / 137,109,346 |
+| Ledger verified | 0 (remote check not authorized/run) |
+| R2 verified | 0 (remote check not authorized/run) |
+| Three-way SHA match | 0 (remote check not authorized/run) |
+| Unresolved | UNKNOWN |
+| Failed | UNKNOWN |
+
+The required `READY_FOR_OWNER_DELETION_APPROVAL` state is intentionally **not** set:
+no owner-approved remote verification has proven `local SHA256 == documents.sha256 ==
+R2 object-byte SHA256` for every file. The PDFs remain tracked. The owner-local rollback
+backup remains `data.zip`, SHA256
+`11E9FB68C3A6B10DA5109F02A463AF854A975605719392DF7ECA67E0BB436ED7`.

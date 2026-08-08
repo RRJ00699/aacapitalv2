@@ -16,16 +16,12 @@ jobs:
         run: |
           pip install playwright pdfplumber rapidfuzz psycopg2-binary --break-system-packages
           python -m playwright install --with-deps chromium
-      - name: Download SBI notes
-        run: python _scripts/download_sbi_notes.py --out data/research_notes
-      - name: Parse + write DB
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python _scripts/parse_sbi_notes.py --dir data/research_notes --write-db
-      - name: Commit new PDFs
-        run: |
-          git config user.name "sbi-notes-bot"
-          git config user.email "bot@aacapital"
-          git add data/research_notes || true
-          git commit -m "SBI notes auto-scrape" || echo "nothing new"
-          git push || echo "no push"
+      - name: Download SBI notes to ephemeral workspace
+        run: python _scripts/download_sbi_notes.py --out "$RUNNER_TEMP/sbi-notes"
+      - name: Prepare bounded local inventory (no Neon, R2, or paid model calls)
+        run: python pipeline/sbi_migration_verify.py --dry-run --directory "$RUNNER_TEMP/sbi-notes"
+      # Real ledger/R2 ingest and Sonnet extraction remain explicit owner checkpoints.
+      # The scheduled workflow must never turn an implementation/test run into writes.
+      - name: Remove ephemeral PDFs
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sbi-notes"

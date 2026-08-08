@@ -34,7 +34,7 @@ KEEP_V1_ALLOWLIST = {
     "_scripts/ipo/ipo_play_selector.py", "_scripts/ipo_score.py",
     "_scripts/ipomatrix_ingest.py", "_scripts/lib/stage_state.py",
     "_scripts/lineage_registry.py", "_scripts/nse_preopen_capture.py",
-    "_scripts/parse_sbi_notes.py", "_scripts/prod/kite_sync_and_predict.py",
+    "_scripts/prod/kite_sync_and_predict.py",
     "_scripts/purge_candles_after_lockin.py", "_scripts/reconcile_listing_dates.py",
     "_scripts/rhp_auto.py", "_scripts/rhp_sonnet.py", "_scripts/rhp_sonnet_store.py",
     "_scripts/run_ipo_pipeline_lean.py", "_scripts/sbi_haiku_extract.py",

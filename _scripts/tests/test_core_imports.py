@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.unit
 
 CORE_IMPORT_SAFE = [
-    "ipo_score", "compute_verdicts", "compute_flags", "parse_sbi_notes",
+    "ipo_score", "compute_verdicts", "compute_flags",
     "sync_issue_details", "schema_sync", "fetch_peer_pe", "compute_quality_score",
     "run_ipo_pipeline_lean",
 ]
