@@ -11,6 +11,13 @@
 
 Because remote coverage and canonical IPO resolution were not queried, the table does **not** claim any file is ledgered, R2-verified, extracted, or deletion-ready. `READY_FOR_INGEST` means only that the local PDF is hashable and can enter the owner-gated resolver; it is not permission to upload.
 
+## Object-key date and source retention
+
+- A filename date is accepted only in the documented `DD-MM-YYYY` form and only when it is a valid calendar date. That note date becomes `document_date` in the object key.
+- When that exact form is absent or invalid, the owner-approved ingest date is used as the metadata fallback. Unsupported date layouts are not guessed.
+- SHA256 remains the durable deduplication identity. The key date is descriptive metadata, not document identity.
+- Git-tracked source PDFs are retained after successful ledger/R2 storage. Only ephemeral downloads are supplied as `temporary_path` and may be removed after commit. Deletion of tracked notes remains a later, separately reviewed owner checkpoint after three-way SHA proof.
+
 ## Cost checkpoint before any real run
 
 - Notes: 241

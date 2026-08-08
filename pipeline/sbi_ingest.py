@@ -6,8 +6,9 @@ import argparse
 import datetime as dt
 import os
 import pathlib
+import re
+import subprocess
 import sys
-import tempfile
 
 if __package__:
     from .document_ledger import store_document
@@ -17,8 +18,41 @@ else:
     from fill_ipo import _norm, resolve_ipo_id
 
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+FILENAME_DATE = re.compile(r"(?<!\d)(\d{2})-(\d{2})-(\d{4})(?!\d)")
+
+
 def company_from_filename(path: pathlib.Path) -> str:
     return path.stem.split("_IPO Note", 1)[0].split("_IPO NOTE", 1)[0].strip()
+
+
+def document_date_from_filename(path: pathlib.Path) -> dt.date | None:
+    """Return a valid filename date using the sole supported rule DD-MM-YYYY.
+
+    Other layouts are deliberately ignored rather than guessed. Invalid calendar
+    dates are also ignored and the caller uses the ingest date.
+    """
+    match = FILENAME_DATE.search(path.name)
+    if not match:
+        return None
+    day, month, year = map(int, match.groups())
+    try:
+        return dt.date(year, month, day)
+    except ValueError:
+        return None
+
+
+def is_git_tracked(path: pathlib.Path) -> bool:
+    """Identify retained sources without coupling production to a data directory."""
+    try:
+        relative = path.resolve().relative_to(ROOT)
+    except ValueError:
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", "--", str(relative)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    )
+    return result.returncode == 0
 
 
 def resolve_ipo(conn, *, isin: str | None, company: str | None):
@@ -32,7 +66,7 @@ def resolve_ipo(conn, *, isin: str | None, company: str | None):
 
 
 def ingest_file(conn, path, *, source_url=None, isin=None, store=None,
-                owner_approved=False, document_date=None):
+                owner_approved=False, document_date=None, retain_source=None):
     path = pathlib.Path(path)
     owner = resolve_ipo(conn, isin=isin, company=company_from_filename(path))
     if owner is None:
@@ -40,12 +74,16 @@ def ingest_file(conn, path, *, source_url=None, isin=None, store=None,
     if not owner_approved:
         return {"status": "READY_FOR_INGEST", "path": str(path), "ipo_id": owner[0]}
     content = path.read_bytes()
+    retained = is_git_tracked(path) if retain_source is None else retain_source
+    effective_date = document_date or document_date_from_filename(path) or dt.date.today()
     saved = store_document(conn, ipo_id=owner[0], isin=owner[1], doc_type="sbi",
-                           document_date=document_date or dt.date.today(),
+                           document_date=effective_date,
                            source_url=source_url, content=content, store=store,
-                           temporary_path=path)
+                           temporary_path=None if retained else path)
     return {"status": "LEDGERED", "doc_id": saved.id, "object_key": saved.object_key,
-            "sha256": saved.sha256, "created": saved.created, "ipo_id": owner[0]}
+            "sha256": saved.sha256, "created": saved.created, "ipo_id": owner[0],
+            "document_date": effective_date.isoformat(),
+            "source_retained": retained}
 
 
 def main(argv=None):
