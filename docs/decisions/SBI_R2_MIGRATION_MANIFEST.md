@@ -2,6 +2,23 @@
 
 **Status: PREPARED — OWNER APPROVAL REQUIRED FOR REAL INGEST**
 
+## PRE-OPTIMIZATION OWNER READ-ONLY VERIFICATION — 2026-08-09
+
+This result is production-owner evidence from the shared canonical identity resolver
+before its batch identity-set query optimization. It is not a synthetic test result.
+
+- `TOTAL=241`
+- `RESOLVED_IPO=198`
+- `LEDGER_MISSING=198`
+- `IPO_UNRESOLVED=43`
+- `AMBIGUOUS_IDENTITY=1`
+- `REMOTE_CHECK_ERROR=0`
+- `R2_HEAD=0`
+- `R2_GET=0`
+- `NEON_READS=721`
+- `RUNTIME_SECONDS=35.109`
+- No R2 PUT, Neon write, Sonnet call, or PDF deletion was performed.
+
 ## REMOTE VERIFICATION — 2026-08-08
 
 **Checkpoint status: BLOCKED — production read credentials were not available in

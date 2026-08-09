@@ -16,6 +16,19 @@ class Cursor:
         return self.rows
 
 
+def test_preloaded_identity_set_avoids_all_resolution_queries():
+    rows = ((1, "ISIN1", "Yatra Online Limited", "yatra online limited"),)
+    cursor = Cursor(rows)
+    loaded = company_identity.load_company_identity_set(cursor)
+    assert cursor.sql == company_identity.IDENTITY_SET_SQL
+    cursor.sql = None
+    result = company_identity.resolve_company_identity(
+        cursor, name_norm="yatra online ltd", company="Yatra Online Ltd",
+        identity_rows=loaded)
+    assert result.row == rows[0][:3] and result.method == "CANONICAL_NAME"
+    assert cursor.sql is None, "preloaded resolution performed another SQL query"
+
+
 @pytest.mark.parametrize(("a", "b"), [
     ("Yatra Online Ltd", "Yatra Online Limited"),
     ("Zaggle Prepaid Ocean Services Limited", "Zaggle Prepaid Ocean Services Ltd"),
