@@ -13,11 +13,11 @@ from pathlib import Path
 
 try:
     from .fill_ipo import _norm
-    from .sbi_ingest import company_from_filename
+    from .sbi_ingest import company_from_filename, resolve_ipo
     from .sbi_sonnet import MODEL, PROMPT_VERSION
 except ImportError:
     from fill_ipo import _norm
-    from sbi_ingest import company_from_filename
+    from sbi_ingest import company_from_filename, resolve_ipo
     from sbi_sonnet import MODEL, PROMPT_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,11 +64,13 @@ def verify_remote(row, conn, store, counter):
     try:
         cur = conn.cursor()
         company = company_from_filename(ROOT / row["local_path"])
-        identity = _read(cur, counter,
-            "SELECT id,isin FROM ipo WHERE name_norm=%s LIMIT 1",
-            (_normalise(company),))
-        if identity:
-            row["ipo_id"], row["isin"] = identity
+        cur.close(); cur = None
+        identity = resolve_ipo(conn, isin=None, company=company, counter=counter)
+        row["identity_resolution"] = identity.method
+        row["identity_ambiguous_count"] = identity.ambiguous_count
+        if identity.row:
+            row["ipo_id"], row["isin"], _ = identity.row
+        cur = conn.cursor()
 
         ledger = _read(cur, counter,
             """SELECT id,sha256,object_key,ipo_id FROM documents
@@ -136,7 +138,11 @@ def _normalise(value):
 
 def aggregate(rows):
     counts = Counter(r.get("status") for r in rows)
-    return {"TOTAL": len(rows), **{status: counts[status] for status in STATUSES}}
+    return {"TOTAL": len(rows),
+            "RESOLVED_IPO": sum(r.get("ipo_id") is not None for r in rows),
+            **{status: counts[status] for status in STATUSES},
+            "AMBIGUOUS_IDENTITY": sum(
+                r.get("identity_resolution") == "AMBIGUOUS" for r in rows)}
 
 
 def preflight(rows):
