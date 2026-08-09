@@ -23,19 +23,24 @@ FORBIDDEN_FIELDS = {
 }
 CLAIM_KINDS = {
     "valuation_observation": ("valuation", "neutral"),
-    "peer_table": ("valuation", "neutral"),
     "key_positive": ("sbi", "positive"),
     "key_risk": ("risk", "negative"),
     "business_observation": ("sbi", "neutral"),
-    "financial_observation": ("financial", "neutral"),
     "verdict": ("sbi", "neutral"),
 }
 
 SYSTEM_PROMPT = """Extract only statements explicitly printed in this SBI IPO note.
-Return JSON with `claims` and `scalar_facts`. Every claim/fact must contain a positive
-integer page_number and a short verbatim excerpt. Do not calculate or infer fair value,
-EPS, P/E, ROE, ROCE, FCF, interest savings, or margin of safety. A printed target/fair
-value is a sourced SBI statement, never AACapital's house fair value."""
+Return ONLY one JSON object with arrays `claims` and `scalar_facts`.
+
+Allowed scalar_facts fields: sbi_rating, sbi_fair_value, sbi_target_value. Fair or
+target values are allowed only when SBI explicitly prints them. Allowed claim kinds:
+valuation_observation, business_observation, key_positive, key_risk, verdict.
+
+Every claim/fact must contain a positive integer page_number and a short verbatim
+excerpt copied from that page. Every claim also needs `statement` and `kind`; every
+fact needs `field` and `value`. Do not calculate or infer house fair value, pro-forma
+EPS, P/E, ROE, ROCE, FCF, margin of safety, interest savings, or any other
+deterministic valuation output. Omit unsupported items; never fill gaps."""
 
 
 class SBIExtractionError(ValueError):
@@ -93,8 +98,12 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
 def already_extracted(conn, doc_id: int) -> bool:
     cur = conn.cursor()
     cur.execute("""SELECT 1 FROM insights WHERE doc_id=%s AND source_type='SBI'
-                    AND model=%s AND prompt_version=%s LIMIT 1""",
-                (doc_id, MODEL, PROMPT_VERSION))
+                    AND model=%s AND prompt_version=%s
+                  UNION ALL
+                  SELECT 1 FROM source_facts WHERE source LIKE %s
+                  LIMIT 1""",
+                (doc_id, MODEL, PROMPT_VERSION,
+                 f'SBI:doc={doc_id}:page=%:model={MODEL}:prompt={PROMPT_VERSION}:%'))
     return cur.fetchone() is not None
 
 

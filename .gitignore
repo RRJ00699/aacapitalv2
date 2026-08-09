@@ -71,3 +71,6 @@ cf-secrets.json
 uat-report/artifacts/
 uat-report/index.html
 uat-results/
+
+# owner-gated SBI extraction run manifests (may contain model output/errors)
+/artifacts/sbi-extraction/

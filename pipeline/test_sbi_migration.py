@@ -12,6 +12,7 @@ from pipeline import sbi_sonnet as sonnet
 from pipeline import sbi_ingest as ingest
 from pipeline import sbi_bounded_ingest as bounded
 from pipeline import company_identity
+from pipeline import sbi_extraction_run as extraction_run
 
 
 FIXTURE = {
@@ -50,6 +51,24 @@ def test_missing_page_or_excerpt_is_rejected():
     bad["claims"][0].pop("excerpt")
     with pytest.raises(sonnet.SBIExtractionError, match="statement/excerpt"):
         sonnet.parse_extraction(bad, doc_id=1)
+
+
+def test_evidence_must_be_verbatim_on_asserted_page():
+    parsed = sonnet.parse_extraction(FIXTURE, doc_id=1)
+    pages = [{"page_number": 1, "text": "We recommend SUBSCRIBE"},
+             {"page_number": 7, "text": "The top ten customers contributed 82% of sales."}]
+    extraction_run.validate_evidence(parsed, pages)
+    pages[1]["text"] = "No supporting language here."
+    with pytest.raises(ValueError, match="unsupported excerpt on page 7"):
+        extraction_run.validate_evidence(parsed, pages)
+
+
+def test_approved_cost_checkpoint_is_below_owner_cap(capsys):
+    extraction_run.print_cost_checkpoint()
+    output = capsys.readouterr().out
+    assert "documents to extract = 198" in output
+    assert "maximum total estimate = $5.927037" in output
+    assert extraction_run.cost(985_679, 198_000) < extraction_run.SPEND_CAP
 
 
 def test_deterministic_model_stub_and_central_identity():
