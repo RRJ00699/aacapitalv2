@@ -77,6 +77,66 @@ def test_missing_page_or_excerpt_is_rejected():
         sonnet.parse_extraction(bad, doc_id=1)
 
 
+def test_prompt_v11_pins_literal_exact_schema_and_no_synonyms():
+    assert sonnet.PROMPT_VERSION == "sbi-v1.1"
+    for required in (
+        '"kind": "key_risk"',
+        '"statement": "One concise sentence explicitly supported by the note."',
+        '"excerpt": "Verbatim excerpt of no more than fifteen words."',
+        '"page_number": 3',
+        '"field": "sbi_rating"',
+        '"value": "SUBSCRIBE"',
+        "Use exactly these field names.",
+        "text, quote, description, citation, page, rating_text",
+        "no Markdown fences, commentary, preamble",
+    ):
+        assert required in sonnet.SYSTEM_PROMPT
+
+
+def test_claim_text_quote_schema_drift_is_rejected_without_aliasing():
+    drifted = {"claims": [{"kind": "key_risk", "text": "Risk is high",
+                            "quote": "verbatim risk", "page_number": 3}],
+               "scalar_facts": []}
+    with pytest.raises(sonnet.SBIExtractionError,
+                       match=r"claims\[0\] lacks required statement/excerpt fields"):
+        sonnet.parse_extraction(drifted, doc_id=1)
+
+
+def test_scalar_quote_schema_drift_is_rejected_without_aliasing():
+    drifted = {"claims": [], "scalar_facts": [{"field": "sbi_rating",
+               "value": "SUBSCRIBE", "quote": "We recommend SUBSCRIBE",
+               "page_number": 1}]}
+    with pytest.raises(sonnet.SBIExtractionError,
+                       match=r"scalar_facts\[0\] lacks required excerpt field"):
+        sonnet.parse_extraction(drifted, doc_id=1)
+
+
+def test_synonym_is_rejected_even_when_required_claim_fields_are_present():
+    drifted = {"claims": [{"kind": "key_risk", "statement": "Risk is high.",
+                            "excerpt": "verbatim risk", "quote": "duplicate alias",
+                            "page_number": 3}], "scalar_facts": []}
+    with pytest.raises(sonnet.SBIExtractionError,
+                       match=r"claims\[0\] has unsupported fields: \['quote'\]"):
+        sonnet.parse_extraction(drifted, doc_id=1)
+
+
+def test_r3_output_bounds_remain_strict():
+    claim = {"kind": "key_risk", "statement": "One supported risk.",
+             "excerpt": "short excerpt", "page_number": 1}
+    fact = {"field": "sbi_rating", "value": "SUBSCRIBE",
+            "excerpt": "short excerpt", "page_number": 1}
+    with pytest.raises(sonnet.SBIExtractionError, match="maximum of 10"):
+        sonnet.parse_extraction({"claims": [claim] * 11, "scalar_facts": []}, doc_id=1)
+    with pytest.raises(sonnet.SBIExtractionError, match="maximum of 3"):
+        sonnet.parse_extraction({"claims": [], "scalar_facts": [fact] * 4}, doc_id=1)
+    too_long = dict(claim, excerpt="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen")
+    with pytest.raises(sonnet.SBIExtractionError, match="exceeds 15 words"):
+        sonnet.parse_extraction({"claims": [too_long], "scalar_facts": []}, doc_id=1)
+    two_sentences = dict(claim, statement="First sentence. Second sentence.")
+    with pytest.raises(sonnet.SBIExtractionError, match="one concise sentence"):
+        sonnet.parse_extraction({"claims": [two_sentences], "scalar_facts": []}, doc_id=1)
+
+
 def test_evidence_must_be_verbatim_on_asserted_page():
     parsed = sonnet.parse_extraction(FIXTURE, doc_id=1)
     pages = [{"page_number": 1, "text": "We recommend SUBSCRIBE"},

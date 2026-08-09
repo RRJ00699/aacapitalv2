@@ -268,7 +268,8 @@ def main(argv=None):
                     records.append(record); print_progress(index, total, row, record, actual_cost)
                     totals["EVIDENCE_REJECTED"] += 1; continue
                 try:
-                    write_extraction(conn, ipo_id=row["ipo_id"], doc_id=row["documents_id"], extraction=parsed)
+                    write_extraction(conn, ipo_id=row["ipo_id"], doc_id=row["documents_id"],
+                                     extraction=parsed, validated=True)
                 except Exception as exc:
                     conn.rollback(); record = {**base, "status": "WRITE_ERROR", "error": f"{type(exc).__name__}: {exc}"}
                     records.append(record); print_progress(index, total, row, record, actual_cost)

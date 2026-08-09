@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 MODEL = "claude-sonnet-4-6"
-PROMPT_VERSION = "sbi-v1"
+PROMPT_VERSION = "sbi-v1.1"
 SOURCE_TYPE = "SBI"
 
 # These are sourced statements, never house-calculated valuation outputs.
@@ -29,9 +29,39 @@ CLAIM_KINDS = {
     "business_observation": ("sbi", "neutral"),
     "verdict": ("sbi", "neutral"),
 }
+CLAIM_KEYS = {"kind", "statement", "excerpt", "page_number", "confidence"}
+SCALAR_KEYS = {"field", "value", "excerpt", "page_number", "confidence"}
 
 SYSTEM_PROMPT = """Extract only statements explicitly printed in this SBI IPO note.
 Return ONLY one JSON object with arrays `claims` and `scalar_facts`.
+
+Use this literal minimal schema example:
+{
+  "claims": [
+    {
+      "kind": "key_risk",
+      "statement": "One concise sentence explicitly supported by the note.",
+      "excerpt": "Verbatim excerpt of no more than fifteen words.",
+      "page_number": 3
+    }
+  ],
+  "scalar_facts": [
+    {
+      "field": "sbi_rating",
+      "value": "SUBSCRIBE",
+      "excerpt": "Verbatim excerpt of no more than fifteen words.",
+      "page_number": 1
+    }
+  ]
+}
+
+Use exactly these field names.
+For claims, the only accepted keys are: kind, statement, excerpt, page_number,
+confidence (optional).
+For scalar_facts, the only accepted keys are: field, value, excerpt, page_number,
+confidence (optional).
+Do not use synonyms such as: text, quote, description, citation, page, rating_text.
+Omit any claim or scalar fact that cannot be supported using the exact required schema.
 
 Allowed scalar_facts fields: sbi_rating, sbi_fair_value, sbi_target_value. Fair or
 target values are allowed only when SBI explicitly prints them. Allowed claim kinds:
@@ -41,7 +71,12 @@ Every claim/fact must contain a positive integer page_number and a short verbati
 excerpt copied from that page. Every claim also needs `statement` and `kind`; every
 fact needs `field` and `value`. Do not calculate or infer house fair value, pro-forma
 EPS, P/E, ROE, ROCE, FCF, margin of safety, interest savings, or any other
-deterministic valuation output. Omit unsupported items; never fill gaps."""
+deterministic valuation output. Omit unsupported items; never fill gaps.
+Maximum 10 claims and maximum 3 scalar_facts. Excerpts must contain no more than
+15 words. Each statement must be one concise sentence.
+
+Respond with the JSON object only: no Markdown fences, commentary, preamble, or
+explanation after the object."""
 
 
 class SBIExtractionError(ValueError):
@@ -95,16 +130,34 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
     forbidden = FORBIDDEN_FIELDS.intersection(obj)
     if forbidden:
         raise SBIExtractionError(f"deterministic fields are forbidden: {sorted(forbidden)}")
+    unexpected_top = set(obj) - {"claims", "scalar_facts"}
+    if unexpected_top:
+        raise SBIExtractionError(f"model response has unsupported top-level fields: {sorted(unexpected_top)}")
     claims = obj.get("claims", [])
     facts = obj.get("scalar_facts", [])
     if not isinstance(claims, list) or not isinstance(facts, list):
         raise SBIExtractionError("claims and scalar_facts must be arrays")
+    if len(claims) > 10:
+        raise SBIExtractionError("claims exceeds maximum of 10")
+    if len(facts) > 3:
+        raise SBIExtractionError("scalar_facts exceeds maximum of 3")
     clean_claims, clean_facts = [], []
     for position, claim in enumerate(claims):
         if not isinstance(claim, dict) or claim.get("kind") not in CLAIM_KINDS:
             raise SBIExtractionError(f"claims[{position}] has unsupported kind")
         if not claim.get("statement") or not claim.get("excerpt"):
-            raise SBIExtractionError(f"claims[{position}] lacks statement/excerpt")
+            raise SBIExtractionError(
+                f"claims[{position}] lacks required statement/excerpt fields")
+        unexpected = set(claim) - CLAIM_KEYS
+        if unexpected:
+            raise SBIExtractionError(
+                f"claims[{position}] has unsupported fields: {sorted(unexpected)}")
+        if len(str(claim["excerpt"]).split()) > 15:
+            raise SBIExtractionError(f"claims[{position}] excerpt exceeds 15 words")
+        statement = str(claim["statement"]).strip()
+        sentence_ends = re.findall(r"[.!?](?=\s|$)", statement)
+        if "\n" in statement or len(sentence_ends) > 1:
+            raise SBIExtractionError(f"claims[{position}] statement must be one concise sentence")
         if not isinstance(claim.get("page_number"), int) or claim["page_number"] < 1:
             raise SBIExtractionError(f"claims[{position}] lacks a valid page_number")
         confidence = claim.get("confidence")
@@ -115,8 +168,16 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
     for position, fact in enumerate(facts):
         if not isinstance(fact, dict) or fact.get("field") not in SCALAR_FIELDS:
             raise SBIExtractionError(f"scalar_facts[{position}] has unsupported field")
-        if fact.get("value") in (None, "") or not fact.get("excerpt"):
-            raise SBIExtractionError(f"scalar_facts[{position}] lacks value/excerpt")
+        if fact.get("value") in (None, ""):
+            raise SBIExtractionError(f"scalar_facts[{position}] lacks required value field")
+        if not fact.get("excerpt"):
+            raise SBIExtractionError(f"scalar_facts[{position}] lacks required excerpt field")
+        unexpected = set(fact) - SCALAR_KEYS
+        if unexpected:
+            raise SBIExtractionError(
+                f"scalar_facts[{position}] has unsupported fields: {sorted(unexpected)}")
+        if len(str(fact["excerpt"]).split()) > 15:
+            raise SBIExtractionError(f"scalar_facts[{position}] excerpt exceeds 15 words")
         if not isinstance(fact.get("page_number"), int) or fact["page_number"] < 1:
             raise SBIExtractionError(f"scalar_facts[{position}] lacks a valid page_number")
         clean_facts.append({**fact, "doc_id": doc_id, "source_type": SOURCE_TYPE,
@@ -136,11 +197,12 @@ def already_extracted(conn, doc_id: int) -> bool:
     return cur.fetchone() is not None
 
 
-def write_extraction(conn, *, ipo_id: int, doc_id: int, extraction: dict[str, Any], commit=True):
+def write_extraction(conn, *, ipo_id: int, doc_id: int, extraction: dict[str, Any],
+                     commit=True, validated=False):
     """Route only canonical sourced facts and evidenced insights; never valuation."""
     if already_extracted(conn, doc_id):
         return {"skipped": True, "facts": 0, "insights": 0}
-    parsed = parse_extraction(extraction, doc_id=doc_id)
+    parsed = extraction if validated else parse_extraction(extraction, doc_id=doc_id)
     try:
         from .fill_v2 import log_source_fact, upsert_insights
     except ImportError:

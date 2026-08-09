@@ -61,6 +61,7 @@ def test_new_note_uses_ledger_then_extracts_and_temp_is_gone(tmp_path, monkeypat
     assert calls[0]["retain_source"] is False
     assert not path.exists() and result["summary"]["newly_ledgered"] == 1
     assert result["summary"]["extracted"] == 1 and writes[0]["doc_id"] == 7
+    assert writes[0]["validated"] is True
 
 
 def test_unresolved_identity_retains_pdf_and_never_extracts(tmp_path, monkeypatch):

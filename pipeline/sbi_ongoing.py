@@ -167,7 +167,8 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
                               otok, note_cost, spent)
                     continue
                 try:
-                    write_extraction(conn, ipo_id=ipo_id, doc_id=doc_id, extraction=parsed)
+                    write_extraction(conn, ipo_id=ipo_id, doc_id=doc_id,
+                                     extraction=parsed, validated=True)
                 except Exception as exc:
                     conn.rollback(); summary["WRITE_ERROR"] += 1
                     records.append({"doc_id": doc_id, "ipo_id": ipo_id,
