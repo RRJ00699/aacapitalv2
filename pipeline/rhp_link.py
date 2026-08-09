@@ -34,6 +34,10 @@ if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     except Exception: pass
 import psycopg2
+try:
+    from .company_identity import canon
+except ImportError:
+    from company_identity import canon
 
 FILE_BUILD = "rhp_link 2026-08-01d — free folder-slug match before any paid call"
 RHP_DIR = "rhps"
@@ -46,30 +50,6 @@ ISIN_LABELLED = re.compile(r"ISIN[^A-Z0-9]{0,25}(IN[A-Z0-9]{10})", re.I)
 
 
 # Order matters: longer forms first, so "limited" is stripped before "ltd" can't match.
-CORP_SUFFIXES = ["privatelimited", "pvtlimited", "corporation", "incorporated",
-                 "enterprises", "industries", "company", "limited", "private",
-                 "public", "corp", "pvt", "ltd", "inc", "co"]
-
-def canon(name):
-    """Company name -> comparable form.
-
-    Separators are removed FIRST, then corporate suffixes are stripped repeatedly from
-    the end. A word-boundary regex cannot work here: the spine stores 'lohiacorpltd'
-    with no separators at all, so \bcorp\b never matches. Both 'LOHIA CORP LIMITED'
-    and 'lohiacorpltd' must reduce to 'lohia', or the model's correct answer can never
-    join the spine — which is why 5 correctly-identified issuers all reported as NEW."""
-    if not name:
-        return ""
-    s = re.sub(r"[^a-z0-9]", "", str(name).lower())
-    changed = True
-    while changed and len(s) > 3:
-        changed = False
-        for suf in CORP_SUFFIXES:
-            if s.endswith(suf) and len(s) - len(suf) >= 3:
-                s = s[: -len(suf)]; changed = True; break
-    return s
-
-
 def valid_isin(code):
     """A real ISIN carries digits. 'INTERNATIONA' — the first 12 letters of
     'INTERNATIONAL Securities Identification Number' — carries none, and matched the

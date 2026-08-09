@@ -3,12 +3,14 @@ import json
 import pathlib
 import runpy
 import sys
+import types
 
 import pytest
 
 from pipeline import sbi_migration_verify as verify
 from pipeline import sbi_sonnet as sonnet
 from pipeline import sbi_ingest as ingest
+from pipeline import company_identity
 
 
 FIXTURE = {
@@ -74,7 +76,7 @@ def test_verifier_reports_every_required_status_without_collapsing_categories():
     rows = [{"status": status} for status in verify.STATUSES]
     counts = verify.aggregate(rows)
     assert counts["TOTAL"] == len(verify.STATUSES)
-    assert set(counts) == {"TOTAL", *verify.STATUSES}
+    assert set(counts) == {"TOTAL", "RESOLVED_IPO", "AMBIGUOUS_IDENTITY", *verify.STATUSES}
     assert all(counts[status] == 1 for status in verify.STATUSES)
 
 
@@ -84,6 +86,86 @@ def test_remote_preflight_has_zero_write_and_model_budget(tmp_path):
     budget = verify.preflight(verify.local_inventory(tmp_path))
     assert budget["tracked_pdf_count"] == 1
     assert budget["r2_put_count"] == budget["neon_writes"] == budget["sonnet_calls"] == 0
+
+
+def test_two_pdf_verification_loads_identity_spine_once_and_matches_preflight():
+    identity_rows = (
+        (1, "ISIN1", "Yatra Online Limited", "yatra online limited"),
+        (2, "ISIN2", "Zaggle Prepaid Ocean Services Limited",
+         "zaggle prepaid ocean services limited"),
+        (3, "ISIN3", "Zaggle Prepaid Ocean Services Ltd",
+         "zaggle prepaid ocean services ltd"),
+    )
+    queries = []
+
+    class Cursor:
+        def execute(self, sql, params):
+            queries.append(sql.strip())
+            self.rows = identity_rows if sql.strip() == company_identity.IDENTITY_SET_SQL else []
+        def fetchone(self):
+            return None
+        def fetchall(self):
+            return self.rows
+        def close(self):
+            pass
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    conn = Connection()
+    counter = verify.OperationCounter()
+    cur = conn.cursor()
+    loaded = company_identity.load_company_identity_set(
+        cur, execute=lambda sql, params: verify._counted_execute(
+            cur, counter, sql, params))
+    cur.close()
+    inputs = [
+        {"local_path": "Yatra Online Ltd_IPO Note.pdf", "local_sha256": "a" * 64,
+         "bytes": 1},
+        {"local_path": "Zaggle Prepaid Ocean Services Company_IPO Note.pdf",
+         "local_sha256": "b" * 64, "bytes": 1},
+    ]
+    results = [verify.verify_remote(row, conn, object(), counter, loaded)
+               for row in inputs]
+
+    assert results[0]["status"] == "LEDGER_MISSING"
+    assert results[0]["identity_resolution"] == "CANONICAL_NAME"
+    assert results[1]["status"] == "IPO_UNRESOLVED"
+    assert results[1]["identity_resolution"] == "AMBIGUOUS"
+    assert queries.count(company_identity.IDENTITY_SET_SQL) == 1
+    assert counter.neon_reads == 3  # one identity load + one ledger lookup per PDF
+    budget = verify.preflight(inputs)["expected_neon_reads"]
+    assert budget["components"]["identity_set_load"] == 1
+    assert budget["components"]["ledger_lookup"] == 2
+    assert budget["total"] == "3 minimum; 7 maximum"
+
+
+def test_ingest_main_reuses_one_identity_set_for_two_files(monkeypatch):
+    identity_rows = ((1, "ISIN1", "Yatra Online Limited", "yatra online limited"),)
+    queries = []
+    received = []
+
+    class Cursor:
+        def execute(self, sql, params):
+            queries.append(sql.strip())
+        def fetchall(self):
+            return identity_rows
+        def close(self):
+            pass
+    class Connection:
+        def cursor(self):
+            return Cursor()
+        def close(self):
+            pass
+    fake_psycopg2 = types.SimpleNamespace(connect=lambda url: Connection())
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://read-only-fixture")
+    monkeypatch.setattr(ingest, "ingest_file", lambda conn, path, **kwargs:
+                        received.append(kwargs["identity_rows"]) or {"status": "READY"})
+
+    assert ingest.main(["one.pdf", "two.pdf"]) == 0
+    assert queries == [company_identity.IDENTITY_SET_SQL]
+    assert received == [identity_rows, identity_rows]
 
 
 def test_script_mode_imports_start_up_and_reach_real_remote_classification(monkeypatch):
@@ -98,7 +180,7 @@ def test_script_mode_imports_start_up_and_reach_real_remote_classification(monke
         and pathlib.Path(entry).resolve() != pipeline_dir
     ]
     monkeypatch.setattr(sys, "path", search_path)
-    for name in ("fill_ipo", "sbi_ingest", "sbi_sonnet", "document_ledger",
+    for name in ("fill_ipo", "company_identity", "sbi_ingest", "sbi_sonnet", "document_ledger",
                  "document_contract", "r2"):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
@@ -110,7 +192,7 @@ def test_script_mode_imports_start_up_and_reach_real_remote_classification(monke
         def __init__(self):
             self.result = None
         def execute(self, sql, params):
-            self.result = (7, "INE000TEST01") if "FROM ipo WHERE name_norm" in sql else None
+            self.result = (7, "INE000TEST01", "Example Ltd") if "FROM ipo WHERE name_norm" in sql else None
         def fetchone(self):
             return self.result
         def close(self):
@@ -165,7 +247,7 @@ def test_tracked_source_survives_successful_ingest(monkeypatch, tmp_path):
     source = tmp_path / "Example Ltd_IPO Note_03-04-2023.pdf"
     source.write_bytes(b"%PDF-1.7\ntracked\n%%EOF")
     calls = []
-    monkeypatch.setattr(ingest, "resolve_ipo", lambda *a, **k: (7, "INE000TEST01", "Example Ltd"))
+    monkeypatch.setattr(ingest, "resolve_ipo", lambda *a, **k: type("R", (), {"row": (7, "INE000TEST01", "Example Ltd")})())
     monkeypatch.setattr(ingest, "is_git_tracked", lambda path: True)
     monkeypatch.setattr(ingest, "store_document", _successful_store(calls))
 
@@ -181,7 +263,7 @@ def test_ephemeral_source_keeps_post_commit_cleanup_behavior(monkeypatch, tmp_pa
     source = tmp_path / "download.pdf"
     source.write_bytes(b"%PDF-1.7\nephemeral\n%%EOF")
     calls = []
-    monkeypatch.setattr(ingest, "resolve_ipo", lambda *a, **k: (7, "INE000TEST01", "Example Ltd"))
+    monkeypatch.setattr(ingest, "resolve_ipo", lambda *a, **k: type("R", (), {"row": (7, "INE000TEST01", "Example Ltd")})())
     monkeypatch.setattr(ingest, "is_git_tracked", lambda path: False)
     monkeypatch.setattr(ingest, "store_document", _successful_store(calls))
 

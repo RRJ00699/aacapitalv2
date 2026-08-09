@@ -13,11 +13,13 @@ from pathlib import Path
 
 try:
     from .fill_ipo import _norm
-    from .sbi_ingest import company_from_filename
+    from .company_identity import load_company_identity_set
+    from .sbi_ingest import company_from_filename, resolve_ipo
     from .sbi_sonnet import MODEL, PROMPT_VERSION
 except ImportError:
     from fill_ipo import _norm
-    from sbi_ingest import company_from_filename
+    from company_identity import load_company_identity_set
+    from sbi_ingest import company_from_filename, resolve_ipo
     from sbi_sonnet import MODEL, PROMPT_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +56,7 @@ def _read(cur, counter, sql, params):
     return cur.fetchone()
 
 
-def verify_remote(row, conn, store, counter):
+def verify_remote(row, conn, store, counter, identity_rows=None):
     """Classify one PDF. Exceptions are isolated so every input gets one status."""
     row.update({"ipo_id": None, "isin": None, "documents_id": None,
                 "documents_sha256": None, "documents_object_key": None,
@@ -64,11 +66,14 @@ def verify_remote(row, conn, store, counter):
     try:
         cur = conn.cursor()
         company = company_from_filename(ROOT / row["local_path"])
-        identity = _read(cur, counter,
-            "SELECT id,isin FROM ipo WHERE name_norm=%s LIMIT 1",
-            (_normalise(company),))
-        if identity:
-            row["ipo_id"], row["isin"] = identity
+        cur.close(); cur = None
+        identity = resolve_ipo(conn, isin=None, company=company, counter=counter,
+                               identity_rows=identity_rows)
+        row["identity_resolution"] = identity.method
+        row["identity_ambiguous_count"] = identity.ambiguous_count
+        if identity.row:
+            row["ipo_id"], row["isin"], _ = identity.row
+        cur = conn.cursor()
 
         ledger = _read(cur, counter,
             """SELECT id,sha256,object_key,ipo_id FROM documents
@@ -136,15 +141,24 @@ def _normalise(value):
 
 def aggregate(rows):
     counts = Counter(r.get("status") for r in rows)
-    return {"TOTAL": len(rows), **{status: counts[status] for status in STATUSES}}
+    return {"TOTAL": len(rows),
+            "RESOLVED_IPO": sum(r.get("ipo_id") is not None for r in rows),
+            **{status: counts[status] for status in STATUSES},
+            "AMBIGUOUS_IDENTITY": sum(
+                r.get("identity_resolution") == "AMBIGUOUS" for r in rows)}
 
 
 def preflight(rows):
     count = len(rows)
-    # Identity + ledger for every file, extraction for at most every file, and an
-    # owner lookup only when filename identity misses but the ledger has an owner.
+    components = {
+        "identity_set_load": 1,
+        "ledger_lookup": count,
+        "ledger_owner_lookup": f"0 to {count}",
+        "extraction_lookup": f"0 to {count}",
+    }
     return {"tracked_pdf_count": count, "tracked_bytes": sum(r["bytes"] for r in rows),
-            "expected_neon_read_queries": f"{2 * count} minimum; {4 * count} maximum",
+            "expected_neon_reads": {"components": components,
+                "total": f"{1 + count} minimum; {1 + 3 * count} maximum"},
             "expected_r2_head_count": f"0 to {count}",
             "maximum_possible_r2_get_count": count, "r2_put_count": 0,
             "neon_writes": 0, "sonnet_calls": 0,
@@ -182,7 +196,13 @@ def main(argv=None):
         conn.set_session(readonly=True, autocommit=True)
         store = R2DocumentStore()
         try:
-            rows = [verify_remote(row, conn, store, counter) for row in rows]
+            cur = conn.cursor()
+            identity_rows = load_company_identity_set(
+                cur, execute=lambda sql, params: _counted_execute(
+                    cur, counter, sql, params))
+            cur.close()
+            rows = [verify_remote(row, conn, store, counter, identity_rows)
+                    for row in rows]
         finally:
             conn.close()
     else:
@@ -195,6 +215,11 @@ def main(argv=None):
                                      "neon_reads": counter.neon_reads,
                                      "runtime_seconds": round(runtime, 3)}}, indent=2))
     return 0
+
+
+def _counted_execute(cur, counter, sql, params):
+    counter.neon_reads += 1
+    cur.execute(sql, params)
 
 
 if __name__ == "__main__":

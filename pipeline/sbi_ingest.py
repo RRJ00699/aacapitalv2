@@ -12,10 +12,12 @@ import sys
 
 if __package__:
     from .document_ledger import store_document
-    from .fill_ipo import _norm, resolve_ipo_id
+    from .fill_ipo import _norm
+    from .company_identity import load_company_identity_set, resolve_company_identity
 else:
     from document_ledger import store_document
-    from fill_ipo import _norm, resolve_ipo_id
+    from fill_ipo import _norm
+    from company_identity import load_company_identity_set, resolve_company_identity
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -55,22 +57,32 @@ def is_git_tracked(path: pathlib.Path) -> bool:
     return result.returncode == 0
 
 
-def resolve_ipo(conn, *, isin: str | None, company: str | None):
-    """Exact ISIN then exact canonical spine name; never fuzzy and never create."""
+def resolve_ipo(conn, *, isin: str | None, company: str | None, counter=None,
+                identity_rows=None):
+    """Use shared exact/unique-canonical company identity resolution."""
     cur = conn.cursor()
-    ipo_id = resolve_ipo_id(cur, isin=isin, name_norm=_norm(company) if company else None)
-    if ipo_id is None:
-        return None
-    cur.execute("SELECT id, isin, name_display FROM ipo WHERE id=%s", (ipo_id,))
-    return cur.fetchone()
+    def execute(sql, params):
+        if counter is not None:
+            counter.neon_reads += 1
+        cur.execute(sql, params)
+    result = resolve_company_identity(cur, isin=isin,
+        name_norm=_norm(company) if company else None, company=company,
+        execute=execute, identity_rows=identity_rows)
+    cur.close()
+    return result
 
 
 def ingest_file(conn, path, *, source_url=None, isin=None, store=None,
-                owner_approved=False, document_date=None, retain_source=None):
+                owner_approved=False, document_date=None, retain_source=None,
+                identity_rows=None):
     path = pathlib.Path(path)
-    owner = resolve_ipo(conn, isin=isin, company=company_from_filename(path))
+    identity = resolve_ipo(conn, isin=isin, company=company_from_filename(path),
+                           identity_rows=identity_rows)
+    owner = identity.row
     if owner is None:
-        return {"status": "UNRESOLVED", "path": str(path)}
+        return {"status": "UNRESOLVED", "path": str(path),
+                "identity_resolution": identity.method,
+                "ambiguous_count": identity.ambiguous_count}
     if not owner_approved:
         return {"status": "READY_FOR_INGEST", "path": str(path), "ipo_id": owner[0]}
     content = path.read_bytes()
@@ -99,9 +111,13 @@ def main(argv=None):
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     failed = 0
     try:
+        cur = conn.cursor()
+        identity_rows = load_company_identity_set(cur)
+        cur.close()
         for name in a.paths:
             try:
-                print(ingest_file(conn, name, owner_approved=a.owner_approved))
+                print(ingest_file(conn, name, owner_approved=a.owner_approved,
+                                  identity_rows=identity_rows))
             except Exception as exc:
                 failed += 1
                 print({"status": "FAILED", "path": name, "error": str(exc)}, file=sys.stderr)
