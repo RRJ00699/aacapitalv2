@@ -10,6 +10,7 @@ import pytest
 from pipeline import sbi_migration_verify as verify
 from pipeline import sbi_sonnet as sonnet
 from pipeline import sbi_ingest as ingest
+from pipeline import sbi_bounded_ingest as bounded
 from pipeline import company_identity
 
 
@@ -86,6 +87,44 @@ def test_remote_preflight_has_zero_write_and_model_budget(tmp_path):
     budget = verify.preflight(verify.local_inventory(tmp_path))
     assert budget["tracked_pdf_count"] == 1
     assert budget["r2_put_count"] == budget["neon_writes"] == budget["sonnet_calls"] == 0
+
+
+def test_bounded_unresolved_report_separates_ambiguous_from_no_match():
+    identity_rows = (
+        (1, "ISIN1", "Example Limited", "example limited"),
+        (2, "ISIN2", "Example Ltd", "example ltd"),
+        (3, "ISIN3", "Different Industries", "different industries"),
+    )
+    rows = [
+        {"local_path": "data/research_notes/Example Company_IPO Note.pdf",
+         "status": "IPO_UNRESOLVED", "identity_ambiguous_count": 2},
+        {"local_path": "data/research_notes/Unknown Holdings_IPO Note.pdf",
+         "status": "IPO_UNRESOLVED", "identity_ambiguous_count": 0},
+    ]
+
+    report = bounded.unresolved_report(rows, identity_rows)
+
+    assert report[0]["group"] == "AMBIGUOUS"
+    assert report[0]["ambiguity_count"] == 2
+    assert report[0]["canonical_company_name"] is None
+    assert set(report[0]["closest_deterministic_spine_candidates"]) == {
+        "Example Limited", "Example Ltd"}
+    assert report[1]["group"] == "NO_CANONICAL_MATCH"
+    assert len(report[1]["closest_deterministic_spine_candidates"]) == 3
+
+
+def test_counting_s3_client_counts_actual_wire_methods_only():
+    class Client:
+        def head_object(self, **kwargs): return {"Metadata": {}}
+        def get_object(self, **kwargs): return {"Body": b"pdf"}
+        def put_object(self, **kwargs): return {}
+
+    client = bounded.CountingS3Client(Client())
+    client.head_object(Key="key")
+    client.get_object(Key="key")
+    client.put_object(Key="key")
+
+    assert (client.heads, client.gets, client.puts) == (1, 1, 1)
 
 
 def test_two_pdf_verification_loads_identity_spine_once_and_matches_preflight():

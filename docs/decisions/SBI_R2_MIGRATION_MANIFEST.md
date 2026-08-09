@@ -1,6 +1,41 @@
 # SBI R2 migration manifest
 
-**Status: PREPARED — OWNER APPROVAL REQUIRED FOR REAL INGEST**
+**Status: OWNER APPROVED, EXECUTION BLOCKED — RUNTIME CREDENTIALS REQUIRED**
+
+## POST-INGEST OWNER RUN — 2026-08-09
+
+**Checkpoint status: BLOCKED BEFORE INGEST.** The owner authorized the bounded
+198-document storage scope, but the execution container did not expose
+`DATABASE_URL` or the four required R2 settings. The mandated immediate command,
+`SBI_OWNER_APPROVED=YES python pipeline/sbi_migration_verify.py --verify-remote
+--owner-approved`, stopped at its credential gate. Therefore this checkpoint does
+not mislabel a local inventory as a production storage proof.
+
+- **VERIFIED — approved scope:** only the 198 rows in the owner's immediately prior
+  `LEDGER_MISSING` result; all 43 `IPO_UNRESOLVED` PDFs remain retained and untouched.
+- **VERIFIED — local inventory at blocked execution:** 241 tracked PDFs and
+  137,109,346 bytes. No PDF was deleted and no Sonnet call was made.
+- **VERIFIED — actual operations in this container:** 0 R2 PUT, 0 R2 HEAD, 0 R2
+  GET, 0 Neon reads, and 0 Neon writes. The command failed before a connection or R2
+  client was created.
+- **UNKNOWN — post-ingest proof:** ingest attempts, successful ledger writes,
+  successful objects, failed ingests, three-way SHA matches, and all post-ingest
+  status counts. They cannot be asserted without production credentials.
+- **UNKNOWN — extraction scope/cost:** already-extracted and needs-extraction counts
+  depend on the blocked post-ingest ledger query. Model is `claude-sonnet-4-6`, prompt
+  version is `sbi-v1`; cost remains unknown because no owner-approved price card or
+  output-token cap was supplied. No paid call was attempted.
+- **VERIFIED — prepared execution:** `pipeline/sbi_bounded_ingest.py` loads the
+  identity spine once, classifies before writing, limits mutation to that run's
+  `LEDGER_MISSING` rows, isolates per-file failures, preserves tracked sources,
+  performs post-write three-way verification, reports exact operation counts and
+  unresolved groups, and produces a local no-call text/page/token inventory.
+- **Exact next owner action required:** expose the production Neon and bucket-scoped
+  R2 credentials in the runtime, then execute
+  `SBI_OWNER_APPROVED=YES python pipeline/sbi_bounded_ingest.py --owner-approved`.
+  Review its stop flag and full proof before separately approving any extraction.
+  Research-note deletion remains unapproved pending extraction, resolution of the
+  43 identities, and explicit owner deletion approval.
 
 ## PRE-OPTIMIZATION OWNER READ-ONLY VERIFICATION — 2026-08-09
 
