@@ -64,11 +64,80 @@ def test_evidence_must_be_verbatim_on_asserted_page():
 
 
 def test_approved_cost_checkpoint_is_below_owner_cap(capsys):
-    extraction_run.print_cost_checkpoint()
+    card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
+                                    1000, extraction_run.Decimal("7"))
+    extraction_run.print_cost_checkpoint(card)
     output = capsys.readouterr().out
     assert "documents to extract = 198" in output
     assert "maximum total estimate = $5.927037" in output
-    assert extraction_run.cost(985_679, 198_000) < extraction_run.SPEND_CAP
+    assert extraction_run.cost(985_679, 198_000, card) < card.spend_cap
+
+
+def _eligible_rows(count):
+    return [{"ipo_id": i + 1, "documents_object_key": f"key/{i}",
+             "r2_sha_status": "VERIFIED", "extraction_tuple": None} for i in range(count)]
+
+
+@pytest.mark.parametrize("count", [198, 2, 0])
+def test_resumable_eligibility_accepts_full_partial_and_noop(count):
+    assert len(extraction_run.eligible_scope(_eligible_rows(count))) == count
+
+
+def test_resumable_eligibility_aborts_scope_creep():
+    with pytest.raises(SystemExit, match="scope creep"):
+        extraction_run.eligible_scope(_eligible_rows(199))
+
+
+def test_pilot_limit_can_attempt_at_most_two_eligible_notes():
+    assert len(extraction_run.eligible_scope(_eligible_rows(198), limit=2)) == 2
+    assert len(extraction_run.eligible_scope(_eligible_rows(1), limit=2)) == 1
+
+
+def test_owner_price_card_fails_closed_and_loads_explicit_values():
+    with pytest.raises(SystemExit, match="OWNER-APPROVED PRICE CARD REQUIRED"):
+        extraction_run.load_owner_price_card({})
+    card = extraction_run.load_owner_price_card({
+        "SBI_SONNET_INPUT_USD_PER_MTOK": "3",
+        "SBI_SONNET_OUTPUT_USD_PER_MTOK": "15",
+        "SBI_SONNET_OUTPUT_CAP": "1000",
+        "SBI_SONNET_SPEND_CAP_USD": "7",
+    })
+    assert card.output_cap == 1000 and card.spend_cap == 7
+
+
+def test_max_tokens_is_truncated_without_parse_or_write_path():
+    called = []
+    status, parsed = extraction_run.parse_complete_response(
+        "incomplete JSON", doc_id=1, stop_reason="max_tokens",
+        parser=lambda *args, **kwargs: called.append("parse"))
+    assert status == "TRUNCATED" and parsed is None
+    assert called == []
+
+
+def test_anthropic_call_returns_stop_reason_and_usage(monkeypatch):
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self):
+            return json.dumps({"content": [{"type": "text", "text": "partial"}],
+                               "usage": {"input_tokens": 12, "output_tokens": 1000},
+                               "stop_reason": "max_tokens"}).encode()
+    monkeypatch.setattr(extraction_run.urllib.request, "urlopen", lambda *a, **k: Response())
+    text, itok, otok, reason = extraction_run.anthropic_call(
+        pages=[{"page_number": 1, "text": "x"}], api_key="test", output_cap=1000)
+    assert (text, itok, otok, reason) == ("partial", 12, 1000, "max_tokens")
+    card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
+                                    1000, extraction_run.Decimal("7"))
+    assert extraction_run.cost(itok, otok, card) == extraction_run.Decimal("0.015036")
+
+
+def test_holdout_manifest_tolerates_advisory_filename_mismatch(monkeypatch):
+    monkeypatch.setattr(extraction_run, "unresolved_report", lambda rows, identities: [{
+        "filename": "missing.pdf", "closest_name_suggestions_advisory_only": [],
+        "group": "NO_CANONICAL_MATCH"}])
+    report = extraction_run.deterministic_holdout_report([], ())
+    assert report[0]["local_sha"] is None
+    assert report[0]["deterministically_resolved"] is False
 
 
 def test_deterministic_model_stub_and_central_identity():
