@@ -4,6 +4,7 @@ import pathlib
 import runpy
 import sys
 import types
+from datetime import datetime, timezone
 
 import pytest
 
@@ -132,9 +133,26 @@ def test_r3_output_bounds_remain_strict():
     too_long = dict(claim, excerpt="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen")
     with pytest.raises(sonnet.SBIExtractionError, match="exceeds 15 words"):
         sonnet.parse_extraction({"claims": [too_long], "scalar_facts": []}, doc_id=1)
-    two_sentences = dict(claim, statement="First sentence. Second sentence.")
-    with pytest.raises(sonnet.SBIExtractionError, match="one concise sentence"):
-        sonnet.parse_extraction({"claims": [two_sentences], "scalar_facts": []}, doc_id=1)
+    exactly_40 = dict(claim, statement=" ".join(["word"] * 40))
+    sonnet.parse_extraction({"claims": [exactly_40], "scalar_facts": []}, doc_id=1)
+    too_many = dict(claim, statement=" ".join(["word"] * 41))
+    with pytest.raises(sonnet.SBIExtractionError, match="exceeds 40 words"):
+        sonnet.parse_extraction({"claims": [too_many], "scalar_facts": []}, doc_id=1)
+    multiline = dict(claim, statement="First line\nsecond line")
+    with pytest.raises(sonnet.SBIExtractionError, match="single-line"):
+        sonnet.parse_extraction({"claims": [multiline], "scalar_facts": []}, doc_id=1)
+
+
+@pytest.mark.parametrize("statement", [
+    "The company plans to repay Rs. 300 crore of debt.",
+    "ABC Ltd. plans to expand capacity using internal accruals.",
+    "Approx. Rs. 125 crore will be used for debt repayment.",
+])
+def test_r4_financial_abbreviations_are_valid_single_line_statements(statement):
+    claim = {"kind": "key_risk", "statement": statement,
+             "excerpt": "short excerpt", "page_number": 1}
+    parsed = sonnet.parse_extraction({"claims": [claim], "scalar_facts": []}, doc_id=1)
+    assert parsed["claims"][0]["statement"] == statement
 
 
 def test_evidence_must_be_verbatim_on_asserted_page():
@@ -153,8 +171,17 @@ def test_approved_cost_checkpoint_is_below_owner_cap(capsys):
     extraction_run.print_cost_checkpoint(card)
     output = capsys.readouterr().out
     assert "documents to extract = 198" in output
-    assert "maximum total estimate = $5.927037" in output
-    assert extraction_run.cost(985_679, 198_000, card) < card.spend_cap
+    assert "maximum total estimate = $6.092169" in output
+    assert extraction_run.cost(1_040_723, 198_000, card) < card.spend_cap
+
+
+def test_v11_historical_maximum_exceeds_old_nine_dollar_authorization():
+    card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
+                                    2000, extraction_run.Decimal("9"))
+    maximum = extraction_run.cost(1_040_723, 198 * 2000, card)
+    assert maximum == extraction_run.Decimal("9.062169")
+    with pytest.raises(SystemExit, match="exceeds .*9.00 cap"):
+        extraction_run.print_cost_checkpoint(card)
 
 
 def _eligible_rows(count):
@@ -210,6 +237,64 @@ def test_success_count_mismatch_blocks_full_run_even_without_failure_category():
         extraction_run.Counter(calls=2, successes=1)) is True
     assert extraction_run.full_run_approval_blocked(
         extraction_run.Counter(calls=2, successes=2)) is False
+    assert extraction_run.full_run_approval_blocked(
+        extraction_run.Counter(selected=2, calls=1, successes=1, spend_stopped=1)) is True
+
+
+def _complete_historical_rows():
+    return [{"documents_id": i + 1, "r2_sha_status": "VERIFIED",
+             "status": "VERIFIED_ALREADY_PRESENT", "extraction_tuple": [i + 1, "m", "p"]}
+            for i in range(198)]
+
+
+class _CutoverCursor:
+    def __init__(self, conn): self.conn = conn; self.rowcount = 0
+    def execute(self, sql, params=()):
+        self.conn.sql.append(sql)
+        if "SELECT max(fetched_at)" in sql:
+            self.result = (datetime(2026, 8, 9, 12, tzinfo=timezone.utc),)
+        elif "INSERT INTO platform_config" in sql:
+            self.rowcount = 1 if not self.conn.inserted else 0
+            self.conn.inserted = True
+    def fetchone(self): return self.result
+
+
+class _CutoverConn:
+    def __init__(self): self.sql = []; self.inserted = False; self.commits = 0
+    def cursor(self): return _CutoverCursor(self)
+    def commit(self): self.commits += 1
+
+
+@pytest.mark.parametrize("limit,updates", [
+    (2, {}),
+    (None, {"selected": 2, "calls": 1, "successes": 1}),
+    (None, {"selected": 1, "calls": 1, "successes": 0, "PARSE_ERROR": 1}),
+    (None, {"selected": 2, "calls": 1, "successes": 1, "spend_stopped": 1}),
+])
+def test_pilot_partial_failed_and_spend_stopped_runs_never_write_cutover(limit, updates):
+    totals = extraction_run.Counter(updates)
+    conn = _CutoverConn()
+    assert extraction_run.maybe_write_cutover(
+        conn, limit=limit, verified=_complete_historical_rows(), totals=totals) is None
+    assert not any("INSERT INTO platform_config" in sql for sql in conn.sql)
+
+
+def test_clean_unlimited_historical_completion_writes_cutover_exactly_once():
+    conn = _CutoverConn(); totals = extraction_run.Counter()
+    marker = extraction_run.maybe_write_cutover(
+        conn, limit=None, verified=_complete_historical_rows(), totals=totals)
+    assert marker == "2026-08-09T12:00:00+00:00"
+    assert sum("INSERT INTO platform_config" in sql for sql in conn.sql) == 1
+    assert conn.commits == 1
+
+
+def test_historical_extraction_missing_never_writes_cutover():
+    rows = _complete_historical_rows()
+    rows[0].update(status="EXTRACTION_MISSING", extraction_tuple=None)
+    conn = _CutoverConn()
+    assert extraction_run.maybe_write_cutover(
+        conn, limit=None, verified=rows, totals=extraction_run.Counter()) is None
+    assert conn.sql == []
 
 
 def test_anthropic_call_returns_stop_reason_and_usage(monkeypatch):
@@ -330,6 +415,15 @@ def test_extraction_inventory_uses_pymupdf_result_without_poppler():
     assert inventory["notes_total"] == inventory["text_extraction_success"] == 1
     assert inventory["text_extraction_failed"] == 0
     assert inventory["token_estimate_status"] == "COMPLETE"
+
+
+def test_inventory_and_historical_runner_share_one_input_estimator():
+    assert bounded.estimate_input_tokens is sonnet.estimate_input_tokens
+    assert extraction_run.estimate_input_tokens is sonnet.estimate_input_tokens
+    pages = [{"text": "abcd" * 10}]
+    without_prompt = sonnet.estimate_input_tokens(pages, system_prompt="")
+    with_prompt = sonnet.estimate_input_tokens(pages)
+    assert with_prompt - without_prompt == (len(sonnet.SYSTEM_PROMPT) + 3) // 4
 
 
 def test_preflight_itemizes_document_ledger_reads_and_writes():

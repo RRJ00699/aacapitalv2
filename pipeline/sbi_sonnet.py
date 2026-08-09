@@ -155,9 +155,10 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
         if len(str(claim["excerpt"]).split()) > 15:
             raise SBIExtractionError(f"claims[{position}] excerpt exceeds 15 words")
         statement = str(claim["statement"]).strip()
-        sentence_ends = re.findall(r"[.!?](?=\s|$)", statement)
-        if "\n" in statement or len(sentence_ends) > 1:
-            raise SBIExtractionError(f"claims[{position}] statement must be one concise sentence")
+        if "\n" in statement or "\r" in statement:
+            raise SBIExtractionError(f"claims[{position}] statement must be single-line")
+        if len(statement.split()) > 40:
+            raise SBIExtractionError(f"claims[{position}] statement exceeds 40 words")
         if not isinstance(claim.get("page_number"), int) or claim["page_number"] < 1:
             raise SBIExtractionError(f"claims[{position}] lacks a valid page_number")
         confidence = claim.get("confidence")
@@ -183,6 +184,13 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
         clean_facts.append({**fact, "doc_id": doc_id, "source_type": SOURCE_TYPE,
                             "model": MODEL, "prompt_version": PROMPT_VERSION})
     return {"claims": clean_claims, "scalar_facts": clean_facts}
+
+
+def estimate_input_tokens(pages, system_prompt=SYSTEM_PROMPT):
+    """One conservative estimator shared by inventory, history, and ongoing lanes."""
+    text_chars = sum(len(page.get("text", "") if isinstance(page, dict) else page[1])
+                     for page in pages)
+    return (text_chars + 3) // 4 + (len(system_prompt) + 3) // 4
 
 
 def already_extracted(conn, doc_id: int) -> bool:

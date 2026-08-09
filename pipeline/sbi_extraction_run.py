@@ -20,18 +20,21 @@ try:
     from .r2 import R2DocumentStore
     from .sbi_bounded_ingest import unresolved_report
     from .sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from .sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, parse_extraction, write_extraction
+    from .sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, estimate_input_tokens, parse_extraction, write_extraction
 except ImportError:
     from company_identity import load_company_identity_set
     from r2 import R2DocumentStore
     from sbi_bounded_ingest import unresolved_report
     from sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, parse_extraction, write_extraction
+    from sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, estimate_input_tokens, parse_extraction, write_extraction
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # OWNER-APPROVED PRICE CARD REQUIRED. Paid-lane values have no code defaults.
 EXPECTED_DOCUMENTS = 198
-EXPECTED_INPUT_TOKENS = 985_679
+PRE_V11_INPUT_TOKENS = 985_679
+PRE_V11_SYSTEM_PROMPT_TOKENS = 196
+EXPECTED_INPUT_TOKENS = (PRE_V11_INPUT_TOKENS + EXPECTED_DOCUMENTS
+                         * (((len(SYSTEM_PROMPT) + 3) // 4) - PRE_V11_SYSTEM_PROMPT_TOKENS))
 RESULT_DIR = ROOT / "artifacts" / "sbi-extraction"
 PRICE_ENV = {
     "input_usd_per_mtok": "SBI_SONNET_INPUT_USD_PER_MTOK",
@@ -158,12 +161,14 @@ def parse_complete_response(response, *, doc_id, stop_reason, parser=parse_extra
 
 
 FAILURE_STATUSES = ("MODEL_ERROR", "PARSE_ERROR", "WRITE_ERROR",
-                    "EVIDENCE_REJECTED", "TRUNCATED")
+                    "EVIDENCE_REJECTED", "TRUNCATED", "MISSING_LEDGER_ROW")
 
 
 def full_run_approval_blocked(totals):
-    return (any(totals[status] for status in FAILURE_STATUSES)
-            or totals["successes"] != totals["calls"])
+    return bool(any(totals[status] for status in FAILURE_STATUSES)
+                or totals["successes"] != totals["calls"]
+                or totals["spend_stopped"]
+                or (totals["selected"] and totals["calls"] < totals["selected"]))
 
 
 def deterministic_holdout_report(rows, identity_rows):
@@ -187,6 +192,30 @@ def deterministic_holdout_report(rows, identity_rows):
             "ambiguity_exists": item["group"] == "AMBIGUOUS", "candidates": candidates,
             "group": item["group"], "deterministically_resolved": deterministic})
     return output
+
+
+def maybe_write_cutover(conn, *, limit, verified, totals):
+    """Create the immutable history/future boundary only after a clean full run."""
+    missing = aggregate(verified)["EXTRACTION_MISSING"]
+    if (limit is not None or missing != 0 or full_run_approval_blocked(totals)
+            or totals["spend_stopped"]):
+        return None
+    doc_ids = [row["documents_id"] for row in verified
+               if row.get("r2_sha_status") == "VERIFIED" and row.get("documents_id")]
+    if len(doc_ids) != EXPECTED_DOCUMENTS:
+        return None
+    cur = conn.cursor()
+    cur.execute("SELECT max(fetched_at) FROM documents WHERE id = ANY(%s)", (doc_ids,))
+    marker = cur.fetchone()[0]
+    if marker is None:
+        return None
+    value = marker.isoformat()
+    cur.execute("""INSERT INTO platform_config(key,value,updated_at)
+                   VALUES ('sbi_ongoing_cutover_at',%s,now())
+                   ON CONFLICT (key) DO NOTHING""", (value,))
+    written = cur.rowcount == 1
+    conn.commit()
+    return value if written else None
 
 
 def main(argv=None):
@@ -226,6 +255,7 @@ def main(argv=None):
         print_remaining_cost_checkpoint(card, len(all_eligible))
         eligible = all_eligible if args.limit is None else all_eligible[:args.limit]
         total = len(eligible)
+        totals["selected"] = total
         for index, row in enumerate(eligible, 1):
             base = {"doc_id": row["documents_id"], "ipo_id": row["ipo_id"],
                     "model": MODEL, "prompt_version": PROMPT_VERSION,
@@ -237,9 +267,9 @@ def main(argv=None):
             try:
                 body = store.get_document(row["documents_object_key"])
                 pages = pdf_pages(body)
-                estimated_input = ((sum(len(p["text"]) for p in pages) + 3) // 4
-                                   + (len(SYSTEM_PROMPT) + 3) // 4)
+                estimated_input = estimate_input_tokens(pages)
                 if actual_cost + cost(estimated_input, card.output_cap, card) > card.spend_cap:
+                    totals["spend_stopped"] = 1
                     print(f"STOP: next projected call would exceed ${card.spend_cap:.2f}", flush=True); break
                 totals["calls"] += 1
                 response, itok, otok, stop_reason = anthropic_call(
@@ -284,6 +314,8 @@ def main(argv=None):
 
         verified = [verify_remote(row, conn, store, OperationCounter(), identity_rows)
                     for row in local_inventory(args.directory)]
+        cutover_written = maybe_write_cutover(
+            conn, limit=args.limit, verified=verified, totals=totals)
         holdouts = deterministic_holdout_report(verified, identity_rows)
         result = {"records": records, "summary": {"calls": totals["calls"],
             "input_tokens": totals["input_tokens"], "output_tokens": totals["output_tokens"],
@@ -291,6 +323,8 @@ def main(argv=None):
             "failures": sum(totals[k] for k in FAILURE_STATUSES),
             "failures_by_category": {k: totals[k] for k in FAILURE_STATUSES},
             "full_run_approval_blocked": full_run_approval_blocked(totals),
+            "spend_stopped": bool(totals["spend_stopped"]),
+            "cutover_written": cutover_written,
             "already_extracted": totals["already_extracted"],
             "EXTRACTION_MISSING": aggregate(verified)["EXTRACTION_MISSING"],
             "holdout_deterministically_resolved": sum(x["deterministically_resolved"] for x in holdouts),

@@ -22,13 +22,13 @@ try:
     from .r2 import R2DocumentStore
     from .sbi_ingest import company_from_filename, ingest_file
     from .sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from .sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT
+    from .sbi_sonnet import MODEL, PROMPT_VERSION, estimate_input_tokens
 except ImportError:
     from company_identity import canon, load_company_identity_set
     from r2 import R2DocumentStore
     from sbi_ingest import company_from_filename, ingest_file
     from sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT
+    from sbi_sonnet import MODEL, PROMPT_VERSION, estimate_input_tokens
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIR = ROOT / "data" / "research_notes"
@@ -127,7 +127,7 @@ def extraction_inventory(rows, extract_text=extract_pdf_text):
         try:
             page_count, extracted_text = extract_text(path)
             chars = len(extracted_text)
-            estimated_input = (chars + 3) // 4 + (len(SYSTEM_PROMPT) + 3) // 4
+            estimated_input = estimate_input_tokens([{"text": extracted_text}])
             extraction_status = "TEXT_EXTRACTION_SUCCEEDED"
             totals.update(text_extraction_success=1, pages=page_count,
                           text_chars=chars, input_tokens=estimated_input)
