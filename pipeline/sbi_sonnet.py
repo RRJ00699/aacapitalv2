@@ -8,6 +8,7 @@ import time.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -51,10 +52,38 @@ def _json_object(response: str | bytes | dict[str, Any]) -> dict[str, Any]:
     if isinstance(response, dict):
         obj = response
     else:
+        if isinstance(response, bytes):
+            response = response.decode("utf-8", errors="replace")
+        if not isinstance(response, str):
+            raise SBIExtractionError("model response must be text or an object")
+        text = response.strip()
+        fenced = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", text,
+                              flags=re.IGNORECASE)
+        if fenced:
+            text = fenced.group(1).strip()
+        decoder = json.JSONDecoder()
         try:
-            obj = json.loads(response)
-        except (TypeError, json.JSONDecodeError) as exc:
-            raise SBIExtractionError("malformed model response") from exc
+            obj, end = decoder.raw_decode(text)
+            if text[end:].strip():
+                raise json.JSONDecodeError("trailing output", text, end)
+        except json.JSONDecodeError:
+            candidates = []
+            for start, char in enumerate(text):
+                if char != "{":
+                    continue
+                try:
+                    candidate, end = decoder.raw_decode(text, start)
+                except json.JSONDecodeError:
+                    continue
+                prefix, suffix = text[:start].strip(), text[end:].strip()
+                wrappers = (prefix, suffix)
+                if (isinstance(candidate, dict) and all(len(part) <= 120 for part in wrappers)
+                        and not any(any(c in part for c in "{}[]`") for part in wrappers)):
+                    candidates.append(candidate)
+            if len(candidates) != 1:
+                prefix = " ".join(text[:120].split())
+                raise SBIExtractionError(f"malformed model response; prefix={prefix!r}")
+            obj = candidates[0]
     if not isinstance(obj, dict):
         raise SBIExtractionError("model response must be a JSON object")
     return obj

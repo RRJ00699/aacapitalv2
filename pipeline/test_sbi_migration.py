@@ -40,6 +40,30 @@ def test_malformed_model_response_is_rejected(response):
         sonnet.parse_extraction(response, doc_id=1)
 
 
+@pytest.mark.parametrize("response", [
+    FIXTURE,
+    json.dumps(FIXTURE),
+    f"```json\n{json.dumps(FIXTURE)}\n```",
+    f"```\n{json.dumps(FIXTURE)}\n```",
+    f"Here is the requested JSON:\n{json.dumps(FIXTURE)}\nThanks.",
+])
+def test_json_object_accepts_only_supported_single_object_wrappers(response):
+    assert sonnet.parse_extraction(response, doc_id=1)["claims"][0]["kind"] == "key_risk"
+
+
+@pytest.mark.parametrize("response", [
+    "{bad", "pure garbage", "[]", "{} {}", "```json\n{}\n```\n{}",
+])
+def test_json_object_rejects_malformed_array_multiple_and_mixed_output(response):
+    with pytest.raises(sonnet.SBIExtractionError):
+        sonnet.parse_extraction(response, doc_id=1)
+
+
+def test_malformed_response_error_has_sanitized_prefix_only():
+    with pytest.raises(sonnet.SBIExtractionError, match="prefix='secret malformed'"):
+        sonnet.parse_extraction("secret\n malformed", doc_id=1)
+
+
 @pytest.mark.parametrize("field", sorted(sonnet.FORBIDDEN_FIELDS))
 def test_ai_cannot_write_deterministic_valuation_fields(field):
     with pytest.raises(sonnet.SBIExtractionError, match="deterministic fields"):
@@ -112,6 +136,20 @@ def test_max_tokens_is_truncated_without_parse_or_write_path():
         parser=lambda *args, **kwargs: called.append("parse"))
     assert status == "TRUNCATED" and parsed is None
     assert called == []
+
+
+@pytest.mark.parametrize("failed", extraction_run.FAILURE_STATUSES)
+def test_every_pilot_failure_blocks_full_run(failed):
+    totals = extraction_run.Counter(calls=2, successes=1)
+    totals[failed] = 1
+    assert extraction_run.full_run_approval_blocked(totals) is True
+
+
+def test_success_count_mismatch_blocks_full_run_even_without_failure_category():
+    assert extraction_run.full_run_approval_blocked(
+        extraction_run.Counter(calls=2, successes=1)) is True
+    assert extraction_run.full_run_approval_blocked(
+        extraction_run.Counter(calls=2, successes=2)) is False
 
 
 def test_anthropic_call_returns_stop_reason_and_usage(monkeypatch):

@@ -91,6 +91,15 @@ def print_cost_checkpoint(card: PriceCard):
         raise SystemExit(f"ABORT: ${total:.6f} estimate exceeds ${card.spend_cap:.2f} cap")
 
 
+def print_remaining_cost_checkpoint(card: PriceCard, remaining: int):
+    """Use current work count and the full input estimate as a safe upper bound."""
+    maximum = (cost(EXPECTED_INPUT_TOKENS, 0, card)
+               + cost(0, remaining * card.output_cap, card))
+    print(f"remaining eligible maximum cost (conservative) = ${maximum:.6f}", flush=True)
+    if maximum > card.spend_cap:
+        raise SystemExit(f"ABORT: remaining maximum ${maximum:.6f} exceeds ${card.spend_cap:.2f} cap")
+
+
 def pdf_pages(body: bytes) -> list[dict]:
     with pymupdf.open(stream=body, filetype="pdf") as doc:
         return [{"page_number": i + 1, "text": page.get_text()} for i, page in enumerate(doc)]
@@ -146,6 +155,15 @@ def parse_complete_response(response, *, doc_id, stop_reason, parser=parse_extra
     if stop_reason == "max_tokens":
         return "TRUNCATED", None
     return "COMPLETE", parser(response, doc_id=doc_id)
+
+
+FAILURE_STATUSES = ("MODEL_ERROR", "PARSE_ERROR", "WRITE_ERROR",
+                    "EVIDENCE_REJECTED", "TRUNCATED")
+
+
+def full_run_approval_blocked(totals):
+    return (any(totals[status] for status in FAILURE_STATUSES)
+            or totals["successes"] != totals["calls"])
 
 
 def deterministic_holdout_report(rows, identity_rows):
@@ -205,6 +223,7 @@ def main(argv=None):
         print(f"eligible_now = {len(all_eligible)}")
         print(f"already_extracted = {already_count}")
         print(f"remaining = {len(all_eligible)}", flush=True)
+        print_remaining_cost_checkpoint(card, len(all_eligible))
         eligible = all_eligible if args.limit is None else all_eligible[:args.limit]
         total = len(eligible)
         for index, row in enumerate(eligible, 1):
@@ -268,9 +287,9 @@ def main(argv=None):
         result = {"records": records, "summary": {"calls": totals["calls"],
             "input_tokens": totals["input_tokens"], "output_tokens": totals["output_tokens"],
             "actual_cost": f"{actual_cost:.6f}", "successes": totals["successes"],
-            "failures": sum(totals[k] for k in ("MODEL_ERROR", "PARSE_ERROR", "WRITE_ERROR", "EVIDENCE_REJECTED", "TRUNCATED")),
-            "failures_by_category": {k: totals[k] for k in ("MODEL_ERROR", "PARSE_ERROR", "WRITE_ERROR", "EVIDENCE_REJECTED", "TRUNCATED")},
-            "full_run_approval_blocked": totals["TRUNCATED"] > 0,
+            "failures": sum(totals[k] for k in FAILURE_STATUSES),
+            "failures_by_category": {k: totals[k] for k in FAILURE_STATUSES},
+            "full_run_approval_blocked": full_run_approval_blocked(totals),
             "already_extracted": totals["already_extracted"],
             "EXTRACTION_MISSING": aggregate(verified)["EXTRACTION_MISSING"],
             "holdout_deterministically_resolved": sum(x["deterministically_resolved"] for x in holdouts),
