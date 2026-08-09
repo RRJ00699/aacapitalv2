@@ -262,7 +262,7 @@ def test_missing_ledger_row_survives_manifest_without_write_error_or_call(tmp_pa
     manifest = json.loads(files[0].read_text())
     assert manifest["summary"] == result["summary"]
     assert manifest["model"] == "claude-sonnet-4-6"
-    assert manifest["prompt_version"] == "sbi-v1.1"
+    assert manifest["prompt_version"] == "sbi-v1.2"
     assert manifest["output_cap"] == 2000 and manifest["run_spend_cap"] == "1"
     assert manifest["cutover_at"] == "2026-08-09T00:00:00+00:00"
     assert manifest["actual_sbi_spend"] == "0.000000"
@@ -274,6 +274,38 @@ def test_missing_ledger_row_survives_manifest_without_write_error_or_call(tmp_pa
     assert not any(secret in serialized for secret in (
         "anthropic-secret-xyz", "postgres-secret-xyz", "r2-access-secret-xyz",
         "r2-secret-xyz"))
+
+
+def test_extracted_with_drops_and_diagnostics_persist_in_ongoing_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(sbi_ongoing, "pending_sbi_doc_ids", lambda conn, cutover: [7])
+    monkeypatch.setattr(sbi_ongoing, "persist_manifest", REAL_PERSIST_MANIFEST)
+    monkeypatch.setattr(sbi_ongoing, "already_extracted", lambda *a: False)
+    monkeypatch.setattr(sbi_ongoing, "pdf_pages", lambda body: [
+        {"page_number": 1, "text": "We recommend Subscribe"}])
+    monkeypatch.setattr(sbi_ongoing.hashlib, "sha256",
+        lambda body: type("H", (), {"hexdigest": lambda self: "sha"})())
+    monkeypatch.setattr(sbi_ongoing, "write_extraction", lambda *a, **k: None)
+    response = json.dumps({"claims": [
+        {"kind": "verdict", "statement": "Subscribe.",
+         "excerpt": "We recommend Subscribe", "page_number": 1},
+        {"kind": "verdict", "statement": "Bad.",
+         "excerpt": " ".join(["word"] * 16), "page_number": 1}],
+        "scalar_facts": [
+         {"field": "sbi_rating", "value": "SUBSCRIBE",
+          "excerpt": "We recommend Subscribe", "page_number": 1},
+         {"field": "sbi_rating", "value": "SUBSCRIBE",
+          "excerpt": "We recommend Subscribe", "page_number": 1, "confidence": 2}]})
+    store = type("Store", (), {"get_document": lambda self, key: b"bytes"})()
+    result = sbi_ongoing.run_sbi_lane(Conn((7, 1, "key", "sha")), directory=tmp_path,
+        store=store, environ=ENV, model_call=lambda **k: (response, 10, 20, "end_turn"),
+        manifest_directory=tmp_path / "manifests")
+    manifest = json.loads(Path(result["manifest_path"]).read_text())
+    record = next(r for r in manifest["records"] if r["status"] == "EXTRACTED_WITH_DROPS")
+    assert record["dropped_items"][0]["position"] == 1
+    assert manifest["summary"]["extracted_with_drops"] == 1
+    assert manifest["summary"]["dropped_items_total"] == 2
+    assert manifest["summary"]["dropped_claims"] == 1
+    assert manifest["summary"]["dropped_scalar_facts"] == 1
 
 
 def test_shared_estimator_includes_system_prompt_identically():

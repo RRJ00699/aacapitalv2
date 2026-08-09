@@ -74,12 +74,13 @@ def test_ai_cannot_write_deterministic_valuation_fields(field):
 def test_missing_page_or_excerpt_is_rejected():
     bad = json.loads(json.dumps(FIXTURE))
     bad["claims"][0].pop("excerpt")
-    with pytest.raises(sonnet.SBIExtractionError, match="statement/excerpt"):
-        sonnet.parse_extraction(bad, doc_id=1)
+    parsed = sonnet.parse_extraction(bad, doc_id=1)
+    assert parsed["claims"] == []
+    assert parsed["dropped_items"][0]["reason"] == "missing required statement/excerpt fields"
 
 
-def test_prompt_v11_pins_literal_exact_schema_and_no_synonyms():
-    assert sonnet.PROMPT_VERSION == "sbi-v1.1"
+def test_prompt_v12_pins_literal_exact_schema_and_no_synonyms():
+    assert sonnet.PROMPT_VERSION == "sbi-v1.2"
     for required in (
         '"kind": "key_risk"',
         '"statement": "One concise sentence explicitly supported by the note."',
@@ -99,7 +100,7 @@ def test_claim_text_quote_schema_drift_is_rejected_without_aliasing():
                             "quote": "verbatim risk", "page_number": 3}],
                "scalar_facts": []}
     with pytest.raises(sonnet.SBIExtractionError,
-                       match=r"claims\[0\] lacks required statement/excerpt fields"):
+                       match="no valid extraction items remain"):
         sonnet.parse_extraction(drifted, doc_id=1)
 
 
@@ -108,7 +109,7 @@ def test_scalar_quote_schema_drift_is_rejected_without_aliasing():
                "value": "SUBSCRIBE", "quote": "We recommend SUBSCRIBE",
                "page_number": 1}]}
     with pytest.raises(sonnet.SBIExtractionError,
-                       match=r"scalar_facts\[0\] lacks required excerpt field"):
+                       match="no valid extraction items remain"):
         sonnet.parse_extraction(drifted, doc_id=1)
 
 
@@ -117,7 +118,7 @@ def test_synonym_is_rejected_even_when_required_claim_fields_are_present():
                             "excerpt": "verbatim risk", "quote": "duplicate alias",
                             "page_number": 3}], "scalar_facts": []}
     with pytest.raises(sonnet.SBIExtractionError,
-                       match=r"claims\[0\] has unsupported fields: \['quote'\]"):
+                       match="no valid extraction items remain"):
         sonnet.parse_extraction(drifted, doc_id=1)
 
 
@@ -130,17 +131,19 @@ def test_r3_output_bounds_remain_strict():
         sonnet.parse_extraction({"claims": [claim] * 11, "scalar_facts": []}, doc_id=1)
     with pytest.raises(sonnet.SBIExtractionError, match="maximum of 3"):
         sonnet.parse_extraction({"claims": [], "scalar_facts": [fact] * 4}, doc_id=1)
+    with pytest.raises(sonnet.SBIExtractionError, match="unsupported top-level"):
+        sonnet.parse_extraction({"claims": [claim], "scalar_facts": [], "extra": 1}, doc_id=1)
     too_long = dict(claim, excerpt="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen")
-    with pytest.raises(sonnet.SBIExtractionError, match="exceeds 15 words"):
-        sonnet.parse_extraction({"claims": [too_long], "scalar_facts": []}, doc_id=1)
+    parsed = sonnet.parse_extraction({"claims": [claim, too_long], "scalar_facts": []}, doc_id=1)
+    assert parsed["dropped_items"][0]["reason"] == "excerpt exceeds 15 words"
     exactly_40 = dict(claim, statement=" ".join(["word"] * 40))
     sonnet.parse_extraction({"claims": [exactly_40], "scalar_facts": []}, doc_id=1)
     too_many = dict(claim, statement=" ".join(["word"] * 41))
-    with pytest.raises(sonnet.SBIExtractionError, match="exceeds 40 words"):
-        sonnet.parse_extraction({"claims": [too_many], "scalar_facts": []}, doc_id=1)
+    parsed = sonnet.parse_extraction({"claims": [claim, too_many], "scalar_facts": []}, doc_id=1)
+    assert parsed["dropped_items"][0]["reason"] == "statement exceeds 40 words"
     multiline = dict(claim, statement="First line\nsecond line")
-    with pytest.raises(sonnet.SBIExtractionError, match="single-line"):
-        sonnet.parse_extraction({"claims": [multiline], "scalar_facts": []}, doc_id=1)
+    parsed = sonnet.parse_extraction({"claims": [claim, multiline], "scalar_facts": []}, doc_id=1)
+    assert parsed["dropped_items"][0]["reason"] == "statement must be single-line"
 
 
 @pytest.mark.parametrize("statement", [
@@ -161,8 +164,76 @@ def test_evidence_must_be_verbatim_on_asserted_page():
              {"page_number": 7, "text": "The top ten customers contributed 82% of sales."}]
     extraction_run.validate_evidence(parsed, pages)
     pages[1]["text"] = "No supporting language here."
-    with pytest.raises(ValueError, match="unsupported excerpt on page 7"):
+    with pytest.raises(ValueError, match=r"claim\[0\].*PAGE 7.*found_on_other_pages=\[\]"):
         extraction_run.validate_evidence(parsed, pages)
+
+
+@pytest.mark.parametrize(("page_text", "excerpt"), [
+    ("The company’s capacity is 100 MW.", "The company's capacity is 100 MW."),
+    ('SBI said “Subscribe” to the issue.', 'SBI said "Subscribe" to the issue.'),
+    ("Revenue grew 20% – profit rose.", "Revenue grew 20% - profit rose."),
+    ("Revenue grew 20% — profit rose.", "Revenue grew 20% - profit rose."),
+    ("Debt repayment is Rs.\u00a0300 crore.", "Debt repayment is Rs. 300 crore."),
+])
+def test_typography_normalization_is_exact_comparison_only(page_text, excerpt):
+    extraction = {"claims": [{"kind": "verdict", "statement": "Supported.",
+        "excerpt": excerpt, "page_number": 1}], "scalar_facts": []}
+    parsed = sonnet.parse_extraction(extraction, doc_id=1)
+    extraction_run.validate_evidence(parsed, [{"page_number": 1, "text": page_text}])
+    assert parsed["claims"][0]["excerpt"] == excerpt
+
+
+@pytest.mark.parametrize("excerpt", [
+    "The company's capacity is 101 MW.",
+    "Capacity is approximately one hundred megawatts.",
+    "This text is genuinely absent.",
+])
+def test_evidence_normalization_does_not_accept_changed_numbers_or_paraphrase(excerpt):
+    parsed = sonnet.parse_extraction({"claims": [{"kind": "verdict",
+        "statement": "Supported.", "excerpt": excerpt, "page_number": 1}],
+        "scalar_facts": []}, doc_id=1)
+    with pytest.raises(ValueError, match=r"found_on_other_pages=\[\]"):
+        extraction_run.validate_evidence(parsed, [{"page_number": 1,
+            "text": "The company’s capacity is 100 MW."}])
+
+
+def test_wrong_asserted_page_is_diagnostic_only():
+    parsed = sonnet.parse_extraction({"claims": [{"kind": "verdict",
+        "statement": "Supported.", "excerpt": "Exact evidence", "page_number": 2}],
+        "scalar_facts": []}, doc_id=1)
+    with pytest.raises(ValueError, match=r"claim\[0\].*PAGE 2.*found_on_other_pages=\[3\]"):
+        extraction_run.validate_evidence(parsed, [
+            {"page_number": 2, "text": "Other text"},
+            {"page_number": 3, "text": "Exact evidence"}])
+
+
+def test_bad_claim_and_scalar_are_dropped_while_valid_items_survive():
+    valid_claim = {"kind": "verdict", "statement": "Supported.",
+                   "excerpt": "Exact evidence", "page_number": 1}
+    bad_claim = dict(valid_claim, excerpt=" ".join(["word"] * 16))
+    valid_fact = {"field": "sbi_rating", "value": "SUBSCRIBE",
+                  "excerpt": "We recommend SUBSCRIBE", "page_number": 1}
+    bad_fact = dict(valid_fact, confidence=2)
+    parsed = sonnet.parse_extraction({"claims": [valid_claim, bad_claim],
+        "scalar_facts": [valid_fact, bad_fact]}, doc_id=1)
+    assert len(parsed["claims"]) == len(parsed["scalar_facts"]) == 1
+    assert parsed["dropped_items"] == [
+        {"item_type": "claim", "position": 1, "reason": "excerpt exceeds 15 words"},
+        {"item_type": "scalar_fact", "position": 1, "reason": "invalid confidence"},
+    ]
+
+
+@pytest.mark.parametrize(("changes", "reason"), [
+    ({"quote": "alias"}, "unsupported fields: ['quote']"),
+    ({"page_number": 0}, "invalid page_number"),
+    ({"confidence": "bad"}, "invalid confidence"),
+])
+def test_additional_item_failures_are_dropped(changes, reason):
+    valid = {"kind": "verdict", "statement": "Supported.",
+             "excerpt": "Exact evidence", "page_number": 1}
+    bad = {**valid, **changes}
+    parsed = sonnet.parse_extraction({"claims": [valid, bad], "scalar_facts": []}, doc_id=1)
+    assert parsed["dropped_items"][0]["reason"] == reason
 
 
 def test_approved_cost_checkpoint_is_below_owner_cap(capsys):
@@ -175,13 +246,45 @@ def test_approved_cost_checkpoint_is_below_owner_cap(capsys):
     assert extraction_run.cost(1_040_723, 198_000, card) < card.spend_cap
 
 
-def test_v11_historical_maximum_exceeds_old_nine_dollar_authorization():
+def test_v12_historical_maximum_exceeds_old_nine_dollar_authorization():
     card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
                                     2000, extraction_run.Decimal("9"))
     maximum = extraction_run.cost(1_040_723, 198 * 2000, card)
     assert maximum == extraction_run.Decimal("9.062169")
     with pytest.raises(SystemExit, match="exceeds .*9.00 cap"):
         extraction_run.print_cost_checkpoint(card)
+
+
+def test_v12_prompt_change_does_not_change_v11_token_estimate():
+    v11_estimate = 1_040_723
+    assert extraction_run.EXPECTED_INPUT_TOKENS == v11_estimate
+    assert extraction_run.EXPECTED_INPUT_TOKENS - v11_estimate == 0
+
+
+def test_preflight_prints_active_cap_and_allows_sufficient_ceiling(capsys):
+    card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
+                                    2000, extraction_run.Decimal("9.1"))
+    extraction_run.print_cost_checkpoint(card)
+    output = capsys.readouterr().out
+    assert "maximum total estimate = $9.062169" in output
+    assert "spend cap = $9.100000" in output
+
+
+def test_cost_abort_occurs_before_neon_or_model(monkeypatch):
+    for name, value in {
+        "SBI_SONNET_OWNER_APPROVED": "YES", "SBI_SONNET_INPUT_USD_PER_MTOK": "3",
+        "SBI_SONNET_OUTPUT_USD_PER_MTOK": "15", "SBI_SONNET_OUTPUT_CAP": "2000",
+        "SBI_SONNET_SPEND_CAP_USD": "9", "DATABASE_URL": "postgres://never-connect",
+        "R2_ACCOUNT_ID": "x", "R2_ACCESS_KEY_ID": "x", "R2_SECRET_ACCESS_KEY": "x",
+        "R2_DOCUMENT_BUCKET": "x", "ANTHROPIC_API_KEY": "never-call",
+    }.items():
+        monkeypatch.setenv(name, value)
+    connects = []
+    monkeypatch.setitem(sys.modules, "psycopg2", types.SimpleNamespace(
+        connect=lambda *a, **k: connects.append(1)))
+    with pytest.raises(SystemExit, match="exceeds .*9.00 cap"):
+        extraction_run.main(["--owner-approved", "--limit", "2"])
+    assert connects == []
 
 
 def _eligible_rows(count):
@@ -239,6 +342,19 @@ def test_success_count_mismatch_blocks_full_run_even_without_failure_category():
         extraction_run.Counter(calls=2, successes=2)) is False
     assert extraction_run.full_run_approval_blocked(
         extraction_run.Counter(selected=2, calls=1, successes=1, spend_stopped=1)) is True
+
+
+def test_dropped_item_status_and_pilot_blocking_but_full_run_continues():
+    parsed = {"claims": [{}], "scalar_facts": [], "dropped_items": [
+        {"item_type": "claim", "position": 1, "reason": "invalid page_number"}]}
+    assert extraction_run.extraction_success_status(parsed) == "EXTRACTED_WITH_DROPS"
+    pilot = extraction_run.Counter(selected=1, calls=1, successes=1, pilot=1)
+    extraction_run.count_drops(pilot, parsed["dropped_items"])
+    assert extraction_run.full_run_approval_blocked(pilot) is True
+    full = extraction_run.Counter(selected=1, calls=1, successes=1, pilot=0)
+    extraction_run.count_drops(full, parsed["dropped_items"])
+    assert extraction_run.full_run_approval_blocked(full) is False
+    assert full["dropped_items_total"] == full["dropped_claims"] == 1
 
 
 def _complete_historical_rows():

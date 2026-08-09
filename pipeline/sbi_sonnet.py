@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 MODEL = "claude-sonnet-4-6"
-PROMPT_VERSION = "sbi-v1.1"
+PROMPT_VERSION = "sbi-v1.2"
 SOURCE_TYPE = "SBI"
 
 # These are sourced statements, never house-calculated valuation outputs.
@@ -141,49 +141,60 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
         raise SBIExtractionError("claims exceeds maximum of 10")
     if len(facts) > 3:
         raise SBIExtractionError("scalar_facts exceeds maximum of 3")
-    clean_claims, clean_facts = [], []
+    clean_claims, clean_facts, dropped = [], [], []
     for position, claim in enumerate(claims):
-        if not isinstance(claim, dict) or claim.get("kind") not in CLAIM_KINDS:
-            raise SBIExtractionError(f"claims[{position}] has unsupported kind")
-        if not claim.get("statement") or not claim.get("excerpt"):
-            raise SBIExtractionError(
-                f"claims[{position}] lacks required statement/excerpt fields")
-        unexpected = set(claim) - CLAIM_KEYS
-        if unexpected:
-            raise SBIExtractionError(
-                f"claims[{position}] has unsupported fields: {sorted(unexpected)}")
-        if len(str(claim["excerpt"]).split()) > 15:
-            raise SBIExtractionError(f"claims[{position}] excerpt exceeds 15 words")
-        statement = str(claim["statement"]).strip()
-        if "\n" in statement or "\r" in statement:
-            raise SBIExtractionError(f"claims[{position}] statement must be single-line")
-        if len(statement.split()) > 40:
-            raise SBIExtractionError(f"claims[{position}] statement exceeds 40 words")
-        if not isinstance(claim.get("page_number"), int) or claim["page_number"] < 1:
-            raise SBIExtractionError(f"claims[{position}] lacks a valid page_number")
-        confidence = claim.get("confidence")
-        if confidence is not None and not 0 <= float(confidence) <= 1:
-            raise SBIExtractionError(f"claims[{position}] has invalid confidence")
-        clean_claims.append({**claim, "doc_id": doc_id, "source_type": SOURCE_TYPE,
-                             "model": MODEL, "prompt_version": PROMPT_VERSION})
+        reason = _claim_error(claim)
+        if reason:
+            dropped.append({"item_type": "claim", "position": position, "reason": reason})
+        else:
+            clean_claims.append({**claim, "doc_id": doc_id, "source_type": SOURCE_TYPE,
+                                 "model": MODEL, "prompt_version": PROMPT_VERSION})
     for position, fact in enumerate(facts):
-        if not isinstance(fact, dict) or fact.get("field") not in SCALAR_FIELDS:
-            raise SBIExtractionError(f"scalar_facts[{position}] has unsupported field")
-        if fact.get("value") in (None, ""):
-            raise SBIExtractionError(f"scalar_facts[{position}] lacks required value field")
-        if not fact.get("excerpt"):
-            raise SBIExtractionError(f"scalar_facts[{position}] lacks required excerpt field")
-        unexpected = set(fact) - SCALAR_KEYS
-        if unexpected:
-            raise SBIExtractionError(
-                f"scalar_facts[{position}] has unsupported fields: {sorted(unexpected)}")
-        if len(str(fact["excerpt"]).split()) > 15:
-            raise SBIExtractionError(f"scalar_facts[{position}] excerpt exceeds 15 words")
-        if not isinstance(fact.get("page_number"), int) or fact["page_number"] < 1:
-            raise SBIExtractionError(f"scalar_facts[{position}] lacks a valid page_number")
-        clean_facts.append({**fact, "doc_id": doc_id, "source_type": SOURCE_TYPE,
-                            "model": MODEL, "prompt_version": PROMPT_VERSION})
-    return {"claims": clean_claims, "scalar_facts": clean_facts}
+        reason = _scalar_error(fact)
+        if reason:
+            dropped.append({"item_type": "scalar_fact", "position": position, "reason": reason})
+        else:
+            clean_facts.append({**fact, "doc_id": doc_id, "source_type": SOURCE_TYPE,
+                                "model": MODEL, "prompt_version": PROMPT_VERSION})
+    if not clean_claims and not clean_facts:
+        raise SBIExtractionError("no valid extraction items remain after item validation")
+    return {"claims": clean_claims, "scalar_facts": clean_facts, "dropped_items": dropped}
+
+
+def _confidence_error(value):
+    if value is None:
+        return None
+    try:
+        valid = 0 <= float(value) <= 1
+    except (TypeError, ValueError):
+        valid = False
+    return None if valid else "invalid confidence"
+
+
+def _claim_error(claim):
+    if not isinstance(claim, dict): return "item must be an object"
+    if claim.get("kind") not in CLAIM_KINDS: return "unsupported kind"
+    if not claim.get("statement") or not claim.get("excerpt"): return "missing required statement/excerpt fields"
+    unexpected = set(claim) - CLAIM_KEYS
+    if unexpected: return f"unsupported fields: {sorted(unexpected)}"
+    if len(str(claim["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
+    statement = str(claim["statement"]).strip()
+    if "\n" in statement or "\r" in statement: return "statement must be single-line"
+    if len(statement.split()) > 40: return "statement exceeds 40 words"
+    if not isinstance(claim.get("page_number"), int) or claim["page_number"] < 1: return "invalid page_number"
+    return _confidence_error(claim.get("confidence"))
+
+
+def _scalar_error(fact):
+    if not isinstance(fact, dict): return "item must be an object"
+    if fact.get("field") not in SCALAR_FIELDS: return "unsupported field"
+    if fact.get("value") in (None, ""): return "missing or empty value"
+    if not fact.get("excerpt"): return "missing required excerpt field"
+    unexpected = set(fact) - SCALAR_KEYS
+    if unexpected: return f"unsupported fields: {sorted(unexpected)}"
+    if len(str(fact["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
+    if not isinstance(fact.get("page_number"), int) or fact["page_number"] < 1: return "invalid page_number"
+    return _confidence_error(fact.get("confidence"))
 
 
 def estimate_input_tokens(pages, system_prompt=SYSTEM_PROMPT):

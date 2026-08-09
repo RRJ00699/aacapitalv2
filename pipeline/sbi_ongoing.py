@@ -15,6 +15,7 @@ try:
     from .r2 import R2DocumentStore
     from .sbi_extraction_run import (
         FAILURE_STATUSES, PriceCard, RESULT_DIR, anthropic_call, cost,
+        extraction_success_status,
         parse_complete_response, pdf_pages, validate_evidence,
     )
     from .sbi_ingest import ingest_file
@@ -25,6 +26,7 @@ except ImportError:
     from r2 import R2DocumentStore
     from sbi_extraction_run import (
         FAILURE_STATUSES, PriceCard, RESULT_DIR, anthropic_call, cost,
+        extraction_success_status,
         parse_complete_response, pdf_pages, validate_evidence,
     )
     from sbi_ingest import ingest_file
@@ -138,7 +140,8 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
     summary = Counter(downloaded=len(paths))
     summary.update({key: 0 for key in (
         "resolved", "unresolved", "newly_ledgered", "already_ledgered",
-        "ingest_errors", "extraction_attempted", "extracted", "already_extracted",
+        "ingest_errors", "extraction_attempted", "extracted", "extracted_with_drops",
+        "dropped_items_total", "dropped_claims", "dropped_scalar_facts", "already_extracted",
         "spend_stopped", "missing_ledger_rows", *FAILURE_STATUSES,
     )})
     records = []
@@ -234,6 +237,7 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
             if status == "TRUNCATED":
                 summary["TRUNCATED"] += 1
             else:
+                dropped = parsed.get("dropped_items", [])
                 try:
                     validate_evidence(parsed, pages)
                 except Exception as exc:
@@ -257,11 +261,19 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
                     _progress(index, len(doc_ids), doc_id, "WRITE_ERROR", itok, otok,
                               note_cost, spent)
                     continue
-                status = "EXTRACTED"; summary["extracted"] += 1
+                status = extraction_success_status(parsed)
+                summary["extracted"] += 1
+                summary["extracted_with_drops"] += bool(dropped)
+                summary["dropped_items_total"] += len(dropped)
+                summary["dropped_claims"] += sum(
+                    item["item_type"] == "claim" for item in dropped)
+                summary["dropped_scalar_facts"] += sum(
+                    item["item_type"] == "scalar_fact" for item in dropped)
             records.append({"doc_id": doc_id, "ipo_id": ipo_id, "status": status,
                 "model": MODEL, "prompt_version": PROMPT_VERSION,
                 "input_tokens": itok, "output_tokens": otok,
-                "actual_cost": f"{note_cost:.6f}", "stop_reason": stop_reason})
+                "actual_cost": f"{note_cost:.6f}", "stop_reason": stop_reason,
+                "dropped_items": parsed.get("dropped_items", []) if parsed else []})
             _progress(index, len(doc_ids), doc_id, status, itok, otok, note_cost, spent)
         except Exception as exc:
             conn.rollback()

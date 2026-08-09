@@ -9,6 +9,7 @@ import pathlib
 import time
 import urllib.error
 import urllib.request
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
@@ -90,6 +91,7 @@ def print_cost_checkpoint(card: PriceCard):
     print(f"input cost estimate = ${input_est:.6f}")
     print(f"maximum output cost = ${output_est:.6f}")
     print(f"maximum total estimate = ${total:.6f}", flush=True)
+    print(f"spend cap = ${card.spend_cap:.6f}", flush=True)
     if total > card.spend_cap:
         raise SystemExit(f"ABORT: ${total:.6f} estimate exceeds ${card.spend_cap:.2f} cap")
 
@@ -108,13 +110,36 @@ def pdf_pages(body: bytes) -> list[dict]:
         return [{"page_number": i + 1, "text": page.get_text()} for i, page in enumerate(doc)]
 
 
+TYPOGRAPHY_FOLD = str.maketrans({
+    "\u2019": "'", "\u2018": "'", "\u201a": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"',
+    "\u2013": "-", "\u2014": "-", "\u00a0": " ",
+})
+COMPARISON_MODE = "NFKC+TYPOGRAPHY_FOLD+WHITESPACE"
+
+
+def normalize_evidence_text(text):
+    return " ".join(unicodedata.normalize("NFKC", str(text)).translate(TYPOGRAPHY_FOLD).split())
+
+
 def validate_evidence(extraction: dict, pages: list[dict]):
-    """Reject the whole note unless every excerpt occurs on its asserted page."""
-    page_text = {page["page_number"]: " ".join(page["text"].split()) for page in pages}
-    for item in extraction["claims"] + extraction["scalar_facts"]:
-        excerpt = " ".join(item["excerpt"].split())
-        if not excerpt or excerpt not in page_text.get(item["page_number"], ""):
-            raise ValueError(f"unsupported excerpt on page {item['page_number']}")
+    """Require exact normalized substring on the asserted page; never fuzzy-match."""
+    page_text = {page["page_number"]: normalize_evidence_text(page["text"]) for page in pages}
+    groups = (("claim", extraction["claims"]), ("scalar_fact", extraction["scalar_facts"]))
+    for item_type, items in groups:
+        for position, item in enumerate(items):
+            original = item["excerpt"]
+            excerpt = normalize_evidence_text(original)
+            asserted = item["page_number"]
+            if excerpt and excerpt in page_text.get(asserted, ""):
+                continue
+            found = sorted(page for page, text in page_text.items()
+                           if page != asserted and excerpt and excerpt in text)
+            diagnostic = " ".join(str(original).split())[:160]
+            raise ValueError(
+                f'{item_type}[{position}] evidence not found on asserted PAGE {asserted}; '
+                f'excerpt="{diagnostic}"; comparison={COMPARISON_MODE}; '
+                f'found_on_other_pages={found}')
 
 
 def anthropic_call(*, pages: list[dict], api_key: str, output_cap: int):
@@ -168,7 +193,19 @@ def full_run_approval_blocked(totals):
     return bool(any(totals[status] for status in FAILURE_STATUSES)
                 or totals["successes"] != totals["calls"]
                 or totals["spend_stopped"]
+                or (totals["pilot"] and totals["dropped_items_total"])
                 or (totals["selected"] and totals["calls"] < totals["selected"]))
+
+
+def count_drops(totals, dropped):
+    totals["dropped_items_total"] += len(dropped)
+    totals["dropped_claims"] += sum(item["item_type"] == "claim" for item in dropped)
+    totals["dropped_scalar_facts"] += sum(
+        item["item_type"] == "scalar_fact" for item in dropped)
+
+
+def extraction_success_status(parsed):
+    return "EXTRACTED_WITH_DROPS" if parsed.get("dropped_items") else "EXTRACTED"
 
 
 def deterministic_holdout_report(rows, identity_rows):
@@ -256,6 +293,7 @@ def main(argv=None):
         eligible = all_eligible if args.limit is None else all_eligible[:args.limit]
         total = len(eligible)
         totals["selected"] = total
+        totals["pilot"] = args.limit is not None
         for index, row in enumerate(eligible, 1):
             base = {"doc_id": row["documents_id"], "ipo_id": row["ipo_id"],
                     "model": MODEL, "prompt_version": PROMPT_VERSION,
@@ -291,6 +329,7 @@ def main(argv=None):
                     print_progress(index, total, row, record, actual_cost)
                     continue
                 assert parsed is not None
+                dropped = parsed.get("dropped_items", [])
                 try:
                     validate_evidence(parsed, pages)
                 except Exception as exc:
@@ -304,8 +343,12 @@ def main(argv=None):
                     conn.rollback(); record = {**base, "status": "WRITE_ERROR", "error": f"{type(exc).__name__}: {exc}"}
                     records.append(record); print_progress(index, total, row, record, actual_cost)
                     totals["WRITE_ERROR"] += 1; continue
-                record = {**base, "status": "EXTRACTED", "error": None}
+                status = extraction_success_status(parsed)
+                record = {**base, "status": status, "error": None,
+                          "dropped_items": dropped}
                 records.append(record); totals["successes"] += 1
+                totals["extracted_with_drops" if dropped else "extracted"] += 1
+                count_drops(totals, dropped)
                 print_progress(index, total, row, record, actual_cost)
             except Exception as exc:
                 conn.rollback(); record = {**base, "status": "MODEL_ERROR", "error": f"{type(exc).__name__}: {exc}"}
@@ -325,10 +368,20 @@ def main(argv=None):
             "full_run_approval_blocked": full_run_approval_blocked(totals),
             "spend_stopped": bool(totals["spend_stopped"]),
             "cutover_written": cutover_written,
+            "extracted": totals["extracted"],
+            "extracted_with_drops": totals["extracted_with_drops"],
+            "dropped_items_total": totals["dropped_items_total"],
+            "dropped_claims": totals["dropped_claims"],
+            "dropped_scalar_facts": totals["dropped_scalar_facts"],
             "already_extracted": totals["already_extracted"],
             "EXTRACTION_MISSING": aggregate(verified)["EXTRACTION_MISSING"],
             "holdout_deterministically_resolved": sum(x["deterministically_resolved"] for x in holdouts),
-            "remaining_unresolved": len(holdouts)}, "holdouts": holdouts}
+            "remaining_unresolved": len(holdouts)},
+            "price_card": {"input_usd_per_mtok": str(card.input_usd_per_mtok),
+                           "output_usd_per_mtok": str(card.output_usd_per_mtok),
+                           "output_cap": card.output_cap,
+                           "spend_cap": str(card.spend_cap)},
+            "holdouts": holdouts}
         RESULT_DIR.mkdir(parents=True, exist_ok=True)
         target = RESULT_DIR / f"run-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.json"
         target.write_text(json.dumps(result, indent=2) + "\n")
