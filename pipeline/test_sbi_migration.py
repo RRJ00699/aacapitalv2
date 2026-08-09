@@ -106,11 +106,65 @@ def test_bounded_unresolved_report_separates_ambiguous_from_no_match():
 
     assert report[0]["group"] == "AMBIGUOUS"
     assert report[0]["ambiguity_count"] == 2
-    assert report[0]["canonical_company_name"] is None
-    assert set(report[0]["closest_deterministic_spine_candidates"]) == {
+    assert set(report[0]["closest_name_suggestions_advisory_only"]) == {
         "Example Limited", "Example Ltd"}
     assert report[1]["group"] == "NO_CANONICAL_MATCH"
-    assert len(report[1]["closest_deterministic_spine_candidates"]) == 3
+    assert len(report[1]["closest_name_suggestions_advisory_only"]) == 3
+    assert rows[0]["status"] == "IPO_UNRESOLVED" and rows[0].get("ipo_id") is None
+    assert rows[1]["status"] == "IPO_UNRESOLVED" and rows[1].get("ipo_id") is None
+
+
+def test_extraction_failure_is_explicit_and_never_estimated():
+    rows = [{"local_path": "data/research_notes/broken.pdf", "bytes": 10,
+             "r2_sha_status": "VERIFIED", "extraction_tuple": None}]
+
+    def fail(_path):
+        raise RuntimeError("unreadable PDF")
+
+    inventory = bounded.extraction_inventory(rows, extract_text=fail)
+
+    assert inventory["notes"][0]["extraction_status"] == "TEXT_EXTRACTION_FAILED"
+    assert inventory["notes"][0]["estimated_input_tokens"] is None
+    assert inventory["text_extraction_failed"] == 1
+    assert inventory["text_extraction_success"] == 0
+    assert inventory["estimated_input_tokens_total"] == 0
+    assert inventory["token_estimate_status"] == "LOWER_BOUND / INCOMPLETE"
+
+
+def test_extraction_inventory_uses_pymupdf_result_without_poppler():
+    rows = [{"local_path": "data/research_notes/note.pdf", "bytes": 20,
+             "r2_sha_status": "VERIFIED", "extraction_tuple": None}]
+    inventory = bounded.extraction_inventory(rows, extract_text=lambda _path: (2, "abcd" * 25))
+    note = inventory["notes"][0]
+
+    assert note["extraction_method"] == "PyMuPDF"
+    assert note["page_count"] == 2 and note["text_chars"] == 100
+    assert note["extraction_status"] == "TEXT_EXTRACTION_SUCCEEDED"
+    assert note["estimated_input_tokens"] is not None
+    assert inventory["notes_total"] == inventory["text_extraction_success"] == 1
+    assert inventory["text_extraction_failed"] == 0
+    assert inventory["token_estimate_status"] == "COMPLETE"
+
+
+def test_preflight_itemizes_document_ledger_reads_and_writes():
+    rows = [{"bytes": 10}, {"bytes": 20}, {"bytes": 30}]
+    scope = rows[:2]
+
+    preflight = bounded.preflight_contract(rows, scope, pre_ingest_classification_reads=3)
+    neon = preflight["expected Neon statements"]
+
+    assert neon == {"identity_set_load": 1,
+                    "pre_ingest_classification_reads": 3,
+                    "per_document_ledger_select": 2,
+                    "per_document_insert": 2,
+                    "post_ingest_verification_reads": 5,
+                    "expected_total_reads": 11,
+                    "expected_total_writes": 2}
+
+
+def test_next_owner_approval_uses_dynamic_unresolved_count():
+    assert "2 unresolved identities" in bounded.next_owner_approval([{}, {}])
+    assert "43 unresolved identities" not in bounded.next_owner_approval([{}, {}])
 
 
 def test_counting_s3_client_counts_actual_wire_methods_only():
@@ -296,6 +350,33 @@ def test_tracked_source_survives_successful_ingest(monkeypatch, tmp_path):
     assert source.exists(), "tracked source was deleted before three-way SHA proof"
     assert calls[0]["temporary_path"] is None
     assert calls[0]["document_date"] == ingest.dt.date(2023, 4, 3)
+
+
+def test_real_ingest_file_accepts_preloaded_identity_without_extra_identity_sql(monkeypatch, tmp_path):
+    source = tmp_path / "Example Ltd_IPO Note.pdf"
+    source.write_bytes(b"%PDF-1.7\ntracked\n%%EOF")
+    queries, store_calls = [], []
+
+    class Cursor:
+        def execute(self, sql, params):
+            queries.append(sql)
+            raise AssertionError("preloaded identity resolution must not query Neon")
+        def close(self):
+            pass
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(ingest, "store_document", _successful_store(store_calls))
+    identity_rows = ((7, "INE000TEST01", "Example Ltd", "example ltd"),)
+
+    result = ingest.ingest_file(Connection(), source, owner_approved=True,
+                                retain_source=True, identity_rows=identity_rows)
+
+    assert result["status"] == "LEDGERED" and result["ipo_id"] == 7
+    assert queries == []
+    assert source.exists()
+    assert store_calls[0]["temporary_path"] is None
 
 
 def test_ephemeral_source_keeps_post_commit_cleanup_behavior(monkeypatch, tmp_path):

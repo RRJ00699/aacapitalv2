@@ -12,9 +12,10 @@ import difflib
 import json
 import os
 import pathlib
-import subprocess
 import time
 from collections import Counter
+
+import pymupdf
 
 try:
     from .company_identity import canon, load_company_identity_set
@@ -63,6 +64,10 @@ class CountingCursor:
     def execute(self, sql, params=()):
         verb = sql.lstrip().split(None, 1)[0].upper()
         self.counts["neon_writes" if verb in {"INSERT", "UPDATE", "DELETE"} else "neon_reads"] += 1
+        if "SELECT id, ipo_id, doc_type, object_key" in sql and "FROM documents WHERE sha256" in sql:
+            self.counts["document_ledger_reads"] += 1
+        elif "INSERT INTO documents" in sql:
+            self.counts["document_ledger_writes"] += 1
         return self.inner.execute(sql, params)
 
     def __getattr__(self, name):
@@ -81,6 +86,11 @@ class CountingConnection:
 
 
 def unresolved_report(rows, identity_rows, limit=3):
+    """Build a human-review report without changing any classification.
+
+    Fuzzy/difflib suggestions are display-only and MUST NEVER feed identity
+    resolution, ledger ownership, or automated ingest.
+    """
     names = [(row[2], canon(row[2])) for row in identity_rows]
     report = []
     for row in rows:
@@ -93,49 +103,85 @@ def unresolved_report(rows, identity_rows, limit=3):
             names, key=lambda item: (-difflib.SequenceMatcher(None, wanted, item[1]).ratio(), item[0]))[:limit]]
         report.append({
             "filename": row["local_path"],
-            "canonical_company_name": None,
             "ambiguity_count": row.get("identity_ambiguous_count", 0),
-            "closest_deterministic_spine_candidates": closest,
+            "closest_name_suggestions_advisory_only": closest,
             "reason_unresolved": "multiple canonical-equality matches" if exact else "no exact or unique canonical match",
             "group": "AMBIGUOUS" if exact else "NO_CANONICAL_MATCH",
         })
     return report
 
 
-def extraction_inventory(rows):
+def extract_pdf_text(path):
+    """Extract local PDF text with the repository-supported PyMuPDF package."""
+    with pymupdf.open(path) as document:
+        return len(document), "".join(page.get_text() for page in document)
+
+
+def extraction_inventory(rows, extract_text=extract_pdf_text):
     totals = Counter()
     notes = []
     for row in rows:
         if row.get("r2_sha_status") != "VERIFIED":
             continue
         path = ROOT / row["local_path"]
-        page_count = None
         try:
-            info = subprocess.run(["pdfinfo", str(path)], capture_output=True, text=True,
-                                  check=True, timeout=30).stdout
-            page_count = int(next(line.split(":", 1)[1] for line in info.splitlines()
-                                  if line.startswith("Pages:")))
-            text = subprocess.run(["pdftotext", str(path), "-"], capture_output=True,
-                                  check=True, timeout=60).stdout
-        except (OSError, subprocess.SubprocessError, StopIteration, ValueError):
-            text = ""
-        chars = len(text)
-        estimated_input = (chars + 3) // 4 + (len(SYSTEM_PROMPT) + 3) // 4
-        notes.append({"filename": row["local_path"], "pages": page_count,
-                      "pdf_bytes": row["bytes"], "text_chars": chars,
-                      "estimated_input_tokens": estimated_input})
-        totals.update(notes=1, pages=page_count or 0, pdf_bytes=row["bytes"],
-                      text_chars=chars, input_tokens=estimated_input)
+            page_count, extracted_text = extract_text(path)
+            chars = len(extracted_text)
+            estimated_input = (chars + 3) // 4 + (len(SYSTEM_PROMPT) + 3) // 4
+            extraction_status = "TEXT_EXTRACTION_SUCCEEDED"
+            totals.update(text_extraction_success=1, pages=page_count,
+                          text_chars=chars, input_tokens=estimated_input)
+        except Exception:
+            page_count = chars = estimated_input = None
+            extraction_status = "TEXT_EXTRACTION_FAILED"
+            totals.update(text_extraction_failed=1)
+        notes.append({"filename": row["local_path"], "extraction_method": "PyMuPDF",
+                      "page_count": page_count, "pdf_bytes": row["bytes"],
+                      "text_chars": chars, "estimated_input_tokens": estimated_input,
+                      "extraction_status": extraction_status})
+        totals.update(notes_total=1, pdf_bytes=row["bytes"])
+    failed = totals["text_extraction_failed"]
     return {"model": MODEL, "prompt_version": PROMPT_VERSION,
             "already_extracted": sum(r.get("r2_sha_status") == "VERIFIED" and r.get("extraction_tuple") is not None for r in rows),
             "needs_extraction": sum(r.get("r2_sha_status") == "VERIFIED" and r.get("extraction_tuple") is None for r in rows),
-            "size_estimate": dict(totals),
-            "token_method": "UTF-8 text characters / 4 plus system prompt; no model call",
+            "notes_total": totals["notes_total"],
+            "text_extraction_success": totals["text_extraction_success"],
+            "text_extraction_failed": failed,
+            "estimated_input_tokens_total": totals["input_tokens"],
+            "size_estimate": {"pages": totals["pages"], "pdf_bytes": totals["pdf_bytes"],
+                              "text_chars": totals["text_chars"]},
+            "token_estimate_status": "LOWER_BOUND / INCOMPLETE" if failed else "COMPLETE",
+            "token_method": "PyMuPDF text characters / 4 plus system prompt; no model call",
             "estimated_output_tokens_per_note": "UNKNOWN until owner sets an output cap",
             "estimated_cost_per_note": "UNKNOWN: no owner-approved price card supplied",
             "estimated_total_cost": "UNKNOWN: no owner-approved price card supplied",
             "estimated_runtime": "UNKNOWN: no paid-call latency evidence collected",
             "notes": notes}
+
+
+def preflight_contract(rows, scope, pre_ingest_classification_reads):
+    """Return the owner cost contract, separating reads, writes, and R2 calls."""
+    expected_post_reads = len(rows) + len(scope)
+    neon_contract = {
+        "identity_set_load": 1,
+        "pre_ingest_classification_reads": pre_ingest_classification_reads,
+        "per_document_ledger_select": len(scope),
+        "per_document_insert": len(scope),
+        "post_ingest_verification_reads": expected_post_reads,
+        "expected_total_reads": 1 + pre_ingest_classification_reads + len(scope) + expected_post_reads,
+        "expected_total_writes": len(scope),
+    }
+    return {"PDF count to ingest": len(scope),
+            "total bytes to ingest": sum(row["bytes"] for row in scope),
+            "expected R2 PUT count": len(scope),
+            "expected Neon statements": neon_contract,
+            "expected verification HEAD/GET count": f"{len(scope)} HEAD; 0 to {len(scope)} GET",
+            "estimated runtime": f"approximately {round(len(scope) * 17.25 / 241, 1)} seconds using owner read-only baseline"}
+
+
+def next_owner_approval(unresolved):
+    return (f"Approve Sonnet extraction scope/cost and separately decide the "
+            f"{len(unresolved)} unresolved identities; deletion remains unapproved.")
 
 
 def main(argv=None):
@@ -167,12 +213,7 @@ def main(argv=None):
         rows = [verify_remote(row, conn, store, initial_counter, identity_rows)
                 for row in local_inventory(args.directory)]
         scope = [row for row in rows if row["status"] == "LEDGER_MISSING"]
-        preflight = {"PDF count to ingest": len(scope),
-                     "total bytes to ingest": sum(row["bytes"] for row in scope),
-                     "expected R2 PUT count": len(scope),
-                     "expected Neon writes": len(scope),
-                     "expected verification HEAD/GET count": f"{len(scope)} HEAD; 0 to {len(scope)} GET",
-                     "estimated runtime": f"approximately {round(len(scope) * 17.25 / 241, 1)} seconds using owner read-only baseline"}
+        preflight = preflight_contract(rows, scope, initial_counter.neon_reads)
         print(json.dumps({"pre_ingest": preflight}), flush=True)
         for row in scope:
             try:
@@ -189,18 +230,19 @@ def main(argv=None):
         verified = [verify_remote(row, conn, store, final_counter, identity_rows)
                     for row in local_inventory(args.directory)]
         bad = [row for row in verified if row["status"] in STOP_STATUSES]
+        unresolved = unresolved_report(verified, identity_rows)
         result = {"aggregate": aggregate(verified),
                   "ingest_attempts": len(scope), "successful_ledger_writes": len(scope) - len(failures),
                   "successful_r2_objects": sum(r.get("r2_sha_status") == "VERIFIED" for r in verified),
                   "failed_ingests": failures,
                   "three_way_sha_match_count": sum(r.get("r2_sha_status") == "VERIFIED" for r in verified),
-                  "unresolved": unresolved_report(verified, identity_rows),
+                  "unresolved": unresolved,
                   "operations": {"r2_put": wire.puts, "r2_head": wire.heads,
                                  "r2_get": wire.gets, **db_counts,
                                  "runtime_seconds": round(time.monotonic() - started, 3)},
                   "extraction_estimate": extraction_inventory(verified),
                   "stop": bool(bad or failures),
-                  "next_owner_approval": "Approve Sonnet extraction scope/cost and separately decide the 43 unresolved identities; deletion remains unapproved."}
+                  "next_owner_approval": next_owner_approval(unresolved)}
         print(json.dumps(result, indent=2))
         return 1 if result["stop"] else 0
     finally:

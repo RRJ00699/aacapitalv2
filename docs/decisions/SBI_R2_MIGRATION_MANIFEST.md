@@ -29,7 +29,11 @@ not mislabel a local inventory as a production storage proof.
   identity spine once, classifies before writing, limits mutation to that run's
   `LEDGER_MISSING` rows, isolates per-file failures, preserves tracked sources,
   performs post-write three-way verification, reports exact operation counts and
-  unresolved groups, and produces a local no-call text/page/token inventory.
+  unresolved groups, and produces a local no-call text/page/token inventory with
+  PyMuPDF (the repository-supported `pymupdf` module). Text extraction failures are
+  explicit, have no per-note token estimate, and make aggregate totals an incomplete
+  lower bound rather than silently substituting empty text. Fuzzy name suggestions
+  are display-only and never feed identity resolution, ownership, or ingest.
 - **Exact next owner action required:** expose the production Neon and bucket-scoped
   R2 credentials in the runtime, then execute
   `SBI_OWNER_APPROVED=YES python pipeline/sbi_bounded_ingest.py --owner-approved`.
@@ -84,7 +88,7 @@ the execution environment. No remote request and no mutation was made.**
   GETs, Neon writes, and Sonnet extractions depend on the blocked verification result.
   No ingest scope is approved by this checkpoint.
 - **UNKNOWN — token and cost inventory:** no Anthropic call was made. A no-call
-  estimate must extract text locally page-by-page (for example with `pdftotext`),
+  estimate must extract text locally page-by-page with repository-supported PyMuPDF,
   count UTF-8 characters and words, apply a documented conservative token range,
   add the fixed system-prompt/output allowance, and multiply input/output ranges by
   the owner-approved Sonnet price card. Tokens per note, cost per note, total cost,

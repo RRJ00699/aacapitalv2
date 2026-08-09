@@ -1,10 +1,12 @@
 from hashlib import sha256
 from pathlib import Path
+from collections import Counter
 
 import pytest
 
 import document_ledger as ledger
 from document_contract import CONTRACT_VERSION, PDF_CONTENT_TYPE
+from pipeline.sbi_bounded_ingest import CountingConnection
 
 
 PDF = b"%PDF-1.7\n" + b"x" * (100 * 1024)
@@ -122,6 +124,19 @@ def test_new_sha_is_a_new_immutable_object():
     save(conn, store)
     save(conn, store, content=PDF + b"new")
     assert len(conn.rows) == 2 and store.put_calls == 2
+
+
+def test_two_new_documents_each_execute_one_ledger_read_and_one_write():
+    counts = Counter()
+    conn, store = CountingConnection(FakeConn(), counts), FakeStore()
+
+    save(conn, store, content=PDF + b"one")
+    save(conn, store, content=PDF + b"two")
+
+    assert counts["document_ledger_reads"] == 2
+    assert counts["document_ledger_writes"] == 2
+    assert counts["neon_reads"] == 2
+    assert counts["neon_writes"] == 2
 
 
 def test_invalid_pdf_is_rejected_before_r2_or_ledger():
