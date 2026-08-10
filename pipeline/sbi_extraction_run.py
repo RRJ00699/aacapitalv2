@@ -308,12 +308,31 @@ def _run_pending_worker_locked(conn, *, store=None, card=None, environ=None, lim
     """
     environ = os.environ if environ is None else environ
     card = card or load_owner_price_card(environ)
+    if (model_call is anthropic_call
+            and environ.get("SBI_SONNET_OWNER_APPROVED") != "YES"):
+        return {"summary": {"status": "OWNER_NOT_APPROVED",
+                            "extraction_status": "OWNER_NOT_APPROVED",
+                            "selected": 0, "actual_sbi_spend": "0.000000"},
+                "records": []}
     store = store or R2DocumentStore()
     api_key = environ.get("ANTHROPIC_API_KEY")
     if (model_call is anthropic_call or token_counter is count_tokens_call) and not api_key:
         raise ValueError("ANTHROPIC_API_KEY is required for production extraction")
     rows = select_pending_documents(conn, limit=limit)
     end_read_transaction(conn)
+    maximum_output_cost = cost(0, len(rows) * card.output_cap, card)
+    print(
+        "SBI PREFLIGHT\n"
+        f"selected={len(rows)}\n"
+        f"input_price={card.input_usd_per_mtok}/MTok\n"
+        f"output_price={card.output_usd_per_mtok}/MTok\n"
+        f"output_cap={card.output_cap}\n"
+        f"run_cap=${card.spend_cap}\n"
+        f"max_output_cost=${maximum_output_cost:.6f}\n"
+        "input_guard=official count_tokens per document + max(1024,10%)\n"
+        "generation=OWNER APPROVED",
+        flush=True,
+    )
     summary = Counter(selected=len(rows))
     summary.update({status: 0 for status in TERMINAL_STATUSES})
     records, spent = [], Decimal(0)

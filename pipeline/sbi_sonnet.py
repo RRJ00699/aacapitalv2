@@ -88,7 +88,6 @@ SBI_EXTRACTION_TOOL = {
         "properties": {
             "claims": {
                 "type": "array",
-                "maxItems": 10,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -96,15 +95,14 @@ SBI_EXTRACTION_TOOL = {
                         "kind": {"type": "string", "enum": list(CLAIM_KINDS)},
                         "statement": {"type": "string"},
                         "excerpt": {"type": "string"},
-                        "page_number": {"type": "integer", "minimum": 1},
-                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        "page_number": {"type": "integer"},
+                        "confidence": {"type": "number"},
                     },
                     "required": ["kind", "statement", "excerpt", "page_number"],
                 },
             },
             "scalar_facts": {
                 "type": "array",
-                "maxItems": 3,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -112,8 +110,8 @@ SBI_EXTRACTION_TOOL = {
                         "field": {"type": "string", "enum": sorted(SCALAR_FIELDS)},
                         "value": {"type": ["string", "number"]},
                         "excerpt": {"type": "string"},
-                        "page_number": {"type": "integer", "minimum": 1},
-                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        "page_number": {"type": "integer"},
+                        "confidence": {"type": "number"},
                     },
                     "required": ["field", "value", "excerpt", "page_number"],
                 },

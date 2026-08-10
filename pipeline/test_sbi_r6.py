@@ -20,6 +20,44 @@ def test_prompt_and_strict_tool_contract():
     assert payload["temperature"] == 0 and payload["max_tokens"] == 2000
 
 
+def test_wire_schema_excludes_unsupported_strict_constraints():
+    schema = sonnet.build_tool_request(
+        [{"page_number": 1, "text": "fixture"}])["tools"][0]["input_schema"]
+    unsupported = {
+        "maxItems", "minItems", "minimum", "maximum",
+        "minLength", "maxLength", "pattern",
+    }
+    found = []
+    def walk(value):
+        if isinstance(value, dict):
+            found.extend(unsupported.intersection(value))
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+    walk(schema)
+    assert found == []
+
+
+def test_local_validation_retains_bounds_removed_from_wire_schema():
+    claim = {"kind": "verdict", "statement": "Supported.",
+             "excerpt": "Exact evidence", "page_number": 1}
+    fact = {"field": "sbi_rating", "value": "SUBSCRIBE",
+            "excerpt": "Exact evidence", "page_number": 1}
+    with pytest.raises(sonnet.SBIExtractionError, match="maximum of 10"):
+        sonnet.parse_extraction({"claims": [claim] * 11, "scalar_facts": []}, doc_id=1)
+    with pytest.raises(sonnet.SBIExtractionError, match="maximum of 3"):
+        sonnet.parse_extraction({"claims": [], "scalar_facts": [fact] * 4}, doc_id=1)
+    for invalid in ({**claim, "page_number": 0},
+                    {**claim, "confidence": -0.1},
+                    {**claim, "confidence": 1.1}):
+        parsed = sonnet.parse_extraction(
+            {"claims": [claim, invalid], "scalar_facts": []}, doc_id=1)
+        assert parsed["dropped_items"][0]["reason"] in {
+            "invalid page_number", "invalid confidence"}
+
+
 def _urlopen_response(payload):
     class Response:
         def __enter__(self): return self

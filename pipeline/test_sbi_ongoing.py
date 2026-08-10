@@ -280,6 +280,45 @@ def test_no_sonnet_config_still_ingests_with_zero_paid_calls(tmp_path, monkeypat
     assert result["summary"]["extraction_status"] == "SKIPPED_OWNER_NOT_CONFIGURED"
 
 
+def test_production_worker_requires_owner_approval_with_zero_calls(monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker, "select_pending_documents",
+                        lambda *a, **k: calls.append("select"))
+    monkeypatch.setattr(worker, "write_extraction",
+                        lambda *a, **k: calls.append("write"))
+    result = worker.run_pending_worker(
+        Conn(), store=Store({"key/1": BODY}), card=CARD, environ=ENV)
+    assert result["summary"]["status"] == "OWNER_NOT_APPROVED"
+    assert result["summary"]["actual_sbi_spend"] == "0.000000"
+    assert calls == []
+
+
+def test_cron_lane_cannot_bypass_owner_approval(tmp_path, monkeypatch):
+    monkeypatch.setattr(sbi_ongoing, "load_company_identity_set", lambda cur: ())
+    monkeypatch.setattr(sbi_ongoing, "persist_manifest", lambda *a, **k: "manifest.json")
+    calls = []
+    monkeypatch.setattr(worker, "select_pending_documents",
+                        lambda *a, **k: calls.append("select"))
+    result = sbi_ongoing.run_sbi_lane(
+        Conn(), directory=tmp_path, store=Store(), environ=ENV)
+    assert result["summary"]["status"] == "OWNER_NOT_APPROVED"
+    assert result["summary"]["extraction_status"] == "OWNER_NOT_APPROVED"
+    assert calls == []
+
+
+def test_cost_preflight_is_emitted_before_model_call(monkeypatch, capsys):
+    docs, completed, writes = [(1, 1, "key/1", DIGEST)], set(), []
+    install_queue(monkeypatch, docs, completed, writes)
+    def model(**kwargs):
+        output = capsys.readouterr().out
+        assert "SBI PREFLIGHT" in output
+        assert "selected=1" in output
+        assert "generation=OWNER APPROVED" in output
+        return extraction(), 10, 20, "tool_use"
+    result = run_local(Conn(), Store({"key/1": BODY}), model_call=model)
+    assert result["summary"]["EXTRACTED"] == 1
+
+
 def test_read_transactions_end_before_external_io(monkeypatch):
     events = []
     class OrderedConn(Conn):

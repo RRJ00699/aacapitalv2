@@ -37,21 +37,19 @@ a matching SBI insight OR a matching SBI source-fact row for the same document/m
 prompt version is complete. This allows a legitimate scalar-only extraction to reach
 `EXTRACTION_MISSING=0`.
 
-## Cost boundary
+## Canonical worker and cost boundary
 
-The old chars/4 total is retained only as a diagnostic approximation and is not an owner
-authorization ceiling after strict tools were added. Before every default production paid call, the lane asks Anthropic
-`/v1/messages/count_tokens` for the matching input context. Anthropic documents that
-count as an estimate that may differ slightly from actual Messages usage, so AACapital
-budgets the greater of count+1,024 tokens or count+10% before adding the configured
-maximum output tokens. This reserve is an engineering guardrail, not a vendor-guaranteed
-error bound; an observed reserve/cap breach is surfaced and blocks approval.
+The extraction queue is the current set of pending SBI documents in the Neon documents
+ledger. The worker reads the immutable R2 object, verifies its SHA-256 against the ledger,
+and immediately before each document asks Anthropic `/v1/messages/count_tokens` for the
+exact strict-tool request context. It budgets the greater of count+1,024 tokens or
+count+10%, adds the configured maximum output cost, and permits generation only when the
+guarded projection fits inside the remaining owner run cap.
 
-`--count-tokens-only` is the owner-gated no-generation checkpoint for the frozen 198
-resolved, SHA-verified historical notes. It writes a local manifest containing per-note
-counts, min/max/total input tokens, the guarded input budget, the delta from the legacy
-approximation, owner price inputs, and the guarded maximum. It makes zero Messages generation calls and zero
-canonical extraction writes.
+After generation, evidence is validated against the asserted synthetic PDF page and
+`source_facts` plus `insights` are written in one canonical transaction. A failed write
+rolls back and leaves the document pending for restart. The current backlog happens to be
+198 documents; 198 is not a runtime invariant, scope ceiling, or activation requirement.
 
 ## Live schema evidence
 
@@ -63,11 +61,7 @@ index on `(ipo_id, field)`. No schema migration is part of R6.
 
 ## Activation gate
 
-Do not merge or run a paid pilot merely because unit tests pass. First review the remote
-PR code, then run the owner-approved count-only checkpoint, review its exact total and
-choose a new ceiling. The next two-note pilot is acceptable only with two `EXTRACTED`
-results, zero drops, zero failure categories, and `full_run_approval_blocked=false`.
-
-## Count-only authorization boundary
-
-`--count-tokens-only` requires the owner gate plus input/output prices and output cap, but no spend-cap environment value. It performs read-only Neon/R2 verification and Anthropic token-count requests only, writes a local review manifest, and makes zero Messages-generation or canonical-write calls. The owner chooses the spend ceiling only after reviewing that manifest.
+Every production generation path requires `SBI_SONNET_OWNER_APPROVED=YES` in addition to
+the configured price card and run cap. Without that explicit owner gate the canonical
+worker returns `OWNER_NOT_APPROVED` before token counting, generation, or canonical
+writes. Injected offline model functions remain available for deterministic tests.

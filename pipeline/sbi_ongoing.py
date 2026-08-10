@@ -72,7 +72,7 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
         worker = run_pending_worker(
             conn, store=store, card=config.card, environ=environ,
             model_call=model_call, token_counter=token_counter)
-        worker["summary"]["extraction_status"] = "CONFIGURED"
+        worker["summary"].setdefault("extraction_status", "CONFIGURED")
     else:
         worker = {"summary": {
             "extraction_status": config.status,
