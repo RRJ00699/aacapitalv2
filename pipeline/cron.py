@@ -329,31 +329,21 @@ def main():
         # Legacy regex step retired. Canonical extraction starts only after the
         # owner-gated ledger/R2 ingest has established immutable provenance.
 
-    # 2c/2d share the canonical historical components. Storage success removes the
+    # 2c/2d ingest new downloads, then invoke the same DB-ledger pending worker used
+    # for every SBI document. Storage success removes the
     # RUNNER_TEMP copy; unresolved/storage-failed inputs remain for diagnosis. Any SBI
     # failure is reported but cannot prevent the unrelated production chain.
     try:
-        from sbi_ongoing import ongoing_configuration, run_sbi_lane
-        config = ongoing_configuration()
-        config_step = classify_sbi_configuration(config)
+        from sbi_ongoing import run_sbi_lane
         print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
-        if not dry and config_step == "skipped":
-            print("      SKIPPED_OWNER_NOT_CONFIGURED")
-            steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
-                          "status": "skipped", "configuration": config.status})
-        elif not dry and config_step == "warning":
-            print(f"      WARNING_CONFIGURATION_ERROR: {config.error}")
-            steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
-                          "status": "warning", "configuration": config.status})
-        else:
-            sbi_result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=dry)
-            print("      " + json.dumps(sbi_result["summary"], sort_keys=True))
-            if sbi_result.get("manifest_path"):
-                print(f"      SBI manifest = {sbi_result['manifest_path']}")
-            steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
-                          "status": "dry" if dry else "ok",
-                          "summary": sbi_result["summary"],
-                          "manifest_path": sbi_result.get("manifest_path")})
+        sbi_result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=dry)
+        print("      " + json.dumps(sbi_result["summary"], sort_keys=True))
+        if sbi_result.get("manifest_path"):
+            print(f"      SBI manifest = {sbi_result['manifest_path']}")
+        steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
+                      "status": "dry" if dry else "ok",
+                      "summary": sbi_result["summary"],
+                      "manifest_path": sbi_result.get("manifest_path")})
     except (Exception, SystemExit) as exc:
         print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
         print(f"      ! isolated SBI lane failure: {type(exc).__name__}: {str(exc)[:200]}")

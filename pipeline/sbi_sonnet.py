@@ -280,18 +280,58 @@ def estimate_input_tokens(pages, system_prompt=SYSTEM_PROMPT):
     return (text_chars + 3) // 4 + (len(system_prompt) + 3) // 4
 
 
+def completion_clause(doc_expression: str = "%s", *, model=MODEL,
+                      prompt_version=PROMPT_VERSION):
+    """Return the one facts-or-insights completion rule.
+
+    ``doc_expression`` is either the bound ``%s`` used by the point lookup or the
+    trusted ``d.id`` expression used by the correlated pending-documents query.
+    Keeping this fragment here prevents selection, retries, and reporting from
+    acquiring subtly different definitions of complete.
+    """
+    if doc_expression not in {"%s", "d.id"}:
+        raise ValueError("unsupported document SQL expression")
+    doc_params = (None,) if doc_expression == "%s" else ()
+    clause = f"""EXISTS (
+        SELECT 1 FROM insights i
+         WHERE i.doc_id={doc_expression} AND i.source_type='SBI'
+           AND i.model=%s AND i.prompt_version=%s
+        UNION ALL
+        SELECT 1 FROM source_facts sf
+         WHERE sf.doc_id={doc_expression}
+           AND sf.source LIKE %s
+        LIMIT 1
+    )"""
+    return clause, doc_params
+
+
 def extraction_predicate(doc_id: int, *, model=MODEL, prompt_version=PROMPT_VERSION):
-    """Return the single canonical SQL/params definition of an SBI extraction."""
-    source_pattern = (
-        f"SBI:doc={doc_id}:page=%:model={model}:prompt={prompt_version}:%"
+    """Return a point lookup using the canonical completion rule."""
+    clause, _ = completion_clause("%s", model=model, prompt_version=prompt_version)
+    pattern = f"SBI:doc={doc_id}:page=%:model={model}:prompt={prompt_version}:%"
+    # The document placeholder occurs once in each UNION arm.
+    params = (doc_id, model, prompt_version, doc_id, pattern)
+    return f"SELECT 1 WHERE {clause}", params
+
+
+def pending_documents_query(*, model=MODEL, prompt_version=PROMPT_VERSION,
+                            limit: int | None = None):
+    """Select every ledgered SBI document not complete for this model/prompt."""
+    clause, _ = completion_clause("d.id", model=model, prompt_version=prompt_version)
+    sql = f"""SELECT d.id,d.ipo_id,d.object_key,d.sha256
+                FROM documents d
+               WHERE d.doc_type='sbi' AND d.ipo_id IS NOT NULL
+                 AND d.object_key IS NOT NULL AND NOT {clause}
+               ORDER BY d.fetched_at,d.id"""
+    params: tuple[Any, ...] = (
+        model, prompt_version,
+        f"SBI:doc=%:page=%:model={model}:prompt={prompt_version}:%",
     )
-    sql = """SELECT doc_id,model,prompt_version FROM insights
-               WHERE doc_id=%s AND source_type='SBI' AND model=%s AND prompt_version=%s
-             UNION ALL
-             SELECT doc_id,%s,%s FROM source_facts
-               WHERE doc_id=%s AND source LIKE %s
-             LIMIT 1"""
-    params = (doc_id, model, prompt_version, model, prompt_version, doc_id, source_pattern)
+    if limit is not None:
+        if limit < 0:
+            raise ValueError("limit must be zero or greater")
+        sql += " LIMIT %s"
+        params += (limit,)
     return sql, params
 
 
