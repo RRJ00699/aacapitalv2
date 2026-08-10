@@ -134,7 +134,8 @@ def upsert_document(conn, ipo_id, doc_type, content_bytes=None, url=None, sha256
 # ============================================================ 5. source_facts (change-log)
 def log_source_fact(conn, ipo_id, field, value, source, doc_id=None, confidence=1.0, commit=True):
     """Provenance, insert ONLY on change. Thin wrapper over the shared _log_fact."""
-    cur=conn.cursor(); _log_fact(cur, ipo_id, field, value, source)
+    cur=conn.cursor(); _log_fact(cur, ipo_id, field, value, source,
+                                 doc_id=doc_id, confidence=confidence)
     if commit: conn.commit()
 
 # ============================================================ 6. listing_outcomes

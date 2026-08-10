@@ -12,7 +12,7 @@ record = dict with keys (all optional except name_display + name_norm):
 
 Run tests:  python fill_ipo.py --selftest
 """
-import os, sys, io, argparse, datetime as dt
+import os, sys, io, argparse, datetime as dt, math
 if __name__=="__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     except Exception: pass
@@ -40,18 +40,30 @@ def resolve_ipo_id(cur, isin=None, name_norm=None):
         if r: return r[0]
     return None
 
-def _log_fact(cur, ipo_id, field, value, source):
-    """Insert into source_facts ONLY if the value changed vs the last record."""
-    if value is None: return
+def _log_fact(cur, ipo_id, field, value, source, doc_id=None, confidence=1.0):
+    """Insert into source_facts ONLY if the value changed vs the last source value."""
+    if value is None:
+        return
+    if isinstance(confidence, bool):
+        raise ValueError("source_facts confidence must be numeric between 0 and 1")
+    try:
+        confidence_value = float(confidence)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("source_facts confidence must be numeric between 0 and 1") from exc
+    if not math.isfinite(confidence_value) or not 0 <= confidence_value <= 1:
+        raise ValueError("source_facts confidence must be numeric between 0 and 1")
+    # Existing change-detection identity is deliberately unchanged: doc_id and
+    # confidence enrich provenance but do not create a new fact identity.
     cur.execute("""SELECT value FROM source_facts
                    WHERE ipo_id=%s AND field=%s AND source=%s
                    ORDER BY fetched_at DESC LIMIT 1""", (ipo_id, field, source))
     last=cur.fetchone()
-    if last and last[0]==str(value): return          # unchanged -> no row
-    cur.execute("""INSERT INTO source_facts(ipo_id,field,value,source,confidence,fetched_at)
-                   VALUES(%s,%s,%s,%s,%s,now())
+    if last and last[0]==str(value): return
+    cur.execute("""INSERT INTO source_facts
+                   (ipo_id,field,value,source,doc_id,confidence,fetched_at)
+                   VALUES(%s,%s,%s,%s,%s,%s,now())
                    ON CONFLICT (ipo_id,field,source,fetched_at) DO NOTHING""",
-                (ipo_id, field, str(value), source, 1.0))
+                (ipo_id, field, str(value), source, doc_id, confidence_value))
 
 def in_backtest(record):
     """mainboard + >=200cr + listing year >= 2016. Table is NOT self-limiting."""
@@ -156,7 +168,7 @@ def selftest():
     # 5. source_facts logged changes, and unchanged re-log adds nothing
     cur.execute("SELECT count(*) FROM source_facts WHERE ipo_id=%s AND field='symbol'",(id1,))
     n_before=cur.fetchone()[0]
-    upsert_ipo(conn, dict(isin=TEST_ISIN, name_display="X", name_norm=TEST_NORM, symbol="ZZZTEST"), "kite")  # same symbol
+    upsert_ipo(conn, dict(isin=TEST_ISIN, name_display="X", name_norm=TEST_NORM, symbol="ZZZTEST"), "kite")
     cur.execute("SELECT count(*) FROM source_facts WHERE ipo_id=%s AND field='symbol'",(id1,))
     check("unchanged symbol adds NO new source_fact", cur.fetchone()[0]==n_before)
 

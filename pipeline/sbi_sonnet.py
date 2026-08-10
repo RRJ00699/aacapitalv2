@@ -1,20 +1,19 @@
 """Canonical, evidence-first SBI note extraction.
 
-This module intentionally contains no PDF regex parser.  Production callers obtain
-the immutable bytes from ``documents.object_key`` and inject a model client; tests use
-the same parser/writer with a deterministic client.  A paid client is never created at
-import time.
+Production extraction is schema-forced through one strict Anthropic client tool.
+The legacy JSON text parser remains available for saved-response replay and tests,
+but the paid transport never falls back to prose recovery.
 """
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from typing import Any, Callable
 
 MODEL = "claude-sonnet-4-6"
-PROMPT_VERSION = "sbi-v1.2"
+PROMPT_VERSION = "sbi-v1.3"
 SOURCE_TYPE = "SBI"
+TOOL_NAME = "record_sbi_extraction"
 
 # These are sourced statements, never house-calculated valuation outputs.
 SCALAR_FIELDS = {"sbi_rating", "sbi_fair_value", "sbi_target_value"}
@@ -33,7 +32,7 @@ CLAIM_KEYS = {"kind", "statement", "excerpt", "page_number", "confidence"}
 SCALAR_KEYS = {"field", "value", "excerpt", "page_number", "confidence"}
 
 SYSTEM_PROMPT = """Extract only statements explicitly printed in this SBI IPO note.
-Return ONLY one JSON object with arrays `claims` and `scalar_facts`.
+Use the record_sbi_extraction tool with exactly these field names.
 
 Use this literal minimal schema example:
 {
@@ -55,35 +54,108 @@ Use this literal minimal schema example:
   ]
 }
 
-Use exactly these field names.
-For claims, the only accepted keys are: kind, statement, excerpt, page_number,
-confidence (optional).
-For scalar_facts, the only accepted keys are: field, value, excerpt, page_number,
-confidence (optional).
-Do not use synonyms such as: text, quote, description, citation, page, rating_text.
-Omit any claim or scalar fact that cannot be supported using the exact required schema.
+Use exactly these field names. Do not use synonyms such as: text, quote, description, citation, page, rating_text. Do not answer with Markdown fences, commentary, preamble,
+or prose outside the forced tool call.
 
 Allowed scalar_facts fields: sbi_rating, sbi_fair_value, sbi_target_value. Fair or
 target values are allowed only when SBI explicitly prints them. Allowed claim kinds:
 valuation_observation, business_observation, key_positive, key_risk, verdict.
 
-Every claim/fact must contain a positive integer page_number and a short verbatim
-excerpt copied from that page. Every claim also needs `statement` and `kind`; every
-fact needs `field` and `value`. Do not calculate or infer house fair value, pro-forma
-EPS, P/E, ROE, ROCE, FCF, margin of safety, interest savings, or any other
-deterministic valuation output. Omit unsupported items; never fill gaps.
-Maximum 10 claims and maximum 3 scalar_facts. Excerpts must contain no more than
-15 words. Each statement must be one concise sentence.
+Every claim/fact must contain a positive integer page_number and a short contiguous
+verbatim excerpt copied from that page. Target 8-12 words per excerpt; the hard server
+ceiling remains 15 words. If the useful source sentence is longer, select a shorter
+contiguous verbatim phrase. Never paraphrase evidence.
 
-Respond with the JSON object only: no Markdown fences, commentary, preamble, or
-explanation after the object."""
+page_number MUST be the N from the synthetic `--- PAGE N ---` marker supplied in this
+request. Do not use a printed footer number, report-internal page number, section number,
+or any other pagination printed inside the PDF text.
+
+Every claim needs statement and kind; every scalar fact needs field and value. Do not
+calculate or infer house fair value, pro-forma EPS, P/E, ROE, ROCE, FCF, margin of
+safety, interest savings, or any other deterministic valuation output. Omit unsupported
+items; never fill gaps. Maximum 10 claims and maximum 3 scalar_facts. Each statement
+must be a single concise line of no more than 40 words.
+
+Call record_sbi_extraction exactly once. Do not answer with prose or Markdown."""
+
+SBI_EXTRACTION_TOOL = {
+    "name": TOOL_NAME,
+    "description": "Record canonical, evidenced SBI claims and explicitly printed scalar facts.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "claims": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {"type": "string", "enum": list(CLAIM_KINDS)},
+                        "statement": {"type": "string"},
+                        "excerpt": {"type": "string"},
+                        "page_number": {"type": "integer", "minimum": 1},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    },
+                    "required": ["kind", "statement", "excerpt", "page_number"],
+                },
+            },
+            "scalar_facts": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "field": {"type": "string", "enum": sorted(SCALAR_FIELDS)},
+                        "value": {"type": ["string", "number"]},
+                        "excerpt": {"type": "string"},
+                        "page_number": {"type": "integer", "minimum": 1},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    },
+                    "required": ["field", "value", "excerpt", "page_number"],
+                },
+            },
+        },
+        "required": ["claims", "scalar_facts"],
+    },
+}
+TOOL_CHOICE = {
+    "type": "tool",
+    "name": TOOL_NAME,
+    "disable_parallel_tool_use": True,
+}
 
 
 class SBIExtractionError(ValueError):
     """The model response cannot safely enter canonical writers."""
 
 
+def build_page_text(pages: list[dict[str, Any]]) -> str:
+    return "\n\n".join(
+        f"--- PAGE {page['page_number']} ---\n{page.get('text', '')}" for page in pages
+    )
+
+
+def build_tool_request(pages: list[dict[str, Any]], *, output_cap: int | None = None) -> dict[str, Any]:
+    """Build the one canonical request shape used by Messages and token counting."""
+    payload: dict[str, Any] = {
+        "model": MODEL,
+        "system": SYSTEM_PROMPT,
+        "tools": [SBI_EXTRACTION_TOOL],
+        "tool_choice": TOOL_CHOICE,
+        "messages": [{"role": "user", "content": build_page_text(pages)}],
+    }
+    if output_cap is not None:
+        payload["max_tokens"] = output_cap
+        payload["temperature"] = 0
+    return payload
+
+
 def _json_object(response: str | bytes | dict[str, Any]) -> dict[str, Any]:
+    """Legacy/offline parser. Paid production transport passes a tool input dict."""
     if isinstance(response, dict):
         obj = response
     else:
@@ -164,6 +236,8 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> 
 def _confidence_error(value):
     if value is None:
         return None
+    if isinstance(value, bool):
+        return "invalid confidence"
     try:
         valid = 0 <= float(value) <= 1
     except (TypeError, ValueError):
@@ -181,7 +255,8 @@ def _claim_error(claim):
     statement = str(claim["statement"]).strip()
     if "\n" in statement or "\r" in statement: return "statement must be single-line"
     if len(statement.split()) > 40: return "statement exceeds 40 words"
-    if not isinstance(claim.get("page_number"), int) or claim["page_number"] < 1: return "invalid page_number"
+    if not isinstance(claim.get("page_number"), int) or isinstance(claim.get("page_number"), bool) or claim["page_number"] < 1:
+        return "invalid page_number"
     return _confidence_error(claim.get("confidence"))
 
 
@@ -193,27 +268,43 @@ def _scalar_error(fact):
     unexpected = set(fact) - SCALAR_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
     if len(str(fact["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
-    if not isinstance(fact.get("page_number"), int) or fact["page_number"] < 1: return "invalid page_number"
+    if not isinstance(fact.get("page_number"), int) or isinstance(fact.get("page_number"), bool) or fact["page_number"] < 1:
+        return "invalid page_number"
     return _confidence_error(fact.get("confidence"))
 
 
 def estimate_input_tokens(pages, system_prompt=SYSTEM_PROMPT):
-    """One conservative estimator shared by inventory, history, and ongoing lanes."""
+    """Legacy local approximation; never use it as an authorization ceiling."""
     text_chars = sum(len(page.get("text", "") if isinstance(page, dict) else page[1])
                      for page in pages)
     return (text_chars + 3) // 4 + (len(system_prompt) + 3) // 4
 
 
+def extraction_predicate(doc_id: int, *, model=MODEL, prompt_version=PROMPT_VERSION):
+    """Return the single canonical SQL/params definition of an SBI extraction."""
+    source_pattern = (
+        f"SBI:doc={doc_id}:page=%:model={model}:prompt={prompt_version}:%"
+    )
+    sql = """SELECT doc_id,model,prompt_version FROM insights
+               WHERE doc_id=%s AND source_type='SBI' AND model=%s AND prompt_version=%s
+             UNION ALL
+             SELECT doc_id,%s,%s FROM source_facts
+               WHERE doc_id=%s AND source LIKE %s
+             LIMIT 1"""
+    params = (doc_id, model, prompt_version, model, prompt_version, doc_id, source_pattern)
+    return sql, params
+
+
 def already_extracted(conn, doc_id: int) -> bool:
     cur = conn.cursor()
-    cur.execute("""SELECT 1 FROM insights WHERE doc_id=%s AND source_type='SBI'
-                    AND model=%s AND prompt_version=%s
-                  UNION ALL
-                  SELECT 1 FROM source_facts WHERE source LIKE %s
-                  LIMIT 1""",
-                (doc_id, MODEL, PROMPT_VERSION,
-                 f'SBI:doc={doc_id}:page=%:model={MODEL}:prompt={PROMPT_VERSION}:%'))
-    return cur.fetchone() is not None
+    try:
+        sql, params = extraction_predicate(doc_id)
+        cur.execute(sql, params)
+        return cur.fetchone() is not None
+    finally:
+        close = getattr(cur, "close", None)
+        if close:
+            close()
 
 
 def write_extraction(conn, *, ipo_id: int, doc_id: int, extraction: dict[str, Any],
@@ -230,7 +321,7 @@ def write_extraction(conn, *, ipo_id: int, doc_id: int, extraction: dict[str, An
         provenance = (f"SBI:doc={doc_id}:page={fact['page_number']}:model={MODEL}:"
                       f"prompt={PROMPT_VERSION}:excerpt={fact['excerpt'][:250]}")
         log_source_fact(conn, ipo_id, fact["field"], fact["value"], provenance,
-                        doc_id=doc_id, confidence=fact.get("confidence", 1.0), commit=False)
+                        doc_id=doc_id, confidence=(fact.get("confidence") if fact.get("confidence") is not None else 1.0), commit=False)
     items = []
     for claim in parsed["claims"]:
         category, direction = CLAIM_KINDS[claim["kind"]]

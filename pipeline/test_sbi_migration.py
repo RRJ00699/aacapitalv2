@@ -79,8 +79,8 @@ def test_missing_page_or_excerpt_is_rejected():
     assert parsed["dropped_items"][0]["reason"] == "missing required statement/excerpt fields"
 
 
-def test_prompt_v12_pins_literal_exact_schema_and_no_synonyms():
-    assert sonnet.PROMPT_VERSION == "sbi-v1.2"
+def test_prompt_v13_pins_strict_schema_and_no_synonyms():
+    assert sonnet.PROMPT_VERSION == "sbi-v1.3"
     for required in (
         '"kind": "key_risk"',
         '"statement": "One concise sentence explicitly supported by the note."',
@@ -90,9 +90,13 @@ def test_prompt_v12_pins_literal_exact_schema_and_no_synonyms():
         '"value": "SUBSCRIBE"',
         "Use exactly these field names.",
         "text, quote, description, citation, page, rating_text",
-        "no Markdown fences, commentary, preamble",
+        "8-12 words",
+        "--- PAGE N ---",
     ):
         assert required in sonnet.SYSTEM_PROMPT
+    assert sonnet.SBI_EXTRACTION_TOOL["strict"] is True
+    assert sonnet.TOOL_CHOICE == {
+        "type": "tool", "name": sonnet.TOOL_NAME, "disable_parallel_tool_use": True}
 
 
 def test_claim_text_quote_schema_drift_is_rejected_without_aliasing():
@@ -270,21 +274,12 @@ def test_preflight_prints_active_cap_and_allows_sufficient_ceiling(capsys):
     assert "spend cap = $9.100000" in output
 
 
-def test_cost_abort_occurs_before_neon_or_model(monkeypatch):
-    for name, value in {
-        "SBI_SONNET_OWNER_APPROVED": "YES", "SBI_SONNET_INPUT_USD_PER_MTOK": "3",
-        "SBI_SONNET_OUTPUT_USD_PER_MTOK": "15", "SBI_SONNET_OUTPUT_CAP": "2000",
-        "SBI_SONNET_SPEND_CAP_USD": "9", "DATABASE_URL": "postgres://never-connect",
-        "R2_ACCOUNT_ID": "x", "R2_ACCESS_KEY_ID": "x", "R2_SECRET_ACCESS_KEY": "x",
-        "R2_DOCUMENT_BUCKET": "x", "ANTHROPIC_API_KEY": "never-call",
-    }.items():
-        monkeypatch.setenv(name, value)
-    connects = []
-    monkeypatch.setitem(sys.modules, "psycopg2", types.SimpleNamespace(
-        connect=lambda *a, **k: connects.append(1)))
+def test_legacy_cost_checkpoint_still_fails_closed():
+    # The legacy approximation remains a diagnostic helper; it still fails closed.
+    card = extraction_run.PriceCard(extraction_run.Decimal("3"), extraction_run.Decimal("15"),
+                                    2000, extraction_run.Decimal("9"))
     with pytest.raises(SystemExit, match="exceeds .*9.00 cap"):
-        extraction_run.main(["--owner-approved", "--limit", "2"])
-    assert connects == []
+        extraction_run.print_cost_checkpoint(card)
 
 
 def _eligible_rows(count):

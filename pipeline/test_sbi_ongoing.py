@@ -262,7 +262,7 @@ def test_missing_ledger_row_survives_manifest_without_write_error_or_call(tmp_pa
     manifest = json.loads(files[0].read_text())
     assert manifest["summary"] == result["summary"]
     assert manifest["model"] == "claude-sonnet-4-6"
-    assert manifest["prompt_version"] == "sbi-v1.2"
+    assert manifest["prompt_version"] == "sbi-v1.3"
     assert manifest["output_cap"] == 2000 and manifest["run_spend_cap"] == "1"
     assert manifest["cutover_at"] == "2026-08-09T00:00:00+00:00"
     assert manifest["actual_sbi_spend"] == "0.000000"

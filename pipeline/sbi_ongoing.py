@@ -15,7 +15,7 @@ try:
     from .r2 import R2DocumentStore
     from .sbi_extraction_run import (
         FAILURE_STATUSES, PriceCard, RESULT_DIR, anthropic_call, cost,
-        extraction_success_status,
+        count_tokens_call, extraction_success_status, guarded_input_tokens,
         parse_complete_response, pdf_pages, validate_evidence,
     )
     from .sbi_ingest import ingest_file
@@ -26,7 +26,7 @@ except ImportError:
     from r2 import R2DocumentStore
     from sbi_extraction_run import (
         FAILURE_STATUSES, PriceCard, RESULT_DIR, anthropic_call, cost,
-        extraction_success_status,
+        count_tokens_call, extraction_success_status, guarded_input_tokens,
         parse_complete_response, pdf_pages, validate_evidence,
     )
     from sbi_ingest import ingest_file
@@ -133,16 +133,31 @@ def _progress(index, total, doc_id, status, itok, otok, note_cost, spent):
           f"cumulative_cost=${spent:.6f}", flush=True)
 
 
+def _count_drops(summary, dropped):
+    summary["dropped_items_total"] += len(dropped)
+    summary["dropped_claims"] += sum(item["item_type"] == "claim" for item in dropped)
+    summary["dropped_scalar_facts"] += sum(
+        item["item_type"] == "scalar_fact" for item in dropped)
+
+
 def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
-                 environ=None, dry_run=False, manifest_directory=RESULT_DIR):
-    """Run one isolated SBI batch; every input receives a terminal classification."""
+                 token_counter=None, environ=None, dry_run=False,
+                 manifest_directory=RESULT_DIR):
+    """Run one isolated SBI batch; every input receives a terminal classification.
+
+    Production uses the default anthropic_call and therefore the official count_tokens
+    preflight before every paid request. Tests may inject a deterministic model_call;
+    when they do not inject a token counter, the old estimator is used only in that
+    offline seam and never by the default production transport.
+    """
     paths = downloaded_pdfs(directory)
     summary = Counter(downloaded=len(paths))
     summary.update({key: 0 for key in (
         "resolved", "unresolved", "newly_ledgered", "already_ledgered",
         "ingest_errors", "extraction_attempted", "extracted", "extracted_with_drops",
         "dropped_items_total", "dropped_claims", "dropped_scalar_facts", "already_extracted",
-        "spend_stopped", "missing_ledger_rows", *FAILURE_STATUSES,
+        "spend_stopped", "spend_cap_breached", "input_reserve_exceeded",
+        "missing_ledger_rows", *FAILURE_STATUSES,
     )})
     records = []
     if dry_run:
@@ -184,8 +199,6 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
     if cutover_at is None and cutover_status is None:
         cutover_status = "SKIPPED_CUTOVER_NOT_CONFIGURED"
     if cutover_at is not None:
-        # The query itself enforces the history/future boundary. Newly ingested IDs
-        # are deliberately not trusted outside that boundary.
         doc_ids = pending_sbi_doc_ids(conn, cutover_at)
     else:
         doc_ids = []
@@ -195,6 +208,7 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
                         "error": "ANTHROPIC_API_KEY is required for extraction"})
         doc_ids = []
     doc_ids = list(dict.fromkeys(doc_ids))
+    production_counter = count_tokens_call if token_counter is None and model_call is anthropic_call else token_counter
     spent = Decimal(0)
     for index, doc_id in enumerate(doc_ids, 1):
         row = _ledger_row(conn, doc_id)
@@ -214,66 +228,91 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
             if hashlib.sha256(body).hexdigest() != expected_sha:
                 raise ValueError("R2 bytes do not match documents.sha256")
             pages = pdf_pages(body)
-            estimated_input = estimate_input_tokens(pages)
-            if spent + cost(estimated_input, card.output_cap, card) > card.spend_cap:
+            if production_counter is not None:
+                official_input = production_counter(pages=pages, api_key=api_key)
+                budgeted_input = guarded_input_tokens(official_input)
+            else:
+                official_input = estimate_input_tokens(pages)
+                budgeted_input = official_input
+            if spent + cost(budgeted_input, card.output_cap, card) > card.spend_cap:
                 summary["spend_stopped"] = 1
                 break
             summary["extraction_attempted"] += 1
-            text, itok, otok, stop_reason = model_call(
+            response, itok, otok, stop_reason = model_call(
                 pages=pages, api_key=api_key, output_cap=card.output_cap)
             note_cost = cost(itok, otok, card); spent += note_cost
+            if production_counter is not None and itok > budgeted_input:
+                summary["input_reserve_exceeded"] += 1
+            if spent > card.spend_cap:
+                summary["spend_cap_breached"] = 1
+                summary["spend_stopped"] = 1
             try:
                 status, parsed = parse_complete_response(
-                    text, doc_id=doc_id, stop_reason=stop_reason)
+                    response, doc_id=doc_id, stop_reason=stop_reason)
             except Exception as exc:
                 summary["PARSE_ERROR"] += 1
                 records.append({"doc_id": doc_id, "ipo_id": ipo_id,
                     "status": "PARSE_ERROR", "input_tokens": itok,
                     "output_tokens": otok, "actual_cost": f"{note_cost:.6f}",
+                    "official_preflight_input_tokens": official_input,
+                    "guarded_preflight_input_tokens": budgeted_input,
                     "error": f"{type(exc).__name__}: {exc}"})
                 _progress(index, len(doc_ids), doc_id, "PARSE_ERROR", itok, otok,
                           note_cost, spent)
                 continue
             if status == "TRUNCATED":
                 summary["TRUNCATED"] += 1
-            else:
-                dropped = parsed.get("dropped_items", [])
-                try:
-                    validate_evidence(parsed, pages)
-                except Exception as exc:
-                    summary["EVIDENCE_REJECTED"] += 1
-                    records.append({"doc_id": doc_id, "ipo_id": ipo_id,
-                        "status": "EVIDENCE_REJECTED", "input_tokens": itok,
-                        "output_tokens": otok, "actual_cost": f"{note_cost:.6f}",
-                        "error": f"{type(exc).__name__}: {exc}"})
-                    _progress(index, len(doc_ids), doc_id, "EVIDENCE_REJECTED", itok,
-                              otok, note_cost, spent)
-                    continue
-                try:
-                    write_extraction(conn, ipo_id=ipo_id, doc_id=doc_id,
-                                     extraction=parsed, validated=True)
-                except Exception as exc:
-                    conn.rollback(); summary["WRITE_ERROR"] += 1
-                    records.append({"doc_id": doc_id, "ipo_id": ipo_id,
-                        "status": "WRITE_ERROR", "input_tokens": itok,
-                        "output_tokens": otok, "actual_cost": f"{note_cost:.6f}",
-                        "error": f"{type(exc).__name__}: {exc}"})
-                    _progress(index, len(doc_ids), doc_id, "WRITE_ERROR", itok, otok,
-                              note_cost, spent)
-                    continue
-                status = extraction_success_status(parsed)
-                summary["extracted"] += 1
-                summary["extracted_with_drops"] += bool(dropped)
-                summary["dropped_items_total"] += len(dropped)
-                summary["dropped_claims"] += sum(
-                    item["item_type"] == "claim" for item in dropped)
-                summary["dropped_scalar_facts"] += sum(
-                    item["item_type"] == "scalar_fact" for item in dropped)
+                records.append({"doc_id": doc_id, "ipo_id": ipo_id, "status": status,
+                    "model": MODEL, "prompt_version": PROMPT_VERSION,
+                    "input_tokens": itok, "output_tokens": otok,
+                    "official_preflight_input_tokens": official_input,
+                    "guarded_preflight_input_tokens": budgeted_input,
+                    "actual_cost": f"{note_cost:.6f}", "stop_reason": stop_reason,
+                    "dropped_items": []})
+                _progress(index, len(doc_ids), doc_id, status, itok, otok, note_cost, spent)
+                continue
+            assert parsed is not None
+            dropped = parsed.get("dropped_items", [])
+            _count_drops(summary, dropped)
+            try:
+                validate_evidence(parsed, pages)
+            except Exception as exc:
+                summary["EVIDENCE_REJECTED"] += 1
+                records.append({"doc_id": doc_id, "ipo_id": ipo_id,
+                    "status": "EVIDENCE_REJECTED", "input_tokens": itok,
+                    "output_tokens": otok, "actual_cost": f"{note_cost:.6f}",
+                    "official_preflight_input_tokens": official_input,
+                    "guarded_preflight_input_tokens": budgeted_input,
+                    "dropped_items": dropped,
+                    "error": f"{type(exc).__name__}: {exc}"})
+                _progress(index, len(doc_ids), doc_id, "EVIDENCE_REJECTED", itok,
+                          otok, note_cost, spent)
+                continue
+            try:
+                write_extraction(conn, ipo_id=ipo_id, doc_id=doc_id,
+                                 extraction=parsed, validated=True)
+            except Exception as exc:
+                conn.rollback(); summary["WRITE_ERROR"] += 1
+                records.append({"doc_id": doc_id, "ipo_id": ipo_id,
+                    "status": "WRITE_ERROR", "input_tokens": itok,
+                    "output_tokens": otok, "actual_cost": f"{note_cost:.6f}",
+                    "official_preflight_input_tokens": official_input,
+                    "guarded_preflight_input_tokens": budgeted_input,
+                    "dropped_items": dropped,
+                    "error": f"{type(exc).__name__}: {exc}"})
+                _progress(index, len(doc_ids), doc_id, "WRITE_ERROR", itok, otok,
+                          note_cost, spent)
+                continue
+            status = extraction_success_status(parsed)
+            summary["extracted"] += 1
+            summary["extracted_with_drops"] += bool(dropped)
             records.append({"doc_id": doc_id, "ipo_id": ipo_id, "status": status,
                 "model": MODEL, "prompt_version": PROMPT_VERSION,
                 "input_tokens": itok, "output_tokens": otok,
+                "official_preflight_input_tokens": official_input,
+                "guarded_preflight_input_tokens": budgeted_input,
                 "actual_cost": f"{note_cost:.6f}", "stop_reason": stop_reason,
-                "dropped_items": parsed.get("dropped_items", []) if parsed else []})
+                "dropped_items": dropped})
             _progress(index, len(doc_ids), doc_id, status, itok, otok, note_cost, spent)
         except Exception as exc:
             conn.rollback()
@@ -297,7 +336,9 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
         "cutover_at": cutover_at.isoformat() if cutover_at else None,
         "cutover_status": cutover_status, "summary": dict(summary),
         "records": records, "actual_sbi_spend": summary["actual_sbi_spend"],
-        "spend_stopped": bool(summary["spend_stopped"])}
+        "spend_stopped": bool(summary["spend_stopped"]),
+        "spend_cap_breached": bool(summary["spend_cap_breached"]),
+        "input_reserve_exceeded": summary["input_reserve_exceeded"]}
     manifest_path = persist_manifest(manifest, manifest_directory)
     return {"summary": dict(summary), "records": records,
             "manifest_path": manifest_path, "cutover_status": cutover_status}

@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import time
+import math
 import urllib.error
 import urllib.request
 import unicodedata
@@ -21,21 +22,27 @@ try:
     from .r2 import R2DocumentStore
     from .sbi_bounded_ingest import unresolved_report
     from .sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from .sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, estimate_input_tokens, parse_extraction, write_extraction
+    from .sbi_sonnet import (
+        MODEL, PROMPT_VERSION, SYSTEM_PROMPT, TOOL_NAME, already_extracted,
+        build_tool_request, estimate_input_tokens, parse_extraction, write_extraction,
+    )
 except ImportError:
     from company_identity import load_company_identity_set
     from r2 import R2DocumentStore
     from sbi_bounded_ingest import unresolved_report
     from sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT, already_extracted, estimate_input_tokens, parse_extraction, write_extraction
+    from sbi_sonnet import (
+        MODEL, PROMPT_VERSION, SYSTEM_PROMPT, TOOL_NAME, already_extracted,
+        build_tool_request, estimate_input_tokens, parse_extraction, write_extraction,
+    )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-# OWNER-APPROVED PRICE CARD REQUIRED. Paid-lane values have no code defaults.
 EXPECTED_DOCUMENTS = 198
+# Historical approximation retained only for backwards-compatible diagnostics/tests.
+# It is NOT an authorization ceiling after strict tool use was introduced.
 PRE_V11_INPUT_TOKENS = 985_679
 PRE_V11_SYSTEM_PROMPT_TOKENS = 196
-EXPECTED_INPUT_TOKENS = (PRE_V11_INPUT_TOKENS + EXPECTED_DOCUMENTS
-                         * (((len(SYSTEM_PROMPT) + 3) // 4) - PRE_V11_SYSTEM_PROMPT_TOKENS))
+EXPECTED_INPUT_TOKENS = 1_040_723  # obsolete v1.1/v1.2 chars/4 comparison baseline
 RESULT_DIR = ROOT / "artifacts" / "sbi-extraction"
 PRICE_ENV = {
     "input_usd_per_mtok": "SBI_SONNET_INPUT_USD_PER_MTOK",
@@ -43,6 +50,13 @@ PRICE_ENV = {
     "output_cap": "SBI_SONNET_OUTPUT_CAP",
     "spend_cap": "SBI_SONNET_SPEND_CAP_USD",
 }
+MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+COUNT_TOKENS_URL = "https://api.anthropic.com/v1/messages/count_tokens"
+# Anthropic documents count_tokens as an estimate that may differ slightly from actual
+# message usage. Reserve at least 1,024 tokens and 10% per request before any paid call.
+# This is an AACapital engineering guardrail, not a vendor-guaranteed error bound.
+INPUT_TOKEN_RESERVE_MIN = 1_024
+INPUT_TOKEN_RESERVE_PCT = Decimal("0.10")
 
 
 class ModelError(RuntimeError):
@@ -55,6 +69,32 @@ class PriceCard:
     output_usd_per_mtok: Decimal
     output_cap: int
     spend_cap: Decimal
+
+
+@dataclass(frozen=True)
+class CountPriceCard:
+    """Pricing inputs needed to calculate a ceiling; no ceiling is required yet."""
+    input_usd_per_mtok: Decimal
+    output_usd_per_mtok: Decimal
+    output_cap: int
+
+
+def load_count_price_card(environ=None) -> CountPriceCard:
+    environ = os.environ if environ is None else environ
+    names = (PRICE_ENV["input_usd_per_mtok"], PRICE_ENV["output_usd_per_mtok"],
+             PRICE_ENV["output_cap"])
+    missing = [name for name in names if not environ.get(name)]
+    if missing:
+        raise SystemExit("OWNER-APPROVED PRICING INPUTS REQUIRED: " + ", ".join(missing))
+    try:
+        card = CountPriceCard(Decimal(environ[names[0]]), Decimal(environ[names[1]]),
+                              int(environ[names[2]]))
+    except (ValueError, ArithmeticError) as exc:
+        raise SystemExit("OWNER-APPROVED pricing inputs must be positive numbers") from exc
+    if min(card.input_usd_per_mtok, card.output_usd_per_mtok,
+           Decimal(card.output_cap)) <= 0:
+        raise SystemExit("OWNER-APPROVED pricing inputs must be positive numbers")
+    return card
 
 
 def load_owner_price_card(environ=None) -> PriceCard:
@@ -75,12 +115,21 @@ def load_owner_price_card(environ=None) -> PriceCard:
     return card
 
 
-def cost(input_tokens: int, output_tokens: int, card: PriceCard) -> Decimal:
+def cost(input_tokens: int, output_tokens: int, card: PriceCard | CountPriceCard) -> Decimal:
     return ((Decimal(input_tokens) * card.input_usd_per_mtok
              + Decimal(output_tokens) * card.output_usd_per_mtok) / Decimal(1_000_000))
 
 
+def guarded_input_tokens(official_count: int) -> int:
+    """Budget above Anthropic's estimate; still not a vendor-guaranteed upper bound."""
+    if not isinstance(official_count, int) or isinstance(official_count, bool) or official_count <= 0:
+        raise ValueError("official_count must be a positive integer")
+    percentage = math.ceil(official_count * (Decimal("1") + INPUT_TOKEN_RESERVE_PCT))
+    return max(official_count + INPUT_TOKEN_RESERVE_MIN, percentage)
+
+
 def print_cost_checkpoint(card: PriceCard):
+    """Legacy chars/4 checkpoint retained for diagnostics, not owner authorization."""
     input_est = cost(EXPECTED_INPUT_TOKENS, 0, card)
     output_est = cost(0, EXPECTED_DOCUMENTS * card.output_cap, card)
     total = input_est + output_est
@@ -97,12 +146,10 @@ def print_cost_checkpoint(card: PriceCard):
 
 
 def print_remaining_cost_checkpoint(card: PriceCard, remaining: int):
-    """Use current work count and the full input estimate as a safe upper bound."""
+    """Legacy approximation retained for compatibility; paid calls use count_tokens."""
     maximum = (cost(EXPECTED_INPUT_TOKENS, 0, card)
                + cost(0, remaining * card.output_cap, card))
-    print(f"remaining eligible maximum cost (conservative) = ${maximum:.6f}", flush=True)
-    if maximum > card.spend_cap:
-        raise SystemExit(f"ABORT: remaining maximum ${maximum:.6f} exceeds ${card.spend_cap:.2f} cap")
+    print(f"remaining eligible maximum cost (legacy approximation) = ${maximum:.6f}", flush=True)
 
 
 def pdf_pages(body: bytes) -> list[dict]:
@@ -142,25 +189,57 @@ def validate_evidence(extraction: dict, pages: list[dict]):
                 f'found_on_other_pages={found}')
 
 
-def anthropic_call(*, pages: list[dict], api_key: str, output_cap: int):
-    page_text = "\n\n".join(f"--- PAGE {p['page_number']} ---\n{p['text']}" for p in pages)
-    payload = json.dumps({"model": MODEL, "max_tokens": output_cap,
-                          "system": SYSTEM_PROMPT,
-                          "messages": [{"role": "user", "content": page_text}]}).encode()
-    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload,
+def _anthropic_request(url: str, *, payload: dict, api_key: str):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
         headers={"content-type": "application/json", "x-api-key": api_key,
                  "anthropic-version": "2023-06-01"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=180) as response:
             result = json.load(response)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        except Exception:
+            detail = str(exc)
+        raise ModelError(f"Anthropic HTTP {exc.code}: {detail}") from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise ModelError(str(exc)) from exc
-    if result.get("type") == "error" or not result.get("content"):
+    if not isinstance(result, dict) or result.get("type") == "error":
         raise ModelError(json.dumps(result)[:1000])
-    text = "".join(block.get("text", "") for block in result["content"] if block.get("type") == "text")
+    return result
+
+
+def count_tokens_call(*, pages: list[dict], api_key: str) -> int:
+    """Official no-generation input count for the exact strict-tool request context."""
+    result = _anthropic_request(
+        COUNT_TOKENS_URL, payload=build_tool_request(pages), api_key=api_key)
+    value = result.get("input_tokens")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ModelError(f"invalid count_tokens response: {json.dumps(result)[:1000]}")
+    return value
+
+
+def anthropic_call(*, pages: list[dict], api_key: str, output_cap: int):
+    """Paid transport: one forced strict tool call, with no prose fallback."""
+    result = _anthropic_request(
+        MESSAGES_URL, payload=build_tool_request(pages, output_cap=output_cap), api_key=api_key)
     usage = result.get("usage") or {}
-    return (text, int(usage.get("input_tokens", 0)),
-            int(usage.get("output_tokens", 0)), result.get("stop_reason"))
+    itok = int(usage.get("input_tokens", 0))
+    otok = int(usage.get("output_tokens", 0))
+    stop_reason = result.get("stop_reason")
+    content = result.get("content")
+    if stop_reason == "max_tokens":
+        # Keep old diagnostic shape for truncated responses, but never parse/write it.
+        text = "".join(block.get("text", "") for block in (content or [])
+                       if isinstance(block, dict) and block.get("type") == "text")
+        return text, itok, otok, stop_reason
+    if stop_reason != "tool_use" or not isinstance(content, list) or len(content) != 1:
+        raise ModelError("forced SBI extraction must return exactly one tool_use block")
+    block = content[0]
+    if (not isinstance(block, dict) or block.get("type") != "tool_use"
+            or block.get("name") != TOOL_NAME or not isinstance(block.get("input"), dict)):
+        raise ModelError("forced SBI extraction returned an invalid tool_use block")
+    return block["input"], itok, otok, stop_reason
 
 
 def eligible_scope(rows, limit=None):
@@ -170,6 +249,15 @@ def eligible_scope(rows, limit=None):
     if len(eligible) > EXPECTED_DOCUMENTS:
         raise SystemExit(f"ABORT scope creep: eligible documents={len(eligible)}, expected maximum={EXPECTED_DOCUMENTS}")
     return eligible if limit is None else eligible[:limit]
+
+
+def frozen_verified_scope(rows):
+    scope = [r for r in rows if r.get("ipo_id") is not None
+             and r.get("documents_object_key") and r.get("r2_sha_status") == "VERIFIED"]
+    if len(scope) != EXPECTED_DOCUMENTS:
+        raise SystemExit(
+            f"ABORT official count scope={len(scope)}; expected frozen {EXPECTED_DOCUMENTS} SHA-verified documents")
+    return scope
 
 
 def print_progress(index, total, row, record, cumulative_cost):
@@ -193,6 +281,8 @@ def full_run_approval_blocked(totals):
     return bool(any(totals[status] for status in FAILURE_STATUSES)
                 or totals["successes"] != totals["calls"]
                 or totals["spend_stopped"]
+                or totals["spend_cap_breached"]
+                or totals["input_reserve_exceeded"]
                 or (totals["pilot"] and totals["dropped_items_total"])
                 or (totals["selected"] and totals["calls"] < totals["selected"]))
 
@@ -255,26 +345,90 @@ def maybe_write_cutover(conn, *, limit, verified, totals):
     return value if written else None
 
 
+def _write_manifest(prefix: str, payload: dict):
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    target = RESULT_DIR / f"{prefix}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.json"
+    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def run_count_tokens_only(*, rows, store, card: CountPriceCard, api_key):
+    """Count the exact 198 strict-tool inputs; no Messages generation or canonical writes."""
+    scope = frozen_verified_scope(rows)
+    records = []
+    for index, row in enumerate(scope, 1):
+        body = store.get_document(row["documents_object_key"])
+        pages = pdf_pages(body)
+        official = count_tokens_call(pages=pages, api_key=api_key)
+        guarded = guarded_input_tokens(official)
+        records.append({"doc_id": row["documents_id"], "ipo_id": row["ipo_id"],
+                        "local_path": row["local_path"], "input_tokens": official,
+                        "guarded_input_tokens": guarded})
+        print(f"[{index}/{EXPECTED_DOCUMENTS}] count_tokens={official} guarded={guarded} "
+              f"filename={row['local_path']}", flush=True)
+    counts = [record["input_tokens"] for record in records]
+    guarded_counts = [record["guarded_input_tokens"] for record in records]
+    total = sum(counts)
+    guarded_total = sum(guarded_counts)
+    maximum = cost(guarded_total, EXPECTED_DOCUMENTS * card.output_cap, card)
+    result = {
+        "mode": "COUNT_TOKENS_ONLY",
+        "model": MODEL,
+        "prompt_version": PROMPT_VERSION,
+        "documents": EXPECTED_DOCUMENTS,
+        "records": records,
+        "official_input_tokens": {"minimum": min(counts), "maximum": max(counts), "total": total},
+        "guarded_input_tokens": {"minimum": min(guarded_counts), "maximum": max(guarded_counts),
+                                 "total": guarded_total},
+        "input_token_reserve": {"minimum_tokens_per_note": INPUT_TOKEN_RESERVE_MIN,
+                                "percentage": str(INPUT_TOKEN_RESERVE_PCT),
+                                "vendor_guaranteed_bound": False},
+        "legacy_approximation": EXPECTED_INPUT_TOKENS,
+        "difference_from_legacy": total - EXPECTED_INPUT_TOKENS,
+        "pricing_inputs": {"input_usd_per_mtok": str(card.input_usd_per_mtok),
+                           "output_usd_per_mtok": str(card.output_usd_per_mtok),
+                           "output_cap": card.output_cap},
+        "spend_cap_required_for_count_only": False,
+        "guarded_maximum_usd": f"{maximum:.6f}",
+        "ceiling_note": "guarded estimate; Anthropic documents count_tokens as an estimate, not an exact upper bound",
+        "messages_generation_calls": 0,
+        "canonical_writes": 0,
+    }
+    target = _write_manifest("count-only", result)
+    print(json.dumps({k: v for k, v in result.items() if k != "records"}, indent=2))
+    print(f"manifest = {target.relative_to(ROOT)}")
+    return result
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--owner-approved", action="store_true")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--count-tokens-only", action="store_true")
     ap.add_argument("--directory", default=str(ROOT / "data" / "research_notes"))
     args = ap.parse_args(argv)
     if not args.owner_approved or os.getenv("SBI_SONNET_OWNER_APPROVED") != "YES":
         raise SystemExit("requires --owner-approved and SBI_SONNET_OWNER_APPROVED=YES")
     if args.limit is not None and args.limit < 0:
         raise SystemExit("--limit must be zero or greater")
-    card = load_owner_price_card()
+    if args.count_tokens_only and args.limit is not None:
+        raise SystemExit("--count-tokens-only cannot be combined with --limit")
+    card = load_count_price_card() if args.count_tokens_only else load_owner_price_card()
     required = ["DATABASE_URL", "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
                 "R2_DOCUMENT_BUCKET", "ANTHROPIC_API_KEY"]
     missing = [key for key in required if not os.getenv(key)]
     if missing:
         raise SystemExit("missing credentials: " + ", ".join(missing))
-    print_cost_checkpoint(card)
+    if args.count_tokens_only:
+        print("configured spend cap = NOT REQUIRED FOR COUNT_ONLY")
+    else:
+        print(f"configured spend cap = ${card.spend_cap:.6f}")
+    print("authorization input = official /v1/messages/count_tokens per note", flush=True)
 
     import psycopg2
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    if args.count_tokens_only:
+        conn.set_session(readonly=True, autocommit=True)
     store = R2DocumentStore()
     counter, records, totals = OperationCounter(), [], Counter()
     actual_cost = Decimal("0")
@@ -282,6 +436,11 @@ def main(argv=None):
         cur = conn.cursor(); identity_rows = load_company_identity_set(cur); cur.close()
         rows = [verify_remote(row, conn, store, counter, identity_rows)
                 for row in local_inventory(args.directory)]
+        if args.count_tokens_only:
+            run_count_tokens_only(rows=rows, store=store, card=card,
+                                  api_key=os.environ["ANTHROPIC_API_KEY"])
+            return 0
+
         all_eligible = eligible_scope(rows)
         already_count = sum(r.get("extraction_tuple") is not None for r in rows
                             if r.get("r2_sha_status") == "VERIFIED")
@@ -289,7 +448,6 @@ def main(argv=None):
         print(f"eligible_now = {len(all_eligible)}")
         print(f"already_extracted = {already_count}")
         print(f"remaining = {len(all_eligible)}", flush=True)
-        print_remaining_cost_checkpoint(card, len(all_eligible))
         eligible = all_eligible if args.limit is None else all_eligible[:args.limit]
         total = len(eligible)
         totals["selected"] = total
@@ -305,14 +463,26 @@ def main(argv=None):
             try:
                 body = store.get_document(row["documents_object_key"])
                 pages = pdf_pages(body)
-                estimated_input = estimate_input_tokens(pages)
-                if actual_cost + cost(estimated_input, card.output_cap, card) > card.spend_cap:
+                official_input = count_tokens_call(
+                    pages=pages, api_key=os.environ["ANTHROPIC_API_KEY"])
+                guarded_input = guarded_input_tokens(official_input)
+                base["official_preflight_input_tokens"] = official_input
+                base["guarded_preflight_input_tokens"] = guarded_input
+                projected = actual_cost + cost(guarded_input, card.output_cap, card)
+                if projected > card.spend_cap:
                     totals["spend_stopped"] = 1
-                    print(f"STOP: next projected call would exceed ${card.spend_cap:.2f}", flush=True); break
+                    print(f"STOP: next exact-count maximum ${projected:.6f} exceeds "
+                          f"${card.spend_cap:.6f} cap", flush=True)
+                    break
                 totals["calls"] += 1
                 response, itok, otok, stop_reason = anthropic_call(
                     pages=pages, api_key=os.environ["ANTHROPIC_API_KEY"], output_cap=card.output_cap)
                 note_cost = cost(itok, otok, card); actual_cost += note_cost
+                if itok > guarded_input:
+                    totals["input_reserve_exceeded"] += 1
+                if actual_cost > card.spend_cap:
+                    totals["spend_cap_breached"] = 1
+                    totals["spend_stopped"] = 1
                 base.update(input_tokens=itok, output_tokens=otok,
                             actual_cost=f"{note_cost:.6f}", stop_reason=stop_reason)
                 totals["input_tokens"] += itok; totals["output_tokens"] += otok
@@ -330,25 +500,27 @@ def main(argv=None):
                     continue
                 assert parsed is not None
                 dropped = parsed.get("dropped_items", [])
+                count_drops(totals, dropped)
                 try:
                     validate_evidence(parsed, pages)
                 except Exception as exc:
-                    record = {**base, "status": "EVIDENCE_REJECTED", "error": f"{type(exc).__name__}: {exc}"}
+                    record = {**base, "status": "EVIDENCE_REJECTED",
+                              "error": f"{type(exc).__name__}: {exc}",
+                              "dropped_items": dropped}
                     records.append(record); print_progress(index, total, row, record, actual_cost)
                     totals["EVIDENCE_REJECTED"] += 1; continue
                 try:
                     write_extraction(conn, ipo_id=row["ipo_id"], doc_id=row["documents_id"],
                                      extraction=parsed, validated=True)
                 except Exception as exc:
-                    conn.rollback(); record = {**base, "status": "WRITE_ERROR", "error": f"{type(exc).__name__}: {exc}"}
+                    conn.rollback(); record = {**base, "status": "WRITE_ERROR",
+                        "error": f"{type(exc).__name__}: {exc}", "dropped_items": dropped}
                     records.append(record); print_progress(index, total, row, record, actual_cost)
                     totals["WRITE_ERROR"] += 1; continue
                 status = extraction_success_status(parsed)
-                record = {**base, "status": status, "error": None,
-                          "dropped_items": dropped}
+                record = {**base, "status": status, "error": None, "dropped_items": dropped}
                 records.append(record); totals["successes"] += 1
                 totals["extracted_with_drops" if dropped else "extracted"] += 1
-                count_drops(totals, dropped)
                 print_progress(index, total, row, record, actual_cost)
             except Exception as exc:
                 conn.rollback(); record = {**base, "status": "MODEL_ERROR", "error": f"{type(exc).__name__}: {exc}"}
@@ -367,6 +539,8 @@ def main(argv=None):
             "failures_by_category": {k: totals[k] for k in FAILURE_STATUSES},
             "full_run_approval_blocked": full_run_approval_blocked(totals),
             "spend_stopped": bool(totals["spend_stopped"]),
+            "spend_cap_breached": bool(totals["spend_cap_breached"]),
+            "input_reserve_exceeded": totals["input_reserve_exceeded"],
             "cutover_written": cutover_written,
             "extracted": totals["extracted"],
             "extracted_with_drops": totals["extracted_with_drops"],
@@ -382,9 +556,7 @@ def main(argv=None):
                            "output_cap": card.output_cap,
                            "spend_cap": str(card.spend_cap)},
             "holdouts": holdouts}
-        RESULT_DIR.mkdir(parents=True, exist_ok=True)
-        target = RESULT_DIR / f"run-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.json"
-        target.write_text(json.dumps(result, indent=2) + "\n")
+        target = _write_manifest("run", result)
         print(json.dumps(result["summary"], indent=2)); print(f"manifest = {target.relative_to(ROOT)}")
     finally:
         conn.close()
