@@ -61,6 +61,11 @@ Allowed scalar_facts fields: sbi_rating, sbi_fair_value, sbi_target_value. Fair 
 target values are allowed only when SBI explicitly prints them. Allowed claim kinds:
 valuation_observation, business_observation, key_positive, key_risk, verdict.
 
+For sbi_fair_value, the evidence excerpt itself must explicitly say "fair value" or
+"fair price". For sbi_target_value, the evidence excerpt itself must explicitly say
+"target price", "target value", or "price target". An IPO price, issue price,
+upper/lower price band, or generic "valued at" is never a fair or target value.
+
 Every claim/fact must contain a positive integer page_number and a short contiguous
 verbatim excerpt copied from that page. Target 8-12 words per excerpt; the hard server
 ceiling remains 15 words. If the useful source sentence is longer, select a shorter
@@ -266,6 +271,15 @@ def _scalar_error(fact):
     unexpected = set(fact) - SCALAR_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
     if len(str(fact["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
+    evidence = str(fact["excerpt"])
+    if (fact.get("field") == "sbi_fair_value"
+            and not re.search(r"\bfair\s+(?:value|price)\b", evidence,
+                              flags=re.IGNORECASE)):
+        return "fair value evidence must explicitly say fair value or fair price"
+    if (fact.get("field") == "sbi_target_value"
+            and not re.search(r"\b(?:target\s+(?:price|value)|price\s+target)\b",
+                              evidence, flags=re.IGNORECASE)):
+        return "target value evidence must explicitly say target price, target value, or price target"
     if not isinstance(fact.get("page_number"), int) or isinstance(fact.get("page_number"), bool) or fact["page_number"] < 1:
         return "invalid page_number"
     return _confidence_error(fact.get("confidence"))
