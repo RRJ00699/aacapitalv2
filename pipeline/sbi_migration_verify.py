@@ -15,12 +15,12 @@ try:
     from .fill_ipo import _norm
     from .company_identity import load_company_identity_set
     from .sbi_ingest import company_from_filename, resolve_ipo
-    from .sbi_sonnet import MODEL, PROMPT_VERSION
+    from .sbi_sonnet import MODEL, PROMPT_VERSION, extraction_predicate
 except ImportError:
     from fill_ipo import _norm
     from company_identity import load_company_identity_set
     from sbi_ingest import company_from_filename, resolve_ipo
-    from sbi_sonnet import MODEL, PROMPT_VERSION
+    from sbi_sonnet import MODEL, PROMPT_VERSION, extraction_predicate
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DIR = ROOT / "data" / "research_notes"
@@ -89,11 +89,8 @@ def verify_remote(row, conn, store, counter, identity_rows=None):
                     row["ipo_id"], row["isin"] = owner
 
         if row["documents_id"] is not None:
-            extraction = _read(cur, counter,
-                """SELECT doc_id,model,prompt_version FROM insights
-                     WHERE doc_id=%s AND source_type='SBI' AND model=%s
-                       AND prompt_version=%s LIMIT 1""",
-                (row["documents_id"], MODEL, PROMPT_VERSION))
+            sql, params = extraction_predicate(row["documents_id"])
+            extraction = _read(cur, counter, sql, params)
             row["extraction_tuple"] = list(extraction) if extraction else None
 
         if row["ipo_id"] is None:
@@ -191,8 +188,6 @@ def main(argv=None):
         except ImportError:
             from r2 import R2DocumentStore
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        # Enforce read-only at the PostgreSQL session boundary even if a credential
-        # was accidentally provisioned with broader privileges.
         conn.set_session(readonly=True, autocommit=True)
         store = R2DocumentStore()
         try:

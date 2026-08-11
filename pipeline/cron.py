@@ -9,16 +9,17 @@ ORDER (each step is skipped-with-a-reason, never half-done):
   1. Kite token refresh      _scripts/refresh_kite_token.py   (TOTP, existing)
   2a. Download RHPs         _scripts/download_sebi_rhps_playwright.py (existing, SEBI)
   2b. Download SBI notes    _scripts/download_sbi_notes.py           (existing)
-  (SBI note CONTENT extraction goes through Sonnet, not the old regex parser)
+  2c. SBI ledger/R2 ingest sbi_ongoing.py
+  2d. SBI Sonnet extraction sbi_ongoing.py
   3. NSE issue/subscription  nse_fetch.py                     (tested 35 PASS)
   4. RHP extraction          drive.py --rhp                   (tested, PAID)
   5. Vendor fallback         RETIRED — ipomatrix_raw dropped in the V1 sweep, no source
   6. Kite candles + outcomes kite_fetch.py                    (auth verified)
   7. Score + verdict         inside drive.py                  (tested)
   8. Completeness + ntfy     inside drive.py                  (tested)
-  9. Post-lockin cleanup     delete RHP PDFs past lock-in (SBI notes are KEPT)
+  9. Post-lockin cleanup     delete RHP PDFs past lock-in
  10. Purge RHP PDFs          transient by design
- 11. Document home           github -> commit SBI notes · local -> leave in place
+ 11. Document home           SBI temp copies are never committed
 
 SPEND CAP — DYNAMIC, CHANGEABLE FROM ANYWHERE
   The cap lives in platform_config.key='daily_spend_cap_usd' (the same table the Kite
@@ -226,6 +227,11 @@ def run(step, cmd, dry, timeout=1800):
         return {"step": step, "status": "missing"}
 
 
+def classify_sbi_configuration(config):
+    return ({"SKIPPED_OWNER_NOT_CONFIGURED": "skipped",
+             "WARNING_CONFIGURATION_ERROR": "warning"}.get(config.status, "configured"))
+
+
 def cleanup_docs(conn, dry):
     """Delete local RHP PDFs once the anchor lock-in has passed.
 
@@ -323,6 +329,27 @@ def main():
         # Legacy regex step retired. Canonical extraction starts only after the
         # owner-gated ledger/R2 ingest has established immutable provenance.
 
+    # 2c/2d ingest new downloads, then invoke the same DB-ledger pending worker used
+    # for every SBI document. Storage success removes the
+    # RUNNER_TEMP copy; unresolved/storage-failed inputs remain for diagnosis. Any SBI
+    # failure is reported but cannot prevent the unrelated production chain.
+    try:
+        from sbi_ongoing import run_sbi_lane
+        print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
+        sbi_result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=dry)
+        print("      " + json.dumps(sbi_result["summary"], sort_keys=True))
+        if sbi_result.get("manifest_path"):
+            print(f"      SBI manifest = {sbi_result['manifest_path']}")
+        steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
+                      "status": "dry" if dry else "ok",
+                      "summary": sbi_result["summary"],
+                      "manifest_path": sbi_result.get("manifest_path")})
+    except (Exception, SystemExit) as exc:
+        print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
+        print(f"      ! isolated SBI lane failure: {type(exc).__name__}: {str(exc)[:200]}")
+        steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
+                      "status": "warning", "error": str(exc)[:200]})
+
     # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
     cap = with_db(get_cap)
     already = with_db(spent_today)
@@ -406,9 +433,9 @@ def main():
     #     local run behaves identically and no file is left lying around after its data
     #     has been banked.
     if not a.purge_pdfs:
-        print("\n  === 10. purge — SKIPPED. RHPs and SBI notes both KEPT on disk.")
+        print("\n  === 10. purge — SKIPPED. RHPs kept; SBI temp lifecycle is handled in 2c.")
     if a.purge_pdfs:
-        print("\n  === 10. purge RHP PDFs (SBI notes are KEPT)")
+        print("\n  === 10. purge RHP PDFs")
         n = sz = 0
         for base in RHP_DIRS:
             if not os.path.isdir(base):
@@ -422,7 +449,7 @@ def main():
         print(f"      {'would purge' if dry else 'purged'} {n} RHP PDFs ({sz/1e6:.1f}MB)")
         kept = sum(1 for r, _, fs in os.walk(SBI_DIR) for f in fs
                    if f.lower().endswith(".pdf")) if os.path.isdir(SBI_DIR) else 0
-        print(f"      {kept} SBI note PDFs KEPT in {SBI_DIR} (needed by the UI)")
+        print(f"      {kept} unresolved/failed SBI temp PDFs retained in {SBI_DIR}")
 
     # 11. TWO-PATH DOCUMENT HOME.
     #     github : the runner is ephemeral, so SBI notes must be committed back or they
@@ -447,8 +474,8 @@ def main():
         print(f"      Run the downloads locally (or pass --skip-download here) so the "
               f"documents persist.")
     else:
-        print(f"      local — {n_rhp} RHPs and {n_sbi} SBI notes kept on disk, "
-              f"nothing committed")
+        print(f"      local — {n_rhp} RHPs kept; {n_sbi} unresolved/failed SBI temp "
+              f"notes retained; nothing committed")
 
     # Fresh connection: the one opened 15 minutes ago is long gone.
     try:

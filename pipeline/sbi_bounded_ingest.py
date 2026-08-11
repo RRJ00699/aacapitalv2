@@ -15,20 +15,16 @@ import pathlib
 import time
 from collections import Counter
 
-import pymupdf
-
 try:
     from .company_identity import canon, load_company_identity_set
     from .r2 import R2DocumentStore
     from .sbi_ingest import company_from_filename, ingest_file
     from .sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from .sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT
 except ImportError:
     from company_identity import canon, load_company_identity_set
     from r2 import R2DocumentStore
     from sbi_ingest import company_from_filename, ingest_file
     from sbi_migration_verify import OperationCounter, aggregate, local_inventory, verify_remote
-    from sbi_sonnet import MODEL, PROMPT_VERSION, SYSTEM_PROMPT
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIR = ROOT / "data" / "research_notes"
@@ -109,54 +105,6 @@ def unresolved_report(rows, identity_rows, limit=3):
             "group": "AMBIGUOUS" if exact else "NO_CANONICAL_MATCH",
         })
     return report
-
-
-def extract_pdf_text(path):
-    """Extract local PDF text with the repository-supported PyMuPDF package."""
-    with pymupdf.open(path) as document:
-        return len(document), "".join(page.get_text() for page in document)
-
-
-def extraction_inventory(rows, extract_text=extract_pdf_text):
-    totals = Counter()
-    notes = []
-    for row in rows:
-        if row.get("r2_sha_status") != "VERIFIED":
-            continue
-        path = ROOT / row["local_path"]
-        try:
-            page_count, extracted_text = extract_text(path)
-            chars = len(extracted_text)
-            estimated_input = (chars + 3) // 4 + (len(SYSTEM_PROMPT) + 3) // 4
-            extraction_status = "TEXT_EXTRACTION_SUCCEEDED"
-            totals.update(text_extraction_success=1, pages=page_count,
-                          text_chars=chars, input_tokens=estimated_input)
-        except Exception:
-            page_count = chars = estimated_input = None
-            extraction_status = "TEXT_EXTRACTION_FAILED"
-            totals.update(text_extraction_failed=1)
-        notes.append({"filename": row["local_path"], "extraction_method": "PyMuPDF",
-                      "page_count": page_count, "pdf_bytes": row["bytes"],
-                      "text_chars": chars, "estimated_input_tokens": estimated_input,
-                      "extraction_status": extraction_status})
-        totals.update(notes_total=1, pdf_bytes=row["bytes"])
-    failed = totals["text_extraction_failed"]
-    return {"model": MODEL, "prompt_version": PROMPT_VERSION,
-            "already_extracted": sum(r.get("r2_sha_status") == "VERIFIED" and r.get("extraction_tuple") is not None for r in rows),
-            "needs_extraction": sum(r.get("r2_sha_status") == "VERIFIED" and r.get("extraction_tuple") is None for r in rows),
-            "notes_total": totals["notes_total"],
-            "text_extraction_success": totals["text_extraction_success"],
-            "text_extraction_failed": failed,
-            "estimated_input_tokens_total": totals["input_tokens"],
-            "size_estimate": {"pages": totals["pages"], "pdf_bytes": totals["pdf_bytes"],
-                              "text_chars": totals["text_chars"]},
-            "token_estimate_status": "LOWER_BOUND / INCOMPLETE" if failed else "COMPLETE",
-            "token_method": "PyMuPDF text characters / 4 plus system prompt; no model call",
-            "estimated_output_tokens_per_note": "UNKNOWN until owner sets an output cap",
-            "estimated_cost_per_note": "UNKNOWN: no owner-approved price card supplied",
-            "estimated_total_cost": "UNKNOWN: no owner-approved price card supplied",
-            "estimated_runtime": "UNKNOWN: no paid-call latency evidence collected",
-            "notes": notes}
 
 
 def preflight_contract(rows, scope, pre_ingest_classification_reads):
@@ -240,7 +188,6 @@ def main(argv=None):
                   "operations": {"r2_put": wire.puts, "r2_head": wire.heads,
                                  "r2_get": wire.gets, **db_counts,
                                  "runtime_seconds": round(time.monotonic() - started, 3)},
-                  "extraction_estimate": extraction_inventory(verified),
                   "stop": bool(bad or failures),
                   "next_owner_approval": next_owner_approval(unresolved)}
         print(json.dumps(result, indent=2))
