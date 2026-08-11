@@ -9,15 +9,18 @@ import pathlib
 import re
 import subprocess
 import sys
+import hashlib
 
 if __package__:
     from .document_ledger import store_document
     from .fill_ipo import _norm
     from .company_identity import load_company_identity_set, resolve_company_identity
+    from .sbi_identity_config import reviewed_decision
 else:
     from document_ledger import store_document
     from fill_ipo import _norm
     from company_identity import load_company_identity_set, resolve_company_identity
+    from sbi_identity_config import reviewed_decision
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -72,20 +75,59 @@ def resolve_ipo(conn, *, isin: str | None, company: str | None, counter=None,
     return result
 
 
+def approved_override_owner(conn, entry, *, identity_rows=None):
+    """Accept an override only when its ID and ISIN identify the same spine row."""
+    ipo_id, isin = entry["ipo_id"], entry["isin"]
+    if identity_rows is not None:
+        matches = [row for row in identity_rows if row[0] == ipo_id and row[1] == isin]
+        return matches[0][:3] if len(matches) == 1 else None
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT id,isin,name_display FROM ipo WHERE id=%s AND isin=%s",
+            (ipo_id, isin),
+        )
+        rows = cur.fetchall()
+        return rows[0] if len(rows) == 1 else None
+    finally:
+        close = getattr(cur, "close", None)
+        if close:
+            close()
+
+
 def ingest_file(conn, path, *, source_url=None, isin=None, store=None,
                 owner_approved=False, document_date=None, retain_source=None,
                 identity_rows=None):
     path = pathlib.Path(path)
-    identity = resolve_ipo(conn, isin=isin, company=company_from_filename(path),
-                           identity_rows=identity_rows)
-    owner = identity.row
+    content = path.read_bytes()
+    local_sha256 = hashlib.sha256(content).hexdigest()
+    decision = reviewed_decision(local_sha256, path.name)
+    if decision and decision.kind == "exclusion":
+        return {"status": "SKIPPED_REVIEWED_EXCLUSION", "path": str(path),
+                "local_sha256": local_sha256,
+                "classification": decision.entry["classification"]}
+    if decision and decision.kind == "unapproved_override":
+        return {"status": "UNRESOLVED", "path": str(path),
+                "local_sha256": local_sha256,
+                "identity_resolution": "UNAPPROVED_SHA_OVERRIDE", "ambiguous_count": 0}
+    if decision and decision.kind == "override":
+        owner = approved_override_owner(conn, decision.entry, identity_rows=identity_rows)
+        if owner is None:
+            return {"status": "INVALID_REVIEWED_OVERRIDE", "path": str(path),
+                    "local_sha256": local_sha256,
+                    "identity_resolution": "OVERRIDE_ID_ISIN_MISMATCH"}
+        identity_method = "OWNER_APPROVED_SHA_OVERRIDE"
+    else:
+        identity = resolve_ipo(conn, isin=isin, company=company_from_filename(path),
+                               identity_rows=identity_rows)
+        owner = identity.row
+        identity_method = identity.method
     if owner is None:
         return {"status": "UNRESOLVED", "path": str(path),
-                "identity_resolution": identity.method,
+                "local_sha256": local_sha256, "identity_resolution": identity_method,
                 "ambiguous_count": identity.ambiguous_count}
     if not owner_approved:
         return {"status": "READY_FOR_INGEST", "path": str(path), "ipo_id": owner[0]}
-    content = path.read_bytes()
     retained = is_git_tracked(path) if retain_source is None else retain_source
     effective_date = document_date or document_date_from_filename(path) or dt.date.today()
     saved = store_document(conn, ipo_id=owner[0], isin=owner[1], doc_type="sbi",

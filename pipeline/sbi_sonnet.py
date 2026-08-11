@@ -11,7 +11,11 @@ import re
 from typing import Any, Callable
 
 MODEL = "claude-sonnet-4-6"
-PROMPT_VERSION = "sbi-v1.3"
+PROMPT_VERSION = "sbi-v1.4"
+LEGACY_COMPLETION_PROMPT_VERSIONS = ("sbi-v1.3",)
+EVIDENCE_TRANSPORT_VERSION = "sbi-evidence-refs-v1"
+MAX_EVIDENCE_REFS = 3
+MAX_EVIDENCE_WORDS = 15
 SOURCE_TYPE = "SBI"
 TOOL_NAME = "record_sbi_extraction"
 
@@ -40,16 +44,14 @@ Use this literal minimal schema example:
     {
       "kind": "key_risk",
       "statement": "One concise sentence explicitly supported by the note.",
-      "excerpt": "Verbatim excerpt of no more than fifteen words.",
-      "page_number": 3
+      "evidence_refs": ["P3:L001", "P3:L002"]
     }
   ],
   "scalar_facts": [
     {
       "field": "sbi_rating",
       "value": "SUBSCRIBE",
-      "excerpt": "Verbatim excerpt of no more than fifteen words.",
-      "page_number": 1
+      "evidence_refs": ["P1:L001"]
     }
   ]
 }
@@ -66,14 +68,10 @@ For sbi_fair_value, the evidence excerpt itself must explicitly say "fair value"
 "target price", "target value", or "price target". An IPO price, issue price,
 upper/lower price band, or generic "valued at" is never a fair or target value.
 
-Every claim/fact must contain a positive integer page_number and a short contiguous
-verbatim excerpt copied from that page. Target 8-12 words per excerpt; the hard server
-ceiling remains 15 words. If the useful source sentence is longer, select a shorter
-contiguous verbatim phrase. Never paraphrase evidence.
-
-page_number MUST be the N from the synthetic `--- PAGE N ---` marker supplied in this
-request. Do not use a printed footer number, report-internal page number, section number,
-or any other pagination printed inside the PDF text.
+Every claim/fact must contain one to three contiguous evidence_refs from exactly one
+page. Copy the stable IDs printed before source lines. Never invent, omit, reorder, or
+join non-contiguous IDs. Python resolves those IDs to the exact excerpt and page. The
+resolved excerpt must contain no more than fifteen words.
 
 Every claim needs statement and kind; every scalar fact needs field and value. Do not
 calculate or infer house fair value, pro-forma EPS, P/E, ROE, ROCE, FCF, margin of
@@ -99,11 +97,10 @@ SBI_EXTRACTION_TOOL = {
                     "properties": {
                         "kind": {"type": "string", "enum": list(CLAIM_KINDS)},
                         "statement": {"type": "string"},
-                        "excerpt": {"type": "string"},
-                        "page_number": {"type": "integer"},
+                        "evidence_refs": {"type": "array", "items": {"type": "string"}},
                         "confidence": {"type": "number"},
                     },
-                    "required": ["kind", "statement", "excerpt", "page_number"],
+                    "required": ["kind", "statement", "evidence_refs"],
                 },
             },
             "scalar_facts": {
@@ -114,11 +111,10 @@ SBI_EXTRACTION_TOOL = {
                     "properties": {
                         "field": {"type": "string", "enum": sorted(SCALAR_FIELDS)},
                         "value": {"type": ["string", "number"]},
-                        "excerpt": {"type": "string"},
-                        "page_number": {"type": "integer"},
+                        "evidence_refs": {"type": "array", "items": {"type": "string"}},
                         "confidence": {"type": "number"},
                     },
-                    "required": ["field", "value", "excerpt", "page_number"],
+                    "required": ["field", "value", "evidence_refs"],
                 },
             },
         },
@@ -136,10 +132,66 @@ class SBIExtractionError(ValueError):
     """The model response cannot safely enter canonical writers."""
 
 
+class EvidenceReferenceError(SBIExtractionError):
+    """The paid response did not supply resolvable deterministic references."""
+
+
+def source_units(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Create stable page-scoped units, omitting only empty extracted lines."""
+    units, index = [], {}
+    for page in pages:
+        line_number = 0
+        for source_text in str(page.get("text", "")).splitlines():
+            if not source_text.strip():
+                continue
+            line_number += 1
+            ref = f"P{page['page_number']}:L{line_number:03d}"
+            unit = {"ref": ref, "page_number": page["page_number"],
+                    "line_number": line_number, "text": source_text}
+            units.append(unit)
+            index[ref] = unit
+    return units, index
+
+
 def build_page_text(pages: list[dict[str, Any]]) -> str:
-    return "\n\n".join(
-        f"--- PAGE {page['page_number']} ---\n{page.get('text', '')}" for page in pages
-    )
+    units, _ = source_units(pages)
+    return "\n".join(f"{unit['ref']} {unit['text']}" for unit in units)
+
+
+def resolve_evidence_refs(response: dict[str, Any], pages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Resolve strict contiguous references before canonical parsing."""
+    _, index = source_units(pages)
+    resolved = {"claims": [], "scalar_facts": []}
+    for group in resolved:
+        items = response.get(group, [])
+        if not isinstance(items, list):
+            raise SBIExtractionError("claims and scalar_facts must be arrays")
+        for position, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise EvidenceReferenceError(f"{group}[{position}] must be an object")
+            refs = item.get("evidence_refs")
+            if not isinstance(refs, list) or not refs or any(not isinstance(r, str) for r in refs):
+                raise EvidenceReferenceError(f"{group}[{position}] missing evidence_refs")
+            if len(refs) > MAX_EVIDENCE_REFS:
+                raise EvidenceReferenceError(f"{group}[{position}] too many evidence_refs")
+            if len(set(refs)) != len(refs):
+                raise EvidenceReferenceError(f"{group}[{position}] duplicate evidence_refs")
+            try:
+                units = [index[ref] for ref in refs]
+            except KeyError as exc:
+                raise EvidenceReferenceError(f"{group}[{position}] unknown evidence_ref {exc.args[0]}") from exc
+            if len({unit["page_number"] for unit in units}) != 1:
+                raise EvidenceReferenceError(f"{group}[{position}] cross-page evidence_refs")
+            numbers = [unit["line_number"] for unit in units]
+            if numbers != sorted(numbers):
+                raise EvidenceReferenceError(f"{group}[{position}] out-of-order evidence_refs")
+            if numbers != list(range(numbers[0], numbers[0] + len(numbers))):
+                raise EvidenceReferenceError(f"{group}[{position}] non-contiguous evidence_refs")
+            clean = {key: value for key, value in item.items() if key != "evidence_refs"}
+            clean.update(excerpt="\n".join(unit["text"] for unit in units),
+                         page_number=units[0]["page_number"])
+            resolved[group].append(clean)
+    return resolved
 
 
 def build_tool_request(pages: list[dict[str, Any]], *, output_cap: int | None = None) -> dict[str, Any]:
@@ -199,9 +251,12 @@ def _json_object(response: str | bytes | dict[str, Any]) -> dict[str, Any]:
     return obj
 
 
-def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int) -> dict[str, Any]:
+def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int,
+                     pages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Validate the complete response before any database write."""
     obj = _json_object(response)
+    if pages is not None:
+        obj = resolve_evidence_refs(obj, pages)
     forbidden = FORBIDDEN_FIELDS.intersection(obj)
     if forbidden:
         raise SBIExtractionError(f"deterministic fields are forbidden: {sorted(forbidden)}")
@@ -254,7 +309,7 @@ def _claim_error(claim):
     if not claim.get("statement") or not claim.get("excerpt"): return "missing required statement/excerpt fields"
     unexpected = set(claim) - CLAIM_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
-    if len(str(claim["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
+    if len(str(claim["excerpt"]).split()) > MAX_EVIDENCE_WORDS: return "excerpt exceeds 15 words"
     statement = str(claim["statement"]).strip()
     if "\n" in statement or "\r" in statement: return "statement must be single-line"
     if len(statement.split()) > 40: return "statement exceeds 40 words"
@@ -270,8 +325,18 @@ def _scalar_error(fact):
     if not fact.get("excerpt"): return "missing required excerpt field"
     unexpected = set(fact) - SCALAR_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
-    if len(str(fact["excerpt"]).split()) > 15: return "excerpt exceeds 15 words"
+    if len(str(fact["excerpt"]).split()) > MAX_EVIDENCE_WORDS: return "excerpt exceeds 15 words"
     evidence = str(fact["excerpt"])
+    if fact.get("field") == "sbi_rating":
+        rating = re.sub(r"[\s_-]+", " ", str(fact.get("value", "")).strip().upper())
+        supported = {
+            "SUBSCRIBE": r"\bSUBSCRIBE\b", "NEUTRAL": r"\bNEUTRAL\b",
+            "AVOID": r"\bAVOID\b", "NOT RATED": r"\bNOT\s+RATED\b",
+            "NO RATING": r"\bNO\s+RATING\b",
+        }
+        if rating not in supported or not re.search(supported[rating], evidence,
+                                                     flags=re.IGNORECASE):
+            return "rating evidence must explicitly state the rating"
     if (fact.get("field") == "sbi_fair_value"
             and not re.search(r"\bfair\s+(?:value|price)\b", evidence,
                               flags=re.IGNORECASE)):
@@ -292,6 +357,13 @@ def estimate_input_tokens(pages, system_prompt=SYSTEM_PROMPT):
     return (text_chars + 3) // 4 + (len(system_prompt) + 3) // 4
 
 
+def completion_prompt_versions(prompt_version=PROMPT_VERSION):
+    """Return compatible completion identities without changing new-row provenance."""
+    if prompt_version == PROMPT_VERSION:
+        return (PROMPT_VERSION, *LEGACY_COMPLETION_PROMPT_VERSIONS)
+    return (prompt_version,)
+
+
 def completion_clause(doc_expression: str = "%s", *, model=MODEL,
                       prompt_version=PROMPT_VERSION):
     """Return the one facts-or-insights completion rule.
@@ -303,42 +375,46 @@ def completion_clause(doc_expression: str = "%s", *, model=MODEL,
     """
     if doc_expression not in {"%s", "d.id"}:
         raise ValueError("unsupported document SQL expression")
-    doc_params = (None,) if doc_expression == "%s" else ()
+    versions = completion_prompt_versions(prompt_version)
+    version_placeholders = ",".join("%s" for _ in versions)
+    source_matches = " OR ".join("sf.source LIKE %s" for _ in versions)
     clause = f"""EXISTS (
         SELECT 1 FROM insights i
          WHERE i.doc_id={doc_expression} AND i.source_type='SBI'
-           AND i.model=%s AND i.prompt_version=%s
+           AND i.model=%s AND i.prompt_version IN ({version_placeholders})
         UNION ALL
         SELECT 1 FROM source_facts sf
          WHERE sf.doc_id={doc_expression}
-           AND sf.source LIKE %s
+           AND ({source_matches})
         LIMIT 1
     )"""
-    return clause, doc_params
+    return clause, versions
 
 
 def extraction_predicate(doc_id: int, *, model=MODEL, prompt_version=PROMPT_VERSION):
     """Return a point lookup using the canonical completion rule."""
-    clause, _ = completion_clause("%s", model=model, prompt_version=prompt_version)
-    pattern = f"SBI:doc={doc_id}:page=%:model={model}:prompt={prompt_version}:%"
+    clause, versions = completion_clause("%s", model=model, prompt_version=prompt_version)
+    patterns = tuple(
+        f"SBI:doc={doc_id}:page=%:model={model}:prompt={version}:%"
+        for version in versions)
     # The document placeholder occurs once in each UNION arm.
-    params = (doc_id, model, prompt_version, doc_id, pattern)
+    params = (doc_id, model, *versions, doc_id, *patterns)
     return f"SELECT 1 WHERE {clause}", params
 
 
 def pending_documents_query(*, model=MODEL, prompt_version=PROMPT_VERSION,
                             limit: int | None = None):
     """Select every ledgered SBI document not complete for this model/prompt."""
-    clause, _ = completion_clause("d.id", model=model, prompt_version=prompt_version)
+    clause, versions = completion_clause("d.id", model=model, prompt_version=prompt_version)
     sql = f"""SELECT d.id,d.ipo_id,d.object_key,d.sha256
                 FROM documents d
                WHERE d.doc_type='sbi' AND d.ipo_id IS NOT NULL
                  AND d.object_key IS NOT NULL AND NOT {clause}
                ORDER BY d.fetched_at,d.id"""
-    params: tuple[Any, ...] = (
-        model, prompt_version,
-        f"SBI:doc=%:page=%:model={model}:prompt={prompt_version}:%",
-    )
+    patterns = tuple(
+        f"SBI:doc=%:page=%:model={model}:prompt={version}:%"
+        for version in versions)
+    params: tuple[Any, ...] = (model, *versions, *patterns)
     if limit is not None:
         if limit < 0:
             raise ValueError("limit must be zero or greater")
@@ -394,4 +470,4 @@ def extract(*, doc_id: int, pages: list[dict[str, Any]], model_client: Callable[
     """Invoke an explicitly supplied client, making offline testing the default."""
     response = model_client(model=MODEL, prompt_version=PROMPT_VERSION,
                             system=SYSTEM_PROMPT, pages=pages)
-    return parse_extraction(response, doc_id=doc_id)
+    return parse_extraction(response, doc_id=doc_id, pages=pages)

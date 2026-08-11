@@ -38,51 +38,21 @@ def test_ai_cannot_write_deterministic_valuation_fields(field):
         sonnet.parse_extraction({field: 1, "claims": [], "scalar_facts": []}, doc_id=1)
 
 
-def test_invalid_items_drop_but_valid_items_survive():
-    valid = {"kind": "verdict", "statement": "Supported.",
-             "excerpt": "Exact evidence", "page_number": 1}
-    bad = dict(valid, excerpt=" ".join(["word"] * 16))
-    parsed = sonnet.parse_extraction({"claims": [valid, bad], "scalar_facts": []},
-                                     doc_id=1)
-    assert len(parsed["claims"]) == 1
-    assert parsed["dropped_items"] == [{"item_type": "claim", "position": 1,
-                                        "reason": "excerpt exceeds 15 words"}]
+def test_resolved_source_is_canonical_with_local_excerpt_bound():
+    raw = {"claims": [{"kind": "verdict", "statement": "Supported.",
+                       "evidence_refs": ["P1:L001"]}], "scalar_facts": []}
+    parsed = sonnet.parse_extraction(raw, doc_id=1,
+                                     pages=[{"page_number": 1, "text": "Exact source text"}])
+    assert parsed["claims"][0]["excerpt"] == "Exact source text"
 
 
-def test_evidence_must_be_on_asserted_synthetic_page():
-    parsed = sonnet.parse_extraction(FIXTURE, doc_id=1)
-    pages = [{"page_number": 1, "text": "We recommend SUBSCRIBE"},
-             {"page_number": 7,
-              "text": "The top ten customers contributed 82% of sales."}]
-    extraction_run.validate_evidence(parsed, pages)
-    pages[1]["text"] = "No supporting language here."
-    with pytest.raises(ValueError, match=r"claim\[0\].*PAGE 7"):
-        extraction_run.validate_evidence(parsed, pages)
-
-
-@pytest.mark.parametrize(("page_text", "excerpt"), [
-    ("The company’s capacity is 100 MW.", "The company's capacity is 100 MW."),
-    ('SBI said “Subscribe” to the issue.', 'SBI said "Subscribe" to the issue.'),
-    ("Revenue grew 20% — profit rose.", "Revenue grew 20% - profit rose."),
-    ("Debt repayment is Rs.\u00a0300 crore.", "Debt repayment is Rs. 300 crore."),
-])
-def test_typography_normalization_is_comparison_only(page_text, excerpt):
-    payload = {"claims": [{"kind": "verdict", "statement": "Supported.",
-                            "excerpt": excerpt, "page_number": 1}],
-               "scalar_facts": []}
-    parsed = sonnet.parse_extraction(payload, doc_id=1)
-    extraction_run.validate_evidence(parsed, [{"page_number": 1, "text": page_text}])
-    assert parsed["claims"][0]["excerpt"] == excerpt
-
-
-def test_changed_number_and_paraphrase_are_rejected():
-    payload = {"claims": [{"kind": "verdict", "statement": "Supported.",
-                            "excerpt": "capacity is 101 MW", "page_number": 1}],
-               "scalar_facts": []}
-    parsed = sonnet.parse_extraction(payload, doc_id=1)
-    with pytest.raises(ValueError):
-        extraction_run.validate_evidence(
-            parsed, [{"page_number": 1, "text": "capacity is 100 MW"}])
+def test_reference_not_source_comparison_is_the_transport_guard():
+    raw = {"claims": [{"kind": "verdict", "statement": "capacity is 101 MW",
+                       "evidence_refs": ["P1:L001"]}], "scalar_facts": []}
+    parsed = sonnet.parse_extraction(raw, doc_id=1,
+                                     pages=[{"page_number": 1, "text": "capacity is 100 MW"}])
+    assert parsed["claims"][0]["statement"] == "capacity is 101 MW"
+    assert parsed["claims"][0]["excerpt"] == "capacity is 100 MW"
 
 
 class Stored:

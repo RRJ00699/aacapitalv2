@@ -24,10 +24,10 @@ PAGES = [{"page_number": 1, "text": "We recommend Subscribe"}]
 def extraction(claims=True, facts=False):
     return {
         "claims": ([{"kind": "verdict", "statement": "Subscribe.",
-                     "excerpt": "We recommend Subscribe", "page_number": 1,
+                     "evidence_refs": ["P1:L001"],
                      "confidence": 0.8}] if claims else []),
         "scalar_facts": ([{"field": "sbi_rating", "value": "SUBSCRIBE",
-                          "excerpt": "We recommend Subscribe", "page_number": 1,
+                          "evidence_refs": ["P1:L001"],
                           "confidence": 0.7}] if facts else []),
     }
 
@@ -143,7 +143,7 @@ def test_one_evidence_failure_does_not_stop_following_document(monkeypatch):
     def model(**kwargs):
         calls.append(1)
         if len(calls) == 1:
-            bad = extraction(); bad["claims"][0]["excerpt"] = "absent evidence"
+            bad = extraction(); bad["claims"][0]["evidence_refs"] = ["P1:L999"]
             return bad, 10, 20, "tool_use"
         return extraction(), 10, 20, "tool_use"
     result = run_local(Conn(), Store({r[2]: BODY for r in docs}), model_call=model)
@@ -206,7 +206,7 @@ def test_doc_id_confidence_persist_and_write_is_atomic(monkeypatch):
                         lambda *a, **k: calls.append(("insight", k)) or (1, 0, "run"))
     conn = type("WriteConn", (), {"commits": 0, "cursor": lambda self: object(),
         "commit": lambda self: setattr(self, "commits", self.commits + 1)})()
-    parsed = sbi_sonnet.parse_extraction(extraction(claims=True, facts=True), doc_id=7)
+    parsed = sbi_sonnet.parse_extraction(extraction(claims=True, facts=True), doc_id=7, pages=PAGES)
     sbi_sonnet.write_extraction(conn, ipo_id=9, doc_id=7,
                                 extraction=parsed, validated=True)
     assert calls[0][1]["doc_id"] == 7 and calls[0][1]["confidence"] == 0.7
@@ -218,7 +218,7 @@ def test_doc_id_confidence_persist_and_write_is_atomic(monkeypatch):
 def test_evidence_rejection_makes_no_canonical_write(monkeypatch):
     docs, completed, writes = [(1, 1, "key/1", DIGEST)], set(), []
     install_queue(monkeypatch, docs, completed, writes)
-    bad = extraction(); bad["claims"][0]["excerpt"] = "not in source"
+    bad = extraction(); bad["claims"][0]["evidence_refs"] = ["P1:L999"]
     result = run_local(Conn(), Store({"key/1": BODY}),
                        model_call=lambda **k: (bad, 10, 20, "tool_use"))
     assert result["records"][0]["status"] == "EVIDENCE_REJECTED"
@@ -258,6 +258,26 @@ def test_lane_ingests_then_invokes_worker_with_no_real_io(tmp_path, monkeypatch)
                                       environ=ENV, model_call=lambda **k: None,
                                       token_counter=lambda **k: 1)
     assert events == ["ingest", "worker"] and result["summary"]["selected"] == 1
+
+
+def test_lane_treats_invalid_reviewed_override_as_unresolved(tmp_path, monkeypatch):
+    pdf = tmp_path / "Example Limited_IPO Note.pdf"; pdf.write_bytes(b"pdf")
+    monkeypatch.setattr(sbi_ongoing, "load_company_identity_set", lambda cur: ())
+    monkeypatch.setattr(sbi_ongoing, "ingest_file", lambda *a, **k: {
+        "status": "INVALID_REVIEWED_OVERRIDE",
+        "identity_resolution": "OVERRIDE_ID_ISIN_MISMATCH",
+    })
+    monkeypatch.setattr(sbi_ongoing, "run_pending_worker", lambda *a, **k: {
+        "summary": {"selected": 0}, "records": []})
+    monkeypatch.setattr(sbi_ongoing, "persist_manifest", lambda *a, **k: "manifest.json")
+
+    result = sbi_ongoing.run_sbi_lane(
+        Conn(), directory=tmp_path, store=Store(), environ=ENV,
+        model_call=lambda **k: None, token_counter=lambda **k: 1)
+
+    assert result["summary"]["unresolved"] == 1
+    assert result["summary"]["resolved"] == 0
+    assert result["records"][0]["status"] == "INVALID_REVIEWED_OVERRIDE"
 
 
 def test_no_sonnet_config_still_ingests_with_zero_paid_calls(tmp_path, monkeypatch):
