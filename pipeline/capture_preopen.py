@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Bounded, forward-only listing-day capture into existing listing_observations."""
-import argparse, datetime as dt, json, os, time
+import argparse, datetime as dt, json, os, pathlib, sys, time
 from zoneinfo import ZoneInfo
 import psycopg2
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from _scripts.kite_connect import get_kite
 from config import (MIN_POSITIVE_LIMIT, PREOPEN_DEFAULT_IPOS, PREOPEN_HARD_MAX_IPOS,
     PREOPEN_DEFAULT_RETRIES, PREOPEN_HARD_MAX_RETRIES, WEEKDAY_MAX_INDEX,
@@ -15,7 +16,7 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
       print("ineligible: outside weekday 08:55-10:05 IST"); return 0
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
     # ISIN is selected first and is the durable identity; symbol is only Kite routing metadata.
-    cur.execute("""SELECT i.id, i.name, i.isin, UPPER(i.symbol), i.listing_date,
+    cur.execute("""SELECT i.id, i.name_display, i.isin, UPPER(i.symbol), i.listing_date,
         'IST-today mainboard listing with ISIN and symbol' AS reason_selected,
         issue.issue_size_cr
       FROM ipo i
@@ -55,4 +56,7 @@ def capture(now=None, limit=PREOPEN_DEFAULT_IPOS, dry_run=False, retries=PREOPEN
     conn.commit(); cur.close(); conn.close(); print(f"captured {count}"); return count
 
 if __name__=="__main__":
- ap=argparse.ArgumentParser(); ap.add_argument("--limit",type=int,default=PREOPEN_DEFAULT_IPOS); ap.add_argument("--dry-run",action="store_true"); ap.add_argument("--retries",type=int,default=PREOPEN_DEFAULT_RETRIES); a=ap.parse_args(); capture(limit=a.limit,dry_run=a.dry_run,retries=a.retries)
+ ap=argparse.ArgumentParser(); ap.add_argument("--limit",type=int,default=PREOPEN_DEFAULT_IPOS); ap.add_argument("--dry-run",action="store_true"); ap.add_argument("--retries",type=int,default=PREOPEN_DEFAULT_RETRIES); ap.add_argument("--at",type=dt.datetime.fromisoformat,help="diagnostic IST timestamp (dry-run only)"); a=ap.parse_args()
+ if a.at is not None and not a.dry_run: ap.error("--at is permitted only with --dry-run")
+ if a.at is not None and a.at.tzinfo is None: ap.error("--at must include an explicit UTC offset")
+ capture(now=a.at.astimezone(ZoneInfo("Asia/Kolkata")) if a.at else None,limit=a.limit,dry_run=a.dry_run,retries=a.retries)

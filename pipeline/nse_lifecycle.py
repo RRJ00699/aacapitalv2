@@ -306,11 +306,13 @@ def run(conn, session, plans, *, write, db_target_queries=1):
     return metrics
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--write", action="store_true")
     ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--discovery-only", action="store_true",
+                    help="refresh only the official canonical IPO universe")
     ap.add_argument("--today", type=dt.date.fromisoformat)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if not (args.write or args.dry_run): raise SystemExit("choose --write or --dry-run")
     import psycopg2
     from curl_cffi import requests as cffi
@@ -328,6 +330,17 @@ def main():
         discovery_rows = [{"name": row["name"], "isin": row.get("isin"),
             "symbol": row.get("symbol"), "resolution": "not_reconciled_discovery_failure",
             "ipo_id": None, "metadata_refresh_required": False} for row in discovered]
+    if args.discovery_only:
+        output = {"DISCOVERY": {"official_source": [url for _, url in DISCOVERY_APIS],
+            "feed_http_calls": discovery_calls, "returned_count": discovery_total,
+            "processed_limit": args.limit, "errors": discovery_errors,
+            "discovered_ipos": discovery_rows, "db_reads": discovery_reads,
+            "db_writes": discovery_writes}}
+        conn.close()
+        print(json.dumps(output, default=str, indent=2, sort_keys=True))
+        if discovery_errors or any(row["resolution"] == "failed" for row in discovery_rows):
+            raise SystemExit(1)
+        return output
     targets = _targets(conn, today, args.limit)
     diagnostic_candidates = _diagnostic_candidates(conn, today)
     validate_diagnostic_superset(targets, diagnostic_candidates)

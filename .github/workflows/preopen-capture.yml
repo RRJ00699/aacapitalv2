@@ -4,6 +4,9 @@ name: Listing preopen capture
 # no listing-day IPO exists. Maximum 5 IPOs per run.
 on:
   schedule:
+    # Canonical official-universe refresh: 08:30 and 17:00 IST weekdays.
+    - cron: "0 3 * * 1-5"
+    - cron: "30 11 * * 1-5"
     - cron: "25-55/5 3 * * 1-5"
     - cron: "0-35/5 4 * * 1-5"
   workflow_dispatch:
@@ -11,7 +14,22 @@ on:
       limit: { description: "Maximum listing IPOs", default: "5", required: false }
       dry_run: { description: "Select ISINs without Kite/DB writes", type: boolean, default: false }
 jobs:
+  discovery:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * 1-5' || github.event.schedule == '30 11 * * 1-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install psycopg2-binary curl_cffi
+      - name: Refresh official NSE canonical universe
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: pipeline
+        run: python nse_lifecycle.py --write --discovery-only --limit 40
   capture:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule != '0 3 * * 1-5' && github.event.schedule != '30 11 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

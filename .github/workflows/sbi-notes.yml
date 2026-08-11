@@ -14,14 +14,23 @@ jobs:
           python-version: "3.12"
       - name: Install deps
         run: |
-          pip install playwright pdfplumber rapidfuzz psycopg2-binary --break-system-packages
+          pip install playwright pymupdf psycopg2-binary boto3 --break-system-packages
           python -m playwright install --with-deps chromium
       - name: Download SBI notes to ephemeral workspace
         run: python _scripts/download_sbi_notes.py --out "$RUNNER_TEMP/sbi-notes"
-      - name: Prepare bounded local inventory (no Neon, R2, or paid model calls)
-        run: python pipeline/sbi_migration_verify.py --dry-run --directory "$RUNNER_TEMP/sbi-notes"
-      # Real ledger/R2 ingest and Sonnet extraction remain explicit owner checkpoints.
-      # The scheduled workflow must never turn an implementation/test run into writes.
+      - name: Ledger and R2 ingest; optionally run owner-approved Sonnet
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_DOCUMENT_BUCKET: ${{ secrets.R2_DOCUMENT_BUCKET }}
+          SBI_SONNET_OWNER_APPROVED: ${{ secrets.SBI_SONNET_OWNER_APPROVED }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SBI_SONNET_INPUT_PRICE_PER_MTOK: ${{ secrets.SBI_SONNET_INPUT_PRICE_PER_MTOK }}
+          SBI_SONNET_OUTPUT_PRICE_PER_MTOK: ${{ secrets.SBI_SONNET_OUTPUT_PRICE_PER_MTOK }}
+          SBI_SONNET_RUN_CAP_USD: ${{ secrets.SBI_SONNET_RUN_CAP_USD }}
+        run: python pipeline/sbi_ongoing.py --directory "$RUNNER_TEMP/sbi-notes" --limit 10
       - name: Remove ephemeral PDFs
         if: always()
         run: rm -rf "$RUNNER_TEMP/sbi-notes"

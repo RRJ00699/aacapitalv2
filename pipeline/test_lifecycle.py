@@ -1,6 +1,6 @@
 import datetime as dt
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from lifecycle import IPOWindow, plan_run
 from nse_lifecycle import (_exclusion_reasons, _find_anchor_url,
@@ -102,6 +102,27 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(report[0]["resolution"], "bootstrap_required")
         self.assertEqual(overlays, []); self.assertEqual(writes, 0)
         self.assertFalse(any("INSERT" in sql or "UPDATE" in sql for sql in conn.cur.sql))
+
+    def test_official_isin_bootstrap_is_idempotent_on_second_discovery(self):
+        row = parse_discovery_item({"companyName":"Official Bootstrap Ltd",
+            "symbol":"BOOT", "isin":"INE0BOOT0001", "issueStartDate":"10-Aug-2026",
+            "issueEndDate":"12-Aug-2026", "priceBand":"100-110", "lotSize":"10"})
+        first = FakeConn([None, None, None])
+        with patch("fill_ipo.upsert_ipo", return_value=(77,"inserted")) as spine, \
+             patch("fill_v2.upsert_ipo_issue") as issue:
+            report, _, _, writes = reconcile_discovery(first, [row], write=True)
+        self.assertEqual(report[0]["ipo_id"], 77)
+        self.assertEqual(report[0]["resolution"], "inserted")
+        self.assertEqual(writes, 2); spine.assert_called_once(); issue.assert_called_once()
+
+        complete = FakeConn([(77,"Official Bootstrap Ltd","official bootstrap ltd",
+                              "BOOT",None,"INE0BOOT0001"),
+                             (dt.date(2026,8,10),dt.date(2026,8,12),100,110,10,None,
+                              False,False)])
+        with patch("fill_ipo.upsert_ipo") as spine, patch("fill_v2.upsert_ipo_issue") as issue:
+            report, _, _, writes = reconcile_discovery(complete, [row], write=True)
+        self.assertEqual(report[0]["resolution"], "unchanged")
+        self.assertEqual(writes, 0); spine.assert_not_called(); issue.assert_not_called()
 
     def test_existing_missing_dates_refresh_overlay_enables_lifecycle(self):
         today = dt.date(2026, 8, 7)
