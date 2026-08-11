@@ -77,9 +77,15 @@ def compute_valuation(conn, ipo_id):
     cur.execute("""SELECT issue_price,band_hi,band_lo,issue_size_cr,ofs_cr
                    FROM ipo_issue WHERE ipo_id=%s""",(ipo_id,))
     iss=cur.fetchone()
-    issue_price = float(iss[0]) if iss and iss[0] is not None else (float(iss[1]) if iss and iss[1] is not None else None)
-    issue_size  = float(iss[3]) if iss and iss[3] is not None else None
-    ofs_cr      = float(iss[4]) if iss and iss[4] is not None else None
+    # Some long-lived owner rows are returned through the compatibility cursor with
+    # the original three-field issue shape.  The size/OFS columns were appended later.
+    # Pad absent trailing fields as NULL instead of indexing beyond that row shape.
+    issue_price_raw, band_hi, _band_lo, issue_size_raw, ofs_raw = (
+        tuple(iss or ()) + (None,) * 5)[:5]
+    issue_price = float(issue_price_raw) if issue_price_raw is not None else (
+        float(band_hi) if band_hi is not None else None)
+    issue_size = float(issue_size_raw) if issue_size_raw is not None else None
+    ofs_cr = float(ofs_raw) if ofs_raw is not None else None
     if issue_price is None: missing.append("issue_price")
 
     latest, allrows = _latest_financials(cur, ipo_id)

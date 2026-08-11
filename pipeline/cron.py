@@ -173,10 +173,16 @@ def run(step, script_path, args, *, dry=False, timeout=1800, required=True, cwd=
     for line in (proc.stdout or "").splitlines()[-30:]:
         print("    " + line)
     if proc.returncode:
-        detail = (proc.stderr or "").strip().splitlines()[-1:] or [f"exit {proc.returncode}"]
+        traceback_tail = (proc.stderr or "").strip().splitlines()[-12:]
+        if traceback_tail:
+            print("    stderr tail:")
+            for line in traceback_tail:
+                print("    " + line[:500])
+        detail = traceback_tail[-1:] or [f"exit {proc.returncode}"]
         print("    failed - " + detail[0][:300])
         return {"step": step, "status": "failed", "duration": time.monotonic()-started,
-                "reason": detail[0][:300], "rc": proc.returncode}
+                "reason": detail[0][:300], "traceback_tail": "\n".join(traceback_tail),
+                "rc": proc.returncode}
     return {"step": step, "status": "dry" if dry else "ok",
             "duration": time.monotonic()-started, "output": proc.stdout or ""}
 
@@ -213,7 +219,8 @@ def discovery_counts(item):
         "returned": data.get("returned_count", 0), "processed": len(rows),
         "matched_existing": sum(value in {"matched_existing", "unchanged", "updated"} for value in resolutions),
         "created": resolutions.count("inserted"),
-        "bounded_not_created": sum(value in {"bootstrap_required", "unresolved", "bounded_not_created"} for value in resolutions),
+        "would_create": resolutions.count("bootstrap_required"),
+        "bounded_not_created": resolutions.count("bounded_not_created"),
         "failures": len(data.get("errors", [])) + resolutions.count("failed"),
     }
 
@@ -261,6 +268,37 @@ def classify_kite_refresh(returncode, output):
     if returncode != (1 if status == "failed" else 0):
         return "failed", value
     return status, value
+
+
+def kite_refresh_guarantees_fetch(refresh_status, structured_status):
+    """Only structured refresh success proves kite_fetch's token source is usable."""
+    return (refresh_status == "ok"
+            and structured_status in {"SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY"})
+
+
+def run_kite_live(ids, rotation_missing):
+    """Refresh then fetch only when the refresh proves the shared token is usable."""
+    results = []
+    token_ready = False
+    if rotation_missing:
+        results.append(skip("Kite token refresh", "owner: configure " +
+                            ", ".join(rotation_missing) + " for activated rotation"))
+    else:
+        refresh = run("Kite token refresh", KITE_REFRESH_SCRIPT, [], timeout=300)
+        refresh_status, structured = classify_kite_refresh(
+            refresh.get("rc", 0), refresh.get("output", ""))
+        refresh["status"] = refresh_status
+        if structured == "SKIPPED_NOT_ACTIVATED":
+            refresh["reason"] = "owner: activate Kite token rotation"
+        results.append(refresh)
+        token_ready = kite_refresh_guarantees_fetch(refresh_status, structured)
+    if token_ready:
+        results.append(run("Kite candles/outcomes", KITE_FETCH_SCRIPT,
+                           ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+    else:
+        results.append(skip("Kite candles/outcomes",
+                            "owner: refresh did not guarantee a usable kite_fetch token"))
+    return results
 
 
 def classify_sbi_configuration(config):
@@ -402,16 +440,7 @@ def main(argv=None):
         elif dry:
             steps.append(skip("Kite refresh/candles", "dry-run: authentication/network operation disabled"))
         else:
-            if rotation_missing:
-                steps.append(skip("Kite token refresh", "owner: configure " + ", ".join(rotation_missing) + " for activated rotation"))
-            else:
-                refresh = run("Kite token refresh", KITE_REFRESH_SCRIPT, [], timeout=300)
-                refresh_status, structured = classify_kite_refresh(refresh.get("rc", 0), refresh.get("output", ""))
-                refresh["status"] = refresh_status
-                if structured == "SKIPPED_NOT_ACTIVATED":
-                    refresh["reason"] = "owner: activate Kite token rotation"
-                steps.append(refresh)
-            steps.append(run("Kite candles/outcomes", KITE_FETCH_SCRIPT, ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+            steps.extend(run_kite_live(ids, rotation_missing))
 
         if dry:
             steps.append(skip("RHP paid extraction", "dry-run: paid extraction disabled"))

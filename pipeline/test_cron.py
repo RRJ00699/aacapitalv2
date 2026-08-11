@@ -52,13 +52,42 @@ def test_kite_proxy_is_conditional_on_rotation():
 def test_structured_counts_are_real_and_missing_contract_fails():
     discovery = {"output": '{"DISCOVERY":{"returned_count":5,"errors":[],"discovered_ipos":'
                            '[{"resolution":"matched_existing"},{"resolution":"inserted"},'
-                           '{"resolution":"bounded_not_created"}]}}', "status": "ok"}
-    assert cron.discovery_counts(discovery) == {"returned": 5, "processed": 3,
-        "matched_existing": 1, "created": 1, "bounded_not_created": 1, "failures": 0}
+                           '{"resolution":"bootstrap_required"},{"resolution":"bounded_not_created"}]}}', "status": "ok"}
+    assert cron.discovery_counts(discovery) == {"returned": 5, "processed": 4,
+        "matched_existing": 1, "created": 1, "would_create": 1,
+        "bounded_not_created": 1, "failures": 0}
     broken = {"output": "not structured", "status": "ok"}
     assert cron.discovery_counts(broken) == {"returned": 0, "processed": 0,
-        "matched_existing": 0, "created": 0, "bounded_not_created": 0, "failures": 0}
+        "matched_existing": 0, "created": 0, "would_create": 0,
+        "bounded_not_created": 0, "failures": 0}
     assert broken["status"] == "failed"
+
+
+def test_kite_fetch_requires_structured_refresh_success():
+    assert not cron.kite_refresh_guarantees_fetch("skipped", "SKIPPED_NOT_ACTIVATED")
+    assert not cron.kite_refresh_guarantees_fetch("failed", "FAILED_LOGIN")
+    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_ROTATED")
+    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_VALIDATED_ONLY")
+
+
+@pytest.mark.parametrize("refresh_status,marker,expected_calls", [
+    ("skipped", "SKIPPED_NOT_ACTIVATED", [cron.KITE_REFRESH_SCRIPT]),
+    ("failed", "FAILED_LOGIN", [cron.KITE_REFRESH_SCRIPT]),
+    ("ok", "SUCCESS_ROTATED", [cron.KITE_REFRESH_SCRIPT, cron.KITE_FETCH_SCRIPT]),
+])
+def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status, marker, expected_calls):
+    calls = []
+    def fake_run(step, target, args, **kwargs):
+        calls.append(target)
+        if target == cron.KITE_REFRESH_SCRIPT:
+            rc = 1 if refresh_status == "failed" else 0
+            return {"step": step, "status": refresh_status, "duration": 0,
+                    "rc": rc, "output": f"KITE_REFRESH_STATUS={marker}\n"}
+        return {"step": step, "status": "ok", "duration": 0}
+    monkeypatch.setattr(cron, "run", fake_run)
+    results = cron.run_kite_live("12", [])
+    assert calls == expected_calls
+    assert results[-1]["status"] == ("ok" if refresh_status == "ok" else "skipped")
 
 
 def test_every_subprocess_target_is_repository_relative_and_visible():
