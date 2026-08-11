@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Publish route snapshots, record the outcome, and alert on failure."""
 import datetime as dt
+import argparse
 import json
 import os
 import subprocess
@@ -69,7 +70,17 @@ def missing_required_config():
     return missing
 
 
-def main() -> int:
+def main(argv=()) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+    if args.dry_run:
+        # Consumer-proof path without a ledger write or publication.  warm_kv passes
+        # this through to the canonical builder, which validates selectors/config.
+        return subprocess.run(
+            [sys.executable, str(HERE / "warm_kv.py"), "--dry-run"],
+            cwd=ROOT,
+        ).returncode
     started = time.time()
     record = {
         "step": FAILED_STEP,
@@ -117,4 +128,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

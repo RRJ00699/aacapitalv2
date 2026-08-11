@@ -143,8 +143,8 @@ export async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const schemaSmoke = process.argv.includes("--schema-smoke");
   if (schemaSmoke && process.env.SNAPSHOT_TEST_FIXTURE === "1") throw new Error("schema smoke requires real Neon SQL; fixture is not allowed");
-  const publishEndpoint = schemaSmoke ? null : snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
-  const key = schemaSmoke ? null : requirePublishKey();
+  const publishEndpoint = schemaSmoke || dryRun ? null : snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
+  const key = schemaSmoke || dryRun ? null : requirePublishKey();
 
   const fixture = process.env.SNAPSHOT_TEST_FIXTURE === "1";
   const realSql = fixture ? null : neon(requireDatabaseUrl(schemaSmoke)) as unknown as SqlClient;

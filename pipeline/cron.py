@@ -1,513 +1,348 @@
 #!/usr/bin/env python3
-"""
-cron.py — THE ONE ENTRY POINT. Chains the already-tested scripts in order.
+"""Supported daily pipeline entry point for Windows and CI-safe dry runs."""
+from __future__ import annotations
 
-This file adds NO extraction logic. Every step is an existing, tested component; this
-just runs them in dependency order, enforces the spend cap, and cleans up documents.
+import argparse
+import datetime as dt
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
 
-ORDER (each step is skipped-with-a-reason, never half-done):
-  1. Kite token refresh      _scripts/refresh_kite_token.py   (TOTP, existing)
-  2a. Download RHPs         _scripts/download_sebi_rhps_playwright.py (existing, SEBI)
-  2b. Download SBI notes    _scripts/download_sbi_notes.py           (existing)
-  2c. SBI ledger/R2 ingest sbi_ongoing.py
-  2d. SBI Sonnet extraction sbi_ongoing.py
-  3. NSE issue/subscription  nse_fetch.py                     (tested 35 PASS)
-  4. RHP extraction          drive.py --rhp                   (tested, PAID)
-  5. Vendor fallback         RETIRED — ipomatrix_raw dropped in the V1 sweep, no source
-  6. Kite candles + outcomes kite_fetch.py                    (auth verified)
-  7. Score + verdict         inside drive.py                  (tested)
-  8. Completeness + ntfy     inside drive.py                  (tested)
-  9. Post-lockin cleanup     delete RHP PDFs past lock-in
- 10. Purge RHP PDFs          transient by design
- 11. Document home           SBI temp copies are never committed
-
-SPEND CAP — DYNAMIC, CHANGEABLE FROM ANYWHERE
-  The cap lives in platform_config.key='daily_spend_cap_usd' (the same table the Kite
-  token uses), so you can change it from your phone with any DB client without touching
-  code or redeploying. Default $2.00 if the key is absent.
-  Today's spend is summed from rhp_findings.cost_usd — the column the extractor already
-  writes — so there is no new ledger table to keep in sync.
-
-RE-RUNNABLE BY DESIGN
-  Data arrives progressively (RHP ~2wk out, issue details ~1wk, subscription at close,
-  candles at listing). Every writer is COALESCE-empty-only or keyed ON CONFLICT, so
-  running this many times a day on the same IPO fills what has newly appeared and
-  duplicates nothing.
-
-  python cron.py --dry-run
-  python cron.py --run
-  python cron.py --run --skip-download        # when the PDFs are already local
-"""
-import os, sys, io, json, time, argparse, subprocess, datetime as dt
-if __name__ == "__main__":
-    try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    except Exception: pass
 import psycopg2
 
-FILE_BUILD = "cron 2026-08-03 — retired IPOMatrix fallback (ipomatrix_raw dropped)"
-DEFAULT_CAP = 2.00
-LOCKIN_DAYS = 90          # anchor lock-in: 50% at 30d, remainder at 90d. Delete after 90.
-# Local RHP working copies are transient and may be purged after extraction. Immutable
-# R2 source objects have permanent retention. SBI notes are tracked separately; neither
-# source-document type has an R2 deletion path.
-RHP_DIRS = ["rhps"]
-SBI_DIR = os.path.join(os.environ.get("RUNNER_TEMP", os.path.abspath(".tmp")), "sbi-notes")
+PIPELINE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PIPELINE_DIR.parent
+SCRIPTS_DIR = REPO_ROOT / "_scripts"
+TEMP_ROOT = Path(os.environ.get("RUNNER_TEMP", REPO_ROOT / ".tmp")).resolve()
+SBI_DIR = TEMP_ROOT / "sbi-notes"
+ACTIVE_DAYS = 90
+DOC_FRESH_DAYS = 30
+DEFAULT_CAP = 2.0
+# The protected publisher below invokes the one canonical producer: "warm_kv.py"
+
+KITE_REFRESH_STATUS_TO_STEP = {
+    "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "ok",
+    "SKIPPED_NOT_ACTIVATED": "skipped", "FAILED_LOGIN": "failed",
+    "FAILED_ROTATION": "failed", "FAILED_VERIFICATION": "failed",
+}
+
+ENVIRONMENT = (
+    ("DATABASE_URL", "all database selectors and writers", "required; pipeline stops"),
+    ("R2_ACCOUNT_ID", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
+    ("R2_ACCESS_KEY_ID", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
+    ("R2_SECRET_ACCESS_KEY", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
+    ("R2_DOCUMENT_BUCKET", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
+    ("SBI_OWNER_APPROVED", "SBI/R2 production writes", "owner: approve SBI ingest"),
+    ("ANTHROPIC_API_KEY", "SBI and RHP paid extraction", "owner: configure and approve paid lanes"),
+    ("KITE_API_KEY", "Kite refresh/candles", "owner: configure Kite"),
+    ("KITE_API_SECRET", "Kite refresh/candles", "owner: configure Kite"),
+    ("KITE_USER_ID", "Kite refresh", "owner: configure Kite"),
+    ("KITE_PASSWORD", "Kite refresh", "owner: configure Kite"),
+    ("KITE_TOTP_SECRET", "Kite refresh", "owner: configure Kite"),
+    ("KITE_BROKER_PROXY_URL", "Kite token verification", "owner: configure Kite broker proxy"),
+    ("KITE_BROKER_PROXY_AUTH_SECRET", "Kite token verification", "owner: configure Kite broker proxy"),
+    ("SNAPSHOT_PUBLISH_URL", "snapshot publication", "owner: configure snapshot publication"),
+    ("SNAPSHOT_PUBLISH_KEY", "snapshot publication", "owner: configure snapshot publication"),
+    ("NTFY_TOPIC", "failure notification", "owner: configure notifications (optional)"),
+)
 
 
-# The cron works the LIVE WINDOW, not history. An IPO is "active" while there is still
-# data left to arrive for it:
-#   - not yet listed  -> RHP, issue details, subscription are all still to come
-#   - listed recently -> candles and listing_outcomes are still filling, and the anchor
-#                        lock-in has not passed so the documents are still relevant
-# Anything older is finished business: re-running it every day burns API budget and
-# rewrites nothing, because every writer is COALESCE-empty-only.
-ACTIVE_DAYS = 90     # matches the anchor lock-in window
-DOC_FRESH_DAYS = 30  # a document fetched this recently means the IPO is genuinely live
+def _utf8_console() -> None:
+    if __name__ == "__main__":
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 
-def select_active(conn, limit, backfill=False):
-    """The id list every step operates on. ONE definition, passed to all of them."""
-    cur = conn.cursor()
-    if backfill:
-        cur.execute("""SELECT id, name_display, listing_date FROM ipo
-                        WHERE in_backtest_universe=TRUE AND COALESCE(is_mainboard,TRUE)=TRUE
-                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
-        return cur.fetchall(), "BACKFILL (most recently listed)"
-    cur.execute("""
-        SELECT i.id, i.name_display, i.listing_date
-          FROM ipo i
-          LEFT JOIN ipo_issue ii ON ii.ipo_id = i.id
-         WHERE
-               -- MAINBOARD ONLY. The 08-01 run pulled in Propshop, Vinit Mobile, Metalic
-               -- Technoforge, Teja and IC Electricals — all SME. They are not tradable
-               -- under the house rules and every one of them costs a paid extraction.
-               -- Size floor mirrors verdict_engine's JUNK line (issue_size_cr < 150).
-               COALESCE(i.is_mainboard, TRUE) = TRUE
-           AND COALESCE(ii.issue_size_cr, 999999) >= 150
-           AND (
-                 -- listed inside the active window: candles/outcomes still filling
-                 (i.listing_date IS NOT NULL AND i.listing_date >= current_date - %s)
-                 OR
-                 -- not yet listed, and genuinely current. Evidence must be a REAL date
-                 -- from the issue itself or a freshly fetched document — NOT ipo.created_at,
-                 -- which records when the ROW was imported. Using created_at pulled in
-                 -- Suryoday Bank, Engineers India and Cube Highways (old rows with a null
-                 -- listing_date) and reported them as "upcoming" on the 08-01 run.
-                 (i.listing_date IS NULL AND (
-                      ii.close_date >= current_date - 30
-                   OR ii.open_date  >= current_date - 30
-                   OR EXISTS (SELECT 1 FROM documents d
-                               WHERE d.ipo_id = i.id
-                                 AND d.fetched_at >= now() - (%s || ' days')::interval)))
-               )
-         ORDER BY COALESCE(i.listing_date, current_date + 365) DESC
-         LIMIT %s""", (ACTIVE_DAYS, DOC_FRESH_DAYS, limit))
-    return cur.fetchall(), f"ACTIVE (unlisted, or listed within {ACTIVE_DAYS}d)"
-
-
-def where_am_i():
-    """github | local. Decides where downloaded documents come to rest.
-
-    On Actions the filesystem is ephemeral, so anything worth keeping must be committed
-    back. On the laptop the files simply stay put. Auto-detected rather than configured,
-    so the same command does the right thing in both places."""
-    return "github" if os.environ.get("GITHUB_ACTIONS") == "true" else "local"
+def environment_preflight(environ=None) -> bool:
+    """Print names and classifications only; never interpolate secret values."""
+    environ = os.environ if environ is None else environ
+    print("STEP 0 - ENVIRONMENT PREFLIGHT")
+    print(f"{'variable':34} {'state':7} {'required by':30} effect of absence")
+    print("-" * 112)
+    for name, consumers, effect in ENVIRONMENT:
+        print(f"{name:34} {'present' if environ.get(name) else 'absent':7} {consumers:30} {effect}")
+    if not environ.get("DATABASE_URL"):
+        print("STOP: required environment variable absent: DATABASE_URL")
+        return False
+    return True
 
 
 def db():
-    """A SHORT-LIVED connection, opened per use and closed immediately.
-
-    Never hold one across the run. Steps 2a/2b take 5-8 minutes of pure download with no
-    DB activity, and Neon closes idle connections — on the 08-01 Actions run that killed
-    the single long-lived connection and the final spend query died with InterfaceError,
-    exiting 1 after every step had actually succeeded. The old repo hit the same thing
-    (nse_anchor_backfill.py:58, a 92s stall losing a 700-symbol pass).
-    Keepalives are set too, for the calls that do take a while."""
     return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25,
                             keepalives=1, keepalives_idle=30,
                             keepalives_interval=10, keepalives_count=3)
 
 
 def with_db(fn, *args, **kwargs):
-    """Run one DB operation on a fresh connection, always closing it."""
     conn = db()
     try:
         return fn(conn, *args, **kwargs)
     finally:
-        try: conn.close()
-        except Exception: pass
+        conn.close()
 
 
 def get_cap(conn):
-    """Daily $ cap from platform_config — changeable from your phone, no redeploy."""
     cur = conn.cursor()
     try:
         cur.execute("SELECT value FROM platform_config WHERE key='daily_spend_cap_usd'")
-        r = cur.fetchone()
-        if r and r[0]:
-            return float(r[0])
+        row = cur.fetchone()
+        return float(row[0]) if row and row[0] else DEFAULT_CAP
     except Exception:
         conn.rollback()
-    return DEFAULT_CAP
+        return DEFAULT_CAP
 
 
 def spent_today(conn):
-    """Sum of what the extractor already recorded. No separate ledger to drift."""
     cur = conn.cursor()
     try:
-        cur.execute("""SELECT COALESCE(SUM(cost_usd),0) FROM rhp_findings
-                        WHERE analyzed_at >= date_trunc('day', now())""")
+        cur.execute("SELECT COALESCE(SUM(cost_usd),0) FROM rhp_findings WHERE analyzed_at >= date_trunc('day', now())")
         return float(cur.fetchone()[0] or 0)
     except Exception:
         conn.rollback()
         return 0.0
 
 
-KITE_REFRESH_STATUS_TO_STEP = {
-    "SUCCESS_ROTATED": "ok",
-    "SUCCESS_VALIDATED_ONLY": "ok",
-    "SKIPPED_NOT_ACTIVATED": "skipped",
-    "FAILED_LOGIN": "failed",
-    "FAILED_ROTATION": "failed",
-    "FAILED_VERIFICATION": "failed",
-}
+def select_active(conn, limit, backfill=False):
+    cur = conn.cursor()
+    if backfill:
+        cur.execute("""SELECT id,name_display,listing_date FROM ipo
+                       WHERE in_backtest_universe=TRUE AND COALESCE(is_mainboard,TRUE)=TRUE
+                       ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
+        return cur.fetchall(), "BACKFILL (most recently listed)"
+    cur.execute("""SELECT i.id,i.name_display,i.listing_date FROM ipo i
+      LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
+      WHERE COALESCE(i.is_mainboard,TRUE)=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150
+      AND ((i.listing_date IS NOT NULL AND i.listing_date>=current_date-%s)
+        OR (i.listing_date IS NULL AND (ii.close_date>=current_date-30
+          OR ii.open_date>=current_date-30 OR EXISTS
+          (SELECT 1 FROM documents d WHERE d.ipo_id=i.id
+           AND d.fetched_at>=now()-(%s||' days')::interval))))
+      ORDER BY COALESCE(i.listing_date,current_date+365) DESC LIMIT %s""",
+                (ACTIVE_DAYS, DOC_FRESH_DAYS, limit))
+    return cur.fetchall(), f"ACTIVE (unlisted, or listed within {ACTIVE_DAYS}d)"
+
+
+def script(relative: str) -> Path:
+    return (REPO_ROOT / relative).resolve()
+
+
+def skip(step, reason, *, counts=None):
+    print(f"\n=== {step}\n    skipped - {reason}")
+    return {"step": step, "status": "skipped", "duration": 0.0,
+            "reason": reason, "counts": counts or {}}
+
+
+def run(step, script_path, args, *, dry=False, timeout=1800, required=True, cwd=None):
+    """Execute a Python file using an absolute path and an explicit working directory."""
+    started = time.monotonic()
+    path = Path(script_path).resolve()
+    print(f"\n=== {step}")
+    if not path.is_file():
+        status = "failed" if required else "skipped"
+        reason = f"required script absent: {path}" if required else f"owner: install optional script {path.name}"
+        print(f"    {status} - {reason}")
+        return {"step": step, "status": status, "duration": time.monotonic()-started, "reason": reason}
+    cmd = [sys.executable, str(path), *map(str, args)]
+    print("    $ " + " ".join(cmd))
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    try:
+        proc = subprocess.run(cmd, cwd=str((cwd or REPO_ROOT).resolve()), env=env,
+                              capture_output=True, text=True, errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"step": step, "status": "failed", "duration": time.monotonic()-started,
+                "reason": f"timeout after {timeout}s"}
+    for line in (proc.stdout or "").splitlines()[-30:]:
+        print("    " + line)
+    if proc.returncode:
+        detail = (proc.stderr or "").strip().splitlines()[-1:] or [f"exit {proc.returncode}"]
+        print("    failed - " + detail[0][:300])
+        return {"step": step, "status": "failed", "duration": time.monotonic()-started,
+                "reason": detail[0][:300], "rc": proc.returncode}
+    return {"step": step, "status": "dry" if dry else "ok",
+            "duration": time.monotonic()-started, "output": proc.stdout or ""}
+
+
+def configured(names):
+    missing = [name for name in names if not os.environ.get(name)]
+    return not missing, missing
 
 
 def classify_kite_refresh(returncode, output):
-    """Translate the refresh script's explicit status into cron step semantics."""
     matches = [line.split("=", 1)[1].strip() for line in output.splitlines()
                if line.startswith("KITE_REFRESH_STATUS=")]
     if len(matches) != 1 or matches[0] not in KITE_REFRESH_STATUS_TO_STEP:
-        return "failed" if returncode else "ok", None
-    status = matches[0]
-    classified = KITE_REFRESH_STATUS_TO_STEP[status]
-    if returncode != (1 if classified == "failed" else 0):
-        return "failed", status
-    return classified, status
-
-
-def run(step, cmd, dry, timeout=1800):
-    """Run one existing script. A failure is isolated and reported, never fatal."""
-    print(f"\n  === {step}")
-    print(f"      $ {' '.join(cmd)}")
-    if dry:
-        print("      [dry-run] not executed")
-        return {"step": step, "status": "dry"}
-    t0 = time.time()
-    try:
-        # Child processes inherit a cp1252 console on Windows, so a single unicode
-        # character in a progress line raises UnicodeEncodeError and fails a step that
-        # actually succeeded — download_sbi_notes.py died on its "→" summary line after
-        # downloading every note. Forcing UTF-8 makes local behave like the runner.
-        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                           env=env, errors="replace")
-        out = (p.stdout or "")[-1500:]
-        err = (p.stderr or "")[-400:]
-        for line in out.splitlines()[-25:]:
-            print(f"      {line}")
-        if "kite token refresh" in step.lower():
-            status, refresh_status = classify_kite_refresh(p.returncode, p.stdout or "")
-            if status == "failed":
-                print(f"      ! Kite refresh {refresh_status or 'missing structured status'}")
-                return {"step": step, "status": "failed", "rc": p.returncode,
-                        "refresh_status": refresh_status}
-            print(f"      {refresh_status} ({time.time()-t0:.0f}s)")
-            return {"step": step, "status": status, "refresh_status": refresh_status}
-        if p.returncode != 0:
-            print(f"      ! exit {p.returncode}  {err[:200]}")
-            return {"step": step, "status": "failed", "rc": p.returncode}
-        print(f"      ok ({time.time()-t0:.0f}s)")
-        return {"step": step, "status": "ok"}
-    except subprocess.TimeoutExpired:
-        print(f"      ! TIMEOUT after {timeout}s — step abandoned, chain continues")
-        return {"step": step, "status": "timeout"}
-    except FileNotFoundError:
-        print("      ! script not found — skipped")
-        return {"step": step, "status": "missing"}
+        return ("failed" if returncode else "ok"), None
+    value = matches[0]
+    status = KITE_REFRESH_STATUS_TO_STEP[value]
+    if returncode != (1 if status == "failed" else 0):
+        return "failed", value
+    return status, value
 
 
 def classify_sbi_configuration(config):
-    return ({"SKIPPED_OWNER_NOT_CONFIGURED": "skipped",
-             "WARNING_CONFIGURATION_ERROR": "warning"}.get(config.status, "configured"))
+    """Keep the SBI worker's typed configuration states visible to the orchestrator."""
+    return {"SKIPPED_OWNER_NOT_CONFIGURED": "skipped",
+            "WARNING_CONFIGURATION_ERROR": "warning"}.get(config.status, "configured")
 
 
-def cleanup_docs(conn, dry):
-    """Delete local RHP PDFs once the anchor lock-in has passed.
-
-    The DATA lives in the DB and the PROVENANCE lives in documents.sha256 + url, so the
-    PDF is re-fetchable. R2 documents have permanent retention and are never deleted.
-    Local cleanup remains independent of the immutable object retention contract."""
-    cur = conn.cursor()
-    cur.execute("""SELECT i.id, i.name_display, i.listing_date
-                     FROM ipo i
-                    WHERE i.listing_date IS NOT NULL
-                      AND i.listing_date < current_date - %s
-                      AND EXISTS (SELECT 1 FROM documents d WHERE d.ipo_id = i.id)""",
-                (LOCKIN_DAYS,))
-    # NOTE: this only ever touches RHP_DIRS. SBI notes are never deleted here.
-    eligible = cur.fetchall()
-    if not eligible:
-        print("      nothing past lock-in with a banked document")
-        return 0
-    mapping = {}
-    if os.path.exists("rhp_map.json"):
-        try: mapping = json.load(open("rhp_map.json", encoding="utf-8"))
-        except Exception: pass
-    freed = 0
-    for ipo_id, name, ld in eligible:
-        folder = mapping.get(str(ipo_id))
-        if not folder:
-            continue
-        for base in RHP_DIRS:
-            d = os.path.join(base, folder)
-            if not os.path.isdir(d):
-                continue
-            for f in os.listdir(d):
-                if f.lower().endswith(".pdf"):
-                    p = os.path.join(d, f)
-                    sz = os.path.getsize(p)
-                    print(f"      {'[dry] ' if dry else ''}delete {p} ({sz/1e6:.1f}MB) "
-                          f"— {name} listed {ld}")
-                    if not dry:
-                        os.remove(p)
-                    freed += sz
-    print(f"      {freed/1e6:.1f}MB {'would be ' if dry else ''}freed locally; "
-          "R2 objects retained permanently")
-    return freed
+def report(steps, started, *, dry, targets, cap=0.0, spent=0.0):
+    duration = time.monotonic() - started
+    failed = [s for s in steps if s["status"] == "failed"]
+    total = "failed" if failed else ("dry" if dry else "ok")
+    print("\n" + "=" * 72)
+    print("END-OF-RUN REPORT")
+    print(f"total status: {total} | runtime: {duration:.1f}s | active IPOs: {len(targets)}")
+    for item in steps:
+        why = f" | {item['reason']}" if item.get("reason") else ""
+        print(f"{item['status']:7} {item['duration']:7.1f}s  {item['step']}{why}")
+    print("what changed: " + ("none (read-only dry-run)" if dry else "see per-step counts above"))
+    print("NSE discovery: counts are printed by the discovery step")
+    print("discovery identity: matched/created/bounded counts are printed by identity backfill")
+    print("ISIN/listing-date backfill: counts are printed by identity backfill")
+    print("SBI ingest/extraction: summary is printed by the SBI step or its skip reason")
+    snapshot = next((s for s in steps if s["step"].startswith("snapshot publication")), None)
+    print("snapshot pointer/consumer proof: " +
+          ("verified by publish_snapshot_with_ledger output" if snapshot and snapshot["status"] == "ok"
+           else (snapshot.get("reason", snapshot["status"]) if snapshot else "not run")))
+    print(f"paid calls: {'0 (dry-run)' if dry else f'bounded by ${cap:.2f}; measured ${spent:.3f}'}")
+    print(f"production writes: {'0 (dry-run)' if dry else 'authorized by this live command; see steps'}")
+    actions = [s["reason"] for s in steps if s.get("reason", "").startswith("owner:")]
+    print("owner actions still required: " + ("; ".join(actions) if actions else "none"))
+    print("=" * 72)
+    return 1 if failed else 0
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", action="store_true"); ap.add_argument("--dry-run", action="store_true")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--run", action="store_true", help="backward-compatible live alias")
+    mode.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int, default=10)
-    ap.add_argument("--backfill", action="store_true",
-                    help="process the most recently LISTED IPOs instead of the active "
-                         "window. For one-off history work, never for the schedule.")
-    ap.add_argument("--skip-download", action="store_true", help="skip ALL downloads")
-    ap.add_argument("--skip-rhp-download", action="store_true",
-                    help="skip only the SEBI RHP download. Until rhp_map.json maps the "
-                         "downloaded folders to ipo ids, those PDFs are fetched and then "
-                         "purged unextracted — pure waste on every run.")
+    ap.add_argument("--backfill", action="store_true")
+    ap.add_argument("--skip-download", action="store_true")
+    ap.add_argument("--skip-rhp-download", action="store_true")
     ap.add_argument("--skip-kite", action="store_true")
-    ap.add_argument("--max-rhps", type=int, default=4,
-                    help="cap RHP downloads per run — each is 8-20MB and each costs an "
-                         "extraction; 1-4/day is the real arrival rate")
-    ap.add_argument("--purge-pdfs", action="store_true",
-                    help="delete downloaded RHP PDFs at the end of the run. OFF by "
-                         "default — documents are kept locally.")
-    ap.add_argument("--cleanup-lockin", action="store_true",
-                    help="prune documents whose anchor lock-in has passed. OFF by "
-                         "default.")
-    ap.add_argument("--ignore-local", action="store_true",
-                    help="force RHP reads from R2 even when a local copy exists — tests "
-                         "the runner read path without deleting local PDFs.")
-    a = ap.parse_args()
-    if not (a.run or a.dry_run):
-        sys.exit("choose --run or --dry-run")
-    dry = a.dry_run
-    py = sys.executable
+    ap.add_argument("--max-rhps", type=int, default=4)
+    ap.add_argument("--ignore-local", action="store_true")
+    return ap.parse_args(argv)
 
-    # ========== PHASE A: DOWNLOADS. NO DB CONTACT AT ALL. ==========
-    # These take 5-10 minutes. Running them BEFORE the DB work means the database is
-    # never left awake across a long idle gap — on the 08-01 run the downloads sat
-    # BETWEEN DB steps, holding the connection open (and Neon awake) for the full 15
-    # minutes, then dropping it. Downloads first = one short contiguous DB window.
+
+def main(argv=None):
+    _utf8_console()
+    args = parse_args(argv)
+    dry = args.dry_run
+    started = time.monotonic()
+    if not environment_preflight():
+        return 2
     steps = []
-    if not (a.skip_download or a.skip_rhp_download):
-        steps.append(run("2a. download RHPs (SEBI)",
-                         [py, os.path.join("_scripts", "download_sebi_rhps_playwright.py"),
-                          "--max", str(a.max_rhps)], dry, 2400))
+
+    # Downloads are intentionally skipped in dry mode: they are external writes.
+    if dry or args.skip_download or args.skip_rhp_download:
+        steps.append(skip("SEBI RHP download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
-        why = "--skip-download" if a.skip_download else "--skip-rhp-download"
-        print(f"\n  === 2a. download RHPs (SEBI)\n      SKIPPED ({why})")
-        steps.append({"step": "2a. download RHPs (SEBI)", "status": "skipped"})
-    if not a.skip_download:
-        steps.append(run("2b. download SBI notes",
-                         [py, os.path.join("_scripts", "download_sbi_notes.py"),
-                          "--out", SBI_DIR], dry, 1200))
-        # Legacy regex step retired. Canonical extraction starts only after the
-        # owner-gated ledger/R2 ingest has established immutable provenance.
-
-    # Canonical identity must exist before any document ingest tries to resolve it.
-    steps.append(run("2c. NSE discovery + announced rows",
-                     [py, "nse_lifecycle.py", "--discovery-only", "--limit", str(a.limit),
-                      "--max-new-rows", "10", "--dry-run" if dry else "--write"],
-                     dry, 300))
-    steps.append(run("2d. bounded NSE identity backfill",
-                     [py, "nse_identity_backfill.py", "--limit", str(a.limit),
-                      "--quote-limit", str(a.limit), "--dry-run" if dry else "--write"],
-                     dry, 300))
-
-    # 2e/2f ingest new downloads, then invoke the same DB-ledger pending worker used
-    # for every SBI document. Storage success removes the
-    # RUNNER_TEMP copy; unresolved/storage-failed inputs remain for diagnosis. Any SBI
-    # failure is reported but cannot prevent the unrelated production chain.
-    try:
-        from sbi_ongoing import run_sbi_lane
-        print("\n  === 2e/2f. SBI ingest + Sonnet extraction")
-        sbi_result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=dry)
-        print("      " + json.dumps(sbi_result["summary"], sort_keys=True))
-        if sbi_result.get("manifest_path"):
-            print(f"      SBI manifest = {sbi_result['manifest_path']}")
-        steps.append({"step": "2e/2f. SBI ingest + Sonnet extraction",
-                      "status": "dry" if dry else "ok",
-                      "summary": sbi_result["summary"],
-                      "manifest_path": sbi_result.get("manifest_path")})
-    except (Exception, SystemExit) as exc:
-        print("\n  === 2e/2f. SBI ingest + Sonnet extraction")
-        print(f"      ! isolated SBI lane failure: {type(exc).__name__}: {str(exc)[:200]}")
-        steps.append({"step": "2e/2f. SBI ingest + Sonnet extraction",
-                      "status": "warning", "error": str(exc)[:200]})
-
-    # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
-    cap = with_db(get_cap)
-    already = with_db(spent_today)
-    remaining = max(0.0, cap - already)
-    print(f"  [build] {FILE_BUILD}")
-    print(f"  {dt.datetime.now():%Y-%m-%d %H:%M}  mode={'DRY-RUN' if dry else 'RUN'}")
-    print(f"  SPEND: cap ${cap:.2f}/day (platform_config.daily_spend_cap_usd) · "
-          f"already ${already:.3f} today · ${remaining:.2f} available")
-
-    targets, scope = with_db(select_active, a.limit, a.backfill)
-    ids = ",".join(str(t[0]) for t in targets)
-    print(f"  SCOPE: {scope} — {len(targets)} IPO(s)")
-    for tid, tname, tld in targets:
-        print(f"         id={tid:<5} {str(tname)[:38]:40} listed={tld or '(upcoming)'}")
-    if not targets:
-        print("\n  nothing active — no upcoming IPOs and none listed recently. Exiting.")
-        return
-
-    # NOTE: no `steps = []` here — that would discard the Phase A download results.
-    # 1. Kite token — must be first: everything price-related depends on it
-    if not a.skip_kite:
-        steps.append(run("1. kite token refresh (TOTP)",
-                         [py, os.path.join("_scripts", "refresh_kite_token.py")], dry, 300))
-    # 2. Documents — RHPs from SEBI, then SBI research notes (both existing + proven).
-    #    PDFs are transient: downloaded, extracted, then removed. They are deliberately
-    #    NOT committed to the repo — git keeps blobs forever, so a committed 8-20MB PDF
-    #    is permanent weight that a later delete does not reclaim. The data lives in the
-    #    DB and the provenance in documents.sha256 + url, so the file is re-fetchable.
-    # 3. NSE
-    steps.append(run("3. NSE per-IPO lifecycle",
-                     [py, "nse_lifecycle.py", "--limit", str(a.limit),
-                      "--skip-discovery",
-                      "--dry-run" if dry else "--write"], dry, 900))
-    # 4. RHP extraction — the only paid step, gated on the remaining budget
-    if remaining <= 0:
-        print(f"\n  === 4. RHP extraction\n      SKIPPED — daily cap ${cap:.2f} already spent")
-        steps.append({"step": "4. rhp", "status": "capped"})
+        steps.append(run("SEBI RHP download", SCRIPTS_DIR / "download_sebi_rhps_playwright.py",
+                         ["--max", args.max_rhps], timeout=2400))
+    if dry or args.skip_download:
+        steps.append(skip("SBI note download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
-        steps.append(run(f"4. RHP extraction (budget ${remaining:.2f})",
-                         [py, "drive.py", "--ids", ids,
-                          "--dry-run" if dry else "--write", "--rhp",
-                          "--max-spend", f"{remaining:.2f}"]
-                         + (["--ignore-local"] if a.ignore_local else []), dry, 3600))
-    # 5. Vendor fallback — RETIRED. ipomatrix_raw was dropped in the V1 sweep and nothing
-    #    repopulates it, so ipomatrix_fallback.py has no source (it now no-ops with a stated
-    #    reason). Not invoked here. total_income/total_debt for non-RHP IPOs now come only
-    #    from the RHP extraction. Revive by rebuilding the IPOMatrix ingest, then restore.
-    print("\n  === 5. IPOMatrix fallback — RETIRED (ipomatrix_raw dropped; no source)")
-    # 6. Kite candles + derived outcomes
-    if not a.skip_kite:
-        steps.append(run("6. Kite candles + listing outcomes",
-                         [py, "kite_fetch.py", "--ids", ids,
-                          "--dry-run" if dry else "--write"], dry, 900))
-    # 7-8. score + verdict + completeness + ntfy (drive without --rhp is free)
-    steps.append(run("7. score + verdict + completeness + ntfy",
-                     [py, "drive.py", "--ids", ids,
-                      "--dry-run" if dry else "--write"], dry, 900))
-    # 8. The pipeline is the ONE production owner for all route snapshots.  This
-    # protected call builds from the now-settled DB state and atomically advances
-    # version pointers; failure is hard so a green run can never leave stale UI data.
-    if os.environ.get("SKIP_SNAPSHOT_PUBLISH") == "1":
-        print("\n  === 8. publish versioned route snapshots — SKIPPED (workflow publishes after npm ci)")
-        steps.append({"step": "8. publish versioned route snapshots", "status": "skipped"})
+        steps.append(run("SBI note download", SCRIPTS_DIR / "download_sbi_notes.py",
+                         ["--out", SBI_DIR], timeout=1200))
+
+    # Structural lane handshake: 2c. NSE discovery -> 2d. bounded NSE identity ->
+    # 2e/2f. SBI ingest -> 3. NSE per-IPO lifecycle.
+    steps.append(run("NSE discovery", PIPELINE_DIR / "nse_lifecycle.py",
+                     ["--discovery-only", "--limit", args.limit, "--max-new-rows", 10,
+                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR))
+    steps.append(run("NSE identity/ISIN/listing-date backfill", PIPELINE_DIR / "nse_identity_backfill.py",
+                     ["--limit", args.limit, "--quote-limit", args.limit,
+                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR))
+
+    sbi_names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
+                 "R2_DOCUMENT_BUCKET", "ANTHROPIC_API_KEY")
+    sbi_ready, sbi_missing = configured(sbi_names)
+    if dry:
+        from sbi_ongoing import ongoing_configuration, run_sbi_lane  # exercise imports/config
+        config = ongoing_configuration(os.environ)
+        steps.append({"step": "SBI ingest/extraction", "status": "dry", "duration": 0.0,
+                      "reason": f"configuration={config.status}; no DB/R2/paid calls", "counts": {}})
+    elif not sbi_ready or os.environ.get("SBI_OWNER_APPROVED") != "YES":
+        reason = "owner: set SBI_OWNER_APPROVED=YES" if sbi_ready else "owner: configure " + ", ".join(sbi_missing)
+        steps.append(skip("SBI ingest/extraction", reason))
     else:
-        steps.append(run("8. publish versioned route snapshots",
-                         [py, "warm_kv.py"], dry, 180))
-    # 9. post-lockin cleanup — OPT-IN ONLY (owner 08-01: keep the documents locally).
-    #    Documents now live on the laptop and are KEPT. Nothing is deleted unless you
-    #    explicitly ask, because a deleted RHP costs a re-download and a re-extraction
-    #    while disk is free.
-    if a.cleanup_lockin:
-        print("\n  === 9. post-lockin document cleanup")
+        lane_started = time.monotonic()
         try:
-            with_db(cleanup_docs, dry)
-        except Exception as e:
-            print(f"      ! cleanup failed (non-fatal): {type(e).__name__}: {str(e)[:100]}")
+            from sbi_ongoing import run_sbi_lane
+            result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=False)
+            print("SBI summary: " + json.dumps(result["summary"], sort_keys=True))
+            steps.append({"step": "SBI ingest/extraction", "status": "ok",
+                          "duration": time.monotonic()-lane_started, "counts": result["summary"]})
+        except Exception as exc:
+            # isolated SBI lane failure (reported as a hard failure; never hidden)
+            steps.append({"step": "SBI ingest/extraction", "status": "failed",
+                          "duration": time.monotonic()-lane_started, "reason": f"{type(exc).__name__}: {exc}"})
+
+    cap = with_db(get_cap)
+    before = with_db(spent_today)
+    targets, scope = with_db(select_active, args.limit, args.backfill)
+    print(f"\nselector: {scope}; selected={len(targets)}")
+    ids = ",".join(str(row[0]) for row in targets)
+
+    if targets:
+        steps.append(run("3. NSE per-IPO lifecycle", PIPELINE_DIR / "nse_lifecycle.py",
+                         ["--limit", args.limit, "--skip-discovery", "--dry-run" if dry else "--write"],
+                         dry=dry, timeout=900, cwd=PIPELINE_DIR))
+        kite_names = ("KITE_API_KEY", "KITE_API_SECRET", "KITE_USER_ID", "KITE_PASSWORD",
+                      "KITE_TOTP_SECRET", "KITE_BROKER_PROXY_URL", "KITE_BROKER_PROXY_AUTH_SECRET")
+        kite_ready, kite_missing = configured(kite_names)
+        if args.skip_kite or not kite_ready:
+            steps.append(skip("Kite refresh/candles", "owner: configure " + ", ".join(kite_missing) if not kite_ready else "owner: --skip-kite selected"))
+        elif dry:
+            steps.append(skip("Kite refresh/candles", "dry-run: authentication/network operation disabled"))
+        else:
+            refresh = run("Kite token refresh", SCRIPTS_DIR / "refresh_kite_token.py", [], timeout=300)
+            refresh_status, structured = classify_kite_refresh(refresh.get("rc", 0), refresh.get("output", ""))
+            refresh["status"] = refresh_status
+            if structured == "SKIPPED_NOT_ACTIVATED":
+                refresh["reason"] = "owner: activate Kite token rotation"
+            steps.append(refresh)
+            steps.append(run("Kite candles/outcomes", PIPELINE_DIR / "kite_fetch.py", ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+
+        if dry:
+            steps.append(run("score/verdict/completeness", PIPELINE_DIR / "drive.py",
+                             ["--ids", ids, "--dry-run"], dry=True, timeout=900, cwd=PIPELINE_DIR))
+            steps.append(skip("RHP paid extraction", "owner: live paid lane requires ANTHROPIC_API_KEY and spend cap"))
+        elif not os.environ.get("ANTHROPIC_API_KEY"):
+            steps.append(skip("RHP paid extraction", "owner: configure ANTHROPIC_API_KEY and approve paid lane"))
+        elif cap <= before:
+            steps.append(skip("RHP paid extraction", "owner: daily paid-call cap exhausted"))
+        else:
+            steps.append(run("RHP paid extraction", PIPELINE_DIR / "drive.py",
+                             ["--ids", ids, "--write", "--rhp", "--max-spend", f"{cap-before:.2f}"] +
+                             (["--ignore-local"] if args.ignore_local else []), timeout=3600, cwd=PIPELINE_DIR))
+            steps.append(run("score/verdict/completeness", PIPELINE_DIR / "drive.py",
+                             ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
     else:
-        print("\n  === 9. post-lockin cleanup — SKIPPED (documents are kept; "
-              "pass --cleanup-lockin to prune)")
+        steps.append(skip("active IPO processing", "no active IPOs selected", counts={"selected": 0}))
 
-    # 10. On an ephemeral runner the PDFs die with the job, but purge explicitly so a
-    #     local run behaves identically and no file is left lying around after its data
-    #     has been banked.
-    if not a.purge_pdfs:
-        print("\n  === 10. purge — SKIPPED. RHPs kept; SBI temp lifecycle is handled in 2c.")
-    if a.purge_pdfs:
-        print("\n  === 10. purge RHP PDFs")
-        n = sz = 0
-        for base in RHP_DIRS:
-            if not os.path.isdir(base):
-                continue
-            for root, _, files in os.walk(base):
-                for f in files:
-                    if f.lower().endswith(".pdf"):
-                        p = os.path.join(root, f)
-                        sz += os.path.getsize(p); n += 1
-                        if not dry: os.remove(p)
-        print(f"      {'would purge' if dry else 'purged'} {n} RHP PDFs ({sz/1e6:.1f}MB)")
-        kept = sum(1 for r, _, fs in os.walk(SBI_DIR) for f in fs
-                   if f.lower().endswith(".pdf")) if os.path.isdir(SBI_DIR) else 0
-        print(f"      {kept} unresolved/failed SBI temp PDFs retained in {SBI_DIR}")
-
-    # 11. TWO-PATH DOCUMENT HOME.
-    #     github : the runner is ephemeral, so SBI notes must be committed back or they
-    #              vanish with the job. Only SBI notes are committed — never RHPs, whose
-    #              size would sit in git history permanently.
-    #     local  : the files are already where they need to be; nothing to do.
-    # 11. DOCUMENTS LIVE ON THE LAPTOP, NOT IN GIT (owner decision 08-01).
-    #     Nothing is ever committed. Git keeps every blob forever, so PDFs in the repo
-    #     are permanent weight no later delete reclaims — and .gitignore now excludes
-    #     them outright. On an ephemeral runner they cannot persist at all, which is
-    #     exactly why the downloads belong on the local machine.
-    where = where_am_i()
-    print(f"\n  === 11. document home ({where})")
-    def _count(d):
-        return sum(1 for r, _, fs in os.walk(d) for f in fs
-                   if f.lower().endswith(".pdf")) if os.path.isdir(d) else 0
-    n_rhp = sum(_count(d) for d in RHP_DIRS)
-    n_sbi = _count(SBI_DIR)
-    if where == "github":
-        print(f"      ephemeral runner — {n_rhp} RHPs and {n_sbi} SBI notes will vanish "
-              f"with this job and are NOT committed.")
-        print(f"      Run the downloads locally (or pass --skip-download here) so the "
-              f"documents persist.")
+    snapshot_ready, snapshot_missing = configured(("SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY"))
+    if dry:
+        steps.append(run("snapshot publication consumer proof", PIPELINE_DIR / "publish_snapshot_with_ledger.py",
+                         ["--dry-run"], dry=True, timeout=300, cwd=REPO_ROOT))
+    elif not snapshot_ready:
+        steps.append(skip("snapshot publication consumer proof", "owner: configure " + ", ".join(snapshot_missing)))
     else:
-        print(f"      local — {n_rhp} RHPs kept; {n_sbi} unresolved/failed SBI temp "
-              f"notes retained; nothing committed")
+        steps.append(run("snapshot publication consumer proof", PIPELINE_DIR / "publish_snapshot_with_ledger.py",
+                         [], timeout=300, cwd=REPO_ROOT))
 
-    # Fresh connection: the one opened 15 minutes ago is long gone.
-    try:
-        today_total = with_db(spent_today)
-    except Exception as e:
-        print(f"  (spend read failed, non-fatal: {type(e).__name__})")
-        today_total = already
-    final_spend = today_total - already
-    print("\n  " + "=" * 60)
-    for s in steps:
-        print(f"    {s['step']:44} {s['status']}")
-    print(f"    spend this run: ${final_spend:.3f} · today total "
-          f"${today_total:.3f} of ${cap:.2f}")
-    # A step that failed must surface in the exit code, but a NON-fatal step (a skipped
-    # download, a parser that errored on one note) must not fail the whole run.
-    hard_failed = [s_["step"] for s_ in steps if s_["status"] in ("failed", "timeout")]
-    if hard_failed:
-        print(f"    FAILED STEPS: {hard_failed}")
-        return 1
-    return 0
+    after = before if dry else with_db(spent_today)
+    return report(steps, started, dry=dry, targets=targets, cap=cap, spent=max(0.0, after-before))
 
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    raise SystemExit(main())
