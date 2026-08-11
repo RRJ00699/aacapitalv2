@@ -1,4 +1,7 @@
-"""Offline regressions for owner-observed derived-stage row shapes."""
+"""Offline regressions for the derived-stage psycopg2 query contract."""
+import inspect
+
+import completeness
 import drive
 import score_engine
 
@@ -12,9 +15,7 @@ class OwnerRowCursor:
 
     def fetchone(self):
         if "FROM ipo_issue" in self.query:
-            # Original owner compatibility shape: price/high/low only.  The scorer's
-            # newer SELECT also asks for issue_size_cr/ofs_cr as trailing fields.
-            return (100, 105, 95)
+            return (100, 105, 95, 500, 50)
         return None
 
     def fetchall(self):
@@ -30,7 +31,7 @@ class OwnerRowConnection:
         return OwnerRowCursor()
 
 
-def test_drive_derived_accepts_owner_issue_tuple_in_dry_and_write_modes(monkeypatch):
+def test_drive_derived_accepts_real_issue_tuple_in_dry_and_write_modes(monkeypatch):
     writes = []
     monkeypatch.setattr(score_engine, "write_valuation", lambda conn, value: writes.append(value))
 
@@ -41,3 +42,12 @@ def test_drive_derived_accepts_owner_issue_tuple_in_dry_and_write_modes(monkeypa
     assert live["status"] == "ok"
     assert len(writes) == 1
     assert dry["score"] is not None and live["score"] == dry["score"]
+
+
+def test_parameterized_consolidated_queries_escape_psycopg_percent_wildcards():
+    score_source = inspect.getsource(score_engine._latest_financials)
+    completeness_source = inspect.getsource(completeness.check_completeness)
+    assert "ILIKE '%%consolidat%%'" in score_source
+    assert "ILIKE '%%consolidat%%'" in completeness_source
+    assert "ILIKE '%consolidat%'" not in score_source
+    assert "ILIKE '%consolidat%'" not in completeness_source

@@ -55,6 +55,8 @@ ENVIRONMENT = (
     ("KITE_USER_ID", "Kite refresh", "owner: configure Kite"),
     ("KITE_PASSWORD", "Kite refresh", "owner: configure Kite"),
     ("KITE_TOTP_SECRET", "Kite refresh", "owner: configure Kite"),
+    ("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE", "Kite local token handoff", "owner: set to 1 with KITE_REFRESH_VALIDATE_ONLY"),
+    ("KITE_REFRESH_VALIDATE_ONLY", "Kite local token handoff", "owner: set to 1 with ALLOW_LEGACY_KITE_DB_TOKEN_WRITE"),
     ("EXECUTE_CLOUDFLARE_SECRET_ROTATION", "Kite secret rotation", "optional; when 1, proxy configuration is required"),
     ("KITE_BROKER_PROXY_URL", "Kite rotation only when EXECUTE_CLOUDFLARE_SECRET_ROTATION=1", "owner: configure only for rotation"),
     ("KITE_BROKER_PROXY_AUTH_SECRET", "Kite rotation only when EXECUTE_CLOUDFLARE_SECRET_ROTATION=1", "owner: configure only for rotation"),

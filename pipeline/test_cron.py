@@ -49,6 +49,11 @@ def test_kite_proxy_is_conditional_on_rotation():
     assert rotation == ["KITE_BROKER_PROXY_URL", "KITE_BROKER_PROXY_AUTH_SECRET"]
 
 
+def test_preflight_inventories_required_owner_kite_handoff_pair():
+    names = {row[0] for row in cron.ENVIRONMENT}
+    assert {"ALLOW_LEGACY_KITE_DB_TOKEN_WRITE", "KITE_REFRESH_VALIDATE_ONLY"} <= names
+
+
 def test_structured_counts_are_real_and_missing_contract_fails():
     discovery = {"output": '{"DISCOVERY":{"returned_count":5,"errors":[],"discovered_ipos":'
                            '[{"resolution":"matched_existing"},{"resolution":"inserted"},'
@@ -158,3 +163,5 @@ def test_runbook_path_and_commands_contract():
     assert "git switch main; git pull --ff-only origin main" in text
     assert "git reset --hard" not in text
     assert "drive.py completeness alerts" in cron.ENVIRONMENT[-1][1]
+    assert "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1" in text
+    assert "KITE_REFRESH_VALIDATE_ONLY=1" in text
