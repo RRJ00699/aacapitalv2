@@ -31,6 +31,13 @@ class Kite:
         return {symbols[0]: {"last_price": 101, "buy_quantity": 10, "sell_quantity": 4, "ohlc": {"open": 100}, "depth": {}}}
 
 class CapturePreopenTest(unittest.TestCase):
+    def tearDown(self):
+        # Do not leak the lightweight import doubles into subsequently collected
+        # pipeline tests (notably nse_lifecycle -> fill_ipo -> psycopg2.extras).
+        sys.modules.pop("capture_preopen", None)
+        sys.modules.pop("_scripts.kite_connect", None)
+        sys.modules.pop("psycopg2", None)
+
     def load_module(self, rows):
         cur = Cursor(rows)
         conn = Conn(cur)
