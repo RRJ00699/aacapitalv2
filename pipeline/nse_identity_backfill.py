@@ -8,11 +8,13 @@ import datetime as dt
 import io
 import json
 import os
+import re
 
 EQUITY_MASTER_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity?symbol={symbol}"
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 SOURCE = "nse_equity_master"
+ISIN_PATTERN = re.compile(r"^IN[A-Z0-9]{9}[0-9]$")
 
 
 def select_isin_candidates(conn, today, limit):
@@ -75,16 +77,18 @@ def quote_record(payload, requested_symbol):
     date_value = meta.get("listingDate")
     try: listing_date = dt.date.fromisoformat(str(date_value)[:10]) if date_value else None
     except ValueError: listing_date = None
-    return {"symbol": symbol, "name": name, "isin": meta.get("isin"),
+    isin = str(meta.get("isin") or "").strip().upper() or None
+    return {"symbol": symbol, "name": name, "isin": isin,
             "listing_date": listing_date}
 
 
 def _name_matches(canonical_name, official_name):
-    from fill_ipo import _norm
-    return bool(official_name) and _norm(canonical_name) == _norm(official_name)
+    from company_identity import canon
+    return bool(official_name) and canon(canonical_name) == canon(official_name)
 
 
 def _fill_empty(conn, ipo_id, field, value, *, write):
+    assert field in {"isin", "listing_date"}
     if value is None or not write:
         return False
     from fill_v2 import log_source_fact
@@ -99,9 +103,12 @@ def _fill_empty(conn, ipo_id, field, value, *, write):
 
 def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None):
     today = today or dt.datetime.now(IST).date()
-    isin_rows = select_isin_candidates(conn, today, limit)
-    remaining = max(0, limit - len(isin_rows))
-    listing_rows = select_listing_date_candidates(conn, remaining)
+    # Reserve capacity for both cohorts so persistent identity misses cannot starve
+    # announced rows awaiting their first listing date.
+    isin_quota = (limit + 1) // 2 if limit > 1 else limit
+    listing_quota = limit - isin_quota
+    isin_rows = select_isin_candidates(conn, today, isin_quota)
+    listing_rows = select_listing_date_candidates(conn, listing_quota)
     selected = isin_rows + listing_rows
     response = session.get(EQUITY_MASTER_URL, timeout=20)
     response.raise_for_status()
@@ -123,11 +130,26 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None)
         if not _name_matches(name, official.get("name")):
             report.append({"ipo_id": ipo_id, "symbol": requested, "outcome": "name_mismatch", "source": source})
             continue
+        official_isin = str(official.get("isin") or "").strip().upper() or None
+        if official_isin and not ISIN_PATTERN.fullmatch(official_isin):
+            report.append({"ipo_id": ipo_id, "symbol": requested,
+                           "outcome": "invalid_isin", "source": source,
+                           "isin": official_isin})
+            continue
+        if old_isin is None and official_isin:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM ipo WHERE isin=%s LIMIT 1", (official_isin,))
+            owner = cur.fetchone()
+            if owner and owner[0] != ipo_id:
+                report.append({"ipo_id": ipo_id, "candidate_ipo_id": ipo_id,
+                               "owner_ipo_id": owner[0], "symbol": requested,
+                               "outcome": "isin_owner_conflict", "source": source})
+                continue
         changed = []
         prospective = []
-        if old_isin is None and official.get("isin"):
+        if old_isin is None and official_isin:
             prospective.append("isin")
-            if _fill_empty(conn, ipo_id, "isin", official["isin"], write=write): changed.append("isin")
+            if _fill_empty(conn, ipo_id, "isin", official_isin, write=write): changed.append("isin")
         if old_date is None and official.get("listing_date"):
             prospective.append("listing_date")
             if _fill_empty(conn, ipo_id, "listing_date", official["listing_date"], write=write): changed.append("listing_date")
@@ -136,7 +158,9 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None)
                        "outcome": "updated" if changed else ("would_update" if prospective and not write else "no_value"),
                        "source": source, "fields": changed if write else prospective})
     if write: conn.commit()
-    return {"headers": headers, "selected": len(selected), "quote_calls": quote_calls,
+    return {"headers": headers, "selected": len(selected),
+            "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
+            "quote_calls": quote_calls,
             "updates": updates, "rows": report}
 
 
@@ -147,8 +171,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if not (args.write ^ args.dry_run): raise SystemExit("choose exactly one of --write or --dry-run")
     if args.limit < 0 or args.quote_limit < 0: raise SystemExit("limits must be non-negative")
+    isin_quota = (args.limit + 1) // 2 if args.limit > 1 else args.limit
     print("OPERATIONS_BUDGET " + json.dumps({"max_session_prime_calls": 2, "max_csv_calls": 1,
           "max_quote_calls": args.quote_limit, "max_selected_rows": args.limit,
+          "max_isin_candidates": isin_quota,
+          "max_listing_date_candidates": args.limit - isin_quota,
           "max_updates": args.limit * 2}, sort_keys=True))
     import psycopg2
     from curl_cffi import requests

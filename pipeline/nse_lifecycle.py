@@ -198,8 +198,6 @@ def _reconcile_discovery_batch(conn, discovered, *, write, max_new_rows=10,
         can_create = hit is not None or new_rows_created < max_new_rows
         if not hit and not can_create:
             action = "bounded_not_created"
-        elif not hit:
-            new_rows_created += 1
         if write and can_create:
             record = {"isin": row.get("isin"), "symbol": row.get("symbol"),
                       "name_display": hit[1] if hit else row["name"],
@@ -211,7 +209,17 @@ def _reconcile_discovery_batch(conn, discovered, *, write, max_new_rows=10,
             if spine_refresh:
                 ipo_id, spine_action = upsert_ipo(conn, record, source="nse-discovery")
                 writes += 1
-            if issue_fields: upsert_ipo_issue(conn, ipo_id, issue_fields, source="nse-discovery")
+                if not hit and spine_action == "inserted":
+                    new_rows_created += 1
+            try:
+                if issue_fields: upsert_ipo_issue(conn, ipo_id, issue_fields, source="nse-discovery")
+            except Exception as exc:
+                conn.rollback()
+                report.append({"name": row["name"], "isin": row.get("isin"),
+                    "symbol": row.get("symbol"), "resolution": "failed",
+                    "ipo_id": ipo_id, "metadata_refresh_required": True,
+                    "error": f"{type(exc).__name__}:{str(exc)[:100]}"})
+                continue
             writes += int(bool(issue_fields)); action = spine_action
         if ipo_id:
             effective_complete = all(row.get(key) is not None or (state and state[idx] is not None)
@@ -246,21 +254,6 @@ def reconcile_discovery(conn, discovered, *, write, max_new_rows=10):
                 "ipo_id": None, "metadata_refresh_required": False,
                 "error": f"{type(exc).__name__}:{str(exc)[:100]}"})
     return report, overlays, reads, writes
-
-
-def report_transition_coverage(conn, company_names, discovered):
-    """Fail visibly only after both the spine and supported feeds prove no exact match."""
-    from fill_ipo import _norm
-    feed_names = {_norm(row.get("name")) for row in discovered}
-    missing = []
-    cur = conn.cursor()
-    for name in company_names:
-        norm = _norm(name)
-        cur.execute("SELECT 1 FROM ipo WHERE name_norm=%s LIMIT 1", (norm,))
-        if cur.fetchone() is None and norm not in feed_names:
-            message = f"CLOSED_PRELISTING_SOURCE_MISSING company={name} action=owner_attention"
-            print(message); missing.append(message)
-    return missing
 
 
 def _absolute_url(url):
@@ -329,7 +322,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--write", action="store_true")
     ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--max-new-rows", type=int, default=10)
-    ap.add_argument("--transition-company", action="append", default=[])
     ap.add_argument("--discovery-only", action="store_true",
                     help="refresh only the official canonical IPO universe")
     ap.add_argument("--skip-discovery", action="store_true",
@@ -354,14 +346,12 @@ def main(argv=None):
         discovery_rows = [{"name": row["name"], "isin": row.get("isin"),
             "symbol": row.get("symbol"), "resolution": "not_reconciled_discovery_failure",
             "ipo_id": None, "metadata_refresh_required": False} for row in discovered]
-    transition_missing = report_transition_coverage(conn, args.transition_company, discovered)
     if args.discovery_only:
         output = {"DISCOVERY": {"official_source": [url for _, url in DISCOVERY_APIS],
             "feed_http_calls": discovery_calls, "returned_count": discovery_total,
             "processed_limit": args.limit, "errors": discovery_errors,
             "discovered_ipos": discovery_rows, "db_reads": discovery_reads,
-            "db_writes": discovery_writes, "max_new_rows": args.max_new_rows,
-            "transition_missing": transition_missing}}
+            "db_writes": discovery_writes, "max_new_rows": args.max_new_rows}}
         conn.close()
         print(json.dumps(output, default=str, indent=2, sort_keys=True))
         if discovery_errors or any(row["resolution"] == "failed" for row in discovery_rows):

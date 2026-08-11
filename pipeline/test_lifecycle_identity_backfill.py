@@ -1,4 +1,5 @@
 import datetime as dt
+import itertools
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -6,14 +7,15 @@ from nse_fetch import parse_discovery_item
 from nse_identity_backfill import (parse_equity_master, quote_record, refresh,
     select_isin_candidates, select_listing_date_candidates, main as backfill_main,
     _fill_empty)
-from nse_lifecycle import reconcile_discovery, report_transition_coverage
+from nse_lifecycle import reconcile_discovery
 
 
 class Cursor:
     def __init__(self, rows=()): self.rows, self.executed, self.rowcount = iter(rows), [], 0
-    def execute(self, sql, params=()): self.executed.append((" ".join(sql.split()), params))
+    def execute(self, sql, params=()):
+        self.executed.append((" ".join(sql.split()), params)); self.params = params
     def fetchone(self): return next(self.rows)
-    def fetchall(self): return list(self.rows)
+    def fetchall(self): return list(itertools.islice(self.rows, self.params[-1]))
 
 
 class Conn:
@@ -21,6 +23,26 @@ class Conn:
     def cursor(self): return self.cur
     def commit(self): self.commits += 1
     def rollback(self): self.rollbacks += 1
+
+
+class RoutedCursor:
+    def __init__(self, isin_rows, listing_rows, owners=()):
+        self.isin_rows, self.listing_rows, self.owners = isin_rows, listing_rows, iter(owners)
+        self.executed, self.current, self.rowcount = [], [], 0
+    def execute(self, sql, params=()):
+        sql = " ".join(sql.split()); self.executed.append((sql, params))
+        if "isin IS NULL AND symbol" in sql: self.current = self.isin_rows[:params[-1]]
+        elif "listing_date IS NULL" in sql: self.current = self.listing_rows[:params[-1]]
+        elif "WHERE isin=%s" in sql: self.current = [next(self.owners, None)]
+        else: self.current = []
+    def fetchall(self): return self.current
+    def fetchone(self): return self.current[0] if self.current and self.current[0] else None
+
+
+class RoutedConn(Conn):
+    def __init__(self, isin_rows, listing_rows, owners=()):
+        self.cur = RoutedCursor(isin_rows, listing_rows, owners)
+        self.commits = self.rollbacks = 0
 
 
 def discovery(name="New Limited", symbol="COLLIDE", isin=None, category="MAINBOARD"):
@@ -68,9 +90,23 @@ def test_isinless_announced_creation_issue_routing_and_idempotent_rerun():
 def test_new_row_bound_is_independent_and_overflow_reported():
     conn = Conn([None, None, None])
     rows = [discovery("One Ltd", "ONE"), discovery("Two Ltd", "TWO"), discovery("Three Ltd", "THREE")]
-    report = reconcile_discovery(conn, rows, write=False, max_new_rows=1)[0]
+    with patch("fill_ipo.upsert_ipo", return_value=(12, "inserted")) as spine, \
+         patch("fill_v2.upsert_ipo_issue"):
+        report = reconcile_discovery(conn, rows, write=True, max_new_rows=1)[0]
     assert len(report) == 3
-    assert [r["resolution"] for r in report] == ["bootstrap_required", "bounded_not_created", "bounded_not_created"]
+    assert [r["resolution"] for r in report] == ["inserted", "bounded_not_created", "bounded_not_created"]
+    spine.assert_called_once()
+
+
+def test_inserted_row_consumes_budget_when_issue_writer_fails():
+    conn = Conn([None, None])
+    rows = [discovery("One Ltd", "ONE"), discovery("Two Ltd", "TWO")]
+    with patch("fill_ipo.upsert_ipo", return_value=(12, "inserted")) as spine, \
+         patch("fill_v2.upsert_ipo_issue", side_effect=RuntimeError("issue failed")):
+        report = reconcile_discovery(conn, rows, write=True, max_new_rows=1)[0]
+    assert [r["resolution"] for r in report] == ["failed", "bounded_not_created"]
+    assert report[0]["ipo_id"] == 12 and conn.rollbacks == 1
+    spine.assert_called_once()
 
 
 def test_selectors_are_bounded_and_encode_all_predicates():
@@ -83,7 +119,7 @@ def test_selectors_are_bounded_and_encode_all_predicates():
     assert params == (3,)
 
 
-CSV = "SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nEXACT,Exact Limited,11-Aug-2026,INE000000001\nMISMATCH,Other Limited,12-Aug-2026,INE000000002\n"
+CSV = "SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nEXACT,ARDEE INDUSTRIES LIMITED,11-Aug-2026,INE000000001\nMISMATCH,Other Limited,12-Aug-2026,INE000000002\n"
 
 
 class Response:
@@ -96,8 +132,8 @@ class Response:
 def test_csv_fixture_exact_outcomes_name_guard_and_dry_run_no_mutation():
     headers, rows = parse_equity_master(CSV)
     assert headers == ["SYMBOL", "NAME OF COMPANY", "DATE OF LISTING", "ISIN NUMBER"]
-    conn = Conn([(1,"Exact Limited","EXACT",None,dt.date(2026,8,11)),
-                 (2,"Wrong Limited","MISMATCH",None,dt.date(2026,8,11))])
+    conn = Conn([(1,"Ardee Industries Ltd","EXACT",None,dt.date(2026,8,11)),
+                 (2,"Entirely Different Company","MISMATCH",None,dt.date(2026,8,11)), None])
     session = Mock(); session.get.return_value = Response(CSV.encode())
     result = refresh(conn, session, limit=2, quote_limit=0, write=False, today=dt.date(2026,8,11))
     assert [r["outcome"] for r in result["rows"]] == ["would_update", "name_mismatch"]
@@ -114,6 +150,32 @@ def test_quote_fallback_exact_symbol_and_same_name_guard():
     assert result["quote_calls"] == 1 and result["rows"][0]["outcome"] == "name_mismatch"
 
 
+def test_reserved_quota_prevents_persistent_isin_misses_starving_listing_date():
+    old = [(n, f"Old {n} Ltd", f"OLD{n}", None, dt.date(2026,1,1)) for n in range(1, 6)]
+    announced = [(99, "New Listing Ltd", "NEWLIST", "INE000000099", None)]
+    conn = RoutedConn(old, announced)
+    session = Mock(); session.get.return_value = Response(
+        b"SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nNEWLIST,New Listing Limited,20-Aug-2026,INE000000099\n")
+    result = refresh(conn, session, limit=6, quote_limit=0, write=False, today=dt.date(2026,8,11))
+    assert result["selected"] == 4
+    assert any(row["ipo_id"] == 99 and row["fields"] == ["listing_date"] for row in result["rows"])
+
+
+def test_isin_owner_collision_and_invalid_isin_fail_closed_and_continue():
+    candidates = [(10,"Alpha Ltd","ALPHA",None,dt.date(2026,8,11)),
+                  (11,"Beta Ltd","BETA",None,dt.date(2026,8,11))]
+    conn = RoutedConn(candidates, [], owners=[(77,)])
+    csv_body = ("SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\n"
+                "ALPHA,Alpha Limited,11-Aug-2026,INE000000001\n"
+                "BETA,Beta Limited,11-Aug-2026,not-an-isin\n").encode()
+    session = Mock(); session.get.return_value = Response(csv_body)
+    result = refresh(conn, session, limit=4, quote_limit=0, write=True, today=dt.date(2026,8,11))
+    assert result["rows"][0]["outcome"] == "isin_owner_conflict"
+    assert result["rows"][0]["candidate_ipo_id"] == 10 and result["rows"][0]["owner_ipo_id"] == 77
+    assert result["rows"][1]["outcome"] == "invalid_isin"
+    assert not any(sql.startswith("UPDATE") for sql, _ in conn.cur.executed)
+
+
 def test_fill_empty_is_coalesce_guarded_and_budget_prints_before_work(capsys):
     conn = Conn(); conn.cur.rowcount = 0
     assert not _fill_empty(conn, 1, "isin", "INE000000001", write=True)
@@ -128,22 +190,20 @@ def test_fill_empty_is_coalesce_guarded_and_budget_prints_before_work(capsys):
     assert first.startswith("OPERATIONS_BUDGET ")
     assert '"max_csv_calls": 1' in first and '"max_quote_calls": 2' in first
     assert '"max_selected_rows": 4' in first and '"max_updates": 8' in first
-
-
-def test_transition_signal_only_after_both_exact_coverage_checks(capsys):
-    missing = Conn([None]); discovered = [discovery("Covered Ltd", "COVER")]
-    assert report_transition_coverage(missing, ["Ardee Industries Limited"], discovered)
-    assert capsys.readouterr().out.strip() == "CLOSED_PRELISTING_SOURCE_MISSING company=Ardee Industries Limited action=owner_attention"
-    existing = Conn([(1,)])
-    assert report_transition_coverage(existing, ["Existing Ltd"], []) == []
-    feed_only = Conn([None])
-    assert report_transition_coverage(feed_only, ["Covered Ltd"], discovered) == []
+    with patch("fill_v2.log_source_fact"):
+        try: _fill_empty(conn, 1, "status", "bad", write=True)
+        except AssertionError: pass
+        else: raise AssertionError("field allowlist did not fail closed")
 
 
 def test_cron_and_capture_workflow_have_structural_handshake_order():
     cron = Path("pipeline/cron.py").read_text()
     assert cron.index('2c. NSE discovery') < cron.index('2d. bounded NSE identity') < cron.index('2e/2f. SBI ingest') < cron.index('3. NSE per-IPO lifecycle')
     workflow = Path(".github/workflows/preopen-capture.yml").read_text()
-    backfill = "python nse_identity_backfill.py --write --limit 5 --quote-limit 5"
-    assert workflow.count(backfill) == 1
-    assert workflow.index(backfill) < workflow.index("python capture_preopen.py")
+    assert workflow.count("python nse_identity_backfill.py") == 1
+    assert 'cron: "20 3 * * 1-5"' in workflow
+    assert "continue-on-error: true" in workflow
+    assert "&& '--dry-run' || '--write'" in workflow
+    capture = workflow.split("  capture:", 1)[1]
+    assert "nse_identity_backfill.py" not in capture
+    assert "20 3 * * 1-5" in capture
