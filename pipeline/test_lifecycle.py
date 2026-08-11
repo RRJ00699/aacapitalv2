@@ -117,6 +117,8 @@ class LifecycleTest(unittest.TestCase):
 
         complete = FakeConn([(77,"Official Bootstrap Ltd","official bootstrap ltd",
                               "BOOT",None,"INE0BOOT0001"),
+                             (77,"Official Bootstrap Ltd","official bootstrap ltd",
+                              "BOOT",None,"INE0BOOT0001"),
                              (dt.date(2026,8,10),dt.date(2026,8,12),100,110,10,None,
                               False,False)])
         with patch("fill_ipo.upsert_ipo") as spine, patch("fill_v2.upsert_ipo_issue") as issue:
@@ -165,6 +167,7 @@ class LifecycleTest(unittest.TestCase):
         good = parse_discovery_item({"companyName": "Good", "symbol": "GOOD",
             "issueStartDate": "07-Aug-2026", "issueEndDate": "09-Aug-2026"})
         conn = FakeConn([
+            (1, "Bad", "bad", "BAD", None, "INE000000002"),
             (1, "Bad", "bad", "BAD", None, "INE000000002"),
             (2, "Good", "good", "GOOD", None, None),
             (None, None, None, None, None, None, True, True)])

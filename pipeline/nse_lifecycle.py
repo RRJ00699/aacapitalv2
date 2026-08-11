@@ -150,7 +150,8 @@ def validate_diagnostic_superset(targets, diagnostics):
         raise RuntimeError(f"diagnostic contract violated; target ids missing: {missing}")
 
 
-def _reconcile_discovery_batch(conn, discovered, *, write):
+def _reconcile_discovery_batch(conn, discovered, *, write, max_new_rows=10,
+                               new_rows_created=0):
     """Resolve official identities and optionally fill canonical missing fields."""
     from fill_ipo import _norm, upsert_ipo
     from fill_v2 import upsert_ipo_issue
@@ -163,22 +164,18 @@ def _reconcile_discovery_batch(conn, discovered, *, write):
                              FROM ipo WHERE isin=%s LIMIT 1""", (row["isin"],))
             hit = cur.fetchone()
             reads += 1
-        if not hit and row.get("symbol"):
-            cur.execute("""SELECT id,name_display,name_norm,symbol,listing_date,isin
-                             FROM ipo WHERE UPPER(symbol)=%s LIMIT 1""", (row["symbol"],))
-            hit = cur.fetchone()
-            reads += 1
+        name_norm = _norm(row["name"])
+        cur.execute("""SELECT id,name_display,name_norm,symbol,listing_date,isin
+                         FROM ipo WHERE name_norm=%s LIMIT 1""", (name_norm,))
+        name_hit = cur.fetchone(); reads += 1
+        if hit and name_hit and hit[0] != name_hit[0]:
+            raise ValueError("official ISIN and canonical name have different owners")
+        if not hit: hit = name_hit
         action = "matched_existing" if hit else "unresolved"
         ipo_id = hit[0] if hit else None
-        sufficient_new = bool(row.get("isin"))
-        if not hit and sufficient_new: action = "bootstrap_required"
+        if not hit: action = "bootstrap_required"
         if hit and row.get("isin") and hit[5] and row["isin"] != hit[5]:
-            raise ValueError("official ISIN conflicts with symbol-owned canonical IPO")
-        if not hit and sufficient_new:
-            cur.execute("SELECT id FROM ipo WHERE name_norm=%s LIMIT 1", (_norm(row["name"]),))
-            reads += 1
-            if cur.fetchone():
-                raise ValueError("official ISIN has unresolved canonical name ownership")
+            raise ValueError("official ISIN conflicts with canonical-name-owned IPO")
         available_issue = {key: row.get(key) for key in
             ("open_date", "close_date", "band_lo", "band_hi", "lot_size", "issue_size_cr")
             if row.get(key) is not None}
@@ -198,11 +195,17 @@ def _reconcile_discovery_batch(conn, discovered, *, write):
                          or (row.get("listing_date") and not hit[4])
                          or (row.get("isin") and not hit[5]))
         refresh = bool(issue_fields or spine_refresh)
-        if write and (hit or sufficient_new):
+        can_create = hit is not None or new_rows_created < max_new_rows
+        if not hit and not can_create:
+            action = "bounded_not_created"
+        elif not hit:
+            new_rows_created += 1
+        if write and can_create:
             record = {"isin": row.get("isin"), "symbol": row.get("symbol"),
                       "name_display": hit[1] if hit else row["name"],
-                      "name_norm": hit[2] if hit else _norm(row["name"]),
-                      "listing_date": row.get("listing_date"), "is_mainboard": True,
+                      "name_norm": hit[2] if hit else name_norm,
+                      "listing_date": row.get("listing_date"),
+                      "is_mainboard": row.get("is_mainboard", True),
                       "status": "announced"}
             spine_action = "unchanged"
             if spine_refresh:
@@ -223,16 +226,17 @@ def _reconcile_discovery_batch(conn, discovered, *, write):
         report.append({"name": row["name"], "isin": row.get("isin"),
             "symbol": row.get("symbol"), "resolution": action,
             "ipo_id": ipo_id, "metadata_refresh_required": refresh})
-    return report, overlays, reads, writes
+    return report, overlays, reads, writes, new_rows_created
 
 
-def reconcile_discovery(conn, discovered, *, write):
+def reconcile_discovery(conn, discovered, *, write, max_new_rows=10):
     """Isolate canonical resolution/refresh failures to one discovered IPO."""
-    report, overlays, reads, writes = [], [], 0, 0
+    report, overlays, reads, writes, created = [], [], 0, 0, 0
     for row in discovered:
         try:
-            item_report, item_overlays, item_reads, item_writes = (
-                _reconcile_discovery_batch(conn, [row], write=write))
+            item_report, item_overlays, item_reads, item_writes, created = (
+                _reconcile_discovery_batch(conn, [row], write=write,
+                    max_new_rows=max_new_rows, new_rows_created=created))
             report.extend(item_report); overlays.extend(item_overlays)
             reads += item_reads; writes += item_writes
         except Exception as exc:
@@ -242,6 +246,21 @@ def reconcile_discovery(conn, discovered, *, write):
                 "ipo_id": None, "metadata_refresh_required": False,
                 "error": f"{type(exc).__name__}:{str(exc)[:100]}"})
     return report, overlays, reads, writes
+
+
+def report_transition_coverage(conn, company_names, discovered):
+    """Fail visibly only after both the spine and supported feeds prove no exact match."""
+    from fill_ipo import _norm
+    feed_names = {_norm(row.get("name")) for row in discovered}
+    missing = []
+    cur = conn.cursor()
+    for name in company_names:
+        norm = _norm(name)
+        cur.execute("SELECT 1 FROM ipo WHERE name_norm=%s LIMIT 1", (norm,))
+        if cur.fetchone() is None and norm not in feed_names:
+            message = f"CLOSED_PRELISTING_SOURCE_MISSING company={name} action=owner_attention"
+            print(message); missing.append(message)
+    return missing
 
 
 def _absolute_url(url):
@@ -309,33 +328,40 @@ def run(conn, session, plans, *, write, db_target_queries=1):
 def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--write", action="store_true")
     ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--max-new-rows", type=int, default=10)
+    ap.add_argument("--transition-company", action="append", default=[])
     ap.add_argument("--discovery-only", action="store_true",
                     help="refresh only the official canonical IPO universe")
+    ap.add_argument("--skip-discovery", action="store_true",
+                    help="run remaining lifecycle work after a separate discovery step")
     ap.add_argument("--today", type=dt.date.fromisoformat)
     args = ap.parse_args(argv)
     if not (args.write or args.dry_run): raise SystemExit("choose --write or --dry-run")
+    if args.limit < 0 or args.max_new_rows < 0: raise SystemExit("limits must be non-negative")
     import psycopg2
     from curl_cffi import requests as cffi
     today = args.today or dt.datetime.now(dt.timezone(dt.timedelta(hours=5, minutes=30))).date()
     session = prime(cffi)
-    discovered, discovery_calls, discovery_errors = fetch_discovery(session)
+    discovered, discovery_calls, discovery_errors = ([], 0, []) if args.skip_discovery else fetch_discovery(session)
     discovery_total = len(discovered)
     discovered = discovered[:args.limit]
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     discovery_rows, overlays, discovery_reads, discovery_writes = ([], [], 0, 0)
     if not discovery_errors:
         discovery_rows, overlays, discovery_reads, discovery_writes = reconcile_discovery(
-            conn, discovered, write=args.write)
+            conn, discovered, write=args.write, max_new_rows=args.max_new_rows)
     else:
         discovery_rows = [{"name": row["name"], "isin": row.get("isin"),
             "symbol": row.get("symbol"), "resolution": "not_reconciled_discovery_failure",
             "ipo_id": None, "metadata_refresh_required": False} for row in discovered]
+    transition_missing = report_transition_coverage(conn, args.transition_company, discovered)
     if args.discovery_only:
         output = {"DISCOVERY": {"official_source": [url for _, url in DISCOVERY_APIS],
             "feed_http_calls": discovery_calls, "returned_count": discovery_total,
             "processed_limit": args.limit, "errors": discovery_errors,
             "discovered_ipos": discovery_rows, "db_reads": discovery_reads,
-            "db_writes": discovery_writes}}
+            "db_writes": discovery_writes, "max_new_rows": args.max_new_rows,
+            "transition_missing": transition_missing}}
         conn.close()
         print(json.dumps(output, default=str, indent=2, sort_keys=True))
         if discovery_errors or any(row["resolution"] == "failed" for row in discovery_rows):
