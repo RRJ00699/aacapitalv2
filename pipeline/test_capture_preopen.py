@@ -31,6 +31,13 @@ class Kite:
         return {symbols[0]: {"last_price": 101, "buy_quantity": 10, "sell_quantity": 4, "ohlc": {"open": 100}, "depth": {}}}
 
 class CapturePreopenTest(unittest.TestCase):
+    def tearDown(self):
+        # Do not leak the lightweight import doubles into subsequently collected
+        # pipeline tests (notably nse_lifecycle -> fill_ipo -> psycopg2.extras).
+        sys.modules.pop("capture_preopen", None)
+        sys.modules.pop("_scripts.kite_connect", None)
+        sys.modules.pop("psycopg2", None)
+
     def load_module(self, rows):
         cur = Cursor(rows)
         conn = Conn(cur)
@@ -99,6 +106,20 @@ class CapturePreopenTest(unittest.TestCase):
         self.assertIn("issue.issue_size_cr DESC NULLS LAST", sql)
         self.assertIn("i.isin IS NOT NULL", sql)
         self.assertIn("i.id", sql)
+        self.assertIn("i.name_display", sql)
+        self.assertNotRegex(sql, r"\bi\.name\b")
+
+    def test_simulated_ardee_like_listing_selects_canonical_identity(self):
+        rows=[(323,"Ardee-like Industries","INE0ARD00001","ARDEE",
+              dt.date(2026,8,12),"reason",220)]
+        mod, _cur, _conn, kite = self.load_module(rows)
+        with patch("builtins.print") as pr:
+            mod.capture(now=dt.datetime(2026,8,12,9,0,tzinfo=ZoneInfo("Asia/Kolkata")),
+                        dry_run=True)
+        payload=json.loads(pr.call_args_list[-1].args[0])
+        self.assertEqual(payload["selected_isins"], ["INE0ARD00001"])
+        self.assertEqual(payload["selected"][0]["symbol"], "ARDEE")
+        self.assertEqual(kite.calls, [])
 
     def test_idempotent_write_contract(self):
         rows=[(1,"IPO","INE000000001","SYM",dt.date(2026,8,4),"reason",200)]
