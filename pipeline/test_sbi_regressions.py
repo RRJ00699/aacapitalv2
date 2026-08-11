@@ -90,13 +90,13 @@ def test_malformed_page_confidence_and_extra_fields_have_drop_diagnostics(change
         {"item_type": "claim", "position": 1, "reason": reason}]
 
 
-def test_wrong_asserted_page_reports_other_exact_pages_without_reassignment():
-    parsed = sonnet.parse_extraction(
-        {"claims": [{**CLAIM, "page_number": 2}], "scalar_facts": []}, doc_id=1)
-    with pytest.raises(ValueError, match=r"PAGE 2.*found_on_other_pages=\[3\]"):
-        run.validate_evidence(parsed, [
-            {"page_number": 2, "text": "Other"},
-            {"page_number": 3, "text": "Exact supporting evidence"}])
+def test_unknown_reference_is_not_reassigned_to_another_page():
+    with pytest.raises(sonnet.EvidenceReferenceError, match="unknown"):
+        sonnet.parse_extraction(
+            {"claims": [{"kind": "verdict", "statement": "Supported.",
+                         "evidence_refs": ["P2:L002"]}], "scalar_facts": []},
+            doc_id=1, pages=[{"page_number": 2, "text": "Other"},
+                             {"page_number": 3, "text": "Exact supporting evidence"}])
 
 
 def _response(payload):
@@ -172,9 +172,10 @@ def test_advisory_lock_uses_stable_session_lock_and_explicit_unlock():
 def test_deterministic_model_stub_and_central_identity():
     calls = []
     result = sonnet.extract(
-        doc_id=9, pages=[{"page_number": 1, "text": "fixture"}],
+        doc_id=9, pages=[{"page_number": 1, "text": "SUBSCRIBE fixture"}],
         model_client=lambda **kwargs: calls.append(kwargs) or {
-            "claims": [], "scalar_facts": [FACT]})
+            "claims": [], "scalar_facts": [{"field": "sbi_rating", "value": "SUBSCRIBE",
+                                               "evidence_refs": ["P1:L001"]}]})
     assert result["scalar_facts"][0]["value"] == "SUBSCRIBE"
     assert calls[0]["model"] == sonnet.MODEL
     assert calls[0]["prompt_version"] == sonnet.PROMPT_VERSION

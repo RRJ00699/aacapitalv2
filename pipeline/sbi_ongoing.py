@@ -58,6 +58,9 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
                 ingest_summary["unresolved"] += 1
                 ingest_records.append({"filename": str(path), **result})
                 continue
+            if result["status"] == "SKIPPED_REVIEWED_EXCLUSION":
+                ingest_records.append({"filename": str(path), **result})
+                continue
             ingest_summary["resolved"] += 1
             ingest_summary["newly_ledgered" if result["created"] else "already_ledgered"] += 1
             ingest_records.append({"filename": str(path), **result})

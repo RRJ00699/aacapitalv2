@@ -10,7 +10,7 @@ from pipeline import fill_ipo, fill_v2, sbi_extraction_run as run, sbi_sonnet as
 def test_prompt_and_strict_tool_contract():
     assert sonnet.MODEL == "claude-sonnet-4-6"
     assert sonnet.PROMPT_VERSION == "sbi-v1.3"
-    assert "--- PAGE N ---" in sonnet.SYSTEM_PROMPT
+    assert "evidence_refs" in sonnet.SYSTEM_PROMPT
     assert sonnet.SBI_EXTRACTION_TOOL["strict"] is True
     assert sonnet.TOOL_CHOICE == {
         "type": "tool", "name": sonnet.TOOL_NAME,
@@ -24,7 +24,7 @@ def test_wire_schema_excludes_unsupported_strict_constraints():
     schema = sonnet.build_tool_request(
         [{"page_number": 1, "text": "fixture"}])["tools"][0]["input_schema"]
     unsupported = {
-        "maxItems", "minItems", "minimum", "maximum",
+        "maxItems", "minimum", "maximum",
         "minLength", "maxLength", "pattern",
     }
     found = []

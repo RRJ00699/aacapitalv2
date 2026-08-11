@@ -9,15 +9,18 @@ import pathlib
 import re
 import subprocess
 import sys
+import hashlib
 
 if __package__:
     from .document_ledger import store_document
     from .fill_ipo import _norm
     from .company_identity import load_company_identity_set, resolve_company_identity
+    from .sbi_identity_config import reviewed_decision
 else:
     from document_ledger import store_document
     from fill_ipo import _norm
     from company_identity import load_company_identity_set, resolve_company_identity
+    from sbi_identity_config import reviewed_decision
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -42,6 +45,15 @@ def document_date_from_filename(path: pathlib.Path) -> dt.date | None:
         return dt.date(year, month, day)
     except ValueError:
         return None
+
+
+def transition_cohort_report(company, *, canonical_row, override,
+                             supported_feed_exact_match):
+    """Fail visibly only when all deterministic identity/source paths are absent."""
+    if canonical_row is None and override is None and supported_feed_exact_match is False:
+        return (f"CLOSED_PRELISTING_SOURCE_MISSING company={company} "
+                "action=owner_attention")
+    return None
 
 
 def is_git_tracked(path: pathlib.Path) -> bool:
@@ -74,18 +86,37 @@ def resolve_ipo(conn, *, isin: str | None, company: str | None, counter=None,
 
 def ingest_file(conn, path, *, source_url=None, isin=None, store=None,
                 owner_approved=False, document_date=None, retain_source=None,
-                identity_rows=None):
+                identity_rows=None, supported_feed_exact_match=None):
     path = pathlib.Path(path)
-    identity = resolve_ipo(conn, isin=isin, company=company_from_filename(path),
-                           identity_rows=identity_rows)
-    owner = identity.row
-    if owner is None:
+    content = path.read_bytes()
+    local_sha256 = hashlib.sha256(content).hexdigest()
+    decision = reviewed_decision(local_sha256, path.name)
+    if decision and decision.kind == "exclusion":
+        return {"status": "SKIPPED_REVIEWED_EXCLUSION", "path": str(path),
+                "local_sha256": local_sha256,
+                "classification": decision.entry["classification"]}
+    if decision and decision.kind == "unapproved_override":
         return {"status": "UNRESOLVED", "path": str(path),
-                "identity_resolution": identity.method,
-                "ambiguous_count": identity.ambiguous_count}
+                "local_sha256": local_sha256,
+                "identity_resolution": "UNAPPROVED_SHA_OVERRIDE", "ambiguous_count": 0}
+    if decision and decision.kind == "override":
+        owner = (decision.entry["ipo_id"], decision.entry["isin"], path.stem)
+        identity_method = "OWNER_APPROVED_SHA_OVERRIDE"
+    else:
+        identity = resolve_ipo(conn, isin=isin, company=company_from_filename(path),
+                               identity_rows=identity_rows)
+        owner = identity.row
+        identity_method = identity.method
+    if owner is None:
+        report = transition_cohort_report(
+            company_from_filename(path), canonical_row=None, override=None,
+            supported_feed_exact_match=supported_feed_exact_match)
+        return {"status": "UNRESOLVED", "path": str(path),
+                "local_sha256": local_sha256, "identity_resolution": identity_method,
+                "ambiguous_count": identity.ambiguous_count,
+                **({"transition_report": report} if report else {})}
     if not owner_approved:
         return {"status": "READY_FOR_INGEST", "path": str(path), "ipo_id": owner[0]}
-    content = path.read_bytes()
     retained = is_git_tracked(path) if retain_source is None else retain_source
     effective_date = document_date or document_date_from_filename(path) or dt.date.today()
     saved = store_document(conn, ipo_id=owner[0], isin=owner[1], doc_type="sbi",

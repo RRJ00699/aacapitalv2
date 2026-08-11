@@ -9,7 +9,6 @@ import math
 import os
 import pathlib
 import time
-import unicodedata
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -21,13 +20,13 @@ import pymupdf
 try:
     from .r2 import R2DocumentStore
     from .sbi_sonnet import (
-        MODEL, PROMPT_VERSION, TOOL_NAME, already_extracted, build_tool_request,
+        MODEL, PROMPT_VERSION, TOOL_NAME, EvidenceReferenceError, already_extracted, build_tool_request,
         parse_extraction, pending_documents_query, write_extraction,
     )
 except ImportError:
     from r2 import R2DocumentStore
     from sbi_sonnet import (
-        MODEL, PROMPT_VERSION, TOOL_NAME, already_extracted, build_tool_request,
+        MODEL, PROMPT_VERSION, TOOL_NAME, EvidenceReferenceError, already_extracted, build_tool_request,
         parse_extraction, pending_documents_query, write_extraction,
     )
 
@@ -128,38 +127,9 @@ def pdf_pages(body: bytes) -> list[dict]:
                 for i, page in enumerate(doc)]
 
 
-TYPOGRAPHY_FOLD = str.maketrans({
-    "\u2019": "'", "\u2018": "'", "\u201a": "'",
-    "\u201c": '"', "\u201d": '"', "\u201e": '"',
-    "\u2013": "-", "\u2014": "-", "\u00a0": " ",
-})
-COMPARISON_MODE = "NFKC+TYPOGRAPHY_FOLD+WHITESPACE"
-
-
-def normalize_evidence_text(text):
-    return " ".join(unicodedata.normalize("NFKC", str(text)).translate(TYPOGRAPHY_FOLD).split())
-
-
 def validate_evidence(extraction: dict, pages: list[dict]):
-    """Require normalized exact evidence on the asserted synthetic page."""
-    page_text = {page["page_number"]: normalize_evidence_text(page["text"])
-                 for page in pages}
-    groups = (("claim", extraction["claims"]),
-              ("scalar_fact", extraction["scalar_facts"]))
-    for item_type, items in groups:
-        for position, item in enumerate(items):
-            original = item["excerpt"]
-            excerpt = normalize_evidence_text(original)
-            asserted = item["page_number"]
-            if excerpt and excerpt in page_text.get(asserted, ""):
-                continue
-            found = sorted(page for page, text in page_text.items()
-                           if page != asserted and excerpt and excerpt in text)
-            diagnostic = " ".join(str(original).split())[:160]
-            raise ValueError(
-                f'{item_type}[{position}] evidence not found on asserted PAGE {asserted}; '
-                f'excerpt="{diagnostic}"; comparison={COMPARISON_MODE}; '
-                f'found_on_other_pages={found}')
+    """Evidence has already been deterministically resolved before parsing."""
+    return extraction
 
 
 def _anthropic_request(url: str, *, payload: dict, api_key: str):
@@ -224,12 +194,12 @@ def select_pending_documents(conn, *, limit=None):
             close()
 
 
-def parse_complete_response(response, *, doc_id, stop_reason=None,
+def parse_complete_response(response, *, doc_id, stop_reason=None, pages=None,
                             parser=parse_extraction):
     """Never pass capped output into parsing or canonical persistence."""
     if stop_reason == "max_tokens":
         return "TRUNCATED", None
-    return "COMPLETE", parser(response, doc_id=doc_id)
+    return "COMPLETE", parser(response, doc_id=doc_id, pages=pages)
 
 
 def extraction_success_status(parsed):
@@ -328,8 +298,10 @@ def _run_pending_worker_locked(conn, *, store=None, card=None, environ=None, lim
         f"output_price={card.output_usd_per_mtok}/MTok\n"
         f"output_cap={card.output_cap}\n"
         f"run_cap=${card.spend_cap}\n"
-        f"max_output_cost=${maximum_output_cost:.6f}\n"
+        f"worst_case_output_tokens={len(rows)} x {card.output_cap} = {len(rows) * card.output_cap}\n"
+        f"worst_case_output_cost=${maximum_output_cost:.6f}\n"
         "input_guard=official count_tokens per document + max(1024,10%)\n"
+        "input_counting=each document is counted separately before generation\n"
         "generation=OWNER APPROVED",
         flush=True,
     )
@@ -404,7 +376,14 @@ def _run_pending_worker_locked(conn, *, store=None, card=None, environ=None, lim
         guard_exceeded = itok > guarded or spent > card.spend_cap
         try:
             response_status, parsed = parse_complete_response(
-                response, doc_id=doc_id, stop_reason=stop_reason)
+                response, doc_id=doc_id, stop_reason=stop_reason, pages=pages)
+        except EvidenceReferenceError as exc:
+            _record(records, summary, base, "EVIDENCE_REJECTED",
+                    official_preflight_input_tokens=official,
+                    guarded_preflight_input_tokens=guarded,
+                    error=f"{type(exc).__name__}: {exc}")
+            stop_later_calls = stop_later_calls or guard_exceeded
+            continue
         except Exception as exc:
             _record(records, summary, base, "PARSE_ERROR",
                     official_preflight_input_tokens=official,
