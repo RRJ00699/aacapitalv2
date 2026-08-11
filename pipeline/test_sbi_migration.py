@@ -38,7 +38,7 @@ def test_ai_cannot_write_deterministic_valuation_fields(field):
         sonnet.parse_extraction({field: 1, "claims": [], "scalar_facts": []}, doc_id=1)
 
 
-def test_resolved_source_is_canonical_without_model_excerpt_bounds():
+def test_resolved_source_is_canonical_with_local_excerpt_bound():
     raw = {"claims": [{"kind": "verdict", "statement": "Supported.",
                        "evidence_refs": ["P1:L001"]}], "scalar_facts": []}
     parsed = sonnet.parse_extraction(raw, doc_id=1,

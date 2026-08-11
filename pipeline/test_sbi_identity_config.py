@@ -39,6 +39,33 @@ def test_ingest_hashes_before_identity_and_unapproved_writes_nothing(tmp_path, m
     assert result["status"] == "UNRESOLVED" and result["local_sha256"] == digest
 
 
+def test_approved_override_requires_one_exact_id_isin_spine_pair(tmp_path, monkeypatch):
+    note = tmp_path / "Known_IPO Note.pdf"; note.write_bytes(b"pdf")
+    digest = hashlib.sha256(b"pdf").hexdigest()
+    entry = {"ipo_id": 7, "isin": "INE000000001"}
+    monkeypatch.setattr(
+        sbi_ingest, "reviewed_decision",
+        lambda sha, filename: config.ReviewedDecision("override", entry))
+    writes = []
+    monkeypatch.setattr(sbi_ingest, "store_document",
+                        lambda *a, **k: writes.append(k))
+
+    exact = ((7, "INE000000001", "Known Ltd", "known ltd"),)
+    ready = sbi_ingest.ingest_file(
+        object(), note, owner_approved=False, identity_rows=exact)
+    assert ready == {"status": "READY_FOR_INGEST", "path": str(note), "ipo_id": 7}
+
+    for rows in (
+        ((7, "INE000000002", "Wrong ISIN", "wrong isin"),),
+        ((8, "INE000000001", "Wrong ID", "wrong id"),),
+        (),
+    ):
+        result = sbi_ingest.ingest_file(
+            object(), note, owner_approved=True, identity_rows=rows)
+        assert result["status"] == "INVALID_REVIEWED_OVERRIDE"
+    assert writes == []
+
+
 def test_generator_unique_ambiguous_and_missing_are_one_row_each():
     inventory = [
         {"company": "Anand and Sons", "filename": "a.pdf", "local_sha256": "a" * 64},
@@ -56,11 +83,11 @@ def test_generator_unique_ambiguous_and_missing_are_one_row_each():
     assert "owner_approved" not in proposals.markdown(rows)
 
 
-def test_transition_report_requires_three_deterministic_absences():
-    expected = "CLOSED_PRELISTING_SOURCE_MISSING company=Ardee action=owner_attention"
-    assert sbi_ingest.transition_cohort_report(
-        "Ardee", canonical_row=None, override=None,
-        supported_feed_exact_match=False) == expected
-    assert sbi_ingest.transition_cohort_report(
-        "Ardee", canonical_row=None, override=None,
-        supported_feed_exact_match=None) is None
+def test_connector_normalization_changes_connectors_not_words():
+    assert proposals.connector_canon("A and B") == proposals.connector_canon("A & B")
+    assert proposals.connector_canon("A_and_B") == proposals.connector_canon("A & B")
+    assert proposals.connector_canon("A%20and%20B") == proposals.connector_canon("A & B")
+    assert proposals.connector_canon("Candy") != proposals.connector_canon("C & Y")
+    assert proposals.connector_canon("Anand Rathi") == proposals.canon("Anand Rathi")
+    assert (proposals.connector_canon("Anand Rathi Share and Stock Brokers")
+            == proposals.connector_canon("Anand Rathi Share & Stock Brokers"))

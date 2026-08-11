@@ -260,6 +260,26 @@ def test_lane_ingests_then_invokes_worker_with_no_real_io(tmp_path, monkeypatch)
     assert events == ["ingest", "worker"] and result["summary"]["selected"] == 1
 
 
+def test_lane_treats_invalid_reviewed_override_as_unresolved(tmp_path, monkeypatch):
+    pdf = tmp_path / "Example Limited_IPO Note.pdf"; pdf.write_bytes(b"pdf")
+    monkeypatch.setattr(sbi_ongoing, "load_company_identity_set", lambda cur: ())
+    monkeypatch.setattr(sbi_ongoing, "ingest_file", lambda *a, **k: {
+        "status": "INVALID_REVIEWED_OVERRIDE",
+        "identity_resolution": "OVERRIDE_ID_ISIN_MISMATCH",
+    })
+    monkeypatch.setattr(sbi_ongoing, "run_pending_worker", lambda *a, **k: {
+        "summary": {"selected": 0}, "records": []})
+    monkeypatch.setattr(sbi_ongoing, "persist_manifest", lambda *a, **k: "manifest.json")
+
+    result = sbi_ongoing.run_sbi_lane(
+        Conn(), directory=tmp_path, store=Store(), environ=ENV,
+        model_call=lambda **k: None, token_counter=lambda **k: 1)
+
+    assert result["summary"]["unresolved"] == 1
+    assert result["summary"]["resolved"] == 0
+    assert result["records"][0]["status"] == "INVALID_REVIEWED_OVERRIDE"
+
+
 def test_no_sonnet_config_still_ingests_with_zero_paid_calls(tmp_path, monkeypatch):
     pdf = tmp_path / "Example Limited_IPO Note.pdf"; pdf.write_bytes(b"pdf")
     events = []

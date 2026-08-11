@@ -54,7 +54,7 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
         try:
             result = ingest_file(conn, path, store=store, owner_approved=True,
                                  retain_source=False, identity_rows=identity_rows)
-            if result["status"] == "UNRESOLVED":
+            if result["status"] in {"UNRESOLVED", "INVALID_REVIEWED_OVERRIDE"}:
                 ingest_summary["unresolved"] += 1
                 ingest_records.append({"filename": str(path), **result})
                 continue

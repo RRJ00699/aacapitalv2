@@ -1,6 +1,7 @@
 # SBI R6 strict extraction transport
 
-Status: code contract for PR #323. No production activation is implied by this document.
+Status: code contract introduced in PR #323 and revised by PR #325. No production
+activation is implied by this document.
 
 ## Why R6 exists
 
@@ -17,16 +18,18 @@ use disabled. Temperature is zero. The paid path accepts only one correctly name
 `tool_use` block and never falls back to parsing assistant prose. `max_tokens` remains a
 truncation result and never enters parsing or writers.
 
-`PROMPT_VERSION` is `sbi-v1.3`. Excerpts target 8-12 words while the server hard limit
-remains 15. `page_number` is the number from the synthetic `--- PAGE N ---` marker, not
-printed report pagination.
+`PROMPT_VERSION` is `sbi-v1.4`. The model returns one to three contiguous, page-scoped
+`evidence_refs` rather than an excerpt or page number. Python resolves those references
+to the exact source text and synthetic PDF page, and the resolved excerpt retains the
+15-word hard limit.
 
 ## Evidence and canonical writes
 
-Unicode normalization is comparison-only; the model excerpt is stored unchanged.
-Surviving claims/facts must still match the asserted PDF page. Item-level schema/bound
-violations are recorded in `dropped_items`; after parsing, those diagnostics are kept on
-successful, evidence-rejected, and write-error records.
+Unicode and typography normalization is comparison-only; the Python-resolved source
+excerpt is stored unchanged. Surviving claims/facts must cite contiguous source units
+from one PDF page. Item-level schema/bound violations are recorded in `dropped_items`;
+after parsing, those diagnostics are kept on successful, evidence-rejected, and
+write-error records.
 
 SBI scalar facts write the live `source_facts.doc_id` foreign key plus the supplied model
 confidence. The existing fact change-detection identity remains `(ipo_id, field, source)`;
@@ -34,8 +37,10 @@ confidence. The existing fact change-detection identity remains `(ipo_id, field,
 
 Extraction completion has one SQL predicate shared by the runner and migration verifier:
 a matching SBI insight OR a matching SBI source-fact row for the same document/model/
-prompt version is complete. This allows a legitimate scalar-only extraction to reach
-`EXTRACTION_MISSING=0`.
+prompt version is complete. New writes use `sbi-v1.4`; existing `sbi-v1.3` rows also
+satisfy the default completion predicate so the transport upgrade does not automatically
+requeue previously completed paid work. This allows a legitimate scalar-only extraction
+to reach `EXTRACTION_MISSING=0`.
 
 ## Canonical worker and cost boundary
 

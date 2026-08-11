@@ -14,7 +14,9 @@ except ImportError:
 
 
 def connector_canon(value):
-    value = re.sub(r"(?:%20|[_-])?(?:and|&|%26)(?:%20|[_-])?", " & ", str(value),
+    value = re.sub(r"%20", " ", str(value), flags=re.IGNORECASE)
+    value = re.sub(r"%26", "&", value, flags=re.IGNORECASE)
+    value = re.sub(r"(?<![a-z0-9])(?:and|&)(?![a-z0-9])", " & ", value,
                    flags=re.IGNORECASE)
     return canon(value)
 
