@@ -329,25 +329,35 @@ def main():
         # Legacy regex step retired. Canonical extraction starts only after the
         # owner-gated ledger/R2 ingest has established immutable provenance.
 
-    # 2c/2d ingest new downloads, then invoke the same DB-ledger pending worker used
+    # Canonical identity must exist before any document ingest tries to resolve it.
+    steps.append(run("2c. NSE discovery + announced rows",
+                     [py, "nse_lifecycle.py", "--discovery-only", "--limit", str(a.limit),
+                      "--max-new-rows", "10", "--dry-run" if dry else "--write"],
+                     dry, 300))
+    steps.append(run("2d. bounded NSE identity backfill",
+                     [py, "nse_identity_backfill.py", "--limit", str(a.limit),
+                      "--quote-limit", str(a.limit), "--dry-run" if dry else "--write"],
+                     dry, 300))
+
+    # 2e/2f ingest new downloads, then invoke the same DB-ledger pending worker used
     # for every SBI document. Storage success removes the
     # RUNNER_TEMP copy; unresolved/storage-failed inputs remain for diagnosis. Any SBI
     # failure is reported but cannot prevent the unrelated production chain.
     try:
         from sbi_ongoing import run_sbi_lane
-        print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
+        print("\n  === 2e/2f. SBI ingest + Sonnet extraction")
         sbi_result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=dry)
         print("      " + json.dumps(sbi_result["summary"], sort_keys=True))
         if sbi_result.get("manifest_path"):
             print(f"      SBI manifest = {sbi_result['manifest_path']}")
-        steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
+        steps.append({"step": "2e/2f. SBI ingest + Sonnet extraction",
                       "status": "dry" if dry else "ok",
                       "summary": sbi_result["summary"],
                       "manifest_path": sbi_result.get("manifest_path")})
     except (Exception, SystemExit) as exc:
-        print("\n  === 2c/2d. SBI ingest + Sonnet extraction")
+        print("\n  === 2e/2f. SBI ingest + Sonnet extraction")
         print(f"      ! isolated SBI lane failure: {type(exc).__name__}: {str(exc)[:200]}")
-        steps.append({"step": "2c/2d. SBI ingest + Sonnet extraction",
+        steps.append({"step": "2e/2f. SBI ingest + Sonnet extraction",
                       "status": "warning", "error": str(exc)[:200]})
 
     # ========== PHASE B: DB WORK. One contiguous window from here on. ==========
@@ -381,6 +391,7 @@ def main():
     # 3. NSE
     steps.append(run("3. NSE per-IPO lifecycle",
                      [py, "nse_lifecycle.py", "--limit", str(a.limit),
+                      "--skip-discovery",
                       "--dry-run" if dry else "--write"], dry, 900))
     # 4. RHP extraction — the only paid step, gated on the remaining budget
     if remaining <= 0:

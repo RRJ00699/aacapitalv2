@@ -265,7 +265,7 @@ def parse_discovery_item(item):
     symbol = _first(item, "symbol", "ticker")
     isin = _first(item, "isin", "ISIN", "issueIsin")
     if not name: return None
-    category = (_first(item, "category", "issueType", "series") or "").upper()
+    category = (_first(item, "category", "issueType", "series", "board") or "").upper()
     if "SME" in category: return None
     price = _first(item, "priceBand", "priceRange", "issuePrice", "price") or ""
     prices = [_num(v) for v in re.findall(r"[\d,.]+", price)]
@@ -275,6 +275,7 @@ def parse_discovery_item(item):
     isin = isin.upper() if isin and re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin.upper()) else None
     return {"name": name, "symbol": symbol.upper() if symbol else None,
             "isin": isin,
+            "is_mainboard": not any(marker in category for marker in ("SME", "EMERGE")),
             "open_date": _discovery_date(_first(item, "issueStartDate", "openDate",
                 "bidOpenDate", "issueOpenDate", "startDate")),
             "close_date": _discovery_date(_first(item, "issueEndDate", "closeDate",
