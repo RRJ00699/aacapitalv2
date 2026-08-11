@@ -39,6 +39,35 @@ def test_optional_configuration_classifies_absent_names(monkeypatch):
     assert cron.skip("paid", "owner: configure ANTHROPIC_API_KEY")["status"] == "skipped"
 
 
+def test_kite_proxy_is_conditional_on_rotation():
+    base = {name: "configured" for name in
+            ("KITE_API_KEY", "KITE_API_SECRET", "KITE_USER_ID", "KITE_PASSWORD", "KITE_TOTP_SECRET")}
+    assert cron.kite_configuration(base) == (True, [], [])
+    base["EXECUTE_CLOUDFLARE_SECRET_ROTATION"] = "1"
+    ready, missing, rotation = cron.kite_configuration(base)
+    assert ready and not missing
+    assert rotation == ["KITE_BROKER_PROXY_URL", "KITE_BROKER_PROXY_AUTH_SECRET"]
+
+
+def test_structured_counts_are_real_and_missing_contract_fails():
+    discovery = {"output": '{"DISCOVERY":{"returned_count":5,"errors":[],"discovered_ipos":'
+                           '[{"resolution":"matched_existing"},{"resolution":"inserted"},'
+                           '{"resolution":"bounded_not_created"}]}}', "status": "ok"}
+    assert cron.discovery_counts(discovery) == {"returned": 5, "processed": 3,
+        "matched_existing": 1, "created": 1, "bounded_not_created": 1, "failures": 0}
+    broken = {"output": "not structured", "status": "ok"}
+    assert cron.discovery_counts(broken) == {"returned": 0, "processed": 0,
+        "matched_existing": 0, "created": 0, "bounded_not_created": 0, "failures": 0}
+    assert broken["status"] == "failed"
+
+
+def test_every_subprocess_target_is_repository_relative_and_visible():
+    targets = [cron.RHP_DOWNLOAD_SCRIPT, cron.SBI_DOWNLOAD_SCRIPT, cron.KITE_REFRESH_SCRIPT,
+               cron.NSE_LIFECYCLE_SCRIPT, cron.NSE_IDENTITY_SCRIPT, cron.KITE_FETCH_SCRIPT,
+               cron.DRIVE_SCRIPT, cron.SNAPSHOT_PUBLISH_SCRIPT]
+    assert all(not Path(target).is_absolute() and (cron.REPO_ROOT / target).is_file() for target in targets)
+
+
 def test_run_uses_absolute_python_script_and_explicit_cwd(monkeypatch, tmp_path):
     child = tmp_path / "child.py"
     child.write_text("print('ok')", encoding="utf-8")
@@ -72,8 +101,7 @@ def test_zero_target_report_has_timings_counts_and_snapshot_proof(capsys, monkey
     assert "END-OF-RUN REPORT" in output
     assert "runtime: 2.5s" in output
     assert "active IPOs: 0" in output
-    assert "verified by publish_snapshot_with_ledger output" in output
-    assert "SBI ingest/extraction" in output and "NSE discovery" in output
+    assert "consumer_source=active" in output
 
 
 def test_failed_step_controls_final_exit_code(monkeypatch):
@@ -98,3 +126,6 @@ def test_runbook_path_and_commands_contract():
     assert "python pipeline\\cron.py --dry-run" in text
     assert "python pipeline\\cron.py\n" in text
     assert len(text.splitlines()) <= 45
+    assert "git switch main; git pull --ff-only origin main" in text
+    assert "git reset --hard" not in text
+    assert "drive.py completeness alerts" in cron.ENVIRONMENT[-1][1]

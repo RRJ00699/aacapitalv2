@@ -71,7 +71,12 @@ def run_sbi_lane(conn, *, directory, store=None, model_call=anthropic_call,
                                    "error": f"{type(exc).__name__}: {exc}"})
 
     config = worker_configuration(environ)
-    if config.status == "CONFIGURED":
+    if (config.status == "CONFIGURED" and model_call is anthropic_call
+            and not environ.get("ANTHROPIC_API_KEY")):
+        worker = {"summary": {"extraction_status": "SKIPPED_OWNER_NOT_CONFIGURED",
+                              "configuration_error": "ANTHROPIC_API_KEY is absent",
+                              "selected": 0, "actual_sbi_spend": "0.000000"}, "records": []}
+    elif config.status == "CONFIGURED":
         worker = run_pending_worker(
             conn, store=store, card=config.card, environ=environ,
             model_call=model_call, token_counter=token_counter)

@@ -111,7 +111,10 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
 async function publishBatch(endpoint:string,key:string,snapshots:Array<{name:string,payload:unknown}>, label:string) {
   const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json","x-aac-key":key},body:JSON.stringify({snapshots})});
   if(!response.ok) throw new Error(`${label} publication failed ${response.status}: ${await response.text()}`);
-  console.log(await response.text());
+  const result=await response.json() as {published?:Record<string,string>};
+  if(!result.published) throw new Error(`${label} publication response omitted versions`);
+  console.log(JSON.stringify({stage:"publication",label,published:result.published}));
+  return result.published;
 }
 
 function fixtureSqlClient(): SqlClient {

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import io
 import json
 import os
@@ -16,13 +15,20 @@ import psycopg2
 
 PIPELINE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PIPELINE_DIR.parent
-SCRIPTS_DIR = REPO_ROOT / "_scripts"
 TEMP_ROOT = Path(os.environ.get("RUNNER_TEMP", REPO_ROOT / ".tmp")).resolve()
 SBI_DIR = TEMP_ROOT / "sbi-notes"
 ACTIVE_DAYS = 90
 DOC_FRESH_DAYS = 30
 DEFAULT_CAP = 2.0
-# The protected publisher below invokes the one canonical producer: "warm_kv.py"
+RHP_DOWNLOAD_SCRIPT = "_scripts/download_sebi_rhps_playwright.py"
+SBI_DOWNLOAD_SCRIPT = "_scripts/download_sbi_notes.py"
+KITE_REFRESH_SCRIPT = "_scripts/refresh_kite_token.py"
+NSE_LIFECYCLE_SCRIPT = "pipeline/nse_lifecycle.py"
+NSE_IDENTITY_SCRIPT = "pipeline/nse_identity_backfill.py"
+KITE_FETCH_SCRIPT = "pipeline/kite_fetch.py"
+DRIVE_SCRIPT = "pipeline/drive.py"
+SNAPSHOT_PUBLISH_SCRIPT = "pipeline/publish_snapshot_with_ledger.py"
+# Canonical snapshot producer invoked by the protected publisher: "warm_kv.py"
 
 KITE_REFRESH_STATUS_TO_STEP = {
     "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "ok",
@@ -37,17 +43,24 @@ ENVIRONMENT = (
     ("R2_SECRET_ACCESS_KEY", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
     ("R2_DOCUMENT_BUCKET", "SBI/R2 ingest", "owner: configure the SBI/R2 lane"),
     ("SBI_OWNER_APPROVED", "SBI/R2 production writes", "owner: approve SBI ingest"),
-    ("ANTHROPIC_API_KEY", "SBI and RHP paid extraction", "owner: configure and approve paid lanes"),
+    ("ANTHROPIC_API_KEY", "SBI and RHP paid extraction", "owner: configure paid extraction"),
+    ("SBI_SONNET_OWNER_APPROVED", "SBI paid extraction", "owner: approve SBI paid extraction"),
+    ("SBI_SONNET_INPUT_USD_PER_MTOK", "SBI price card", "owner: configure SBI paid extraction"),
+    ("SBI_SONNET_OUTPUT_USD_PER_MTOK", "SBI price card", "owner: configure SBI paid extraction"),
+    ("SBI_SONNET_OUTPUT_CAP", "SBI price card", "owner: configure SBI paid extraction"),
+    ("SBI_SONNET_RUN_CAP_USD", "SBI price card", "owner: configure SBI paid extraction"),
+    ("RHP_EXTRACTION_OWNER_APPROVED", "RHP paid extraction", "owner: approve RHP paid extraction"),
     ("KITE_API_KEY", "Kite refresh/candles", "owner: configure Kite"),
     ("KITE_API_SECRET", "Kite refresh/candles", "owner: configure Kite"),
     ("KITE_USER_ID", "Kite refresh", "owner: configure Kite"),
     ("KITE_PASSWORD", "Kite refresh", "owner: configure Kite"),
     ("KITE_TOTP_SECRET", "Kite refresh", "owner: configure Kite"),
-    ("KITE_BROKER_PROXY_URL", "Kite token verification", "owner: configure Kite broker proxy"),
-    ("KITE_BROKER_PROXY_AUTH_SECRET", "Kite token verification", "owner: configure Kite broker proxy"),
+    ("EXECUTE_CLOUDFLARE_SECRET_ROTATION", "Kite secret rotation", "optional; when 1, proxy configuration is required"),
+    ("KITE_BROKER_PROXY_URL", "Kite rotation only when EXECUTE_CLOUDFLARE_SECRET_ROTATION=1", "owner: configure only for rotation"),
+    ("KITE_BROKER_PROXY_AUTH_SECRET", "Kite rotation only when EXECUTE_CLOUDFLARE_SECRET_ROTATION=1", "owner: configure only for rotation"),
     ("SNAPSHOT_PUBLISH_URL", "snapshot publication", "owner: configure snapshot publication"),
     ("SNAPSHOT_PUBLISH_KEY", "snapshot publication", "owner: configure snapshot publication"),
-    ("NTFY_TOPIC", "failure notification", "owner: configure notifications (optional)"),
+    ("NTFY_TOPIC", "drive.py completeness alerts", "owner: configure completeness alerts (optional)"),
 )
 
 
@@ -141,7 +154,7 @@ def skip(step, reason, *, counts=None):
 def run(step, script_path, args, *, dry=False, timeout=1800, required=True, cwd=None):
     """Execute a Python file using an absolute path and an explicit working directory."""
     started = time.monotonic()
-    path = Path(script_path).resolve()
+    path = (REPO_ROOT / script_path).resolve()
     print(f"\n=== {step}")
     if not path.is_file():
         status = "failed" if required else "skipped"
@@ -168,9 +181,74 @@ def run(step, script_path, args, *, dry=False, timeout=1800, required=True, cwd=
             "duration": time.monotonic()-started, "output": proc.stdout or ""}
 
 
+def structured_objects(output):
+    """Decode JSON objects embedded in a child's otherwise human-readable output."""
+    decoder = json.JSONDecoder()
+    objects = []
+    for index, char in enumerate(output):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(output[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+    return objects
+
+
+def require_child_json(item, key):
+    for value in reversed(structured_objects(item.get("output", ""))):
+        if key in value:
+            return value[key]
+    item.update(status="failed", reason=f"required child output contract absent: {key}")
+    return {}
+
+
+def discovery_counts(item):
+    data = require_child_json(item, "DISCOVERY")
+    rows = data.get("discovered_ipos", [])
+    resolutions = [row.get("resolution") for row in rows]
+    return {
+        "returned": data.get("returned_count", 0), "processed": len(rows),
+        "matched_existing": sum(value in {"matched_existing", "unchanged", "updated"} for value in resolutions),
+        "created": resolutions.count("inserted"),
+        "bounded_not_created": sum(value in {"bootstrap_required", "unresolved", "bounded_not_created"} for value in resolutions),
+        "failures": len(data.get("errors", [])) + resolutions.count("failed"),
+    }
+
+
+def identity_counts(item):
+    data = next((value for value in reversed(structured_objects(item.get("output", "")))
+                 if "selected" in value and "rows" in value), None)
+    if data is None:
+        item.update(status="failed", reason="required child output contract absent: identity counts")
+        return {}
+    outcomes = [row.get("outcome") for row in data.get("rows", [])]
+    selected_by_need = data.get("selected_by_need", {})
+    return {"selected": data.get("selected", 0),
+            "isin_selected": selected_by_need.get("isin", 0),
+            "date_selected": selected_by_need.get("listing_date", 0),
+            "updated": data.get("updates", 0),
+            "name_mismatch": outcomes.count("name_mismatch"),
+            "isin_conflict": outcomes.count("isin_owner_conflict"),
+            "not_found": outcomes.count("not_found")}
+
+
 def configured(names):
     missing = [name for name in names if not os.environ.get(name)]
     return not missing, missing
+
+
+def kite_configuration(environ=None):
+    environ = os.environ if environ is None else environ
+    baseline = ("KITE_API_KEY", "KITE_API_SECRET", "KITE_USER_ID", "KITE_PASSWORD", "KITE_TOTP_SECRET")
+    missing = [name for name in baseline if not environ.get(name)]
+    rotation_missing = []
+    if environ.get("EXECUTE_CLOUDFLARE_SECRET_ROTATION") == "1":
+        rotation_missing = [name for name in ("KITE_BROKER_PROXY_URL", "KITE_BROKER_PROXY_AUTH_SECRET")
+                            if not environ.get(name)]
+    return not missing, missing, rotation_missing
 
 
 def classify_kite_refresh(returncode, output):
@@ -201,14 +279,12 @@ def report(steps, started, *, dry, targets, cap=0.0, spent=0.0):
     for item in steps:
         why = f" | {item['reason']}" if item.get("reason") else ""
         print(f"{item['status']:7} {item['duration']:7.1f}s  {item['step']}{why}")
+        if item.get("counts"):
+            print(" " * 17 + "counts: " + ", ".join(f"{key}={value}" for key, value in item["counts"].items()))
     print("what changed: " + ("none (read-only dry-run)" if dry else "see per-step counts above"))
-    print("NSE discovery: counts are printed by the discovery step")
-    print("discovery identity: matched/created/bounded counts are printed by identity backfill")
-    print("ISIN/listing-date backfill: counts are printed by identity backfill")
-    print("SBI ingest/extraction: summary is printed by the SBI step or its skip reason")
     snapshot = next((s for s in steps if s["step"].startswith("snapshot publication")), None)
     print("snapshot pointer/consumer proof: " +
-          ("verified by publish_snapshot_with_ledger output" if snapshot and snapshot["status"] == "ok"
+          (f"active_version={snapshot.get('counts', {}).get('active_version')} consumer_source=active" if snapshot and snapshot["status"] == "ok"
            else (snapshot.get("reason", snapshot["status"]) if snapshot else "not run")))
     print(f"paid calls: {'0 (dry-run)' if dry else f'bounded by ${cap:.2f}; measured ${spent:.3f}'}")
     print(f"production writes: {'0 (dry-run)' if dry else 'authorized by this live command; see steps'}")
@@ -246,46 +322,69 @@ def main(argv=None):
     if dry or args.skip_download or args.skip_rhp_download:
         steps.append(skip("SEBI RHP download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
-        steps.append(run("SEBI RHP download", SCRIPTS_DIR / "download_sebi_rhps_playwright.py",
+        steps.append(run("SEBI RHP download", RHP_DOWNLOAD_SCRIPT,
                          ["--max", args.max_rhps], timeout=2400))
     if dry or args.skip_download:
         steps.append(skip("SBI note download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
-        steps.append(run("SBI note download", SCRIPTS_DIR / "download_sbi_notes.py",
+        steps.append(run("SBI note download", SBI_DOWNLOAD_SCRIPT,
                          ["--out", SBI_DIR], timeout=1200))
 
     # Structural lane handshake: 2c. NSE discovery -> 2d. bounded NSE identity ->
     # 2e/2f. SBI ingest -> 3. NSE per-IPO lifecycle.
-    steps.append(run("NSE discovery", PIPELINE_DIR / "nse_lifecycle.py",
+    discovery = run("NSE discovery", NSE_LIFECYCLE_SCRIPT,
                      ["--discovery-only", "--limit", args.limit, "--max-new-rows", 10,
-                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR))
-    steps.append(run("NSE identity/ISIN/listing-date backfill", PIPELINE_DIR / "nse_identity_backfill.py",
+                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR)
+    if discovery["status"] != "failed":
+        discovery["counts"] = discovery_counts(discovery)
+    steps.append(discovery)
+    identity = run("NSE identity/ISIN/listing-date backfill", NSE_IDENTITY_SCRIPT,
                      ["--limit", args.limit, "--quote-limit", args.limit,
-                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR))
+                      "--dry-run" if dry else "--write"], dry=dry, timeout=300, cwd=PIPELINE_DIR)
+    if identity["status"] != "failed":
+        identity["counts"] = identity_counts(identity)
+    steps.append(identity)
 
-    sbi_names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
-                 "R2_DOCUMENT_BUCKET", "ANTHROPIC_API_KEY")
+    sbi_names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_DOCUMENT_BUCKET")
     sbi_ready, sbi_missing = configured(sbi_names)
     if dry:
         from sbi_ongoing import ongoing_configuration, run_sbi_lane  # exercise imports/config
         config = ongoing_configuration(os.environ)
-        steps.append({"step": "SBI ingest/extraction", "status": "dry", "duration": 0.0,
-                      "reason": f"configuration={config.status}; no DB/R2/paid calls", "counts": {}})
+        steps.append({"step": "SBI ingest", "status": "dry", "duration": 0.0,
+                      "reason": "no DB/R2 writes", "counts": {}})
+        steps.append({"step": "SBI extraction", "status": "dry", "duration": 0.0,
+                      "reason": f"configuration={config.status}; no paid calls", "counts": {}})
     elif not sbi_ready or os.environ.get("SBI_OWNER_APPROVED") != "YES":
         reason = "owner: set SBI_OWNER_APPROVED=YES" if sbi_ready else "owner: configure " + ", ".join(sbi_missing)
-        steps.append(skip("SBI ingest/extraction", reason))
+        steps.append(skip("SBI ingest", reason))
+        steps.append(skip("SBI extraction", "owner: SBI ingest must be configured first"))
     else:
         lane_started = time.monotonic()
         try:
             from sbi_ongoing import run_sbi_lane
             result = with_db(run_sbi_lane, directory=SBI_DIR, dry_run=False)
             print("SBI summary: " + json.dumps(result["summary"], sort_keys=True))
-            steps.append({"step": "SBI ingest/extraction", "status": "ok",
-                          "duration": time.monotonic()-lane_started, "counts": result["summary"]})
+            summary = result["summary"]
+            ingest_counts = {key: summary.get(key, 0) for key in
+                             ("downloaded", "resolved", "unresolved", "newly_ledgered", "already_ledgered", "ingest_errors")}
+            extraction_counts = {"selected": summary.get("selected", 0),
+                                 "completed": summary.get("EXTRACTED", 0) + summary.get("EXTRACTED_WITH_DROPS", 0),
+                                 "skipped": summary.get("ALREADY_EXTRACTED", 0),
+                                 "rejected": summary.get("EVIDENCE_REJECTED", 0)}
+            steps.append({"step": "SBI ingest", "status": "ok",
+                          "duration": time.monotonic()-lane_started, "counts": ingest_counts})
+            extraction_status = summary.get("extraction_status")
+            if extraction_status == "CONFIGURED":
+                steps.append({"step": "SBI extraction", "status": "ok", "duration": 0.0,
+                              "counts": extraction_counts})
+            else:
+                detail = summary.get("configuration_error") or extraction_status
+                steps.append(skip("SBI extraction", f"owner: {detail}", counts=extraction_counts))
         except Exception as exc:
             # isolated SBI lane failure (reported as a hard failure; never hidden)
-            steps.append({"step": "SBI ingest/extraction", "status": "failed",
+            steps.append({"step": "SBI ingest", "status": "failed",
                           "duration": time.monotonic()-lane_started, "reason": f"{type(exc).__name__}: {exc}"})
+            steps.append(skip("SBI extraction", "owner: ingest failed"))
 
     cap = with_db(get_cap)
     before = with_db(spent_today)
@@ -294,51 +393,60 @@ def main(argv=None):
     ids = ",".join(str(row[0]) for row in targets)
 
     if targets:
-        steps.append(run("3. NSE per-IPO lifecycle", PIPELINE_DIR / "nse_lifecycle.py",
+        steps.append(run("3. NSE per-IPO lifecycle", NSE_LIFECYCLE_SCRIPT,
                          ["--limit", args.limit, "--skip-discovery", "--dry-run" if dry else "--write"],
                          dry=dry, timeout=900, cwd=PIPELINE_DIR))
-        kite_names = ("KITE_API_KEY", "KITE_API_SECRET", "KITE_USER_ID", "KITE_PASSWORD",
-                      "KITE_TOTP_SECRET", "KITE_BROKER_PROXY_URL", "KITE_BROKER_PROXY_AUTH_SECRET")
-        kite_ready, kite_missing = configured(kite_names)
+        kite_ready, kite_missing, rotation_missing = kite_configuration()
         if args.skip_kite or not kite_ready:
             steps.append(skip("Kite refresh/candles", "owner: configure " + ", ".join(kite_missing) if not kite_ready else "owner: --skip-kite selected"))
         elif dry:
             steps.append(skip("Kite refresh/candles", "dry-run: authentication/network operation disabled"))
         else:
-            refresh = run("Kite token refresh", SCRIPTS_DIR / "refresh_kite_token.py", [], timeout=300)
-            refresh_status, structured = classify_kite_refresh(refresh.get("rc", 0), refresh.get("output", ""))
-            refresh["status"] = refresh_status
-            if structured == "SKIPPED_NOT_ACTIVATED":
-                refresh["reason"] = "owner: activate Kite token rotation"
-            steps.append(refresh)
-            steps.append(run("Kite candles/outcomes", PIPELINE_DIR / "kite_fetch.py", ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+            if rotation_missing:
+                steps.append(skip("Kite token refresh", "owner: configure " + ", ".join(rotation_missing) + " for activated rotation"))
+            else:
+                refresh = run("Kite token refresh", KITE_REFRESH_SCRIPT, [], timeout=300)
+                refresh_status, structured = classify_kite_refresh(refresh.get("rc", 0), refresh.get("output", ""))
+                refresh["status"] = refresh_status
+                if structured == "SKIPPED_NOT_ACTIVATED":
+                    refresh["reason"] = "owner: activate Kite token rotation"
+                steps.append(refresh)
+            steps.append(run("Kite candles/outcomes", KITE_FETCH_SCRIPT, ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
 
         if dry:
-            steps.append(run("score/verdict/completeness", PIPELINE_DIR / "drive.py",
-                             ["--ids", ids, "--dry-run"], dry=True, timeout=900, cwd=PIPELINE_DIR))
-            steps.append(skip("RHP paid extraction", "owner: live paid lane requires ANTHROPIC_API_KEY and spend cap"))
+            steps.append(skip("RHP paid extraction", "dry-run: paid extraction disabled"))
+        elif os.environ.get("RHP_EXTRACTION_OWNER_APPROVED") != "YES":
+            steps.append(skip("RHP paid extraction", "owner: approve RHP paid extraction"))
         elif not os.environ.get("ANTHROPIC_API_KEY"):
             steps.append(skip("RHP paid extraction", "owner: configure ANTHROPIC_API_KEY and approve paid lane"))
         elif cap <= before:
             steps.append(skip("RHP paid extraction", "owner: daily paid-call cap exhausted"))
         else:
-            steps.append(run("RHP paid extraction", PIPELINE_DIR / "drive.py",
+            steps.append(run("RHP paid extraction", DRIVE_SCRIPT,
                              ["--ids", ids, "--write", "--rhp", "--max-spend", f"{cap-before:.2f}"] +
                              (["--ignore-local"] if args.ignore_local else []), timeout=3600, cwd=PIPELINE_DIR))
-            steps.append(run("score/verdict/completeness", PIPELINE_DIR / "drive.py",
-                             ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+        steps.append(run("score/verdict/completeness", DRIVE_SCRIPT,
+                         ["--ids", ids, "--dry-run" if dry else "--write"], dry=dry, timeout=900, cwd=PIPELINE_DIR))
     else:
         steps.append(skip("active IPO processing", "no active IPOs selected", counts={"selected": 0}))
 
     snapshot_ready, snapshot_missing = configured(("SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY"))
     if dry:
-        steps.append(run("snapshot publication consumer proof", PIPELINE_DIR / "publish_snapshot_with_ledger.py",
+        steps.append(run("snapshot publication consumer proof", SNAPSHOT_PUBLISH_SCRIPT,
                          ["--dry-run"], dry=True, timeout=300, cwd=REPO_ROOT))
     elif not snapshot_ready:
         steps.append(skip("snapshot publication consumer proof", "owner: configure " + ", ".join(snapshot_missing)))
     else:
-        steps.append(run("snapshot publication consumer proof", PIPELINE_DIR / "publish_snapshot_with_ledger.py",
-                         [], timeout=300, cwd=REPO_ROOT))
+        snapshot = run("snapshot publication consumer proof", SNAPSHOT_PUBLISH_SCRIPT, [], timeout=300, cwd=REPO_ROOT)
+        if snapshot["status"] == "ok":
+            proofs = [value["SNAPSHOT_CONSUMER_PROOF"] for value in structured_objects(snapshot.get("output", ""))
+                      if "SNAPSHOT_CONSUMER_PROOF" in value]
+            if not proofs or proofs[-1].get("consumer_source") != "active":
+                snapshot.update(status="failed", reason="snapshot publication lacked active-pointer consumer proof")
+            else:
+                snapshot["counts"] = {"published": proofs[-1].get("snapshots_published", 0),
+                                      "active_version": proofs[-1].get("active_version")}
+        steps.append(snapshot)
 
     after = before if dry else with_db(spent_today)
     return report(steps, started, dry=dry, targets=targets, cap=cap, spent=max(0.0, after-before))
