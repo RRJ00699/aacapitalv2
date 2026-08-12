@@ -91,18 +91,42 @@ def environment_preflight(environ=None) -> bool:
     return True
 
 
-def db():
-    return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25,
-                            keepalives=1, keepalives_idle=30,
-                            keepalives_interval=10, keepalives_count=3)
+def db(*, attempts=4, base_delay=2.0, sleep=time.sleep):
+    """Open a DB connection, retrying transient connect failures — DNS blips, dead Neon
+    sessions, connect timeouts — with bounded exponential backoff. Raises the last
+    OperationalError only after every attempt fails."""
+    last = None
+    for attempt in range(attempts):
+        try:
+            return psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=25,
+                                    keepalives=1, keepalives_idle=30,
+                                    keepalives_interval=10, keepalives_count=3)
+        except psycopg2.OperationalError as exc:
+            last = exc
+            if attempt == attempts - 1:
+                raise
+            sleep(base_delay * (2 ** attempt))
+    raise last  # pragma: no cover - the loop returns or raises above
 
 
-def with_db(fn, *args, **kwargs):
-    conn = db()
-    try:
-        return fn(conn, *args, **kwargs)
-    finally:
-        conn.close()
+def with_db(fn, *args, attempts=2, **kwargs):
+    """Run fn(conn) on a fresh connection. If the session dies mid-call
+    (OperationalError), reconnect and retry the whole unit of work, bounded by attempts.
+    The pipeline's writers are idempotent (COALESCE-empty-only / ON CONFLICT), so a retry
+    never double-applies. db() itself already retries the connect. measure_db() wraps this,
+    so report-critical reads inherit both the connect retry and the session-death retry."""
+    last = None
+    for attempt in range(attempts):
+        conn = db()
+        try:
+            return fn(conn, *args, **kwargs)
+        except psycopg2.OperationalError as exc:
+            last = exc
+            if attempt == attempts - 1:
+                raise
+        finally:
+            conn.close()
+    raise last  # pragma: no cover - the loop returns or raises above
 
 
 def measure_db(steps, name, fn, default, *args, **kwargs):
