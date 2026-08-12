@@ -18,7 +18,8 @@ def _run(script, uri, contract=None, *args):
         env["CONTRACT_CSV"] = str(contract)
     if os.environ.get("SUBPROC_COV"):
         env["COVERAGE_FILE"] = str(ROOT / ".coverage")
-    s = ROOT / "_scripts" / script
+    diagnostic = ROOT / "tools" / "diagnostics" / script
+    s = diagnostic if diagnostic.is_file() else ROOT / "_scripts" / script
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(s)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(s)])
