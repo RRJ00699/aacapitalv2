@@ -28,6 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The SQL integration probe executes the repository's TypeScript query
+      # helper, so this job needs the same locked JS dependencies as UAT.
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml pyotp kiteconnect python-dotenv
