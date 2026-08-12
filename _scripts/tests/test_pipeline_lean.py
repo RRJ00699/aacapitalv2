@@ -54,8 +54,9 @@ def test_daily_run_order_contracts(orch):
     ran, fail, mp, tmp = orch
     code = _main(mp)
     assert code == 0
-    # Canonical issue details must be synchronized before derived verdicts.
-    assert ran.index("sync_issue_details.py") < ran.index("compute_verdicts.py")
+    for duplicate in ("compute_verdicts.py", "ipo_score.py", "compute_quality_score.py",
+                      "download_sbi_notes.py", "sbi_haiku_extract.py", "rhp_auto.py"):
+        assert duplicate not in ran
     assert ran[0] == "schema_sync.py"                # DDL owner runs FIRST
     assert ran.index("check_data_contract.py") > ran.index("compute_flags.py")  # gate LAST block
     assert "purge_candles_after_lockin.py" not in ran     # weekly-only
@@ -92,7 +93,7 @@ def test_non_hard_step_failure_does_not_stop_run(orch):
     fail["refresh_gmp.py"] = 1
     code = _main(mp)
     assert code == 0                                  # non-hard: run completes OK
-    assert "compute_verdicts.py" in ran               # later steps still ran
+    assert "compute_flags.py" in ran                  # later legacy-only steps still ran
 
 def test_missing_script_skips_not_fails(orch, capsys):
     ran, fail, mp, tmp = orch

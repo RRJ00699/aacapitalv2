@@ -5,7 +5,9 @@ import subprocess, sys, os, pytest, psycopg2
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def run(script, *args, env=None):
-    return subprocess.run([sys.executable, os.path.join(ROOT, "_scripts", script), *args],
+    diagnostic = os.path.join(ROOT, "tools", "diagnostics", script)
+    path = diagnostic if os.path.isfile(diagnostic) else os.path.join(ROOT, "_scripts", script)
+    return subprocess.run([sys.executable, path, *args],
                           capture_output=True, text=True, env=env or os.environ.copy())
 
 @pytest.mark.db

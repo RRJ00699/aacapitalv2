@@ -18,7 +18,8 @@ def _run(script, uri, contract=None, *args):
         env["CONTRACT_CSV"] = str(contract)
     if os.environ.get("SUBPROC_COV"):
         env["COVERAGE_FILE"] = str(ROOT / ".coverage")
-    s = ROOT / "_scripts" / script
+    diagnostic = ROOT / "tools" / "diagnostics" / script
+    s = diagnostic if diagnostic.is_file() else ROOT / "_scripts" / script
     cmd = ([sys.executable, "-m", "coverage", "run", "-p",
             f"--rcfile={ROOT}/.coveragerc", str(s)]
            if os.environ.get("SUBPROC_COV") else [sys.executable, str(s)])
@@ -133,6 +134,7 @@ APP_TABLES = """
     CREATE TABLE ipo_level_analysis (symbol TEXT, trade_date DATE);
     CREATE TABLE ipo_research_notes (company TEXT, source TEXT);
     CREATE TABLE ipo_rhp_intel (company_name TEXT);
+    CREATE TABLE access_requests (email TEXT PRIMARY KEY);
 """
 
 @pytest.fixture
@@ -156,6 +158,15 @@ def test_schema_sync_bootstraps_guardrail_objects(sync_pg):
         assert cur.fetchone()[0], f"{t} not created"
     cur.execute("SELECT source FROM data_source_registry WHERE domain='vix'")
     assert cur.fetchone()[0] == "kite"                   # guardrail C seeded
+
+
+def test_schema_sync_owns_access_request_note(sync_pg):
+    _uri, c = sync_pg
+    assert _run("schema_sync.py", _uri).returncode == 0
+    cur = c.cursor()
+    cur.execute("""SELECT 1 FROM information_schema.columns
+                   WHERE table_name='access_requests' AND column_name='note'""")
+    assert cur.fetchone() == (1,)
 
 def test_schema_sync_per_statement_isolation_on_fresh_db(pg_uri):
     """FRESH empty db: statements targeting absent app tables fail (exit 1,

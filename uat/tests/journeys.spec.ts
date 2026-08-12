@@ -15,8 +15,7 @@ test.describe("AACapital user journeys", () => {
     // pick() navigates via the aac:focus-ipo custom event — the URL NEVER
     // changes (components/features/ipo-search.tsx pick -> onSelect -> event).
     // Assert the outcome: the command card (or its title) becomes visible.
-    await expect(page.locator("#ipocard-UATGOOD")
-      .or(page.getByText("UAT Complete Ltd").first())).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("#ipocard-UATGOOD")).toBeVisible({ timeout: 10_000 });
   });
 
   test("J2 · quality + lifecycle filters combine", async ({ watched: page }) => {
@@ -48,8 +47,8 @@ test.describe("AACapital user journeys", () => {
     const complete = page.locator("#ipocard-UATGOOD");
     const exp1 = complete.getByRole("button", { name: /RHP \+ SBI research/ });
     if (await exp1.count()) { await exp1.first().scrollIntoViewIfNeeded(); await exp1.first().click(); } // expander (skip if already open)
-    await expect(complete).toContainText("RHP evidence · the document's own words");
-    await expect(complete).toContainText("will not receive any proceeds"); // quoted excerpt renders
+    await expect(complete.getByText("RHP · quoted").first()).toBeVisible();
+    await expect(complete.locator('[title*="will not receive any proceeds"]').first()).toBeVisible();
     const incomplete = page.locator("#ipocard-UATINC");
     const exp2 = incomplete.getByRole("button", { name: /RHP \+ SBI research/ });
     if (await exp2.count()) { await exp2.first().scrollIntoViewIfNeeded(); await exp2.first().click(); }
@@ -109,21 +108,17 @@ test.describe("AACapital user journeys", () => {
 });
 
 test.describe("Complete Details + street news (2026-07-22)", () => {
-  test("J11 · deep link opens details; missing fields render em-dash with source; news links out", async ({ watched: page }) => {
+  test("J11 · legacy deep link resolves to the immutable ISIN-backed Details page", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2?view=details&ipo=UATGOOD");
-    await expect(page.getByText("Issue structure")).toBeVisible();
-    await expect(page.getByText("Lot size")).toBeVisible();
-    await expect(page.getByText(/pending \(Chittorgarh/).first()).toBeVisible(); // honest gap, named source
-    const link = page.getByRole("link", { name: /debuts above expectations/i });
+    const link = page.getByRole("link", { name: /Open Complete Details/i });
     await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute("href", /reuters\.com/);
-    await expect(page.getByText("linked & summarized, never scraped")).toBeVisible();
+    await expect(link).toHaveAttribute("href", "/dashboard/ipo2/details/INE000000011");
   });
 
-  test("J12 · details for the incomplete IPO invents nothing", async ({ watched: page }) => {
+  test("J12 · incomplete IPO still resolves by exact ISIN without inventing a record", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2?view=details&ipo=UATINC");
-    await expect(page.getByText("QUALITY: INCOMPLETE")).toBeVisible();
-    await expect(page.getByText("No street report available yet")).toBeVisible();
-    await expect(page.getByText("pending analysis")).toBeVisible(); // evidence gap named
+    const link = page.getByRole("link", { name: /Open Complete Details/i });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", "/dashboard/ipo2/details/INE000000029");
   });
 });

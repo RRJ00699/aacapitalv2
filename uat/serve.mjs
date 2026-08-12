@@ -11,10 +11,13 @@ const seed = readFileSync("uat/fixtures/seed.json", "utf8").replaceAll("__TODAY_
 const dir = mkdtempSync(join(tmpdir(), "aac-uat-"));
 const fixture = join(dir, "seed.json");
 writeFileSync(fixture, seed);
+const snapshots = readFileSync("uat/fixtures/snapshots.json", "utf8").replaceAll("__TODAY__", ist);
+const snapshotFixture = join(dir, "snapshots.json");
+writeFileSync(snapshotFixture, snapshots);
 const nextCli = createRequire(import.meta.url).resolve("next/dist/bin/next");
 const child = spawn(process.execPath, [nextCli, "start", "-p", String(process.env.UAT_PORT || 4123)], {
   stdio: "inherit",
-  env: { ...process.env, UAT_FIXTURE_JSON: fixture,
+  env: { ...process.env, UAT_FIXTURE_JSON: fixture, UAT_SNAPSHOT_JSON: snapshotFixture,
     DATABASE_URL: "postgres://uat:uat@fixture.invalid/uat",
     AUTH_SECRET: "uat-fixture-secret-not-production", NEXTAUTH_SECRET: "uat-fixture-secret-not-production",
     NEXTAUTH_URL: `http://localhost:${process.env.UAT_PORT || 4123}` },

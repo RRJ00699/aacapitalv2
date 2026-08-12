@@ -90,19 +90,11 @@ JOBS = {
     "vm_verify":       ["_scripts/vm_verify.py"],
     "token":           ["_scripts/refresh_kite_token.py"],
     "gmp":             ["_scripts/scrape_investorgain_gmp.py", "--write-db"],
-    "sbi_download":    ["_scripts/download_sbi_notes.py"],
     "ipomatrix":        ["_scripts/ipomatrix_ingest.py", "--only-null", "--apply"],
     "breadth":         ["_scripts/market_breadth.py", "--apply"],
     "sync":            ["_scripts/git_sync.py"],
-    # Mobile-first ops (2026-07-18): the derived layer could only be recomputed
-    # by running the WHOLE pipeline. These let the phone re-run one stage after a
-    # fix, without a laptop. All are idempotent (UPDATE-in-place / ON CONFLICT).
-    "verdicts":        ["_scripts/compute_verdicts.py", "--apply"],
-    "score":           ["_scripts/ipo_score.py", "--apply"],
-    "quality":         ["_scripts/compute_quality_score.py", "--apply"],
     "schema":          ["_scripts/schema_sync.py"],
     "smoke":           ["_scripts/smoke_probe.py"],
-    "sbi_haiku":       ["_scripts/sbi_haiku_extract.py"],
 }
 
 def ensure_table(cur):

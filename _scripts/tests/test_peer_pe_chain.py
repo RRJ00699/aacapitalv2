@@ -41,14 +41,14 @@ def test_fill_empty_only_on_real_postgres(pg_uri):
     c.close()
 
 
-def test_pipeline_order_notes_before_screener_after_haiku():
+def test_pipeline_order_notes_before_screener_without_duplicate_haiku():
     import re
     src = open(os.path.join(ROOT, "run_ipo_pipeline_lean.py"), encoding="utf-8").read()
     scripts = re.findall(r'step\("[^"]+",\s*\["([a-z_\.]+\.py)"', src)
-    i_haiku = scripts.index("sbi_haiku_extract.py")
     i_notes = scripts.index("derive_peer_pe_from_notes.py")
     i_scr = scripts.index("fetch_peer_pe.py")
-    assert i_haiku < i_notes < i_scr, f"step order wrong: {scripts[i_haiku:i_scr+1]}"
+    assert "sbi_haiku_extract.py" not in scripts
+    assert i_notes < i_scr, f"step order wrong: {scripts[i_notes:i_scr+1]}"
 
 
 def test_ipomatrix_probe_discovers_not_guesses():

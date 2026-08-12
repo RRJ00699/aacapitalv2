@@ -1,0 +1,98 @@
+# TODO — Commit 2 of "Actions scheduling (probe + gated daily)"
+#
+# This is a PLACEHOLDER, not a workflow. The `.yml.TODO` extension is intentional so
+# GitHub Actions does NOT pick it up: the scheduled daily pipeline must not go live
+# until the owner runs `probe-nse` and reports the results. This file will be replaced
+# by `.github/workflows/daily-pipeline.yml` in Commit 2.
+#
+# ============================================================================
+# GATE — write Commit 2 only after the owner pastes, from the probe-nse run:
+#   - the three `browser=` HTTP codes (EQUITY_L primary, quote fallback, root handshake)
+#   - the `cron.py --dry-run` result (did it reach the final report, or STOP at preflight?)
+# ============================================================================
+#
+# INTENDED SHAPE OF .github/workflows/daily-pipeline.yml
+# -----------------------------------------------------
+# name: AACapital daily pipeline
+#
+# on:
+#   schedule:
+#     # 08:15 IST == 02:45 UTC. Weekdays only (Mon-Fri). Cron is evaluated in UTC.
+#     - cron: '45 2 * * 1-5'
+#   workflow_dispatch:
+#     inputs:
+#       limit:
+#         description: 'How many IPOs to process'
+#         required: false
+#         default: '10'
+#
+# concurrency:
+#   # Two runs must never overlap (a schedule tick colliding with a manual dispatch, or
+#   # a long run overrunning into the next day). Writers are idempotent, but a paid
+#   # extraction racing a second run wastes money. Do NOT cancel-in-progress: let the
+#   # first run finish; the second queues.
+#   group: aacapital-daily-pipeline
+#   cancel-in-progress: false
+#
+# jobs:
+#   pipeline:
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 90
+#     permissions:
+#       contents: read            # nothing is committed back; documents live in R2
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with: { python-version: '3.12' }
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#           # plus any extras cron.py's live lanes need on the runner (e.g. boto3,
+#           # pymupdf, playwright + chromium) — confirm against the probe dry-run output.
+#       - name: Run daily pipeline
+#         env:
+#           # ALL read as ${{ secrets.NAME }} per task rules. NOTE: the existing
+#           # pipeline.yml reads R2_ACCOUNT_ID / R2_DOCUMENT_BUCKET / SNAPSHOT_PUBLISH_URL
+#           # from `vars`, not `secrets`. Commit 2 uses `secrets` as the task specifies;
+#           # the owner must add these as repository secrets (or we reconcile the naming
+#           # with the owner when writing Commit 2).
+#           DATABASE_URL:          ${{ secrets.DATABASE_URL }}
+#           R2_ACCOUNT_ID:         ${{ secrets.R2_ACCOUNT_ID }}
+#           R2_ACCESS_KEY_ID:      ${{ secrets.R2_ACCESS_KEY_ID }}
+#           R2_SECRET_ACCESS_KEY:  ${{ secrets.R2_SECRET_ACCESS_KEY }}
+#           R2_DOCUMENT_BUCKET:    ${{ secrets.R2_DOCUMENT_BUCKET }}
+#           SNAPSHOT_PUBLISH_URL:  ${{ secrets.SNAPSHOT_PUBLISH_URL }}
+#           # Kite vars + local-token-handoff flags:
+#           KITE_API_KEY:          ${{ secrets.KITE_API_KEY }}
+#           KITE_API_SECRET:       ${{ secrets.KITE_API_SECRET }}
+#           KITE_USER_ID:          ${{ secrets.KITE_USER_ID }}
+#           KITE_PASSWORD:         ${{ secrets.KITE_PASSWORD }}
+#           KITE_TOTP_SECRET:      ${{ secrets.KITE_TOTP_SECRET }}
+#           ALLOW_LEGACY_KITE_DB_TOKEN_WRITE: '1'
+#           KITE_REFRESH_VALIDATE_ONLY:       '1'
+#           # SNAPSHOT_PUBLISH_KEY / NTFY_TOPIC / ANTHROPIC_API_KEY as needed by the
+#           # lanes the owner chooses to run on Actions.
+#         run: python pipeline/cron.py    # live run (no --dry-run)
+#
+# LANE DECISION — depends on the probe result (fill in when writing Commit 2)
+# --------------------------------------------------------------------------
+# cron.py already SKIPS (never fails) any lane whose config/approval is absent; Commit 2
+# must NOT weaken those skip-not-fail gates. What the probe decides:
+#
+#   * If NSE `browser=` codes are 200 from the runner:
+#       The NSE-touching lanes (NSE discovery, NSE identity/ISIN/listing-date backfill,
+#       NSE per-IPO lifecycle) may run on Actions. No extra gating needed.
+#
+#   * If NSE `browser=` codes are 403 from the runner IPs:
+#       The NSE-touching lanes must be GATED OFF in this workflow and documented as
+#       owner-PC-only. Pass `--skip-*`-style flags or an env gate so those lanes report
+#       "skipped: owner-PC-only (NSE 403 from runner IPs)" rather than failing — the DB,
+#       R2/SBI, Kite (validate-only), snapshot-publish, and scoring lanes still run on
+#       Actions. (cron.py has --skip-download / --skip-rhp-download / --skip-kite today;
+#       a discovery/identity/lifecycle skip switch may need to be added — decide with the
+#       owner based on the dry-run output, without weakening the existing gates.)
+#
+# RULES CARRIED INTO COMMIT 2: no secret values in code or logs (names/codes only);
+# every secret read as ${{ secrets.NAME }}; do not weaken cron.py's skip-not-fail gates;
+# full local gate before push.

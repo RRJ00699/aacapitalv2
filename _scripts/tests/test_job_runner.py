@@ -14,6 +14,11 @@ import job_runner as J
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC = (ROOT / "_scripts" / "job_runner.py").read_text(encoding="utf-8")
 pytestmark = pytest.mark.unit
+JOB_RUNS_DDL = """CREATE TABLE job_runs (
+    id BIGSERIAL PRIMARY KEY, job TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued', requested_by TEXT,
+    requested_at TIMESTAMPTZ DEFAULT now(), started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ, exit_code INT, error TEXT, log_tail TEXT)"""
 
 
 # ---------- source-order contract ----------
@@ -103,7 +108,7 @@ def test_should_exit_idle_matrix(monkeypatch, flag, throttled, exits):
 def test_main_empty_queue_single_pass_no_jobs_run(monkeypatch, capsys, pg_uri):
     import psycopg2
     c = psycopg2.connect(pg_uri); c.autocommit = True
-    c.cursor().execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+    c.cursor().execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;" + JOB_RUNS_DDL)
     monkeypatch.setattr(J, "DB", pg_uri)
     ran = []
     monkeypatch.setattr(J, "run_job", lambda job: ran.append(job) or (0, "", None))
@@ -119,7 +124,7 @@ def test_main_empty_queue_single_pass_no_jobs_run(monkeypatch, capsys, pg_uri):
 def test_main_claims_runs_and_records_queued_job(monkeypatch, pg_uri):
     import psycopg2
     c = psycopg2.connect(pg_uri); c.autocommit = True
-    c.cursor().execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+    c.cursor().execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;" + JOB_RUNS_DDL)
     monkeypatch.setattr(J, "DB", pg_uri)
     monkeypatch.setattr(J, "run_job",
                         lambda job: (0, "did the thing", None) if job == "gmp" else (2, "", "boom"))

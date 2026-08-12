@@ -1,0 +1,85 @@
+name: Probe NSE/Kite reachability
+
+# MANUAL-ONLY reachability probe. There is deliberately NO schedule: the owner runs
+# this once from Actions -> Run workflow to answer two questions before the scheduled
+# daily pipeline (Commit 2) is written:
+#   1. Do the NSE/Kite endpoints answer from GitHub-hosted runner IPs, or do they 403?
+#   2. Does the pipeline repo import, resolve paths, and preflight cleanly in the
+#      Actions Ubuntu environment?
+# It performs NO writes and needs NO scraping secrets: the curls print HTTP status
+# codes only (never response bodies, never secret values), and the repo proof is
+# `cron.py --dry-run`, which the code guarantees is read-only.
+#
+# The results GATE Commit 2 (.github/workflows/daily-pipeline.yml): if NSE returns 403
+# from runner IPs, the NSE-touching lanes stay owner-PC-only in the daily workflow.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: probe-nse
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: NSE / Kite HTTP reachability (status codes only)
+        # No secrets are used here. We print only the numeric HTTP status code returned
+        # by each endpoint. For each URL we record two codes:
+        #   bare    = an unadorned client (no browser headers)
+        #   browser = a browser-like User-Agent/Accept, mirroring how the real pipeline
+        #             reaches NSE via curl_cffi impersonation
+        # If `browser` is 403 the runner IP itself is blocked; if only `bare` is 403 the
+        # block is header-based and the pipeline's impersonation may still work.
+        run: |
+          set -u
+          probe() {
+            label="$1"; url="$2"
+            bare=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url" || echo "000")
+            browser=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+              -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
+              -H 'Accept: text/html,application/json,application/xhtml+xml,*/*' \
+              -H 'Accept-Language: en-US,en;q=0.9' \
+              "$url" || echo "000")
+            printf '%-30s bare=%-4s browser=%-4s %s\n' "$label" "$bare" "$browser" "$url"
+          }
+          echo "NSE/Kite reachability from a GitHub-hosted runner"
+          echo "codes: 000=connection failed/timeout  200=OK  403=blocked  4xx/5xx=see code"
+          echo "-------------------------------------------------------------------------------"
+          probe "backfill-primary(EQUITY_L)" "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+          probe "backfill-fallback(quote)"   "https://www.nseindia.com/api/quote-equity?symbol=RELIANCE"
+          probe "handshake(root)"            "https://www.nseindia.com"
+          echo "-------------------------------------------------------------------------------"
+          echo "Paste the three 'browser=' codes into the PR before Commit 2 is written."
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pipeline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Repo executes on the runner (cron.py --dry-run, read-only, no writes)
+        # IF the DATABASE_URL secret is present, prove the repo imports, resolves paths,
+        # and passes preflight on the Actions Ubuntu runner. --dry-run performs no
+        # external downloads, no paid calls, and no DB/R2 writes (see cron.py). The
+        # secret is only tested for presence with -z; its value is never printed.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is not present — skipping the dry-run repo proof."
+            echo "Add the DATABASE_URL secret and re-run to prove cron.py imports and"
+            echo "preflights on the runner. (Reachability codes above are still valid.)"
+            exit 0
+          fi
+          python pipeline/cron.py --dry-run

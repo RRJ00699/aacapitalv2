@@ -5,8 +5,8 @@ const C = {
   border: "#ECE8E1",
   ink: "#0F1B2D",
   sub: "#475569",
-  meta: "#94a3b8",
-  gold: "#B8860B",
+  meta: "#475569",
+  gold: "#765500",
 }
 
 const mono = "'IBM Plex Mono', monospace"
