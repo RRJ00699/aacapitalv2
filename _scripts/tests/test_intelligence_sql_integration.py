@@ -1,5 +1,6 @@
 import json,os,subprocess
 import psycopg2
+from psycopg2.extensions import parse_dsn
 
 DDL="""
 CREATE TABLE ipo(id int primary key,isin text,symbol text,name_display text,listing_date date);
@@ -14,6 +15,26 @@ CREATE TABLE documents(id int,doc_type text,url text,sha256 text,page_count int)
 CREATE TABLE insights(id int,ipo_id int,excerpt text,page_number int,doc_id int,category text,direction text,source_type text,is_current boolean);
 """
 
+def _postgres_env(pg_uri):
+    """Translate pgserver's socket DSN into explicit postgres.js options."""
+    parsed = parse_dsn(pg_uri)
+    mapping = {
+        "host": "PGHOST",
+        "port": "PGPORT",
+        "user": "PGUSER",
+        "password": "PGPASSWORD",
+        "dbname": "PGDATABASE",
+    }
+    return {mapping[key]: value for key, value in parsed.items() if key in mapping}
+
+def test_postgres_env_preserves_pgserver_unix_socket():
+    env = _postgres_env("postgresql://postgres@/postgres?host=/tmp/pgserver-fixture")
+    assert env == {
+        "PGHOST": "/tmp/pgserver-fixture",
+        "PGUSER": "postgres",
+        "PGDATABASE": "postgres",
+    }
+
 def test_seeded_real_details_sql_builds_available_profile_with_latest_fact_and_restated_basis(pg_uri):
     conn=psycopg2.connect(pg_uri);cur=conn.cursor();cur.execute("DROP SCHEMA public CASCADE;CREATE SCHEMA public;"+DDL)
     cur.execute("INSERT INTO ipo VALUES(1,'INE000000001','FIX','Fixture',NULL);INSERT INTO ipo_issue VALUES(1,100,90,100,500,500,0,10,10)")
@@ -21,6 +42,6 @@ def test_seeded_real_details_sql_builds_available_profile_with_latest_fact_and_r
     cur.execute("INSERT INTO financial_statements VALUES(1,'31-Mar-26','Standalone',20,120,40,100),(1,'31-Mar-25','Restated Consolidated',20,100,50,110)")
     cur.execute("INSERT INTO source_facts VALUES(1,'cash_cr','100','2026-01-01'),(1,'cash_cr','80','2026-02-01'),(1,'debt_repayment_cr','50','2026-02-01'),(1,'interest_expense_cr','10','2026-02-01')")
     conn.commit();conn.close()
-    env={**os.environ,'DATABASE_URL':pg_uri};result=subprocess.run(['npx','tsx','_scripts/tests/helpers/intelligence_sql_probe.ts'],env=env,text=True,capture_output=True)
+    env={**os.environ,'DATABASE_URL':pg_uri,**_postgres_env(pg_uri)};result=subprocess.run(['npx','tsx','_scripts/tests/helpers/intelligence_sql_probe.ts'],env=env,text=True,capture_output=True)
     assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     out=json.loads(result.stdout);assert out=={'status':'AVAILABLE','post_issue_shares_cr':4,'cash_cr':80,'financial_basis':'Restated Consolidated'}
