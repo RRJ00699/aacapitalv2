@@ -292,6 +292,11 @@ DDL = [
         status TEXT NOT NULL DEFAULT 'queued', requested_by TEXT,
         requested_at TIMESTAMPTZ DEFAULT now(), started_at TIMESTAMPTZ,
         finished_at TIMESTAMPTZ, exit_code INT, error TEXT, log_tail TEXT)""",
+    """CREATE TABLE IF NOT EXISTS access_requests (
+        email TEXT PRIMARY KEY, name TEXT, status TEXT NOT NULL DEFAULT 'pending',
+        requested_at TIMESTAMPTZ DEFAULT now(), decided_at TIMESTAMPTZ,
+        decided_by TEXT, note TEXT)""",
+    "ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS note TEXT",
 ]
 
 

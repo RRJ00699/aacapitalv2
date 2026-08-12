@@ -21,5 +21,6 @@ def test_seeded_real_details_sql_builds_available_profile_with_latest_fact_and_r
     cur.execute("INSERT INTO financial_statements VALUES(1,'31-Mar-26','Standalone',20,120,40,100),(1,'31-Mar-25','Restated Consolidated',20,100,50,110)")
     cur.execute("INSERT INTO source_facts VALUES(1,'cash_cr','100','2026-01-01'),(1,'cash_cr','80','2026-02-01'),(1,'debt_repayment_cr','50','2026-02-01'),(1,'interest_expense_cr','10','2026-02-01')")
     conn.commit();conn.close()
-    env={**os.environ,'DATABASE_URL':pg_uri};result=subprocess.run(['npx','tsx','_scripts/tests/helpers/intelligence_sql_probe.ts'],env=env,text=True,capture_output=True,check=True)
+    env={**os.environ,'DATABASE_URL':pg_uri};result=subprocess.run(['npx','tsx','_scripts/tests/helpers/intelligence_sql_probe.ts'],env=env,text=True,capture_output=True)
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     out=json.loads(result.stdout);assert out=={'status':'AVAILABLE','post_issue_shares_cr':4,'cash_cr':80,'financial_basis':'Restated Consolidated'}
