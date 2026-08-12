@@ -21,6 +21,7 @@ writers into the V2 tables.
   python kite_fetch.py --ids 285 --write --days 60
 """
 import os, sys, io, argparse, datetime as dt
+from pathlib import Path
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     except Exception: pass
@@ -28,6 +29,9 @@ import psycopg2
 
 FILE_BUILD = "kite_fetch 2026-08-03e — NSE/BSE resolve + exchange provenance, market_candles_15m, ceiling_20 fix, score-scope 699"
 _INSTRUMENTS = None
+REPO_ROOT = Path(__file__).resolve().parent.parent
+KITE_CONNECT_SCRIPT = "_scripts/kite_connect.py"
+SHARED_SCRIPTS_DIR = (REPO_ROOT / KITE_CONNECT_SCRIPT).parent
 
 # NOTE: a 15-min fetch-start clamp (today - LOOKBACK) is DEFERRED. The horizon must be
 # MEASURED with a backward-walking probe (request today-300/-400/-600/-1000 for a token
@@ -37,13 +41,18 @@ _INSTRUMENTS = None
 # probe, then re-add the clamp.
 
 
-def get_kite():
-    """Import the repo's shared helper wherever it lives."""
-    for path in ("_scripts", os.path.join("aacapitalv2", "_scripts"), "."):
-        if os.path.isdir(path) and path not in sys.path:
-            sys.path.insert(0, path)
+def load_shared_get_kite():
+    """Import the repository's shared helper independently of the caller's cwd."""
+    scripts_path = str(SHARED_SCRIPTS_DIR)
+    if scripts_path not in sys.path:
+        sys.path.insert(0, scripts_path)
     from kite_connect import get_kite as _g
-    return _g()
+    return _g
+
+
+def get_kite():
+    """Authenticate through the existing shared token source."""
+    return load_shared_get_kite()()
 
 
 def instruments(kite):

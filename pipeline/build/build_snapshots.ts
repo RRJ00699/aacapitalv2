@@ -111,7 +111,10 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
 async function publishBatch(endpoint:string,key:string,snapshots:Array<{name:string,payload:unknown}>, label:string) {
   const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json","x-aac-key":key},body:JSON.stringify({snapshots})});
   if(!response.ok) throw new Error(`${label} publication failed ${response.status}: ${await response.text()}`);
-  console.log(await response.text());
+  const result=await response.json() as {published?:Record<string,string>};
+  if(!result.published) throw new Error(`${label} publication response omitted versions`);
+  console.log(JSON.stringify({stage:"publication",label,published:result.published}));
+  return result.published;
 }
 
 function fixtureSqlClient(): SqlClient {
@@ -143,8 +146,8 @@ export async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const schemaSmoke = process.argv.includes("--schema-smoke");
   if (schemaSmoke && process.env.SNAPSHOT_TEST_FIXTURE === "1") throw new Error("schema smoke requires real Neon SQL; fixture is not allowed");
-  const publishEndpoint = schemaSmoke ? null : snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
-  const key = schemaSmoke ? null : requirePublishKey();
+  const publishEndpoint = schemaSmoke || dryRun ? null : snapshotPublishEndpoint(process.env.SNAPSHOT_PUBLISH_URL);
+  const key = schemaSmoke || dryRun ? null : requirePublishKey();
 
   const fixture = process.env.SNAPSHOT_TEST_FIXTURE === "1";
   const realSql = fixture ? null : neon(requireDatabaseUrl(schemaSmoke)) as unknown as SqlClient;

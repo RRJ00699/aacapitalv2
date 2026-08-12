@@ -159,6 +159,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None)
                        "source": source, "fields": changed if write else prospective})
     if write: conn.commit()
     return {"headers": headers, "selected": len(selected),
+            "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows)},
             "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
             "quote_calls": quote_calls,
             "updates": updates, "rows": report}

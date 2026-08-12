@@ -95,6 +95,19 @@ class SnapshotHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"ok": True, "published": published}).encode())
 
+    def do_GET(self):
+        if self.path != "/api/ipo-command":
+            self.send_error(404)
+            return
+        version = self.kv.get(_pointer("ipo-command:v6", "active"))
+        self.send_response(200)
+        if version:
+            self.send_header("x-snapshot-version", version)
+            self.send_header("x-cache", "HIT")
+        self.end_headers()
+        payload = self.kv.get(_data_key("ipo-command:v6", version), "{}") if version else "{}"
+        self.wfile.write(payload.encode())
+
 
 class ServerContext:
     def __enter__(self):
@@ -332,7 +345,7 @@ def test_missing_pointer_switch_is_detected_by_consumer_proof():
     with ServerContext() as srv:
         SnapshotHandler.skip_pointer = True
         res = run_publisher(srv.url)
-        assert res.returncode == 0
+        assert res.returncode != 0
         assert SnapshotHandler.kv.get(_pointer("ipo-command:v6", "active")) is None
         hit = consume_with_versioned_snapshot(SnapshotHandler.kv)
         assert hit["payload"] == {}

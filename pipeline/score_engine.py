@@ -63,7 +63,7 @@ def _latest_financials(cur, ipo_id):
     # off-format value sorts last rather than erroring the whole query.
     cur.execute("""SELECT period,basis,revenue,ebitda,pat,net_worth,total_debt,total_assets
                    FROM financial_statements WHERE ipo_id=%s
-                   ORDER BY (basis ILIKE '%consolidat%') DESC,
+                   ORDER BY (basis ILIKE '%%consolidat%%') DESC,
                             CASE WHEN period ~ '^[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2}$'
                                  THEN to_date(period,'DD-Mon-YY') END DESC NULLS LAST""",(ipo_id,))
     rows=cur.fetchall()
@@ -77,9 +77,12 @@ def compute_valuation(conn, ipo_id):
     cur.execute("""SELECT issue_price,band_hi,band_lo,issue_size_cr,ofs_cr
                    FROM ipo_issue WHERE ipo_id=%s""",(ipo_id,))
     iss=cur.fetchone()
-    issue_price = float(iss[0]) if iss and iss[0] is not None else (float(iss[1]) if iss and iss[1] is not None else None)
-    issue_size  = float(iss[3]) if iss and iss[3] is not None else None
-    ofs_cr      = float(iss[4]) if iss and iss[4] is not None else None
+    issue_price_raw, band_hi, _band_lo, issue_size_raw, ofs_raw = (
+        iss if iss is not None else (None, None, None, None, None))
+    issue_price = float(issue_price_raw) if issue_price_raw is not None else (
+        float(band_hi) if band_hi is not None else None)
+    issue_size = float(issue_size_raw) if issue_size_raw is not None else None
+    ofs_cr = float(ofs_raw) if ofs_raw is not None else None
     if issue_price is None: missing.append("issue_price")
 
     latest, allrows = _latest_financials(cur, ipo_id)

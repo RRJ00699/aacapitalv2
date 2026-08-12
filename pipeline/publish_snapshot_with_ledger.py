@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Publish route snapshots, record the outcome, and alert on failure."""
 import datetime as dt
+import argparse
 import json
 import os
 import subprocess
 import sys
 import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 FAILED_STEP = "snapshot build/publication"
@@ -69,7 +71,48 @@ def missing_required_config():
     return missing
 
 
-def main() -> int:
+def publication_versions(output):
+    published = {}
+    for line in output.splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if value.get("stage") == "publication":
+            published.update(value.get("published", {}))
+    return published
+
+
+def prove_active_consumer(output):
+    versions = publication_versions(output)
+    expected = versions.get("ipo-command:v6")
+    if not expected:
+        raise RuntimeError("publication response omitted canonical ipo-command:v6 version")
+    origin = os.environ["SNAPSHOT_PUBLISH_URL"]
+    parsed = urllib.parse.urlsplit(origin)
+    endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/api/ipo-command", "", ""))
+    response = urllib.request.urlopen(endpoint, timeout=30)
+    active = response.headers.get("x-snapshot-version")
+    rollback = response.headers.get("x-snapshot-rollback")
+    if active != expected or rollback:
+        raise RuntimeError("active snapshot pointer did not resolve to the published Command version")
+    proof = {"snapshots_published": len(versions), "active_version": active,
+             "consumer_source": "active", "canonical_snapshot": "ipo-command:v6"}
+    print(json.dumps({"SNAPSHOT_CONSUMER_PROOF": proof}, sort_keys=True))
+    return proof
+
+
+def main(argv=()) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+    if args.dry_run:
+        # Consumer-proof path without a ledger write or publication.  warm_kv passes
+        # this through to the canonical builder, which validates selectors/config.
+        return subprocess.run(
+            [sys.executable, str(HERE / "warm_kv.py"), "--dry-run"],
+            cwd=ROOT,
+        ).returncode
     started = time.time()
     record = {
         "step": FAILED_STEP,
@@ -89,7 +132,8 @@ def main() -> int:
                                    text=True, capture_output=True)
         if completed.stdout: print(completed.stdout, end="")
         if completed.stderr: print(completed.stderr, end="", file=sys.stderr)
-        record.update({"status": "ok", "alert_status": "NOT_REQUIRED"})
+        proof = prove_active_consumer(completed.stdout or "")
+        record.update({"status": "ok", "alert_status": "NOT_REQUIRED", "consumer_proof": proof})
         return 0
     except subprocess.CalledProcessError as exc:
         if exc.stdout: print(exc.stdout, end="")
@@ -117,4 +161,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
