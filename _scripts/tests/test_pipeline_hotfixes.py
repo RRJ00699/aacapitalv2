@@ -139,7 +139,9 @@ def test_ticker_targets_use_strong_symbol_key(pg_uri, require_pg_tz):
     resolve; SME and small issues stay excluded."""
     import importlib.util
     import psycopg2
-    spec = importlib.util.spec_from_file_location("kt", os.path.join(ROOT, "ipo", "kite_ticker_ipo.py"))
+    archived = os.path.join(REPO, "compatibility", "scripts", "ipo", "kite_ticker_ipo.py")
+    assert archived not in open(os.path.join(REPO, "pipeline", "cron.py"), encoding="utf-8").read()
+    spec = importlib.util.spec_from_file_location("kt", archived)
     kt = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(kt)

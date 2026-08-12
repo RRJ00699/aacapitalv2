@@ -89,11 +89,31 @@ KNOWN_GAPS = {
     # (gmp harness-limit entry pruned 2026-07-20: route archived on main)
 }
 
+# Exact manifest replaces the stale aggregate floor. Base fda64a8 and this head both
+# contain these same 25 blocks; a removed route/block now names the precise delta.
+SQL_BLOCK_MANIFEST = {
+    "app/api/access-note/route.ts": 1,
+    "app/api/admin/access/route.ts": 7,
+    "app/api/admin/jobs/route.ts": 3,
+    "app/api/admin/pipeline-failures/route.ts": 1,
+    "app/api/admin/pipeline-steps/route.ts": 1,
+    "app/api/admin/secrets/route.ts": 3,
+    "app/api/auth/zerodha/callback/route.ts": 2,
+    "app/api/auth/zerodha/status/route.ts": 1,
+    "app/api/ipo/cum-volume/route.ts": 1,
+    "app/api/ipo/tick-feed/route.ts": 1,
+    "app/api/market/snapshot/route.ts": 2,
+    "app/api/settings/route.ts": 2,
+}
+
 
 def test_B5_every_route_sql_block_runs_or_is_known_gap(contract_db):
     new_failures, cured = {}, []
     blocks = list(all_blocks())
-    assert len(blocks) >= 38, f"extractor regressed: only {len(blocks)} sql blocks found"
+    actual = {}
+    for filename, _index, _query in blocks:
+        actual[filename] = actual.get(filename, 0) + 1
+    assert actual == SQL_BLOCK_MANIFEST, f"route SQL manifest changed: actual={actual}"
     cur = contract_db.cursor()
     for f, i, q in blocks:
         q2, params = _bind(q)
