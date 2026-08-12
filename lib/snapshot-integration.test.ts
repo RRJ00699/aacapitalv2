@@ -47,3 +47,18 @@ test("test KV mutator rejects production mutation", () => {
     else (process.env as Record<string, string | undefined>).NODE_ENV = oldEnv;
   }
 });
+
+test("UAT production server reads deterministic versioned snapshots without a Cloudflare binding", async () => {
+  const oldFixture = process.env.UAT_SNAPSHOT_JSON;
+  process.env.UAT_SNAPSHOT_JSON = `${process.cwd()}/uat/fixtures/snapshots.json`;
+  __setTestKVForIntegration(undefined);
+  try {
+    const response = await indexGET();
+    assert.equal(response.headers.get("x-cache"), "HIT");
+    assert.equal((await response.json()).rows[0].sym, "UATGOOD");
+  } finally {
+    if (oldFixture === undefined) delete process.env.UAT_SNAPSHOT_JSON;
+    else process.env.UAT_SNAPSHOT_JSON = oldFixture;
+    __setTestKVForIntegration(undefined);
+  }
+});

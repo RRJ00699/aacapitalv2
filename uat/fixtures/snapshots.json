@@ -1,0 +1,199 @@
+{
+  "ipo-command:v6": {
+    "cards": [
+      {
+        "company_name": "UAT Complete Ltd",
+        "sym": "UATGOOD",
+        "state": "UPCOMING",
+        "listing_date": "2026-08-20",
+        "open_date": "2026-08-13",
+        "close_date": "2026-08-17",
+        "issue_size_cr": "1101.28",
+        "issue_price": "425",
+        "ipo_score": 3,
+        "score_band": "STRONG",
+        "score_expected_win": 81,
+        "verdict": "TRADE",
+        "quality_score": 31,
+        "anchor_count": 129,
+        "ofs_cr": "981",
+        "fresh_issue_cr": "0",
+        "band_high": "425",
+        "band_low": "404",
+        "ipo_pe": "23",
+        "eps_post": "15.06",
+        "peer_median_pe": "22",
+        "roe": "33.7",
+        "rhp_url": "https://x/rhp.pdf",
+        "rhp_verdict": "clean",
+        "rhp_gate": "accept",
+        "rhp_full": "{\"one_line\":\"Clean forensics.\"}",
+        "sbi_rating": "SUBSCRIBE",
+        "fair_value": 411,
+        "fair_mos": -3.2,
+        "fair_verdict": "fair",
+        "fair_note": "EPS and peer valuation available",
+        "playbook_setup": "watch",
+        "playbook_verdict": "Passes: 30+ anchor investors.",
+        "insights": [
+          {
+            "category": "structure",
+            "direction": "negative",
+            "statement": "Entirely an offer for sale; the company receives no proceeds.",
+            "excerpt": "the Company will not receive any proceeds from the Offer",
+            "source": "RHP",
+            "locator": "p.87"
+          },
+          {
+            "category": "governance",
+            "direction": "positive",
+            "statement": "Independent board majority documented.",
+            "excerpt": "a majority of independent directors",
+            "source": "RHP",
+            "locator": "p.44"
+          }
+        ],
+        "news": {
+          "publisher": "Reuters",
+          "headline": "UAT Complete debuts above expectations as analysts flag rich valuation",
+          "url": "https://www.reuters.com/markets/asia/uat",
+          "published_at": "2026-07-22",
+          "snippet": "Shares opened above the issue price..."
+        },
+        "research": {
+          "pipeline_status": "RESEARCH_COMPLETE",
+          "research_completeness": { "done": 3, "of": 3, "label": "Research Complete" },
+          "rhp_status": "CONFIRMED",
+          "sbi_status": "CONFIRMED",
+          "company_quality": { "status": "CONFIRMED", "verdict": "GOOD" },
+          "prelisting_score": { "score": 3, "band": "STRONG" },
+          "fair_value_status": "READY",
+          "margin_of_safety_status": "READY",
+          "evidence": [
+            {
+              "category": "structure",
+              "direction": "negative",
+              "statement": "Entirely an offer for sale; the company receives no proceeds.",
+              "excerpt": "the Company will not receive any proceeds from the Offer",
+              "source": "RHP",
+              "locator": "p.87"
+            }
+          ]
+        }
+      },
+      {
+        "company_name": "UAT Incomplete Ltd",
+        "sym": "UATINC",
+        "state": "UPCOMING",
+        "listing_date": "2026-08-20",
+        "open_date": "2026-08-13",
+        "close_date": "2026-08-17",
+        "issue_size_cr": "1101.28",
+        "issue_price": "425",
+        "ipo_score": 1,
+        "score_band": "FAVORABLE",
+        "score_expected_win": 79,
+        "verdict": "WATCH",
+        "quality_score": 31,
+        "anchor_count": 129,
+        "ofs_cr": "981",
+        "fresh_issue_cr": "0",
+        "band_high": "425",
+        "band_low": "404",
+        "ipo_pe": "23",
+        "eps_post": "15.06",
+        "roe": "33.7",
+        "fair_note": "needs peer P/E",
+        "playbook_setup": "watch",
+        "playbook_verdict": "Passes: 30+ anchor investors.",
+        "research": {
+          "pipeline_status": "ENRICHED",
+          "research_completeness": { "done": 1, "of": 3, "label": "Research Partial" },
+          "rhp_status": "PENDING",
+          "sbi_status": "PENDING",
+          "company_quality": { "status": "INCOMPLETE" },
+          "prelisting_score": { "score": 1, "band": "FAVORABLE" },
+          "fair_value_status": "UNAVAILABLE",
+          "margin_of_safety_status": "UNAVAILABLE",
+          "fair_value_note": "Fair value unavailable — peer evidence pending.",
+          "evidence": null
+        }
+      },
+      {
+        "company_name": "UAT Listing Ltd",
+        "sym": "UATLIVE",
+        "state": "LISTING",
+        "listing_date": "__TODAY__",
+        "open_date": "2026-08-03",
+        "close_date": "2026-08-05",
+        "issue_size_cr": "11692.91",
+        "issue_price": "574",
+        "verdict": "WATCH",
+        "anchor_count": 129,
+        "research": {
+          "pipeline_status": "ENRICHED",
+          "research_completeness": { "done": 1, "of": 3, "label": "Research Partial" },
+          "rhp_status": "PARTIAL",
+          "sbi_status": "PENDING",
+          "company_quality": { "status": "INCOMPLETE" },
+          "fair_value_status": "UNAVAILABLE"
+        }
+      }
+    ],
+    "filtered": [],
+    "filtered_count": 0,
+    "live": [],
+    "levels": [],
+    "blocks": [],
+    "post": [
+      {
+        "company_name": "UAT Listed Ltd",
+        "sym": "UATPOST",
+        "listing_date": "2026-07-10",
+        "listing_gap_pct": 4.2,
+        "score_band": "FAVORABLE",
+        "verdict": "WATCH",
+        "research": {
+          "research_completeness": { "done": 2, "of": 3, "label": "Research Partial" },
+          "company_quality": { "status": "CONFIRMED", "verdict": "WATCH" }
+        }
+      }
+    ],
+    "brlm": [ { "lead": "UAT BRLM", "n": 10, "pop_rate": 77, "med_gap": 12.5 } ],
+    "dl": [],
+    "track": [],
+    "generated_at": "2026-08-12T00:00:00Z"
+  },
+  "ipo:index:v3": {
+    "rows": [
+      { "company_name": "UAT Complete Ltd", "sym": "UATGOOD", "isin": "INE000000011", "listing_date": "2026-08-20" },
+      { "company_name": "UAT Incomplete Ltd", "sym": "UATINC", "isin": "INE000000029", "listing_date": "2026-08-20" },
+      { "company_name": "UAT Listing Ltd", "sym": "UATLIVE", "isin": "INE000000037", "listing_date": "__TODAY__" },
+      { "company_name": "UAT Listed Ltd", "sym": "UATPOST", "isin": "INE000000045", "listing_date": "2026-07-10" }
+    ],
+    "generated_at": "2026-08-12T00:00:00Z"
+  },
+  "ipo-live-preopen:v2": {
+    "ok": true,
+    "window": "listing_date = IST-today",
+    "count": 1,
+    "book_live": false,
+    "listings": [
+      {
+        "company_name": "UAT Listing Ltd",
+        "sym": "UATLIVE",
+        "listing_date": "__TODAY__",
+        "research_ready": false,
+        "research_missing": [ "fair value inputs", "completed RHP evidence" ],
+        "mos": {
+          "pct": null,
+          "cushion_rupees": 0,
+          "fair_anchor": 574,
+          "anchor_source": "issue-price-floor",
+          "gmp_ref": null
+        }
+      }
+    ],
+    "snapshot_as_of": "2026-08-12T00:00:00Z"
+  }
+}

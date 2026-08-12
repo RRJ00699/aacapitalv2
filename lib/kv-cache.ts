@@ -18,6 +18,30 @@ export function __setTestKVForIntegration(store: KV | null | undefined): void {
 
 function kv(): KV | null {
   if (testKV !== undefined) return testKV;
+  const fixturePath = process.env.UAT_SNAPSHOT_JSON;
+  if (fixturePath) {
+    // The browser UAT boots the production build without a Cloudflare binding.
+    // Give that build a read-only, file-backed versioned-snapshot store so the
+    // same KV-only routes are exercised with deterministic data. This variable
+    // is set only by uat/serve.mjs; production never receives it.
+    const readFixture = () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return JSON.parse(require("fs").readFileSync(fixturePath, "utf8")) as Record<string, unknown>;
+    };
+    return {
+      async get(key: string) {
+        const active = key.match(/^snapshot:(.+):active$/);
+        if (active) return Object.hasOwn(readFixture(), active[1]) ? "uat-fixture" : null;
+        const data = key.match(/^snapshot:(.+):data:uat-fixture$/);
+        if (data) {
+          const value = readFixture()[data[1]];
+          return value === undefined ? null : JSON.stringify(value);
+        }
+        return null;
+      },
+      async put() { /* UAT fixture is intentionally read-only. */ },
+    };
+  }
   try {
     return (getCloudflareContext().env as unknown as { CACHE?: KV }).CACHE ?? null;
   } catch {
