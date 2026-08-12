@@ -86,7 +86,7 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
   // empty. A non-existent sentinel id returns no domain row while PostgreSQL still parses,
   // plans, and validates every new table, column, alias, lateral join and JSON aggregate.
   const detailIds = selected.length || !schemaSmoke ? selected.map(row => row.id) : [-1];
-  const [command, index, journeys, preopenRows, observations, detailRows] = await Promise.all([
+  const [command, index, journeys, preopenRows, observations, levelObservations, detailRows] = await Promise.all([
     atBuilderStage("ipo-command", () => buildCommand(sql)),
     atBuilderStage("ipo-index", () => buildIpoIndex(sql)),
     Promise.all(journeyQueries.map(({ row, identity }) => limit(async () => ({ row, candles: await atBuilderStage(
@@ -95,14 +95,16 @@ async function buildSnapshots(sql: SqlClient, maxIpos: number, concurrency: numb
     ) })))),
     atBuilderStage("live-preopen", () => fetchPreopenRows(sql)),
     atBuilderStage("preopen-observations", () => sql`SELECT DISTINCT ON (o.ipo_id) o.ipo_id,o.ltp,o.buy_qty,o.sell_qty,o.payload,o.observed_at FROM listing_observations o WHERE o.obs_type='preopen' ORDER BY o.ipo_id,o.observed_at DESC`),
+    atBuilderStage("level-observations", () => sql`SELECT DISTINCT ON (o.ipo_id) o.ipo_id,o.payload,o.observed_at FROM listing_observations o WHERE o.obs_type='level' ORDER BY o.ipo_id,o.observed_at DESC`),
     atBuilderStage("ipo-details", () => fetchDetailsRows(sql, detailIds)),
   ]);
   const latest = new Map(observations.map(o => [String(o.ipo_id), o]));
+  const latestLevel = new Map(levelObservations.map(o => [String(o.ipo_id), o]));
   const now = new Date().toISOString();
   const globals = [
     { name: "ipo-command:v6", payload: command }, { name: "ipo:index:v3", payload: index },
     { name: "ipo-live-preopen:v2", payload: { ok:true, window:"listing_date = IST-today", book_live:false, live_overlay:"BLOCKED", degraded:"Kite credential automation is not proven safe", count:preopenRows.length, listings:preopenRows.map(r => ({...scoreListing(r),latest_observation:latest.get(String(r.ipo_id))??null})), fetchedAt:now } },
-    ...journeys.filter(({ row }) => row !== null).map(({row,candles}) => ({ name:`journey:isin:${String(row!.isin).toUpperCase()}:v1`, payload:{ isin:row!.isin,sym:row!.sym,rows:candles,generated_at:now } })),
+    ...journeys.filter(({ row }) => row !== null).map(({row,candles}) => ({ name:`journey:isin:${String(row!.isin).toUpperCase()}:v1`, payload:{ isin:row!.isin,sym:row!.sym,rows:candles,level_observation:latestLevel.get(String(row!.id))??null,generated_at:now } })),
   ];
   const details = detailRows.map(row => ({ name:`ipo-details:isin:${String(row.isin).toUpperCase()}:v1`, payload:detailsFromRow(row,now) }));
   return { globals, details };

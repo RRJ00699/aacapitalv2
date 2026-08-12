@@ -78,7 +78,8 @@ def test_kite_fetch_requires_structured_refresh_success():
 @pytest.mark.parametrize("refresh_status,marker,expected_calls", [
     ("skipped", "SKIPPED_NOT_ACTIVATED", [cron.KITE_REFRESH_SCRIPT]),
     ("failed", "FAILED_LOGIN", [cron.KITE_REFRESH_SCRIPT]),
-    ("ok", "SUCCESS_ROTATED", [cron.KITE_REFRESH_SCRIPT, cron.KITE_FETCH_SCRIPT]),
+    ("ok", "SUCCESS_ROTATED", [cron.KITE_REFRESH_SCRIPT, cron.KITE_FETCH_SCRIPT,
+                                  cron.KITE_FETCH_15M_SCRIPT, cron.TOP_DETECTOR_SCRIPT]),
 ])
 def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status, marker, expected_calls):
     calls = []
@@ -88,7 +89,13 @@ def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status,
             rc = 1 if refresh_status == "failed" else 0
             return {"step": step, "status": refresh_status, "duration": 0,
                     "rc": rc, "output": f"KITE_REFRESH_STATUS={marker}\n"}
-        return {"step": step, "status": "ok", "duration": 0}
+        marker_output = ({cron.KITE_FETCH_15M_SCRIPT:
+                          'FIFTEEN_MIN_CANDLES={"selected":1}',
+                          cron.TOP_DETECTOR_SCRIPT:
+                          'TOP_DETECTOR={"selected":1,"state_counts":{}}'}
+                         .get(target, ""))
+        return {"step": step, "status": "ok", "duration": 0,
+                "output": marker_output}
     monkeypatch.setattr(cron, "run", fake_run)
     results = cron.run_kite_live("12", [])
     assert calls == expected_calls
@@ -98,6 +105,7 @@ def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status,
 def test_every_subprocess_target_is_repository_relative_and_visible():
     targets = [cron.RHP_DOWNLOAD_SCRIPT, cron.SBI_DOWNLOAD_SCRIPT, cron.KITE_REFRESH_SCRIPT,
                cron.NSE_LIFECYCLE_SCRIPT, cron.NSE_IDENTITY_SCRIPT, cron.KITE_FETCH_SCRIPT,
+               cron.KITE_FETCH_15M_SCRIPT, cron.TOP_DETECTOR_SCRIPT,
                cron.DRIVE_SCRIPT, cron.SNAPSHOT_PUBLISH_SCRIPT]
     assert all(not Path(target).is_absolute() and (cron.REPO_ROOT / target).is_file() for target in targets)
 
@@ -142,6 +150,24 @@ def test_failed_step_controls_final_exit_code(monkeypatch):
     monkeypatch.setattr(cron.time, "monotonic", lambda: 1.0)
     assert cron.report([{"step": "x", "status": "failed", "duration": 0.1}], 0,
                        dry=True, targets=[]) == 1
+
+
+def test_post_completeness_db_outage_is_reported_without_escaping(monkeypatch, capsys):
+    def unavailable(_conn, _ids):
+        raise cron.psycopg2.OperationalError("temporary DNS failure")
+
+    monkeypatch.setattr(cron, "with_db", lambda fn, *args: fn(None, *args))
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1.0)
+    steps = []
+    value, ok = cron.db_measurement(
+        steps, "Post-run V2 completeness measurement", unavailable, [7], default=[])
+
+    assert value == [] and not ok
+    assert cron.report(steps, 0, dry=False, targets=[(7,)], cap=0, spent=0) == 1
+    output = capsys.readouterr().out
+    assert "total status: failed" in output
+    assert "OperationalError: temporary DNS failure" in output
+    assert "traceback_tail:" in output
 
 
 @pytest.mark.parametrize("cwd", [cron.REPO_ROOT, Path("/")])

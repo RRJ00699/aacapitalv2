@@ -43,12 +43,10 @@ def test_write_jobs_pass_apply():
     assert not bad, f"job(s) will dry-run and silently write nothing: {bad}"
 
 
-def test_derived_layer_is_individually_runnable():
-    """After a fix, the phone must be able to re-run ONE stage — not only the
-    whole pipeline. This is the mobile-ops requirement."""
+def test_legacy_duplicate_jobs_are_not_phone_triggerable():
     jobs = _jobs()
-    for needed in ("verdicts", "score", "quality"):
-        assert needed in jobs, f"'{needed}' not phone-triggerable — laptop required"
+    for retired in ("verdicts", "score", "quality", "sbi_download", "sbi_haiku"):
+        assert retired not in jobs
 
 
 def test_no_job_shells_out_unsafely():

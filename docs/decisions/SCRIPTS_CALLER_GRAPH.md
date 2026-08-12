@@ -210,3 +210,11 @@ The closure contains 47 production files, including the root:
 ## Method and regression
 
 `tests/contracts/test_scripts_caller_graph.py` uses a repository fixture to prove the previously missed `step(["foo.py"])` edge, a `subprocess.run(["python", "bar.py"])` edge, an explicit `_scripts/final.py` path, and transitive wrapper/import closure.
+
+## PR #328 scoped lean cleanup delta
+
+**Before:** `TOTAL=53 KEEP=53 UNREACHABLE=0 UNKNOWN=0`.
+
+**After:** `TOTAL=53 KEEP=53 UNREACHABLE=0 UNKNOWN=0`.
+
+The KEEP file set is unchanged file-for-file. The following executable lean edges were removed because `pipeline/cron.py` already owns them: `download_sbi_notes.py`, `sbi_haiku_extract.py`, `rhp_auto.py`, `ipo_score.py`, `compute_verdicts.py`, and `compute_quality_score.py`. The corresponding Admin jobs removed were `sbi_download`, `sbi_haiku`, `score`, `verdicts`, and `quality`. Scripts that retain uncovered or owner-undecided capabilities remain explicitly inventoried by `LEGACY_OWNER_DECISION_PATHS`; they are not executed by that inventory constant. No ratchet was weakened and no capability was ported.

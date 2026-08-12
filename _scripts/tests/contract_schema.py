@@ -514,7 +514,7 @@ CREATE TABLE ipo_preopen_book (id SERIAL PRIMARY KEY, symbol TEXT,
     captured_at TIMESTAMPTZ, source TEXT, state_hash TEXT, ieq BIGINT,
     payload JSONB);
 CREATE TABLE access_requests (email TEXT PRIMARY KEY, name TEXT, status TEXT,
-    requested_at TIMESTAMPTZ, decided_at TIMESTAMPTZ, decided_by TEXT);
+    requested_at TIMESTAMPTZ, decided_at TIMESTAMPTZ, decided_by TEXT, note TEXT);
 CREATE TABLE allowed_users (email TEXT PRIMARY KEY, added_by TEXT,
     added_at TIMESTAMPTZ);
 CREATE TABLE distraction_log (id BIGSERIAL PRIMARY KEY, owner_email TEXT,

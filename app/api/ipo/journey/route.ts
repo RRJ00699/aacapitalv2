@@ -16,6 +16,6 @@ export async function GET(req: NextRequest) {
   const hit=store && isin ? await readVersionedSnapshot(store,`journey:isin:${isin}:v1`) : null;
   const resolvedSym=sym || (hit ? String(JSON.parse(hit.payload).sym||"").toUpperCase() : "");
   if (!hit) return NextResponse.json({...computeJourney([],resolvedSym),isin:isin||null,degraded:"snapshot unavailable"},{headers:{"x-cache":"MISS"}});
-  const bundle=JSON.parse(hit.payload) as {rows?:Record<string,unknown>[]};
-  return NextResponse.json({...computeJourney(bundle.rows??[],resolvedSym),isin},{headers:{"x-cache":"HIT","x-snapshot-version":hit.version,...(hit.source==="previous"?{"x-snapshot-rollback":"previous"}:{})}});
+  const bundle=JSON.parse(hit.payload) as {rows?:Record<string,unknown>[];level_observation?:Record<string,unknown>|null};
+  return NextResponse.json({...computeJourney(bundle.rows??[],resolvedSym),isin,level_observation:bundle.level_observation??null},{headers:{"x-cache":"HIT","x-snapshot-version":hit.version,...(hit.source==="previous"?{"x-snapshot-rollback":"previous"}:{})}});
 }

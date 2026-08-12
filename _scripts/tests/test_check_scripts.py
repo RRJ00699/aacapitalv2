@@ -11,6 +11,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "_scripts"
+DIAGNOSTICS = ROOT / "tools" / "diagnostics"
 sys.path.insert(0, str(SCRIPTS))
 
 
@@ -29,7 +30,8 @@ def _run(script, uri, *args):
     env.pop("NEON_DATABASE_URL", None)          # never let a real DB leak in
     for k in [k for k in env if k.startswith(("COV_CORE", "COVERAGE"))]:
         env.pop(k)
-    return subprocess.run([*_py(SCRIPTS / script), *args],
+    path = DIAGNOSTICS / script if (DIAGNOSTICS / script).is_file() else SCRIPTS / script
+    return subprocess.run([*_py(path), *args],
                           capture_output=True, text=True, env=env, timeout=60)
 
 def _load_cdc(uri):
@@ -38,7 +40,7 @@ def _load_cdc(uri):
     os.environ["CONTRACT_CSV"] = str(SCRIPTS / "ipo_data_contract.csv")
     argv, sys.argv = sys.argv, ["check_data_contract.py"]
     try:
-        spec = importlib.util.spec_from_file_location("cdc", SCRIPTS / "check_data_contract.py")
+        spec = importlib.util.spec_from_file_location("cdc", DIAGNOSTICS / "check_data_contract.py")
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         return m
