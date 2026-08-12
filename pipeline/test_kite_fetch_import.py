@@ -28,6 +28,6 @@ def test_shared_kite_helper_imports_from_every_working_directory(
 
 def test_cron_keeps_explicit_pipeline_cwd_for_kite_fetch():
     source = Path(cron.__file__).read_text(encoding="utf-8")
-    invocation = 'run("Kite candles/outcomes", KITE_FETCH_SCRIPT'
+    invocation = 'run("Daily candles/outcomes", KITE_FETCH_SCRIPT'
     start = source.index(invocation)
     assert "cwd=PIPELINE_DIR" in source[start:start + 250]

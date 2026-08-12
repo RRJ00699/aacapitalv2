@@ -316,6 +316,12 @@ def main():
 
     print(f"  [build] {FILE_BUILD}")
     print(f"  {len(targets)} IPOs · mode={'WRITE' if write else 'DRY-RUN'}")
+    if not write:
+        for ipo_id, isin, symbol, name, listing_date in targets:
+            print(f"  dry id={ipo_id} isin={isin} symbol={symbol} listing_date={listing_date} name={name}")
+        conn.close()
+        print("  Nothing was written; Kite authentication/network calls were not attempted.")
+        return
     try:
         kite = get_kite()
         n_inst = len(instruments(kite))

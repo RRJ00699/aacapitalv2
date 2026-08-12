@@ -26,6 +26,8 @@ KITE_REFRESH_SCRIPT = "_scripts/refresh_kite_token.py"
 NSE_LIFECYCLE_SCRIPT = "pipeline/nse_lifecycle.py"
 NSE_IDENTITY_SCRIPT = "pipeline/nse_identity_backfill.py"
 KITE_FETCH_SCRIPT = "pipeline/kite_fetch.py"
+KITE_FETCH_15M_SCRIPT = "pipeline/kite_fetch_15m.py"
+TOP_BOTTOM_SCRIPT = "pipeline/topout_online.py"
 DRIVE_SCRIPT = "pipeline/drive.py"
 SNAPSHOT_PUBLISH_SCRIPT = "pipeline/publish_snapshot_with_ledger.py"
 # Canonical snapshot producer invoked by the protected publisher: "warm_kv.py"
@@ -295,11 +297,18 @@ def run_kite_live(ids, rotation_missing):
         results.append(refresh)
         token_ready = kite_refresh_guarantees_fetch(refresh_status, structured)
     if token_ready:
-        results.append(run("Kite candles/outcomes", KITE_FETCH_SCRIPT,
-                           ["--ids", ids, "--write"], timeout=900, cwd=PIPELINE_DIR))
+        results.append(run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
+                           ["--ids", ids, "--write", "--no-15m"], timeout=900, cwd=PIPELINE_DIR))
+        limit = max(1, len([value for value in ids.split(",") if value]))
+        results.append(run("15-min candles", KITE_FETCH_15M_SCRIPT,
+                           ["--limit", limit, "--write"], timeout=900, cwd=PIPELINE_DIR))
+        results.append(run("Top/bottom DISCOVERY", TOP_BOTTOM_SCRIPT,
+                           ["--limit", limit, "--write"], timeout=300, cwd=PIPELINE_DIR))
     else:
-        results.append(skip("Kite candles/outcomes",
+        results.append(skip("Daily candles/outcomes",
                             "owner: refresh did not guarantee a usable kite_fetch token"))
+        results.append(skip("15-min candles", "owner: refresh did not guarantee a usable kite_fetch token"))
+        results.append(skip("Top/bottom DISCOVERY", "owner: 15-min candle supply unavailable"))
     return results
 
 
@@ -384,6 +393,11 @@ def main(argv=None):
     if identity["status"] != "failed":
         identity["counts"] = identity_counts(identity)
     steps.append(identity)
+    # The historical vendor-ledger inventory and reviewed field mapping cannot be
+    # inferred locally. Keep the missing W3 handshake fail-visible until an owner
+    # export or authorized SHA-verified R2 read is supplied.
+    steps.append(skip("Pre-run IPO record completeness plan",
+                      "owner: provide the historical ledger JSON export or authorize read-only R2 verification (BLOCKER_IPO_RECORD_CONTRACT_EVIDENCE_UNAVAILABLE)"))
 
     sbi_names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_DOCUMENT_BUCKET")
     sbi_ready, sbi_missing = configured(sbi_names)
@@ -436,11 +450,23 @@ def main(argv=None):
         steps.append(run("3. NSE per-IPO lifecycle", NSE_LIFECYCLE_SCRIPT,
                          ["--limit", args.limit, "--skip-discovery", "--dry-run" if dry else "--write"],
                          dry=dry, timeout=900, cwd=PIPELINE_DIR))
+        steps.append(skip("Anchor allocation parsing",
+                          "owner: BLOCKER_ANCHOR_OFFICIAL_SOURCE_UNPROVEN"))
         kite_ready, kite_missing, rotation_missing = kite_configuration()
         if args.skip_kite or not kite_ready:
-            steps.append(skip("Kite refresh/candles", "owner: configure " + ", ".join(kite_missing) if not kite_ready else "owner: --skip-kite selected"))
+            reason = "owner: configure " + ", ".join(kite_missing) if not kite_ready else "owner: --skip-kite selected"
+            steps.append(skip("Kite token refresh", reason))
+            steps.append(skip("Daily candles/outcomes", reason))
+            steps.append(skip("15-min candles", reason))
+            steps.append(skip("Top/bottom DISCOVERY", "owner: 15-min candle supply unavailable"))
         elif dry:
-            steps.append(skip("Kite refresh/candles", "dry-run: authentication/network operation disabled"))
+            steps.append(skip("Kite token refresh", "dry-run: authentication/network operation disabled"))
+            steps.append(run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
+                             ["--ids", ids, "--dry-run", "--no-15m"], dry=True, timeout=300, cwd=PIPELINE_DIR))
+            steps.append(run("15-min candles", KITE_FETCH_15M_SCRIPT,
+                             ["--limit", args.limit, "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR))
+            steps.append(run("Top/bottom DISCOVERY", TOP_BOTTOM_SCRIPT,
+                             ["--limit", args.limit, "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR))
         else:
             steps.extend(run_kite_live(ids, rotation_missing))
 
@@ -458,6 +484,10 @@ def main(argv=None):
                              (["--ignore-local"] if args.ignore_local else []), timeout=3600, cwd=PIPELINE_DIR))
         steps.append(run("score/verdict/completeness", DRIVE_SCRIPT,
                          ["--ids", ids, "--dry-run" if dry else "--write"], dry=dry, timeout=900, cwd=PIPELINE_DIR))
+        steps.append(skip("Post-run contract completeness measurement",
+                          "owner: reviewed IPO record contract is blocked on source evidence"))
+        steps.append(skip("Database-backed Listing rules layers",
+                          "owner: rule_validation_results production producer is quarantined; canonical ownership decision required"))
     else:
         steps.append(skip("active IPO processing", "no active IPOs selected", counts={"selected": 0}))
 

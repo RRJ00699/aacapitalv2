@@ -78,7 +78,8 @@ def test_kite_fetch_requires_structured_refresh_success():
 @pytest.mark.parametrize("refresh_status,marker,expected_calls", [
     ("skipped", "SKIPPED_NOT_ACTIVATED", [cron.KITE_REFRESH_SCRIPT]),
     ("failed", "FAILED_LOGIN", [cron.KITE_REFRESH_SCRIPT]),
-    ("ok", "SUCCESS_ROTATED", [cron.KITE_REFRESH_SCRIPT, cron.KITE_FETCH_SCRIPT]),
+    ("ok", "SUCCESS_ROTATED", [cron.KITE_REFRESH_SCRIPT, cron.KITE_FETCH_SCRIPT,
+                                  cron.KITE_FETCH_15M_SCRIPT, cron.TOP_BOTTOM_SCRIPT]),
 ])
 def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status, marker, expected_calls):
     calls = []
@@ -98,6 +99,7 @@ def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status,
 def test_every_subprocess_target_is_repository_relative_and_visible():
     targets = [cron.RHP_DOWNLOAD_SCRIPT, cron.SBI_DOWNLOAD_SCRIPT, cron.KITE_REFRESH_SCRIPT,
                cron.NSE_LIFECYCLE_SCRIPT, cron.NSE_IDENTITY_SCRIPT, cron.KITE_FETCH_SCRIPT,
+               cron.KITE_FETCH_15M_SCRIPT, cron.TOP_BOTTOM_SCRIPT,
                cron.DRIVE_SCRIPT, cron.SNAPSHOT_PUBLISH_SCRIPT]
     assert all(not Path(target).is_absolute() and (cron.REPO_ROOT / target).is_file() for target in targets)
 
