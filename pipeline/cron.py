@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import traceback
 
 import psycopg2
 
@@ -102,6 +103,24 @@ def with_db(fn, *args, **kwargs):
         return fn(conn, *args, **kwargs)
     finally:
         conn.close()
+
+
+def measure_db(steps, name, fn, default, *args, **kwargs):
+    """Run one report-critical DB measurement without jeopardising the report."""
+    started = time.monotonic()
+    try:
+        return with_db(fn, *args, **kwargs), True
+    except Exception as exc:
+        tail = traceback.format_exc().strip().splitlines()[-12:]
+        print(f"\n=== {name}\n    failed - {type(exc).__name__}: {exc}")
+        print("    traceback tail:")
+        for line in tail:
+            print("    " + line[:500])
+        steps.append({"step": name, "status": "failed",
+                      "duration": time.monotonic() - started,
+                      "reason": f"{type(exc).__name__}: {exc}",
+                      "traceback_tail": "\n".join(tail)})
+        return default, False
 
 
 def get_cap(conn):
@@ -368,6 +387,10 @@ def report(steps, started, *, dry, targets, cap=0.0, spent=0.0):
         print(f"{item['status']:7} {item['duration']:7.1f}s  {item['step']}{why}")
         if item.get("counts"):
             print(" " * 17 + "counts: " + ", ".join(f"{key}={value}" for key, value in item["counts"].items()))
+        if item.get("traceback_tail"):
+            print(" " * 17 + "traceback_tail:")
+            for line in item["traceback_tail"].splitlines():
+                print(" " * 17 + line[:500])
     print("what changed: " + ("none (read-only dry-run)" if dry else "see per-step counts above"))
     snapshot = next((s for s in steps if s["step"].startswith("snapshot publication")), None)
     print("snapshot pointer/consumer proof: " +
@@ -431,13 +454,21 @@ def main(argv=None):
     if identity["status"] != "failed":
         identity["counts"] = identity_counts(identity)
     steps.append(identity)
-    targets, scope = with_db(select_active, args.limit, args.backfill)
-    print(f"\nselector: {scope}; selected={len(targets)}")
+    targets, selector_ok = measure_db(steps, "Active IPO selector", select_active,
+                                      ([], "failed"), args.limit, args.backfill)
+    scope = targets[1] if selector_ok else "failed"
+    targets = targets[0]
+    print(f"\nActive IPO selector = {'ok' if selector_ok else 'failed'}")
+    if selector_ok:
+        print(f"selector: {scope}; selected={len(targets)}")
     ids = ",".join(str(row[0]) for row in targets)
     target_ids = [row[0] for row in targets]
-    pre_completeness = with_db(completeness_plan, target_ids) if target_ids else []
-    steps.append({"step": "Pre-run V2 completeness plan", "status": "dry" if dry else "ok",
-                  "duration": 0.0, "counts": completeness_counts(pre_completeness)})
+    pre_completeness, pre_ok = (measure_db(steps, "Pre-run V2 completeness plan",
+                                           completeness_plan, [], target_ids)
+                                if selector_ok and target_ids else ([], selector_ok))
+    if pre_ok:
+        steps.append({"step": "Pre-run V2 completeness plan", "status": "dry" if dry else "ok",
+                      "duration": 0.0, "counts": completeness_counts(pre_completeness)})
 
     sbi_names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_DOCUMENT_BUCKET")
     sbi_ready, sbi_missing = configured(sbi_names)
@@ -480,9 +511,10 @@ def main(argv=None):
                           "duration": time.monotonic()-lane_started, "reason": f"{type(exc).__name__}: {exc}"})
             steps.append(skip("SBI extraction", "owner: ingest failed"))
 
-    cap = with_db(get_cap)
-    before = with_db(spent_today)
-    if targets:
+    cap, cap_ok = measure_db(steps, "Spend cap measurement", get_cap, 0.0)
+    before, before_ok = measure_db(steps, "Spend before measurement", spent_today, 0.0)
+    spend_available = cap_ok and before_ok
+    if targets and selector_ok:
         steps.append(run("3. NSE per-IPO lifecycle", NSE_LIFECYCLE_SCRIPT,
                          ["--limit", args.limit, "--skip-discovery", "--dry-run" if dry else "--write"],
                          dry=dry, timeout=900, cwd=PIPELINE_DIR))
@@ -516,6 +548,8 @@ def main(argv=None):
             steps.append(skip("RHP paid extraction", "owner: approve RHP paid extraction"))
         elif not os.environ.get("ANTHROPIC_API_KEY"):
             steps.append(skip("RHP paid extraction", "owner: configure ANTHROPIC_API_KEY and approve paid lane"))
+        elif not spend_available:
+            steps.append(skip("RHP paid extraction", "paid execution disabled: spend measurement unavailable"))
         elif cap <= before:
             steps.append(skip("RHP paid extraction", "owner: daily paid-call cap exhausted"))
         else:
@@ -524,12 +558,17 @@ def main(argv=None):
                              (["--ignore-local"] if args.ignore_local else []), timeout=3600, cwd=PIPELINE_DIR))
         steps.append(run("score/verdict/completeness", DRIVE_SCRIPT,
                          ["--ids", ids, "--dry-run" if dry else "--write"], dry=dry, timeout=900, cwd=PIPELINE_DIR))
-        post_completeness = with_db(completeness_plan, target_ids)
-        steps.append({"step": "Post-run V2 completeness measurement",
-                      "status": "dry" if dry else "ok", "duration": 0.0,
-                      "counts": completeness_counts(pre_completeness, post_completeness)})
+        post_completeness, post_ok = measure_db(steps, "Post-run V2 completeness measurement",
+                                                completeness_plan, [], target_ids)
+        if post_ok:
+            steps.append({"step": "Post-run V2 completeness measurement",
+                          "status": "dry" if dry else "ok", "duration": 0.0,
+                          "counts": completeness_counts(pre_completeness, post_completeness)})
         steps.append(skip("Database-backed Listing rules layers",
                           "owner: rule_validation_results production producer is quarantined; canonical ownership decision required"))
+    elif not selector_ok:
+        steps.append(skip("active IPO processing", "selector failed; dependent cohort work skipped",
+                          counts={"selected": 0}))
     else:
         steps.append(skip("active IPO processing", "no active IPOs selected", counts={"selected": 0}))
 
@@ -551,7 +590,8 @@ def main(argv=None):
                                       "active_version": proofs[-1].get("active_version")}
         steps.append(snapshot)
 
-    after = before if dry else with_db(spent_today)
+    after, after_ok = ((before, before_ok) if dry else
+                       measure_db(steps, "Spend after measurement", spent_today, before))
     return report(steps, started, dry=dry, targets=targets, cap=cap, spent=max(0.0, after-before))
 
 

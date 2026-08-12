@@ -20,7 +20,7 @@ writers into the V2 tables.
   python kite_fetch.py --limit 5 --write
   python kite_fetch.py --ids 285 --write --days 60
 """
-import os, sys, io, argparse, datetime as dt
+import os, sys, io, argparse, datetime as dt, traceback
 from pathlib import Path
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -53,6 +53,19 @@ def load_shared_get_kite():
 def get_kite():
     """Authenticate through the existing shared token source."""
     return load_shared_get_kite()()
+
+
+def db():
+    """Return a new, deliberately short-lived database connection."""
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def with_db(fn, *args, **kwargs):
+    conn = db()
+    try:
+        return fn(conn, *args, **kwargs)
+    finally:
+        conn.close()
 
 
 def instruments(kite):
@@ -195,16 +208,18 @@ def derive_outcome(conn, ipo_id):
     return rec, None
 
 
-def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_15m=True):
+def process(kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_15m=True):
     """One IPO through the whole chain. Returns a step report."""
     from fill_v2 import upsert_candles, upsert_listing_outcome, upsert_candles_15m
     from fill_ipo import upsert_ipo, _log_fact
     out = {"ipo_id": ipo_id, "token": None, "bars": 0, "bars_15m": 0,
            "outcome": None, "notes": []}
 
-    cur = conn.cursor()
-    cur.execute("SELECT kite_token FROM ipo WHERE id=%s", (ipo_id,))
-    token = (cur.fetchone() or [None])[0]
+    def read_token(conn):
+        cur = conn.cursor()
+        cur.execute("SELECT kite_token FROM ipo WHERE id=%s", (ipo_id,))
+        return (cur.fetchone() or [None])[0]
+    token = with_db(read_token)
 
     if token is None:
         token, how = resolve_token(kite, isin, symbol)
@@ -215,25 +230,30 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
             return out
         if write:
             # COALESCE-empty-only, so this can only fill a null token
-            upsert_ipo(conn, dict(isin=isin, name_display=name,
-                                  name_norm=None, kite_token=token), source="kite")
-            # provenance: record WHICH exchange the token resolved on (NSE|BSE).
-            # upsert_ipo committed above; _log_fact writes on `cur`, so commit it too.
-            _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
-            conn.commit()
+            def store_token(conn):
+                upsert_ipo(conn, dict(isin=isin, name_display=name,
+                                      name_norm=None, kite_token=token), source="kite")
+                cur = conn.cursor()
+                _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
+                conn.commit()
+            with_db(store_token)
     elif write:
         # Token already stored (possibly by the old NSE-only resolver, which never wrote
         # provenance). Backfill kite_token_exchange from the token itself — but only if NO
         # exchange fact exists yet, so this fills the gap on every re-run without duplicating
         # freshly-resolved rows. source='kite-backfill' keeps it distinguishable from 'kite'.
         out["resolved_by"] = "already stored"
-        cur.execute("SELECT 1 FROM source_facts WHERE ipo_id=%s AND field='kite_token_exchange' LIMIT 1",
-                    (ipo_id,))
-        if cur.fetchone() is None:
-            exch = exchange_for_token(kite, token)
-            if exch:
-                _log_fact(cur, ipo_id, "kite_token_exchange", exch, "kite-backfill")
-                conn.commit()
+        # Resolve over the network with no DB connection held, then persist separately.
+        exch = exchange_for_token(kite, token)
+        if exch:
+            def backfill_exchange(conn):
+                cur = conn.cursor()
+                cur.execute("SELECT 1 FROM source_facts WHERE ipo_id=%s AND field='kite_token_exchange' LIMIT 1",
+                            (ipo_id,))
+                if cur.fetchone() is None:
+                    _log_fact(cur, ipo_id, "kite_token_exchange", exch, "kite-backfill")
+                    conn.commit()
+            with_db(backfill_exchange)
     out["token"] = token
 
     end = dt.date.today()
@@ -244,34 +264,39 @@ def process(conn, kite, ipo_id, isin, symbol, name, listing_date, days, write, f
         bars = fetch_candles(kite, token, start, end)
         out["bars"] = len(bars)
         if write and bars:
-            upsert_candles(conn, ipo_id, bars)
+            with_db(upsert_candles, ipo_id, bars)
     except Exception as e:
         # A daily failure must NOT skip the (independently paginated) 15-min fetch below —
         # they are separate series, and the old IPOs that most need 15-min data are exactly
         # the ones whose long daily range is most likely to hit an API edge. Log and go on.
         out["notes"].append(f"daily candles failed: {type(e).__name__}: {str(e)[:80]}")
+        traceback.print_exc(file=sys.stdout)
 
     # 15-minute intraday -> market_candles_15m. INCREMENTAL: start at the day after
     # the last stored bar (or listing_date on first backfill), paginate to today.
     if write and fetch_15m:
-        cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
-        last = (cur.fetchone() or [None])[0]
+        def read_latest(conn):
+            cur = conn.cursor()
+            cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
+            return (cur.fetchone() or [None])[0]
+        last = with_db(read_latest)
         i_start = last.date() if last else (listing_date or (end - dt.timedelta(days=days)))
         # (clamp to a MEASURED lookback horizon deferred — see the note at LOOKBACK above)
         try:
             bars15 = fetch_candles_15m(kite, token, i_start, end)
-            out["bars_15m"] = upsert_candles_15m(conn, ipo_id, bars15) if bars15 else 0
+            out["bars_15m"] = with_db(upsert_candles_15m, ipo_id, bars15) if bars15 else 0
         except Exception as e:
             out["notes"].append(f"15m candles failed: {type(e).__name__}: {str(e)[:80]}")
+            traceback.print_exc(file=sys.stdout)
 
     if not write:
         out["notes"].append("dry-run: outcome not derived (needs candles stored)")
         return out
-    rec, note = derive_outcome(conn, ipo_id)
+    rec, note = with_db(derive_outcome, ipo_id)
     if note:
         out["notes"].append(note)
     elif rec:
-        upsert_listing_outcome(conn, ipo_id, rec, dataset_version="v2")
+        with_db(upsert_listing_outcome, ipo_id, rec, dataset_version="v2")
         out["outcome"] = {k: rec[k] for k in ("gap_pct", "pool", "listing_open", "d1_close")
                           if k in rec}
     return out
@@ -291,15 +316,16 @@ def main():
     write = a.write and not a.dry_run
     fetch_15m = not a.no_15m
 
-    conn = psycopg2.connect(os.environ["DATABASE_URL"]); cur = conn.cursor()
     if write and fetch_15m:
         from fill_v2 import ensure_15m_table
-        ensure_15m_table(conn)          # idempotent; creates market_candles_15m once
-    if a.ids:
-        ids = [int(x) for x in a.ids.split(",") if x.strip()]
-        cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
-                        WHERE id = ANY(%s) ORDER BY id""", (ids,))
-    else:
+        with_db(ensure_15m_table)          # idempotent; creates market_candles_15m once
+    def select_targets(conn):
+        cur = conn.cursor()
+        if a.ids:
+            ids = [int(x) for x in a.ids.split(",") if x.strip()]
+            cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
+                            WHERE id = ANY(%s) ORDER BY id""", (ids,))
+            return cur.fetchall()
         # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
         # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
         # 105 score-scope IPOs with no candle attempt at all — kite candles must cover
@@ -312,14 +338,14 @@ def main():
                           AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
                                         WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
                         ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
-    targets = cur.fetchall()
+        return cur.fetchall()
+    targets = with_db(select_targets)
 
     print(f"  [build] {FILE_BUILD}")
     print(f"  {len(targets)} IPOs · mode={'WRITE' if write else 'DRY-RUN'}")
     if not write:
         for ipo_id, isin, symbol, name, listing_date in targets:
             print(f"  dry id={ipo_id} isin={isin} symbol={symbol} listing_date={listing_date} name={name}")
-        conn.close()
         print("  Nothing was written; Kite authentication/network calls were not attempted.")
         return
     try:
@@ -334,7 +360,7 @@ def main():
     for ipo_id, isin, symbol, name, listing_date in targets:
         print(f"  == id={ipo_id} {str(symbol or '(no symbol)'):14} {str(name)[:34]}")
         try:
-            r = process(conn, kite, ipo_id, isin, symbol, name, listing_date, a.days,
+            r = process(kite, ipo_id, isin, symbol, name, listing_date, a.days,
                         write, fetch_15m)
             print(f"       token={r['token']} ({r.get('resolved_by','already stored')})  "
                   f"bars={r['bars']}  bars_15m={r['bars_15m']}")
@@ -344,11 +370,9 @@ def main():
                 print(f"       [note] {n}")
             ok += 1 if r["token"] else 0
         except Exception as e:
-            try: conn.rollback()
-            except Exception: pass
             failed += 1
             print(f"  ! id={ipo_id}: {type(e).__name__}: {str(e)[:120]}")
-    conn.close()
+            traceback.print_exc(file=sys.stdout)
     print(f"\n  done. {ok}/{len(targets)} with a token · {failed} failed."
           + ("" if write else "  Nothing was written."))
     # A step where EVERY IPO threw is a failed step. Exiting 0 let the 08-01 cron print

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -150,6 +151,46 @@ def test_failed_step_controls_final_exit_code(monkeypatch):
     monkeypatch.setattr(cron.time, "monotonic", lambda: 1.0)
     assert cron.report([{"step": "x", "status": "failed", "duration": 0.1}], 0,
                        dry=True, targets=[]) == 1
+
+
+def test_db_measurement_failure_retains_and_prints_twelve_line_traceback(monkeypatch, capsys):
+    steps = []
+    def fail(_conn):
+        def nested():
+            raise cron.psycopg2.OperationalError("could not translate host name")
+        nested()
+    monkeypatch.setattr(cron, "db", lambda: SimpleNamespace(close=lambda: None))
+    value, ok = cron.measure_db(steps, "Pre-run V2 completeness plan", fail, [])
+    assert value == [] and not ok
+    assert steps[0]["status"] == "failed"
+    assert len(steps[0]["traceback_tail"].splitlines()) <= 12
+    assert "OperationalError" in steps[0]["traceback_tail"]
+    assert "traceback tail:" in capsys.readouterr().out
+
+
+def test_select_active_operational_error_reaches_end_of_run_without_uncaught_traceback(
+        monkeypatch, capsys):
+    monkeypatch.setenv("DATABASE_URL", "redacted")
+    monkeypatch.setattr(cron, "environment_preflight", lambda: True)
+    monkeypatch.setattr(cron, "run", lambda step, *_args, **_kwargs:
+                        {"step": step, "status": "failed", "duration": 0.0,
+                         "reason": "test child disabled"})
+    def measured(fn, *_args, **_kwargs):
+        if fn is cron.select_active:
+            raise cron.psycopg2.OperationalError("DNS unavailable")
+        if fn is cron.get_cap:
+            return 2.0
+        if fn is cron.spent_today:
+            return 0.0
+        raise AssertionError(fn)
+    monkeypatch.setattr(cron, "with_db", measured)
+    rc = cron.main(["--dry-run"])
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert "Active IPO selector = failed" in output
+    assert "selector failed; dependent cohort work skipped" in output
+    assert "no active IPOs selected" not in output
+    assert "END-OF-RUN REPORT" in output
 
 
 @pytest.mark.parametrize("cwd", [cron.REPO_ROOT, Path("/")])
