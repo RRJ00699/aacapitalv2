@@ -25,10 +25,10 @@ def test_missing_database_url_is_single_stop_message(capsys):
 
 
 def test_preflight_redacts_secret_values(capsys):
-    secret = "never-print-this-value"
-    assert cron.environment_preflight({"DATABASE_URL": secret}) is True
+    sentinel = "never-print-this-value"
+    assert cron.environment_preflight({"DATABASE_URL": sentinel}) is True
     output = capsys.readouterr().out
-    assert secret not in output
+    assert sentinel not in output
     assert "DATABASE_URL" in output and "present" in output
 
 
