@@ -3,7 +3,16 @@ import { fetchDetailsRows,detailsFromRow } from "../../../lib/v2/ipo-details";
 import type { SqlClient } from "../../../lib/v2/sql";
 
 async function main() {
- const sql=postgres(process.env.DATABASE_URL!,{max:1});
+ const sql=process.env.PGHOST
+  ? postgres({
+      host:process.env.PGHOST,
+      ...(process.env.PGPORT?{port:Number(process.env.PGPORT)}:{}),
+      database:process.env.PGDATABASE,
+      username:process.env.PGUSER,
+      password:process.env.PGPASSWORD,
+      max:1,
+    })
+  : postgres(process.env.DATABASE_URL!,{max:1});
  try {
   const rows=await fetchDetailsRows(sql as unknown as SqlClient,[1]);
   const details=detailsFromRow(rows[0],"2026-08-07T00:00:00Z");
