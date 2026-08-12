@@ -17,6 +17,18 @@ SOURCE = "nse_equity_master"
 ISIN_PATTERN = re.compile(r"^IN[A-Z0-9]{9}[0-9]$")
 
 
+class SourceUnavailable(RuntimeError):
+    """The upstream NSE primary source (EQUITY_L.csv) answered with a non-200 status.
+
+    For a bounded nightly backfill this is an EXPECTED, RECOVERABLE condition
+    (throttling, maintenance windows, or runner-IP policy), not a code fault: nothing
+    was filled and nothing was corrupted. It is raised as a distinct type so the entry
+    point can treat it as a clean no-op (exit 0 with a visible marker) while genuine
+    faults - DB errors, malformed data, unexpected exceptions - still surface as a
+    non-zero exit. See main().
+    """
+
+
 def select_isin_candidates(conn, today, limit):
     cur = conn.cursor()
     cur.execute("""SELECT id,name_display,symbol,isin,listing_date
@@ -111,7 +123,11 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None)
     listing_rows = select_listing_date_candidates(conn, listing_quota)
     selected = isin_rows + listing_rows
     response = session.get(EQUITY_MASTER_URL, timeout=20)
-    response.raise_for_status()
+    status = getattr(response, "status_code", 200)
+    if status != 200:
+        # A non-200 from the primary ISIN source is a bounded, recoverable no-op, not a
+        # failure: surface it as SourceUnavailable so main() can exit 0 cleanly.
+        raise SourceUnavailable(f"EQUITY_L.csv returned HTTP {status}")
     headers, master = parse_equity_master(response.content)
     report, quote_calls, updates = [], 0, 0
     for ipo_id, name, symbol, old_isin, old_date in selected:
@@ -185,8 +201,20 @@ def main(argv=None):
     try:
         result = refresh(conn, prime(requests), limit=args.limit,
                          quote_limit=args.quote_limit, write=args.write)
-        print(json.dumps(result, default=str, indent=2, sort_keys=True))
-    finally: conn.close()
+    except SourceUnavailable as exc:
+        # CLEAN NO-OP -> EXIT 0. The primary source was unavailable this run; nothing was
+        # filled and nothing was corrupted. Emit a visible marker in the normal result
+        # shape (so the orchestrator's counts parser still reads selected/updates) and
+        # return so the process exits 0. A genuine fault (DB, parse, or any other
+        # unexpected exception) is deliberately NOT caught here and still exits non-zero.
+        result = {"headers": [], "selected": 0,
+                  "selected_by_need": {"isin": 0, "listing_date": 0},
+                  "selector_quotas": {"isin": 0, "listing_date": 0},
+                  "quote_calls": 0, "updates": 0, "rows": [],
+                  "skipped": "source_unavailable", "detail": str(exc)}
+    finally:
+        conn.close()
+    print(json.dumps(result, default=str, indent=2, sort_keys=True))
     return result
 
 
