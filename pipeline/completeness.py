@@ -68,14 +68,18 @@ SUBSCRIPTION_FIELDS = ["qib_x", "nii_x", "retail_x", "total_x",
 FINANCIAL_FIELDS = ["revenue", "total_income", "pat", "net_worth", "total_debt"]
 
 
-# Columns we have NO primary source for. Owner ruling 08-01: fall back to IPOMatrix.
-# They are reported separately so a run is not permanently "incomplete" on columns that
-# no primary fetcher can ever fill.
-#   anchor_count / anchor_amount_cr — NSE ipo-detail gives the anchor PORTION IN SHARES
-#     only; the investor count lives in the Anchor Allocation Report (probed 08-01).
-#   GMP — no home in the 15 tables at all (sidecar by the 07-31 design).
-VENDOR_FALLBACK = {"subscription_snapshots.anchor_count",
-                   "subscription_snapshots.anchor_amount_cr"}
+def retry_lane(field):
+    """Map an absent V2-schema field only to an already-owned pipeline lane."""
+    field = field.split(" [", 1)[0]
+    if field.startswith(("ipo.", "ipo_issue.", "subscription_snapshots.")):
+        return "anchor" if "anchor_" in field else "NSE lifecycle"
+    if field.startswith(("documents.", "rhp_findings.", "financial_statements.")):
+        return "RHP"
+    if field.startswith("market_candles") or field == "ipo.kite_token":
+        return "Kite"
+    if field.startswith(("valuation.", "decisions.")):
+        return "score/verdict"
+    return "SBI"
 
 
 def _pending(stage, listing_date, close_date, today, col, has_rhp=False,
@@ -123,11 +127,7 @@ def _pending(stage, listing_date, close_date, today, col, has_rhp=False,
         if stage in ("announced", "open"):
             return "issue not closed yet"
     if col == "financial_statements.revenue" and not has_rhp:
-        # Revenue-from-operations is an RHP-ONLY field. IPOMatrix reports Total Income
-        # and nothing else — that is the definitional difference the 07-31 comparison
-        # established, and why both lines are stored separately. Until an RHP is
-        # extracted there is no source for it, so it is awaiting, not missing.
-        return "awaiting RHP (vendor supplies total_income only)"
+        return "awaiting RHP"
     if col == "ipo.kite_token":
         if stage != "listed":
             return "no instrument until listing"
@@ -209,7 +209,9 @@ def check_completeness(conn, ipo_id, today=None):
     row = cur.fetchone()
     if not row:
         return dict(ipo_id=ipo_id, stage=None, complete=False,
-                    missing=["ipo.row_absent"], present=[], name=None)
+                    missing=["ipo.row_absent"], pending=[], present=[], name=None,
+                    required_present=0, required_total=1, completeness_pct=0.0,
+                    retry_lanes=["NSE lifecycle"])
     _, status, listing_date, name, kite_token = row
     has_token = kite_token is not None
     # The 15-min retention wall, read from the data (rolling): IPOs listed before it can
@@ -303,12 +305,17 @@ def check_completeness(conn, ipo_id, today=None):
         else:
             real_missing.append(m)
 
-    blocking = [m for m in real_missing if m not in VENDOR_FALLBACK]
+    blocking = real_missing
+    required_present = len(present)
+    required_total = required_present + len(blocking) + len(pend)
     return dict(ipo_id=ipo_id, name=name, stage=stage,
                 complete=(len(blocking) == 0),
                 missing=sorted(blocking),
                 pending=sorted(f"{k} ({v})" for k, v in pend.items()),
-                vendor_gaps=sorted(m for m in real_missing if m in VENDOR_FALLBACK),
+                required_present=required_present,
+                required_total=required_total,
+                completeness_pct=round(100 * required_present / required_total, 1) if required_total else 100.0,
+                retry_lanes=sorted({retry_lane(m) for m in blocking}),
                 present=sorted(present),
                 engine_version=(v[0] if v else None))
 
@@ -317,11 +324,9 @@ def ntfy_line(rep):
     """The one-line body for the ntfy push (item 10 consumes this)."""
     who = f"IPO {rep.get('name') or rep['ipo_id']}"
     if rep["complete"]:
-        vg = rep.get("vendor_gaps") or []
         pd_ = rep.get("pending") or []
         tail = ""
         if pd_: tail += f" · {len(pd_)} pending"
-        if vg:  tail += f" · {len(vg)} vendor-fallback"
         return f"{who}: COMPLETE for {rep['stage']}{tail}"
     cols = ", ".join(m.split(" [")[0] for m in rep["missing"][:6])
     more = f" +{len(rep['missing'])-6} more" if len(rep["missing"]) > 6 else ""
@@ -365,8 +370,9 @@ def main():
             print(f"       - {m}")
         for m in r.get("pending", []):
             print(f"       . {m}  [not due yet]")
-        for m in r.get("vendor_gaps", []):
-            print(f"       ~ {m}  [IPOMatrix fallback — no primary source]")
+        print(f"     completeness {r['required_present']}/{r['required_total']} ({r['completeness_pct']}%)")
+        if r["retry_lanes"]:
+            print(f"     retry lanes: {', '.join(r['retry_lanes'])}")
     print(f"\n  RUN SUMMARY: {len(reps)} IPOs, {ncomplete} COMPLETE, "
           f"{len(reps)-ncomplete} missing columns")
     # what the ntfy push would say

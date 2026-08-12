@@ -9,7 +9,7 @@ type Journey = {
   gainNow?: number; offPeak?: number; daysHeld?: number; lockinDaysLeft?: number
   decision?: string; reason?: string; tone?: string
   series?: Array<{ date: string; close: number; high: number; low: number }>
-  level_observation?: { observed_at?: string; payload?: { label?: string; state?: string; signal?: string|null; evaluated_through_bar?: string } } | null
+  level_observation?: { observed_at?: string; payload?: { label?: string; state?: string; evaluated_through_bar?: string } } | null
 }
 
 const MONO = { fontFamily: "var(--f-mono)", fontVariantNumeric: "tabular-nums" } as const
@@ -84,7 +84,6 @@ function JourneyInner() {
         <div style={{ color: C.gold, fontSize: 11, fontWeight: 800, letterSpacing: .6 }}>DISCOVERY · LEVEL DETECTOR</div>
         <div style={{ color: C.text, marginTop: 4 }}>{String(d.level_observation.payload.state || "no_signal").replaceAll("_", " ")}</div>
         <div style={{ color: C.meta, fontSize: 11, marginTop: 3 }}>Evaluated through {d.level_observation.payload.evaluated_through_bar || d.level_observation.observed_at}</div>
-        {d.level_observation.payload.signal && <div style={{ color: C.meta, fontSize: 12, marginTop: 4 }}>{d.level_observation.payload.signal === "entry" ? "Entry interpretation" : "Exit interpretation"}</div>}
       </div>}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>

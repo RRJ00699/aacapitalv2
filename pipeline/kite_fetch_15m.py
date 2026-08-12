@@ -19,17 +19,28 @@ def is_transient(exc: Exception) -> bool:
     return any(marker in f"{type(exc).__name__}: {exc}".lower() for marker in TRANSIENT_MARKERS)
 
 
-def select_targets(conn, limit: int):
-    """Canonical mainboard/size scope, bounded by IST calendar dates."""
+IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
+
+
+def parse_ids(value: str | None) -> list[int] | None:
+    return [int(part) for part in value.split(",") if part.strip()] if value else None
+
+
+def select_targets(conn, limit: int, ids: list[int] | None = None):
+    """Select exact IDs or the progress-safe canonical 100-day mainboard cohort."""
     cur = conn.cursor()
-    cur.execute("""SELECT i.id,i.isin,i.symbol,i.name_display,i.listing_date,i.kite_token
+    id_clause = "AND i.id = ANY(%s)" if ids is not None else ""
+    params = ([ids, limit] if ids is not None else [limit])
+    cur.execute(f"""SELECT i.id,i.isin,i.symbol,i.name_display,i.listing_date,i.kite_token
       FROM ipo i
+      LEFT JOIN (SELECT ipo_id,max(ts) AS latest FROM market_candles_15m GROUP BY ipo_id) c
+        ON c.ipo_id=i.id
       WHERE i.is_mainboard=TRUE AND i.listing_date BETWEEN
         ((now() AT TIME ZONE 'Asia/Kolkata')::date - 100)
         AND (now() AT TIME ZONE 'Asia/Kolkata')::date
       AND i.kite_token IS NOT NULL AND NULLIF(trim(i.symbol),'') IS NOT NULL
-      AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii WHERE ii.ipo_id=i.id LIMIT 1),999999)>=150
-      ORDER BY i.listing_date DESC,i.id LIMIT %s""", (limit,))
+      {id_clause}
+      ORDER BY c.latest ASC NULLS FIRST,i.id LIMIT %s""", params)
     return cur.fetchall()
 
 
@@ -47,8 +58,9 @@ def insert_bars(conn, ipo_id: int, bars: list[dict]) -> int:
     return inserted
 
 
-def run(conn, *, limit: int, dry_run: bool, throttle_seconds: float = 0.34, sleep=time.sleep):
-    targets = select_targets(conn, limit)
+def run(conn, *, limit: int, dry_run: bool, ids: list[int] | None = None,
+        throttle_seconds: float = 0.34, sleep=time.sleep):
+    targets = select_targets(conn, limit, ids)
     summary = {"selected": len(targets), "attempted": 0, "bars_received": 0,
                "bars_inserted": 0, "duplicates": 0, "no_data": 0,
                "transient_failed": 0, "ipos": []}
@@ -57,17 +69,19 @@ def run(conn, *, limit: int, dry_run: bool, throttle_seconds: float = 0.34, slee
         return summary
     kite = get_kite()
     cur = conn.cursor()
-    today = dt.datetime.now(dt.timezone(dt.timedelta(hours=5, minutes=30))).date()
+    end = dt.datetime.now(IST)
     for ipo_id, _isin, _symbol, name, listing_date, token in targets:
         summary["attempted"] += 1
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         latest = (cur.fetchone() or [None])[0]
-        start = latest + dt.timedelta(microseconds=1) if latest else listing_date
+        # Kite bars are aligned to 15-minute boundaries. Keep both paginator bounds
+        # timezone-aware and resume at the next possible identity, never +1 microsecond.
+        start = (latest.astimezone(IST) + dt.timedelta(minutes=15)) if latest else dt.datetime.combine(listing_date, dt.time.min, IST)
         item = {"ipo_id": ipo_id, "name": name, "from": str(start)}
         try:
             for attempt in range(2):
                 try:
-                    bars = fetch_candles_15m(kite, token, start, today)
+                    bars = fetch_candles_15m(kite, token, start, end)
                     break
                 except Exception as exc:
                     if not is_transient(exc) or attempt:
@@ -95,6 +109,7 @@ def run(conn, *, limit: int, dry_run: bool, throttle_seconds: float = 0.34, slee
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--ids", help="exact comma-separated IPO IDs")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args(argv)
@@ -102,7 +117,8 @@ def main(argv=None):
         parser.error("choose --dry-run or --write")
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
-        result = run(conn, limit=max(1, args.limit), dry_run=args.dry_run)
+        result = run(conn, limit=max(1, args.limit), dry_run=args.dry_run,
+                     ids=parse_ids(args.ids))
     finally:
         conn.close()
     print("FIFTEEN_MIN_CANDLES=" + json.dumps(result, default=str, sort_keys=True))
