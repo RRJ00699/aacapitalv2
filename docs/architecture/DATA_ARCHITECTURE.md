@@ -21,7 +21,7 @@ source, not assumed). These are the ONLY tables cron may write to.
 | Table | Read by | Fed by |
 |---|---|---|
 | `ipo_intelligence` | 6 routes (command, intelligence, listing-day, playbook, post-listing) | IPOMatrix ingest, Chittorgarh, Screener, SBI, sync steps |
-| `ipo_consolidated` | 4 routes (command, levels, live-preopen, post-listing) | built nightly by `build_ipo_consolidated_v2.py` |
+| `ipo_consolidated` *(RETIRED)* | none — retired; forbidden by `tests/contracts/test_no_v1_tables.py`. Routes read versioned KV snapshots per `docs/architecture/CANONICAL_SPINE.md` | formerly `build_ipo_consolidated_v2.py` (now quarantined under `compatibility/consolidated/`, not run) |
 | `ipo_issue_details` | playbook | Chittorgarh scrape |
 
 ### Computed outputs (we generate these — not fetched)

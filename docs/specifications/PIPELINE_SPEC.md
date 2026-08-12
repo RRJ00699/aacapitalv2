@@ -16,9 +16,13 @@ center to decide whether a company is worth caring about, does their own researc
 on the gaps Sonnet flags, and makes the final call on listing day against house rules.
 
 ## 1. Trigger — new IPO discovery
-- **NSE upcoming/listing scrape** is the entry point: when an IPO appears there,
-  it enters our tables. (`fetch_nse_ipos.py`)
-- **Chittorgarh** is the primary calendar + details source (`scrape_chittorgarh.py`).
+- **NSE discovery** is the live entry point: the canonical official-universe refresh
+  (`pipeline/nse_lifecycle.py --discovery-only`, driven by `pipeline/cron.py`) is what
+  creates IPO rows when an issue appears on NSE.
+- **Chittorgarh** scrapers are RETIRED/quarantined — `scrape_chittorgarh.py` and
+  `enrich_ipo_chittorgarh.py` now live under `compatibility/scripts/` and are NOT run in
+  production (marked UNREACHABLE/QUARANTINED in `docs/repository-inventory.tsv`). They are
+  not the primary calendar source.
 - An IPO row is created with identity (name, symbol, dates, size, band) and then
   progressively enriched by the steps below.
 
@@ -26,7 +30,7 @@ on the gaps Sonnet flags, and makes the final call on listing day against house 
 | Source | Fills | Script |
 |---|---|---|
 | NSE upcoming/listings | discovery, symbol, listing/open/close dates | `fetch_nse_ipos.py` |
-| Chittorgarh | calendar, issue size, band, anchors, subscription | `scrape_chittorgarh.py`, `enrich_ipo_chittorgarh.py` |
+| Chittorgarh (RETIRED — quarantined under `compatibility/scripts/`, not run) | formerly calendar, issue size, band, anchors, subscription | `compatibility/scripts/scrape_chittorgarh.py`, `compatibility/scripts/enrich_ipo_chittorgarh.py` |
 | IPOMatrix | anchors/structure for new IPOs (JWT, admin-set cookie) | `ipomatrix_ingest.py` |
 | InvestorGain | GMP (day-before + history) — context only | `scrape_investorgain_gmp.py` |
 | SEBI / Chittorgarh | RHP prospectus PDF | `fetch_new_rhps.py`, `download_sebi_rhps_playwright.py` |
