@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml
+      - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml pyotp
       # SUBPROC_COV wraps subprocess integration tests in coverage; --cov (no
       # arg) defers to .coveragerc so the CORE denominator stays honest.
       - run: SUBPROC_COV=1 python -m pytest _scripts/tests/ -q --cov --cov-report=term
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: npm ci
-      - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml
+      - run: pip install pytest pytest-cov pgserver psycopg2-binary curl_cffi openpyxl anthropic pymupdf pdfplumber requests pandas lxml pyotp
       - run: npx playwright install --with-deps chromium
       - name: Full UAT (typecheck + build + pytest + browser journeys + a11y)
         run: npm run uat:all

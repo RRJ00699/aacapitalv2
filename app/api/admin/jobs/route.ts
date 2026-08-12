@@ -29,14 +29,13 @@ const ALLOWED_JOBS = new Set([
   "peer_pe", "peer_pe_notes", "news", "vm_verify",          // fair-value input fetch · reality report
   "token",                         // Kite token (candles need it)
   "gmp",                           // GMP scrape (IPO context)
-  "sbi_download",                  // temporary SBI discovery; canonical ingest is owner-gated
   // IPO daily levels
   // candle sync (post-listing dashboard)
   "sync",                          // git sync (utility)
   // Added 2026-07-18: these existed in job_runner.py AND had console buttons,
   // but this route rejected them with "unknown job '<name>'" — a THIRD
   // definition of the job list that nobody kept in sync.
-  "schema", "verdicts", "score", "quality", "smoke", "sbi_haiku",
+  "schema", "smoke",
   "ipomatrix", "breadth",   // had a button + runner entry but the API rejected it too
 ]);
 

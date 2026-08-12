@@ -50,12 +50,9 @@ ONE_ROW_LISTED = {
 HAS_ROWS = {
     "documents":            "RHP document registered (sha256 provenance)",
     "rhp_findings":         "Sonnet extraction run stored",
-    "financial_statements": "restated financials (>=1 period)",
     "valuation":            "ratios + score computed",
 }
-HAS_ROWS_OPEN = {
-    "subscription_snapshots": "subscription / anchor / MF data",
-}
+HAS_ROWS_OPEN = {}
 HAS_ROWS_LISTED = {
     "market_candles":     "daily candles",
     "market_candles_15m": "15-min intraday bars",
@@ -80,6 +77,19 @@ def retry_lane(field):
     if field.startswith(("valuation.", "decisions.")):
         return "score/verdict"
     return "SBI"
+
+
+def summarize_requirements(present, missing, pending):
+    """Summarize one fixed stage requirement set without row-shape dependence."""
+    required_present = len(present)
+    required_total = required_present + len(missing) + len(pending)
+    return {
+        "required_present": required_present,
+        "required_total": required_total,
+        "completeness_pct": (round(100 * required_present / required_total, 1)
+                             if required_total else 100.0),
+        "retry_lanes": sorted({retry_lane(field) for field in missing}),
+    }
 
 
 def _pending(stage, listing_date, close_date, today, col, has_rhp=False,
@@ -255,6 +265,8 @@ def check_completeness(conn, ipo_id, today=None):
     if f:
         for c, v in zip(FINANCIAL_FIELDS, f):
             (present if v is not None else missing).append(f"financial_statements.{c}")
+    else:
+        missing.extend(f"financial_statements.{c}" for c in FINANCIAL_FIELDS)
 
     if stage in ("open", "closed", "listed"):
         cur.execute(f"""SELECT {', '.join(SUBSCRIPTION_FIELDS)} FROM subscription_snapshots
@@ -264,6 +276,8 @@ def check_completeness(conn, ipo_id, today=None):
         if s:
             for c, v in zip(SUBSCRIPTION_FIELDS, s):
                 (present if v is not None else missing).append(f"subscription_snapshots.{c}")
+        else:
+            missing.extend(f"subscription_snapshots.{c}" for c in SUBSCRIPTION_FIELDS)
 
     # --- valuation: reuse the engine's own missing_inputs rather than re-deriving ---
     # MUST read the SCORE engine's row, not simply the newest. Once an RHP extraction
@@ -306,16 +320,12 @@ def check_completeness(conn, ipo_id, today=None):
             real_missing.append(m)
 
     blocking = real_missing
-    required_present = len(present)
-    required_total = required_present + len(blocking) + len(pend)
+    summary = summarize_requirements(present, blocking, pend)
     return dict(ipo_id=ipo_id, name=name, stage=stage,
                 complete=(len(blocking) == 0),
                 missing=sorted(blocking),
                 pending=sorted(f"{k} ({v})" for k, v in pend.items()),
-                required_present=required_present,
-                required_total=required_total,
-                completeness_pct=round(100 * required_present / required_total, 1) if required_total else 100.0,
-                retry_lanes=sorted({retry_lane(m) for m in blocking}),
+                **summary,
                 present=sorted(present),
                 engine_version=(v[0] if v else None))
 

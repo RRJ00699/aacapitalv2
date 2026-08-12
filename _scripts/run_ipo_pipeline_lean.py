@@ -24,6 +24,14 @@ REPO=os.path.dirname(HERE)
 LOGDIR=os.path.join(HERE,"logs"); os.makedirs(LOGDIR,exist_ok=True)
 LOG=os.path.join(LOGDIR,f"pipeline_lean_{datetime.date.today()}.log")
 
+# Analyzer-visible inventory only. These paths are deliberately not invoked; their
+# capabilities await OWNER verdicts in LEAN_RETIREMENT_DECISIONS.md.
+LEGACY_OWNER_DECISION_PATHS = (
+    "_scripts/compute_quality_score.py", "_scripts/rhp_auto.py",
+    "_scripts/fetch_new_rhps.py", "_scripts/rhp_sonnet_store.py",
+    "_scripts/insights_fanout.py", "_scripts/lib/quality_factors.py",
+)
+
 
 
 def _warm_command_cache():
@@ -204,20 +212,11 @@ def main():
             _log_step(_nm, _sc, True, "skipped — Kite token stale (expected on the 08:30 run)")
 
     # ── SBI RESEARCH NOTES (structured scrape/parse — NOT sent to Sonnet) ──
-    step("download SBI notes (new only)",   ["download_sbi_notes.py"])
-    # SBI regex parsing is retired. The owner-gated canonical lane stores immutable
-    # documents before Sonnet extraction; it is intentionally not auto-activated here.
+    # SBI acquisition/extraction is owned by pipeline/cron.py and is not duplicated here.
     step("street news discovery (free RSS)", ["fetch_ipo_news.py", "--apply"])
-    step("SBI Haiku extract ($0.50 cap)",   ["sbi_haiku_extract.py"])
-
-    # ── RHP forensic (Sonnet, RHP-only) — non-hard, shares the $3/day budget ──
-    # rhp_auto self-gates to the remaining daily budget (reads rhp_run_log), so
-    # running it in BOTH daily lean runs never exceeds $3/day combined. A Sonnet
-    # or SEBI hiccup here must not kill the data pipeline → non-hard.
-    step("RHP forensic (Sonnet, $3/day cap)", ["rhp_auto.py", "--apply"])
+    # RHP acquisition/extraction is owner-gated by pipeline/cron.py and is not duplicated here.
 
     # ── COMPUTE (single pass — no duplicate block) ──
-    step("ipo score v0 (derived)",          ["ipo_score.py","--apply"])
     step("d10 outcome precompute",          ["compute_d10.py"])
     step("reconcile listing dates",         ["reconcile_listing_dates.py", "--apply"])  # Phase-1 fix #2: was dry-run every night
     # REMOVED 2026-07-18 (dead step): "close-in-range strength" — CIR is REJECTED
@@ -238,9 +237,7 @@ def main():
 
     # ── BUILD + VERDICTS ──
     step("sync issue_details -> intelligence (isin)", ["sync_issue_details.py"])
-    step("compute IPO verdicts (TRADE/WATCH/CAUTION/AVOID)", ["compute_verdicts.py","--apply"])
     step("compute red-flag scanner",        ["compute_flags.py","--apply"])
-    step("Quality score (pre-list)",      ["compute_quality_score.py","--apply"])
 
     # ── JOURNAL + MAINTENANCE ──
     if kite_ok:
