@@ -832,6 +832,17 @@ function IpoCommand() {
   // IST market hours regardless of the viewer's timezone (user is CST):
   // 09:00 IST = 03:30 UTC (210 min) · 15:30 IST = 10:00 UTC (600 min), Mon–Fri.
   const [liveOverlay, setLiveOverlay] = useState<Record<string, R>>({});
+  const daysSinceIstDate = (value: unknown) => {
+    const listed = String(value ?? "").slice(0, 10);
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const dateNumber = (s: string) => {
+      const [year, month, day] = s.split("-").map(Number);
+      return Date.UTC(year, month - 1, day);
+    };
+    return listed ? (dateNumber(today) - dateNumber(listed)) / 86400000 : NaN;
+  };
   useEffect(() => {
     if (view !== "live" || !d) return;
     const inISTMarketHours = () => {
@@ -843,7 +854,7 @@ function IpoCommand() {
     const syms = Array.from(new Set((d.cards || [])
       .filter(c => {
         if (!c.sym || !c.listing_date) return false;
-        const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+        const days = daysSinceIstDate(c.listing_date);
         return days >= 0 && days <= 7;
       })
       .map(c => String(c.sym))));
@@ -959,7 +970,7 @@ function IpoCommand() {
   const windowCards = (() => {
     const raw = cards.filter(c => {
       if (!c.listing_date || !c.sym) return false;
-      const days = (Date.now() - new Date(String(c.listing_date)).getTime()) / 86400000;
+      const days = daysSinceIstDate(c.listing_date);
       return days >= 0 && days <= 7;
     });
     // Defensive dedupe: a junk DB twin (two Laser rows, 2026-07-18) rendered

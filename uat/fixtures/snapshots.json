@@ -4,6 +4,7 @@
       {
         "company_name": "UAT Complete Ltd",
         "sym": "UATGOOD",
+        "isin": "INE000000011",
         "state": "UPCOMING",
         "listing_date": "2026-08-20",
         "open_date": "2026-08-13",
@@ -84,6 +85,7 @@
       {
         "company_name": "UAT Incomplete Ltd",
         "sym": "UATINC",
+        "isin": "INE000000029",
         "state": "UPCOMING",
         "listing_date": "2026-08-20",
         "open_date": "2026-08-13",
