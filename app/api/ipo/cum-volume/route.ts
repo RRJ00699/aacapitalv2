@@ -23,6 +23,12 @@ export async function GET(req: Request) {
   if (!symbol) {
     return NextResponse.json({ ok: false, error: "symbol required" }, { status: 400 });
   }
+  if (process.env.UAT_FIXTURE_JSON) {
+    return NextResponse.json({
+      ok: true, symbol, window: "10:29–11:00 IST", cum_volume: null,
+      status: "awaiting", note: "UAT fixture has no live tick stream",
+    });
+  }
 
   // Phase-2 zero-idle: VolumeConfirm polls every 60s per symbol. The window
   // total is FINAL after 11:00 IST — cache confirmed 24h, in-window 60s, so
