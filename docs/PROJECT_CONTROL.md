@@ -1,5 +1,9 @@
 # AACapital — Project Control Plan
 
+**Status: CODE COMPLETE → OWNER CHECK.** UI-foundation cycle. The daily pipeline
+remains **OWNER CHECK** (not VERIFIED DONE) until the owner's post-#333 Windows
+A1/A2 evidence is pasted. See §0 for the full status vocabulary.
+
 > Repo-native control surface. Single source of truth for program state,
 > two-agent ownership, seams, and the exact producer fields the UI is waiting
 > on. Refresh from evidence each cycle — never from memory.
@@ -105,11 +109,37 @@ These are surfaced in the UI today as honest "Not available from current
 payload" states (Admin Operations) or "pending" (Command Center). Each names the
 exact producer field requested. **No number is fabricated in their place.**
 
+### 4a. Producer contract to build next (Codex) — `pipeline-health:v1` (KV)
+
+The Admin overview is **zero-wake**: it reads only KV, never Neon. Live pipeline
+lane health therefore needs the pipeline to **publish run health to a KV
+snapshot** (the same way `ipo-command:v6` is published) so the web app can read
+it without a Neon query. The consumer is ready (`lib/admin/lane-status.ts`,
+fully unit-tested); the producer is a **separate Codex task** — it must NOT be
+built in this UI PR and must not modify `pipeline/build/build_snapshots.ts` here.
+
+Proposed contract (Codex to confirm/adjust):
+
+```
+snapshot name: pipeline-health:v1  (KV, published by the pipeline like ipo-command:v6)
+{
+  run_complete: boolean,            // authoritative; else consumer infers from ran_at (15-min window)
+  last_run_at:  string|null,        // ISO
+  steps:    [{ step, ok, ran_at, duration_ms?, config_required?, error? }],
+  expected: [{ step, weekly? }],    // = EXPECTED_LEAN_STEPS
+  failures: [{ step, stderr_tail, failed_at }]
+}
+```
+
+### 4b. Fields consumed as honest "unavailable" until a payload carries them
+
 | Consumer surface | Requested field | Purpose |
 | --- | --- | --- |
-| Admin · Operations | `pipeline_step_runs.duration_ms` | Per-lane duration (no timing captured today) |
+| Admin · Operations | `pipeline-health:v1` (KV) | Last run, per-lane status, first failing lane + traceback. Rendered as configuration-required until published. |
+| Admin · Operations | `pipeline-health:v1: steps[].duration_ms` | Per-lane duration (no timing captured today) |
+| Admin · Operations | `pipeline-health:v1: steps[].config_required` | Flag lanes that need configuration |
+| Admin · Operations | `pipeline-health:v1: failures[].stderr_tail` | Failed-step traceback tail |
 | Admin · Operations | `admin.owner_action_queue[]` | Owner-action queue |
-| Admin · Operations | `pipeline_step_runs.config_required` | Flag lanes that need configuration |
 | Admin · Operations | `rhp.retry_pending_count` | Retry / pending document count |
 | Admin · Operations | `admin.paid_call_status{used,cap}` | Paid-call status/cap (no secret values) |
 | Command Center | `strategy_backtest{cohort,win_rate,n,median}` | Validated cohort win-rates for the playbook. Until this ships, **no win-rate / "edge" percentage renders** — the UI shows qualitative setup descriptions only. |
@@ -131,7 +161,7 @@ Advanced this cycle: **D1, D2, D3, D7, A3.**
 | D2 | Shared screen states (loading/empty/pending/stale/config-required/failed+retry) | CODE COMPLETE → OWNER CHECK |
 | D3 | Command Center simplification + truthfulness (no fabricated edge %, REIT/InvIT visibly excluded, three-verdict preserved) | CODE COMPLETE → OWNER CHECK |
 | D7 | Mobile-first Command Center at 380px | CODE COMPLETE → OWNER CHECK (screenshots) |
-| A3 | Admin Operations dashboard (first failing lane in 5 min, honest unavailable states) | CODE COMPLETE → OWNER CHECK |
+| A3 | Admin Operations dashboard — **zero-wake** (KV-only, no Neon web polling); active-IPO + completeness from KV with UNKNOWN on degraded; lane health awaits the `pipeline-health:v1` producer | CODE COMPLETE → OWNER CHECK |
 
 All five are **CODE COMPLETE** and awaiting **OWNER CHECK** (UI screenshots +
 manual UAT). None is VERIFIED DONE until the owner signs off.

@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22.12, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
       - name: Unit tests (lib TypeScript)
@@ -37,7 +37,7 @@ jobs:
       # The SQL integration probe executes the repository's TypeScript query
       # helper, so this job needs the same locked JS dependencies as UAT.
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with: { node-version: 22.12, cache: npm }
       - run: npm ci
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with: { node-version: 22.12 }
       - name: Dependency audit (high+) with a documented allowlist
         run: |
           # KNOWN, ACCEPTED — @auth/core advisories from next-auth v5 BETA. We are mid-
@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with: { node-version: 22.12 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: npm ci
