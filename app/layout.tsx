@@ -32,9 +32,18 @@ export const viewport: Viewport = {
   themeColor: "#0B1628",
 }
 
+// Pre-paint theme boot — runs before React hydrates so the correct palette is
+// on <html> from the first frame. Prevents the light→dark (or dark→light) flash
+// a useEffect-only theme would cause. Kept in sync with lib/theme.ts (mode
+// values, storage key, and the LIGHT/DARK background hexes).
+const THEME_BOOT = `(function(){try{var k='aac-theme',m=localStorage.getItem(k);if(m==='auto'){m='system';try{localStorage.setItem(k,m)}catch(e){}}var r=document.documentElement;if(m==='light'){r.setAttribute('data-theme','light')}else if(m==='dark'){r.setAttribute('data-theme','dark')}else{r.removeAttribute('data-theme')}var dark=m==='dark'||((m==='system'||!m)&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);r.style.background=dark?'#12202B':'#EDF1F6';r.style.colorScheme=dark?'dark':'light';}catch(e){}})();`
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body style={{ margin: 0, padding: 0 }}>
         <ServiceWorkerRegister />
         <ThemeProvider>{children}</ThemeProvider>

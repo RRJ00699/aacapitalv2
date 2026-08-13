@@ -73,6 +73,19 @@ input, button, textarea, select { outline: none; font-family: inherit; }
   --s-junk: var(--t-red);     --s-junk-bg: var(--t-redBg);     --s-junk-bd: var(--t-redBd);
   --s-info: var(--t-blue);    --s-info-bg: var(--t-blueBg);    --s-info-bd: var(--t-blueBd);
   --s-neutral: var(--t-sub);  --s-neutral-bg: var(--t-grayBg); --s-neutral-bd: var(--t-border);
+  /* ── Shared semantic tokens (theme v1 contract) ────────────────────────────
+     ONE vocabulary the whole app maps to. These alias the per-theme --t-* /
+     --s-* variables above, so light/dark (and system-derived) keep working
+     automatically — never redefine a colour only inside a media/[data-theme]
+     block. positive/warning/negative/neutral carry fg + bg + border; surface,
+     border and text are the structural roles. */
+  --c-positive: var(--s-good);    --c-positive-bg: var(--s-good-bg);    --c-positive-bd: var(--s-good-bd);
+  --c-warning:  var(--s-watch);   --c-warning-bg:  var(--s-watch-bg);   --c-warning-bd:  var(--s-watch-bd);
+  --c-negative: var(--s-junk);    --c-negative-bg: var(--s-junk-bg);    --c-negative-bd: var(--s-junk-bd);
+  --c-neutral:  var(--s-neutral); --c-neutral-bg:  var(--s-neutral-bg); --c-neutral-bd:  var(--s-neutral-bd);
+  --c-surface:  var(--t-surface); --c-surface-2:   var(--t-surface2);
+  --c-border:   var(--t-border);
+  --c-text:     var(--t-text);    --c-text-sub:    var(--t-sub);        --c-text-meta:   var(--t-meta);
   /* motion (150–250ms band) + focus */
   --m-fast: 150ms; --m-base: 200ms; --m-slow: 250ms;
   --m-ease: cubic-bezier(.2,.8,.3,1);

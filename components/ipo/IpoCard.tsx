@@ -59,14 +59,15 @@ function scoreColor(score: number | null): string {
   return C.red;
 }
 
-function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | null; conf: number | null; sub?: string; tally?: boolean; band?: string | null; win?: number | null }) {
-  // tally mode: ipo_score v0 is a backtested additive tally (-4..+6), NOT a
-  // percent — showing it on a 0-100 arc made every IPO read as 0/1/-2 garbage
-  // (Rakesh 2026-07-17). Number = signed tally; arc = position within the
-  // tally's true range (visual only).
+function ScoreDial({ score, conf, sub, tally, band }: { score: number | null; conf: number | null; sub?: string; tally?: boolean; band?: string | null }) {
+  // tally mode: ipo_score v0 is an additive rule tally (-4..+6), NOT a percent.
+  // The dial shows the QUALITATIVE grade (score_band) + the signed tally; it does
+  // NOT render an uncontracted backtested win% (score_expected_win). Historical
+  // win-rates return only once strategy_backtest ships as an evidenced producer
+  // field — see docs/runbooks/PROJECT_CONTROL.md §4c. Arc = tally position (visual).
   const col = tally ? (score != null && score >= 2 ? C.green : score != null && score <= -1 ? C.red : C.amber) : scoreColor(score);
   const pct = score == null ? 0
-    : tally ? (win != null ? Math.max(0, Math.min(100, Number(win))) : Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100)))
+    : tally ? Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100))
     : Math.max(0, Math.min(100, score));
   const r = 30, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
   return (
@@ -84,13 +85,13 @@ function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | nul
           ? <span style={{ fontSize: 7.5, color: C.dim, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>
           : tally
             ? <>
-                {/* BIG number = backtested win% (what a user grasps); the raw
-                   tally is the small signed chip below. Fixes "0/1/-2 means
-                   nothing" — the number people see is now 60-81, not the tally. */}
-                <span style={{ ...num, fontSize: 24, fontWeight: 800, color: col, lineHeight: 1 }}>
-                  {win != null ? `${Math.round(Number(win))}%` : (band ? String(band).slice(0, 4) : "—")}</span>
-                <span style={{ fontSize: 7.5, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.15 }}>
-                  {band ? String(band).toLowerCase() : ""}{win != null ? " hist" : ""}</span>
+                {/* BIG = the qualitative grade (score_band). No win% renders —
+                   that is an uncontracted historical stat (see §4c). */}
+                <span style={{ fontWeight: 800, color: col, lineHeight: 1.05, textAlign: "center",
+                  textTransform: "uppercase", letterSpacing: 0.2, padding: "0 3px",
+                  fontSize: band && String(band).length > 7 ? 9 : band && String(band).length > 5 ? 11 : 13 }}>
+                  {band ? String(band) : "—"}</span>
+                <span style={{ fontSize: 7.5, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.15 }}>grade</span>
                 <span style={{ ...num, fontSize: 8, color: C.dim, marginTop: 1 }}>
                   tally {Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))}</span>
               </>
@@ -345,26 +346,26 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const edges: Edge[] = [
     ...(lifecycle ? [{ label: "Timeline", value: lifecycle.v, sub: lifecycle.s, state: lifecycle.st } as Edge] : []),
     { label: "Anchors", value: anc != null ? String(anc) : "—",
-      sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
+      sub: anc != null ? (anc > 30 ? "30+ · strong book" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
     { label: "OFS mix", value: ofsPct != null ? `${ofsPct}%` : "—",
       // Phase-7 (2026-07-20): ">60 = promoter cash-out" was an evidence-free
-      // interpretation of a structured number. The BACKTESTED fact is the
-      // fresh-vs-OFS win-rate split; seller identity/motive needs the RHP.
-      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "OFS-heavy" : "mixed") : "awaiting",
+      // interpretation of a structured number. Describe the fresh-vs-OFS mix
+      // qualitatively; no hard-coded win-rate is asserted on the card.
+      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy" : ofsPct > 60 ? "OFS-heavy" : "mixed") : "awaiting",
       state: ofsPct == null ? "na" : ofsPct < 30 ? "pass" : ofsPct > 60 ? "warn" : "neutral" },
     { label: "PE vs peer", value: peRatio != null ? `${peRatio.toFixed(2)}×` : ipoPe != null ? `${ipoPe.toFixed(0)}` : "—",
-      sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
+      sub: peRatio != null ? (peRatio < 0.6 ? "cheap vs peers" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
       state: peRatio == null ? "na" : peRatio < 0.6 ? "pass" : "neutral" },
     { label: "QIB", value: qib != null ? `${qib}×` : "—",
-      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
+      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
       state: qib == null ? "na" : qib >= 5 && qib <= 25 ? "pass" : "neutral" },
     // Band tile: a bare ₹high just repeated the IPO PRICE tile (Rakesh's
     // redundancy call, 2026-07-16). Show the low–high RANGE when we have it;
     // when we don't, the tile is pure duplication — drop it.
     ...(bandHigh != null && bandLow != null && bandLow < bandHigh ? [{
       label: "Band", value: `₹${bandLow}–${bandHigh}`,
-      sub: bandHigh < 300 ? "under ₹300 · wins" : "premium band",
+      sub: bandHigh < 300 ? "under ₹300 · affordable" : "premium band",
       state: (bandHigh < 300 ? "pass" : "neutral") } as Edge] : []),
   ];
 
@@ -396,11 +397,15 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 +12.7%, drawdown risk 23.6% vs 32.4%. RHP flags, early volume,
                 retail price-bids and MF share all failed to beat it. */}
             {c.house_stack === true ? (
-              <span title={String(c.house_stack_stat ?? "")} style={{
+              // No title/aria from house_stack_stat — the producer supplies an
+              // uncontracted backtest string ("72.7% win · +17.2% median") that
+              // must not reach a tooltip. Historical stats return only via the
+              // strategy_backtest contract (docs/runbooks/PROJECT_CONTROL.md §4c).
+              <span style={{
                 marginLeft: 8, color: C.green, background: C.greenBg,
                 border: `1px solid ${C.greenBd}`, borderRadius: 999,
                 padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>
-                ◆ HOUSE STACK · 72.7%
+                ◆ HOUSE STACK
               </span>
             ) : null}
           </div>
@@ -423,7 +428,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           </div>
         </div>
         <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-          <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} win={isQuality ? null : (c.score_expected_win as number | null)} />
+          <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} />
           {(() => {
             const r = c.sbi_rating ? String(c.sbi_rating) : null;
             if (!r) return null;
@@ -504,7 +509,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
               -20% drawdown risk is 23.6% vs 32.4% baseline. */}
           {c.house_stack === true ? (
             <div style={{ fontSize: 10.5, color: C.green, fontWeight: 700, marginBottom: 6 }}>
-              ◆ House Stack — historically {String(c.house_stack_stat ?? "")}; drawdown risk 23.6% vs 32.4% baseline
+              ◆ House Stack — 30+ anchors, ≥₹200cr, fresh-issue all align. The strongest configuration for sitting through a dip.
             </div>
           ) : null}
           <button onClick={() => onJourney?.(sym)} style={{
@@ -599,7 +604,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push({ text: `Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)` });
           if (c.quality_promoter === true) good.push({ text: "Quality promoter track record" });
           if (c.house_stack === true)
-            good.push({ text: "HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue — 72.7% win, +17.2% median (D30, n=55)" });
+            good.push({ text: "HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue all align" });
           if (clear > 0 && raised.length === 0) good.push({ text: `${clear} governance checks clear — no auditor/SEBI/pledge flags` });
         }
         const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];

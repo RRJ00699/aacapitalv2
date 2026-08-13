@@ -36,6 +36,8 @@
         "fair_note": "EPS and peer valuation available",
         "playbook_setup": "watch",
         "playbook_verdict": "Passes: 30+ anchor investors.",
+        "house_stack": true,
+        "house_stack_stat": "72.7% win · +17.2% median · D30 (n=55)",
         "insights": [
           {
             "category": "structure",

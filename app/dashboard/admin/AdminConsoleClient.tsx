@@ -5,6 +5,8 @@
 // script, and writes back status + exit code + last 60 log lines. UI just polls.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ThemeToggle from "@/components/ui/ThemeToggle";
+import OperationsOverview from "./OperationsOverview";
 
 const C = {
   bg: "var(--t-bg)", surface: "var(--t-surface)", border: "var(--t-border)", hover: "var(--t-surface2)",
@@ -21,11 +23,11 @@ const C = {
 // _scripts/job_runner.py. Non-IPO jobs (theses, exit/base backtests, coverage,
 // universe backfill, screener, convergence) removed.
 const JOB_CATALOG: { key: string; label: string; desc: string; heavy?: boolean }[] = [
-  { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → SBI → Haiku/Sonnet → score → verdicts → consolidated → gates", heavy: true },
+  { key: "pipeline",        label: "Run full pipeline (lean)", desc: "The production 08:30/17:00 flow: discovery → enrich → peer PE → GMP → candles → LLM extraction → score → verdicts → consolidated → gates", heavy: true },
   { key: "pipeline_weekly", label: "Pipeline + weekly purge", desc: "Lean pipeline plus the post-lock candle purge", heavy: true },
   { key: "ipo_lifecycle",   label: "Run IPO lifecycle", desc: "Per-IPO NSE issue, forward subscription, anchor allocation and listing-day pre-open actions" },
   { key: "news",            label: "Street news discovery", desc: "Whitelisted RSS (Reuters preferred, ET/MC/BS/Mint fallback) → one article per IPO; manual override wins" },
-  { key: "peer_pe_notes",   label: "Peer P/E from SBI notes", desc: "Median of the Haiku-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
+  { key: "peer_pe_notes",   label: "Peer P/E from analyst notes", desc: "Median of the LLM-extracted peer table → peer_median_pe (fill-empty; runs before Screener)" },
   { key: "peer_pe",         label: "Fetch peer P/E (Screener)", desc: "Screener peer multiples → peer_median_pe — fills whatever the SBI notes left NULL" },
   { key: "vm_verify",       label: "VM verify (report)",    desc: "One-command reality check — stages, cron, files, per-IPO matrices. Read-only; output lands in the job log" },
   { key: "gmp",             label: "Refresh GMP",           desc: "Scrape InvestorGain grey-market premium → ipo_gmp" },
@@ -156,22 +158,28 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>⚙️ Settings</a>
           <a href="/dashboard/access" style={{ fontSize: 13, fontWeight: 600, color: C.blue, textDecoration: "none",
             background: C.blueBg, border: `1px solid ${C.blueBd}`, borderRadius: 8, padding: "5px 10px", marginLeft: 8 }}>🔑 Access</a>
-          <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Job Console</h1>
+          <h1 style={{fontFamily:"var(--f-display)",letterSpacing:-0.3, fontSize: 20, fontWeight: 800, color: C.text, margin: 0 }}>⚙️ Admin · Operations</h1>
         </div>
         {/* Refresh removed (Rakesh 2026-07-17): gave no feedback and the list
             auto-loads on mount + after each job. Pull-to-refresh covers manual. */}
+        <ThemeToggle compact />
       </div>
       <p style={{ fontSize: 13, color: C.meta, marginTop: 0, marginBottom: 18 }}>
-        Run any pipeline job with one click. web → Neon only; the VM polls and runs it. Signed in as {adminEmail}.
+        Pipeline health first, then one-click job runs. The web only enqueues to Neon; the scheduled runner (cron.py) claims and runs each job. Signed in as {adminEmail}.
       </p>
+
+      {/* Operations overview — the 8 AM answer: first failing lane + action. */}
+      <OperationsOverview />
+
+      <h2 style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: "0 0 10px", fontFamily: "var(--f-display)" }}>Job runner</h2>
 
       {warning && (
         <div style={{
           background: C.amberBg, border: `1px solid ${C.amberBd}`, color: C.amber,
           borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 16,
         }}>
-          job_runs table is unavailable — provision it with explicit migration tooling; nothing runs until{" "}
-          <code>job_runner.py</code> is scheduled on the VM (cron, every minute).
+          job_runs table is unavailable — provision it with explicit migration tooling; nothing runs until the{" "}
+          scheduled runner (<code>cron.py</code>) is active.
         </div>
       )}
       {loadErr && (

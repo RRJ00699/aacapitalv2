@@ -16,7 +16,7 @@
     "uat:all": "npm run typecheck && npm run build && python -m pytest _scripts/tests/ -q && playwright test --project=desktop --project=tablet --project=mobile",
     "uat:smoke": "node uat/smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"lib/**/*.test.ts\"",
+    "test": "node uat/run-lib-tests.mjs",
     "set-password": "node _scripts/set-password.mjs",
     "worker:kite:dry-run": "wrangler deploy --config workers/kite-broker-proxy/wrangler.jsonc --dry-run",
     "worker:kite:types": "wrangler types --config workers/kite-broker-proxy/wrangler.jsonc workers/kite-broker-proxy/worker-configuration.d.ts"

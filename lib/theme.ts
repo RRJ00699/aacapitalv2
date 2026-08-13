@@ -36,18 +36,40 @@ export const DARK: Palette = {
   header:"#0E1922", headerText:"#EAF1EF",
 }
 
-type Mode = "auto" | "light" | "dark"
+// Theme modes (agreed first version). "system" follows prefers-color-scheme;
+// "light"/"dark" are explicit manual overrides that persist across reloads.
+export type Mode = "system" | "light" | "dark"
+export const THEME_STORAGE_KEY = "aac-theme"
+
+// Normalize any stored value (incl. the legacy "auto") to a valid Mode.
+export function normalizeMode(v: unknown): Mode {
+  if (v === "light" || v === "dark") return v
+  return "system" // "system", legacy "auto", null, or anything unexpected
+}
+
+// Read the persisted mode synchronously so the very first client render already
+// matches the pre-paint inline script (see app/layout.tsx) — no flash, no
+// server/client class divergence to reconcile.
+function readStoredMode(): Mode {
+  if (typeof window === "undefined") return "system"
+  try { return normalizeMode(window.localStorage.getItem(THEME_STORAGE_KEY)) } catch { return "system" }
+}
+
 const ThemeCtx = createContext<{ pal: Palette; mode: Mode; isDark: boolean; setMode: (m: Mode) => void }>({
-  pal: LIGHT, mode: "auto", isDark: false, setMode: () => {},
+  pal: LIGHT, mode: "system", isDark: false, setMode: () => {},
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<Mode>("auto")
+  const [mode, setMode] = useState<Mode>(readStoredMode)
   const [sysDark, setSysDark] = useState(false)
 
   useEffect(() => {
-    const saved = (typeof window !== "undefined" && window.localStorage.getItem("aac-theme")) as Mode | null
-    if (saved) setMode(saved)
+    // Re-sync from storage once mounted (covers SSR's "system" default) and
+    // migrate a legacy "auto" value in place.
+    const raw = (() => { try { return window.localStorage.getItem(THEME_STORAGE_KEY) } catch { return null } })()
+    const norm = normalizeMode(raw)
+    setMode(norm)
+    if (raw === "auto") { try { window.localStorage.setItem(THEME_STORAGE_KEY, norm) } catch { /* ignore */ } }
     const mq = window.matchMedia("(prefers-color-scheme: dark)")
     setSysDark(mq.matches)
     const on = (e: MediaQueryListEvent) => setSysDark(e.matches)
@@ -55,23 +77,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", on)
   }, [])
 
-  const isDark = mode === "dark" || (mode === "auto" && sysDark)
+  const isDark = mode === "dark" || (mode === "system" && sysDark)
   const pal = isDark ? DARK : LIGHT
 
   const set = (m: Mode) => {
     setMode(m)
-    try { window.localStorage.setItem("aac-theme", m) } catch { /* ignore */ }
+    try { window.localStorage.setItem(THEME_STORAGE_KEY, m) } catch { /* ignore */ }
   }
 
   useEffect(() => {
     if (typeof document !== "undefined") {
-      document.documentElement.style.background = pal.bg
-      // drive the CSS variables: explicit choice sets data-theme; auto removes it (CSS media query handles it)
-      if (mode === "light") document.documentElement.setAttribute("data-theme", "light")
-      else if (mode === "dark") document.documentElement.setAttribute("data-theme", "dark")
-      else document.documentElement.removeAttribute("data-theme")
+      const root = document.documentElement
+      root.style.background = pal.bg
+      root.style.colorScheme = isDark ? "dark" : "light"
+      // Drive the CSS variables: an explicit choice stamps data-theme; "system"
+      // removes it so the prefers-color-scheme media query in globals.css wins.
+      if (mode === "light") root.setAttribute("data-theme", "light")
+      else if (mode === "dark") root.setAttribute("data-theme", "dark")
+      else root.removeAttribute("data-theme")
     }
-  }, [pal.bg, mode])
+  }, [pal.bg, mode, isDark])
 
   return createElement(ThemeCtx.Provider, { value: { pal, mode, isDark, setMode: set } }, children)
 }
