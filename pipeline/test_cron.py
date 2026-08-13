@@ -168,6 +168,58 @@ def test_db_measurement_failure_retains_and_prints_twelve_line_traceback(monkeyp
     assert "traceback tail:" in capsys.readouterr().out
 
 
+def test_successful_zero_spend_is_not_measurement_failure(monkeypatch):
+    class ZeroCursor:
+        def execute(self, *_args):
+            pass
+        def fetchone(self):
+            return (0,)
+    connection = SimpleNamespace(cursor=lambda: ZeroCursor(), close=lambda: None)
+    monkeypatch.setattr(cron, "db", lambda: connection)
+    steps = []
+    value, available = cron.measure_db(steps, "Spend before measurement",
+                                       cron.spent_today, None)
+    assert value == 0.0
+    assert available
+    assert steps == []
+
+
+@pytest.mark.parametrize("failed_measurement", [cron.get_cap, cron.spent_today])
+def test_spend_query_failure_skips_paid_subprocess(monkeypatch, capsys, failed_measurement):
+    monkeypatch.setenv("DATABASE_URL", "redacted")
+    monkeypatch.setenv("RHP_EXTRACTION_OWNER_APPROVED", "YES")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "configured")
+    calls = []
+
+    def fake_run(step, target, args, **_kwargs):
+        calls.append((step, target, args))
+        return {"step": step, "status": "ok", "duration": 0.0, "output": ""}
+
+    def fake_with_db(fn, *_args, **_kwargs):
+        if fn is cron.select_active:
+            return [(7, "Seven", None)], "ACTIVE"
+        if fn is cron.completeness_plan:
+            return []
+        if fn is failed_measurement:
+            raise cron.psycopg2.OperationalError("spend query unavailable")
+        if fn is cron.get_cap:
+            return 2.0
+        if fn is cron.spent_today:
+            return 0.0
+        raise AssertionError(fn)
+
+    monkeypatch.setattr(cron, "run", fake_run)
+    monkeypatch.setattr(cron, "with_db", fake_with_db)
+    rc = cron.main(["--skip-download", "--skip-kite"])
+    output = capsys.readouterr().out
+    paid_calls = [call for call in calls if call[0] == "RHP paid extraction"]
+    assert paid_calls == []
+    assert "spend query unavailable" in output
+    assert "paid execution disabled: spend measurement unavailable" in output
+    assert "END-OF-RUN REPORT" in output
+    assert rc == 1
+
+
 def test_select_active_operational_error_reaches_end_of_run_without_uncaught_traceback(
         monkeypatch, capsys):
     monkeypatch.setenv("DATABASE_URL", "redacted")
@@ -190,6 +242,7 @@ def test_select_active_operational_error_reaches_end_of_run_without_uncaught_tra
     assert "Active IPO selector = failed" in output
     assert "selector failed; dependent cohort work skipped" in output
     assert "no active IPOs selected" not in output
+    assert "active IPOs: UNKNOWN — selector failed" in output
     assert "END-OF-RUN REPORT" in output
 
 

@@ -125,23 +125,15 @@ def measure_db(steps, name, fn, default, *args, **kwargs):
 
 def get_cap(conn):
     cur = conn.cursor()
-    try:
-        cur.execute("SELECT value FROM platform_config WHERE key='daily_spend_cap_usd'")
-        row = cur.fetchone()
-        return float(row[0]) if row and row[0] else DEFAULT_CAP
-    except Exception:
-        conn.rollback()
-        return DEFAULT_CAP
+    cur.execute("SELECT value FROM platform_config WHERE key='daily_spend_cap_usd'")
+    row = cur.fetchone()
+    return float(row[0]) if row and row[0] else DEFAULT_CAP
 
 
 def spent_today(conn):
     cur = conn.cursor()
-    try:
-        cur.execute("SELECT COALESCE(SUM(cost_usd),0) FROM rhp_findings WHERE analyzed_at >= date_trunc('day', now())")
-        return float(cur.fetchone()[0] or 0)
-    except Exception:
-        conn.rollback()
-        return 0.0
+    cur.execute("SELECT COALESCE(SUM(cost_usd),0) FROM rhp_findings WHERE analyzed_at >= date_trunc('day', now())")
+    return float(cur.fetchone()[0] or 0)
 
 
 def select_active(conn, limit, backfill=False):
@@ -375,13 +367,14 @@ def classify_sbi_configuration(config):
             "WARNING_CONFIGURATION_ERROR": "warning"}.get(config.status, "configured")
 
 
-def report(steps, started, *, dry, targets, cap=0.0, spent=0.0):
+def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, spent=0.0):
     duration = time.monotonic() - started
     failed = [s for s in steps if s["status"] == "failed"]
     total = "failed" if failed else ("dry" if dry else "ok")
     print("\n" + "=" * 72)
     print("END-OF-RUN REPORT")
-    print(f"total status: {total} | runtime: {duration:.1f}s | active IPOs: {len(targets)}")
+    active = str(len(targets)) if selector_available else "UNKNOWN — selector failed"
+    print(f"total status: {total} | runtime: {duration:.1f}s | active IPOs: {active}")
     for item in steps:
         why = f" | {item['reason']}" if item.get("reason") else ""
         print(f"{item['status']:7} {item['duration']:7.1f}s  {item['step']}{why}")
@@ -544,12 +537,12 @@ def main(argv=None):
 
         if dry:
             steps.append(skip("RHP paid extraction", "dry-run: paid extraction disabled"))
+        elif not spend_available:
+            steps.append(skip("RHP paid extraction", "paid execution disabled: spend measurement unavailable"))
         elif os.environ.get("RHP_EXTRACTION_OWNER_APPROVED") != "YES":
             steps.append(skip("RHP paid extraction", "owner: approve RHP paid extraction"))
         elif not os.environ.get("ANTHROPIC_API_KEY"):
             steps.append(skip("RHP paid extraction", "owner: configure ANTHROPIC_API_KEY and approve paid lane"))
-        elif not spend_available:
-            steps.append(skip("RHP paid extraction", "paid execution disabled: spend measurement unavailable"))
         elif cap <= before:
             steps.append(skip("RHP paid extraction", "owner: daily paid-call cap exhausted"))
         else:
@@ -592,7 +585,8 @@ def main(argv=None):
 
     after, after_ok = ((before, before_ok) if dry else
                        measure_db(steps, "Spend after measurement", spent_today, before))
-    return report(steps, started, dry=dry, targets=targets, cap=cap, spent=max(0.0, after-before))
+    return report(steps, started, dry=dry, targets=targets,
+                  selector_available=selector_ok, cap=cap, spent=max(0.0, after-before))
 
 
 if __name__ == "__main__":
