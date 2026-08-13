@@ -159,6 +159,19 @@ data returns to the UI the moment there is an evidenced producer behind it.
 | B-1 | **Codex producer: publish `strategy_backtest{cohort, win_rate, n, median}`** as a contracted, evidenced field so quantitative performance can return to the UI. Until then, `playbook_verdict` / `house_stack_stat` historical percentages must **not** render. UI (Claude) consumes `strategy_backtest` only after it ships. | Codex → Claude | NOT STARTED |
 | B-2 | **Codex producer: publish `pipeline-health:v1`** (KV snapshot, §4a) so the Admin overview can show live per-lane health without a Neon web query. UI classifier (`lib/admin/lane-status.ts`) is ready and unit-tested. | Codex → Claude | NOT STARTED |
 
+**B-1 producer render paths to clean (Codex-owned — NOT fixable in the UI PR).**
+These emit the same uncontracted-backtest strings from the producer side and must
+be gated on `strategy_backtest` when B-1 ships:
+
+- `lib/v2/live-preopen.ts:99` — pre-open stack tile detail: "72.7% win, +17.2% med (D30, n=55)".
+- `lib/v2/ipo-command.ts:173–174` — `playbook_verdict`: "…85% historically" / "…92% historically" (and the related `house_stack_stat` "72.7% win · +17.2% median" at `ipo-command.ts:184`).
+
+The consumer side is already clean: the Command Center no longer renders these
+strings (engine strip, score dial, and the house_stack tooltip were all removed),
+and `uat/tests/command-center.spec.ts` fails on them — including an attribute/HTML
+scan that catches a `house_stack_stat` tooltip regression. But the strings still
+originate in the producer above; only Codex can stop them at the source.
+
 Rationale: the "77%-edge"-class percentages were removed from the Command Center
 this cycle because nothing evidenced backed them at the consumer. B-1 is the path
 for those numbers to come back — owned by Codex (the producer), consumed by Claude

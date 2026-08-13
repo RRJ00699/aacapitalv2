@@ -397,7 +397,11 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 +12.7%, drawdown risk 23.6% vs 32.4%. RHP flags, early volume,
                 retail price-bids and MF share all failed to beat it. */}
             {c.house_stack === true ? (
-              <span title={String(c.house_stack_stat ?? "")} style={{
+              // No title/aria from house_stack_stat — the producer supplies an
+              // uncontracted backtest string ("72.7% win · +17.2% median") that
+              // must not reach a tooltip. Historical stats return only via the
+              // strategy_backtest contract (docs/runbooks/PROJECT_CONTROL.md §4c).
+              <span style={{
                 marginLeft: 8, color: C.green, background: C.greenBg,
                 border: `1px solid ${C.greenBd}`, borderRadius: 999,
                 padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>

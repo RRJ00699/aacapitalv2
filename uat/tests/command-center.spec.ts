@@ -13,6 +13,8 @@ const FORBIDDEN = [
   "85% with a near-zero",
   "8.1 of 10 worked",
   "72.7%",
+  "+17.2%",
+  "win ·",
   "respected 78",
   "based on how 370",
   "of 10 worked",
@@ -25,6 +27,18 @@ const FORBIDDEN = [
   "370 IPOs",
 ];
 
+// Strings that must not appear in ANY rendered HTML — including title/aria
+// attributes that innerText cannot see. This is what guards the house_stack_stat
+// tooltip ("72.7% win · +17.2% median") from regressing back onto the card.
+const FORBIDDEN_ATTR = ["72.7% win", "+17.2%", "win ·"];
+
+async function assertNoForbiddenAttr(page: import("@playwright/test").Page) {
+  const html = await page.content();
+  for (const phrase of FORBIDDEN_ATTR) {
+    expect(html, `forbidden phrase in rendered HTML (attr/tooltip): ${phrase}`).not.toContain(phrase);
+  }
+}
+
 test.describe("Command Center — truthfulness", () => {
   test("no fabricated win-rate / edge claims on the main view", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
@@ -33,6 +47,8 @@ test.describe("Command Center — truthfulness", () => {
     for (const phrase of FORBIDDEN) {
       expect(body, `forbidden phrase present: ${phrase}`).not.toContain(phrase.toLowerCase());
     }
+    // Also scan attributes (title/aria) — catches the house_stack_stat tooltip.
+    await assertNoForbiddenAttr(page);
   });
 
   test("no fabricated stats in the Playbook view", async ({ watched: page }) => {
