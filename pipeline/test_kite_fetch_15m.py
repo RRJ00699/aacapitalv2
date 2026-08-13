@@ -29,10 +29,11 @@ def test_selector_is_progress_safe_without_issue_size_exclusion():
         def execute(self, sql, params):
             normalized = " ".join(sql.split())
             assert "issue_size_cr" not in normalized
-            assert "COALESCE(i.is_mainboard,FALSE)=TRUE" in normalized
+            assert "issue_size_cr" not in normalized
             assert "c.latest ASC NULLS FIRST" in normalized
             assert "i.id = ANY(%s)" in normalized
-            assert params == [[9, 3], 2]
+            assert "LIMIT" not in normalized
+            assert params == [[9, 3]]
         def fetchall(self): return []
     class Conn:
         def cursor(self): return Cursor()
@@ -47,7 +48,7 @@ def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monke
     class Conn:
         def cursor(self): return Cursor()
         def rollback(self): raise AssertionError("rerun must not fail")
-    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77)
+    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77, True, True)
     monkeypatch.setattr(lane, "select_targets", lambda conn, limit, ids: [target])
     monkeypatch.setattr(lane, "get_kite", lambda: object())
     requested = []
@@ -70,3 +71,16 @@ def test_transient_classification_is_bounded_to_transport_failures():
     assert lane.is_transient(RuntimeError("HTTP 429"))
     assert lane.is_transient(TimeoutError("timed out"))
     assert not lane.is_transient(RuntimeError("column does not exist"))
+
+
+def test_explicit_ids_are_deduplicated_and_every_unique_id_has_one_outcome(monkeypatch):
+    today = dt.datetime.now(lane.IST).date()
+    rows = [(1,"I","", "eligible small",today,11,True,True),
+            (2,"I","", "Bagmane shape",today,22,True,False),
+            (3,"I","", "SME",today,33,False,True)]
+    monkeypatch.setattr(lane, "select_targets", lambda *_: rows)
+    result = lane.run(object(), limit=1, ids=lane.parse_ids("1,2,3,4,1"), dry_run=True)
+    assert result["requested"] == 4 and result["eligible"] == 1
+    assert result["exclusions"] == {"unclassified_missing_issue":1,
+                                     "out_of_universe":1, "not_found":1}
+    assert len(result["ipos"]) == 4

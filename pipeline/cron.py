@@ -118,11 +118,28 @@ def with_db(fn, *args, **kwargs):
         conn.close()
 
 
+def with_db_read_retry(fn, *args, attempts=2, **kwargs):
+    """Retry a report-only SELECT callback on a fresh session.
+
+    This helper is deliberately used only by ``measure_db``. Writers, SBI/R2,
+    paid work and publication must use the one-shot ``with_db`` seam above.
+    """
+    for attempt in range(attempts):
+        conn = db()
+        try:
+            return fn(conn, *args, **kwargs)
+        except psycopg2.OperationalError:
+            if attempt + 1 == attempts:
+                raise
+        finally:
+            conn.close()
+
+
 def measure_db(steps, name, fn, default, *args, **kwargs):
     """Run one report-critical DB measurement without jeopardising the report."""
     started = time.monotonic()
     try:
-        return with_db(fn, *args, **kwargs), True
+        return with_db_read_retry(fn, *args, **kwargs), True
     except Exception as exc:
         tail = traceback.format_exc().strip().splitlines()[-12:]
         print(f"\n=== {name}\n    failed - {type(exc).__name__}: {exc}")
@@ -150,16 +167,15 @@ def spent_today(conn):
 
 
 def select_active(conn, limit, backfill=False):
-    from universe import SQL as universe_sql
     cur = conn.cursor()
     if backfill:
-        cur.execute(f"""SELECT id,name_display,listing_date FROM ipo i
-                       WHERE in_backtest_universe=TRUE AND {universe_sql}
+        cur.execute("""SELECT id,name_display,listing_date FROM ipo i
+                       WHERE in_backtest_universe=TRUE AND i.is_mainboard=TRUE
                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
         return cur.fetchall(), "BACKFILL (most recently listed)"
-    cur.execute(f"""SELECT i.id,i.name_display,i.listing_date FROM ipo i
+    cur.execute("""SELECT i.id,i.name_display,i.listing_date FROM ipo i
       LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-      WHERE {universe_sql}
+      WHERE i.is_mainboard=TRUE AND ii.ipo_id IS NOT NULL
       AND ((i.listing_date IS NOT NULL AND i.listing_date>=current_date-%s)
         OR (i.listing_date IS NULL AND (ii.close_date>=current_date-30
           OR ii.open_date>=current_date-30 OR EXISTS
@@ -340,8 +356,8 @@ def attach_sebi_status(item):
         item.update(status="failed", reason="required downloader summary absent")
         return
     data = json.loads(lines[-1])
-    item["counts"] = {key: data.get(key, 0) for key in
-                      ("succeeded", "failed", "pending", "retries")}
+    item["counts"] = {f"this_run_{key}": value for key, value in data.get("this_run", {}).items()}
+    item["counts"].update({f"backlog_{key}": value for key, value in data.get("backlog", {}).items()})
     if data.get("status") in {"PARTIAL", "RETRY_PENDING"}:
         item.update(status="partial", reason=data["status"])
 
@@ -421,7 +437,8 @@ def classify_sbi_configuration(config):
 def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, spent=0.0):
     duration = time.monotonic() - started
     failed = [s for s in steps if s["status"] == "failed"]
-    total = "failed" if failed else ("dry" if dry else "ok")
+    partial = [s for s in steps if s["status"] == "partial"]
+    total = "failed" if failed else ("partial/retry_required" if partial else ("dry" if dry else "ok"))
     print("\n" + "=" * 72)
     print("END-OF-RUN REPORT")
     active = str(len(targets)) if selector_available else "UNKNOWN — selector failed"
@@ -445,7 +462,7 @@ def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, sp
     actions = [s["reason"] for s in steps if s.get("reason", "").startswith("owner:")]
     print("owner actions still required: " + ("; ".join(actions) if actions else "none"))
     print("=" * 72)
-    return 1 if failed else 0
+    return 1 if failed else (3 if partial else 0)
 
 
 def parse_args(argv=None):

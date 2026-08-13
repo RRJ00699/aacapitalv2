@@ -41,8 +41,8 @@ SEVERE_JUNK = {"sebi_action", "going_concern", "fraud", "inflated_figures"}
 # is_mainboard alone is unreliable (fill_ipo defaults it to True), so it doesn't exclude
 # SME issues — add the >=Rs.150cr floor so we don't write verdicts for IPOs not traded.
 # (NULL issue_size => kept, via COALESCE, for size-pending upcoming names.)
-UNIVERSE_SQL = ("SELECT i.id FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id "
-                "WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 "
+UNIVERSE_SQL = ("SELECT i.id FROM ipo i WHERE i.is_mainboard=TRUE "
+                "AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id) "
                 "ORDER BY i.id")
 
 def _latest_valuation(cur, ipo_id):
@@ -185,8 +185,10 @@ def diff(good_set="strong", show_all=False):
     """READ-ONLY. BEFORE (current latest stored verdict) -> AFTER (recomputed) for every
     IPO whose verdict changes. JUNK->GOOD is broken out separately (finding #1)."""
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
-    cur.execute("""SELECT i.id, i.name_display FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-                   WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 ORDER BY i.id""")
+    cur.execute("""SELECT i.id, i.name_display FROM ipo i
+                   WHERE i.is_mainboard=TRUE
+                   AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+                   ORDER BY i.id""")
     ipos=cur.fetchall()
     cur.execute("""SELECT DISTINCT ON (ipo_id) ipo_id, fundamental_verdict
                    FROM decisions ORDER BY ipo_id, decided_at DESC""")

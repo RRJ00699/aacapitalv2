@@ -320,24 +320,22 @@ def main():
         from fill_v2 import ensure_15m_table
         with_db(ensure_15m_table)          # idempotent; creates market_candles_15m once
     def select_targets(conn):
-        from universe import SQL as universe_sql
         cur = conn.cursor()
         if a.ids:
             ids = [int(x) for x in a.ids.split(",") if x.strip()]
-            cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
-                            WHERE {universe_sql} AND i.id = ANY(%s) ORDER BY i.id""", (ids,))
+            cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
+                            WHERE i.is_mainboard=TRUE
+                              AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+                              AND i.id = ANY(%s) ORDER BY i.id""", (ids,))
             return cur.fetchall()
-        # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
-        # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
-        # 105 score-scope IPOs with no candle attempt at all — kite candles must cover
-        # the SAME 699 the pipeline scores/verdicts. Scalar subquery (not a JOIN) so a
-        # multi-row ipo_issue can't fan out the target list. NULL size -> treated as
-        # large (999999), matching the engines' COALESCE.
-        cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+        # Scope is aligned to the official structured mainboard spine and the 100-day
+        # monitoring window. An ipo_issue row is required classification evidence;
+        # issue size is deliberately not an eligibility condition.
+        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
                         FROM ipo i
-                        WHERE {universe_sql}
-                          AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
-                                        WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
+                        WHERE i.is_mainboard=TRUE
+                          AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+                          AND i.listing_date BETWEEN current_date-100 AND current_date
                         ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
         return cur.fetchall()
     targets = with_db(select_targets)

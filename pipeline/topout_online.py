@@ -16,6 +16,7 @@ TIER 2 (SILENT, never alerts): rounding-top WATCH, tracked two ways:
 The separately researched bottom mirror is not promoted in this owner-approved scope.
 """
 import os, argparse, datetime as dt, json, statistics as st
+from zoneinfo import ZoneInfo
 import psycopg2
 def f(x):
     try: return float(x)
@@ -204,12 +205,22 @@ def level_is_permitted(conn):
     definitions=" ".join(str(row[0]) for row in cur.fetchall()).lower()
     return not definitions or "obs_type" not in definitions or "level" in definitions
 
+IST = ZoneInfo("Asia/Kolkata")
+
+def input_is_fresh(evaluated, latest_completed_session, now=None):
+    """Use the stored daily-session series as the holiday-aware session source."""
+    now_ist = (now or dt.datetime.now(dt.timezone.utc)).astimezone(IST)
+    evaluated_ist = evaluated.astimezone(IST)
+    if evaluated_ist.date() == now_ist.date() and now_ist.time() < dt.time(15, 30):
+        return False
+    return latest_completed_session is not None and evaluated_ist.date() >= latest_completed_session
+
 def run(conn, *, limit, dry_run, ids=None):
-    from universe import SQL as universe_sql
     cur=conn.cursor()
     clause="AND i.id = ANY(%s)" if ids is not None else ""
     params=([ids, limit] if ids is not None else [limit])
-    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE {universe_sql} AND EXISTS
+    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE i.is_mainboard=TRUE
+      AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id) AND EXISTS
       (SELECT 1 FROM market_candles_15m c WHERE c.ipo_id=i.id) {clause}
       ORDER BY i.id LIMIT %s""", params)
     targets=cur.fetchall()
@@ -220,13 +231,14 @@ def run(conn, *, limit, dry_run, ids=None):
         cur.execute("SELECT ts,o,h,l,c,v FROM market_candles_15m WHERE ipo_id=%s ORDER BY ts", (ipo_id,))
         bars=[dict(zip(("ts","o","h","l","c","v"), row)) for row in cur.fetchall()]
         result=detect_top(bars); evaluated=bars[-1]["ts"]
-        # The detector must never turn yesterday's partial supply into a new signal.
-        session = dt.datetime.now(evaluated.tzinfo).date()
-        if dt.datetime.now(evaluated.tzinfo).time() < dt.time(15, 30):
-            session -= dt.timedelta(days=1)
-        while session.weekday() >= 5:
-            session -= dt.timedelta(days=1)
-        if evaluated.date() < session:
+        # market_candles is the existing structured session source: it naturally
+        # represents weekends and exchange holidays without a guessed calendar.
+        cur.execute("""SELECT max(d) FROM market_candles WHERE ipo_id=%s
+                       AND d <= CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::time < time '15:30'
+                         THEN (now() AT TIME ZONE 'Asia/Kolkata')::date-1
+                         ELSE (now() AT TIME ZONE 'Asia/Kolkata')::date END""", (ipo_id,))
+        latest_session=(cur.fetchone() or [None])[0]
+        if not input_is_fresh(evaluated, latest_session):
             payload={"detector_version":DETECTOR_VERSION,
                      "evaluated_through_bar":evaluated.isoformat(), "label":"DISCOVERY",
                      "state":"STALE_INPUT", "alert":False, "trigger":None,

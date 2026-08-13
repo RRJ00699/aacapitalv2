@@ -410,10 +410,11 @@ def run_all(write=False):
     # drive.py already scores new IPOs by calling compute_valuation directly; this makes
     # the batch run match that scope. is_mainboard defaults to True (unreliable), so add
     # the >=Rs.150cr floor to exclude SME issues (same scope as verdict_engine).
-    cur.execute("""SELECT i.id FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-                   WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 ORDER BY i.id""")
+    cur.execute("""SELECT i.id FROM ipo i WHERE i.is_mainboard=TRUE
+                   AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+                   ORDER BY i.id""")
     ids=[r[0] for r in cur.fetchall()]
-    print(f"computing valuation for {len(ids)} mainboard IPOs (>=Rs.150cr) (write={write})")
+    print(f"computing valuation for {len(ids)} mainboard IPOs (write={write})")
     bands={}; scored=0
     for i,iid in enumerate(ids,1):
         v=compute_valuation(conn, iid)

@@ -463,19 +463,24 @@ def run_downloads(context, manifest: dict, args) -> None:
         f"already done).")
 
     done = 0
+    run_succeeded = run_failed = run_retries = 0
     consecutive_fails = 0
     for url, rec in todo:
         if args.max and done >= args.max:
             log(f"--max {args.max} reached, stopping.")
             break
         rec["attempts"] = rec.get("attempts", 0) + 1
+        if rec["attempts"] > 1:
+            run_retries += 1
         log(f"[{done+1}/{len(todo)}] {rec['company']}")
         try:
             download_one(context, url, rec)
+            run_succeeded += 1
             consecutive_fails = 0
         except (PWTimeout, PWError, RuntimeError, OSError) as e:
             reason = str(e).splitlines()[0][:200]
             rec.update(status="failed_download", error=reason)
+            run_failed += 1
             log(f"  FAIL {rec['company']}: {reason}")
             log_failure(url, reason)
             consecutive_fails += 1
@@ -500,8 +505,11 @@ def run_downloads(context, manifest: dict, args) -> None:
                   if r.get("status", "pending") == "pending")
     retries = sum(max(0, int(r.get("attempts", 0)) - 1)
                   for r in manifest["filings"].values())
-    print("SEBI_DOWNLOAD_SUMMARY=" + json.dumps({"succeeded": ok_n, "failed": bad,
-          "pending": pending, "retries": retries,
+    print("SEBI_DOWNLOAD_SUMMARY=" + json.dumps({
+          "this_run": {"succeeded": run_succeeded, "failed": run_failed,
+                       "retries": run_retries},
+          "backlog": {"succeeded": ok_n, "failed": bad, "pending": pending,
+                      "retries": retries},
           "status": "PARTIAL" if bad else ("RETRY_PENDING" if pending else "OK")},
           sort_keys=True))
 

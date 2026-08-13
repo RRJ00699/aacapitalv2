@@ -209,7 +209,7 @@ def test_spend_query_failure_skips_paid_subprocess(monkeypatch, capsys, failed_m
         raise AssertionError(fn)
 
     monkeypatch.setattr(cron, "run", fake_run)
-    monkeypatch.setattr(cron, "with_db", fake_with_db)
+    monkeypatch.setattr(cron, "with_db_read_retry", fake_with_db)
     rc = cron.main(["--skip-download", "--skip-kite"])
     output = capsys.readouterr().out
     paid_calls = [call for call in calls if call[0] == "RHP paid extraction"]
@@ -306,6 +306,33 @@ def test_sbi_writer_cannot_be_callback_retried(monkeypatch):
     with pytest.raises(cron.psycopg2.OperationalError):
         cron.with_db(run_sbi_lane)
     assert calls == [1]
+
+
+def test_read_retry_uses_fresh_closed_connections_and_measurement_is_available(monkeypatch):
+    conns = []
+    class Conn:
+        def __init__(self): self.closed = False
+        def close(self): self.closed = True
+    monkeypatch.setattr(cron, "db", lambda: conns.append(Conn()) or conns[-1])
+    calls = []
+    def measurement(_conn):
+        calls.append(1)
+        if len(calls) == 1:
+            raise cron.psycopg2.OperationalError("dead read session")
+        return 0
+    steps = []
+    value, available = cron.measure_db(steps, "zero measurement", measurement, None)
+    assert value == 0 and available and calls == [1, 1]
+    assert len(conns) == 2 and all(conn.closed for conn in conns)
+    assert steps == []
+
+
+def test_partial_step_is_retry_required_and_nonzero(capsys, monkeypatch):
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    rc = cron.report([{"step":"SEBI", "status":"partial", "duration":0,
+                       "reason":"RETRY_PENDING"}], 0, dry=False, targets=[])
+    assert rc == 3
+    assert "total status: partial/retry_required" in capsys.readouterr().out
 
 
 def test_runbook_path_and_commands_contract():

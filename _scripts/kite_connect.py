@@ -90,12 +90,29 @@ def get_token() -> str:
     )
 
 
+def resolve_credentials() -> tuple[str, str, str]:
+    """Return one complete, unmixed credential pair and its non-secret source."""
+    db_error = None
+    if DATABASE_URL:
+        try:
+            key, token = get_credentials_from_db()
+            return key, token, "database"
+        except Exception as exc:
+            db_error = type(exc).__name__
+    env_key = os.environ.get("KITE_API_KEY", "")
+    env_token = os.environ.get("KITE_ACCESS_TOKEN", "")
+    if env_key and env_token:
+        return env_key, env_token, "environment"
+    if env_key or env_token:
+        raise Exception("Incomplete environment Kite credential pair; set both KITE_API_KEY and KITE_ACCESS_TOKEN")
+    reason = f"; database lookup failed ({db_error})" if db_error else ""
+    raise Exception("No complete Kite credential pair available" + reason)
+
+
 def get_kite() -> KiteConnect:
     """Return an authenticated KiteConnect instance."""
-    if DATABASE_URL:
-        api_key, token = get_credentials_from_db()
-    else:
-        api_key, token = API_KEY, get_token()
+    api_key, token, source = resolve_credentials()
+    log.info("Using Kite credentials from %s", source)
     kite  = KiteConnect(api_key=api_key)
     kite.set_access_token(token)
     return kite
