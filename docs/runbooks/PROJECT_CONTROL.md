@@ -190,9 +190,40 @@ Advanced this cycle: **D1, D2, D3, D7, A3.**
 | D3 | Command Center simplification + truthfulness (no fabricated edge %, REIT/InvIT visibly excluded, three-verdict preserved) | CODE COMPLETE → OWNER CHECK |
 | D7 | Mobile-first Command Center at 380px | CODE COMPLETE → OWNER CHECK (screenshots) |
 | A3 | Admin Operations dashboard — **zero-wake** (KV-only, no Neon web polling); active-IPO + completeness from KV with UNKNOWN on degraded; lane health awaits the `pipeline-health:v1` producer | CODE COMPLETE → OWNER CHECK |
+| CD1 | Complete Details record screen — full `ipo-details-v1` record: identity/timeline, issue overview (+ derived market cap / lot value, labeled pro-forma), canonical financials & pro-forma (VERIFIED FACT vs DETERMINISTIC PRO-FORMA), valuation & fair value (house + canonical, no performance %), RHP & SBI verbatim evidence split by `source_type`, governance/risk, persisted decision, listing outcome, and a consolidated missing-data register. KV-only consumer; every leaf driven off `DetailField.state`; no `JSON.stringify`/`[object Object]` reaches the DOM. | CODE COMPLETE → OWNER CHECK (owner mobile UAT) |
 
-All five are **CODE COMPLETE** and awaiting **OWNER CHECK** (UI screenshots +
-manual UAT). None is VERIFIED DONE until the owner signs off.
+All prior five (D1/D2/D3/D7/A3) plus **CD1** are **CODE COMPLETE** and awaiting
+**OWNER CHECK** (UI screenshots + manual UAT). None is VERIFIED DONE until the
+owner signs off.
+
+### 5a. Complete Details (CD1) — build notes & flags
+
+- **Scope honoured:** consumer-only. `pipeline_files_changed = 0`,
+  `producer/schema_changes = 0`, no new API route, no SQL, no `DATABASE_URL`
+  import, no payload fallback. Edits limited to
+  `app/dashboard/ipo2/details/[isin]/page.tsx` (unchanged this cycle),
+  `components/ipo/CompleteDetails.tsx`, new `lib/ui/details-format.ts`
+  (+ unit tests), and new UAT `uat/tests/complete-details-populated.spec.ts`.
+- **Violation fixed:** the previous `CompleteDetails.show()` did
+  `JSON.stringify` on objects, leaking raw blobs for `ai_analysis.findings`,
+  `decision.evidence`, and `inputs_used`. Replaced with a shared `ValueNode`
+  renderer (arrays → lists, objects → labeled rows); a UAT test now fails if a
+  serialized object reaches the record DOM.
+- **§8 doctrine flag (display-only, NOT relabeled in the UI):** the current
+  doctrine is *missing-financials → WATCH-pending, never JUNK*. `ipo-details-v1`
+  passes through whatever `decisions.fundamental_verdict` was persisted and does
+  **not** enforce this remap. The UI **displays the stored verdict verbatim**
+  and must not relabel it. If a persisted `JUNK` verdict is actually a
+  missing-financials case, that is a **producer/decision-writer** correction
+  (Codex), not a UI change — recorded here rather than fabricated on screen.
+- **Always-empty profile collections folded into the register (not shown as
+  permanent empty cards):** promoters, business, objects, expenses,
+  selling_shareholders, shareholding, reservation, anchor, subscriptions, peers,
+  listing, market, economic_transformations, and the inert `sbi_analysis`
+  (structured SBI stance is ABSENT; only verbatim SBI *excerpts* render, via
+  `verified_evidence[].source_type === "SBI"`).
+- **No performance percentages:** consistent with §4c/B-1 — the verdict band is a
+  qualitative label only; no win-rate/edge/backtest % renders from any source.
 
 ---
 
