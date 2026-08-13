@@ -109,10 +109,12 @@ function EvidenceList({ items, empty }: { items: EvidenceItem[]; empty: string }
           {e.direction ? <Badge label={String(e.direction)} tone={String(e.direction).toLowerCase() === "negative" ? "junk" : "neutral"} /> : null}
         </div>
         <blockquote style={{ margin: "7px 0", paddingLeft: 12, borderLeft: `3px solid ${C.green}`, overflowWrap: "anywhere" }}>{e.excerpt}</blockquote>
-        <small style={{ color: C.meta, overflowWrap: "anywhere" }}>
-          {[e.document?.doc_type, e.category].filter(Boolean).join(" · ")}
-          {e.document?.url ? <> · <a href={String(e.document.url)} target="_blank" rel="noopener noreferrer">source document</a></> : null}
-        </small>
+        {e.document ? (
+          <small style={{ color: C.meta, overflowWrap: "anywhere" }}>
+            {[e.document.doc_type, e.category].filter(Boolean).join(" · ")}
+            {e.document.url ? <> · <a href={String(e.document.url)} target="_blank" rel="noopener noreferrer">source document</a></> : null}
+          </small>
+        ) : e.category ? <small style={{ color: C.meta }}>{e.category}</small> : null}
       </article>
     ))}</>
   );
