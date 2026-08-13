@@ -196,6 +196,58 @@ def test_fill_empty_is_coalesce_guarded_and_budget_prints_before_work(capsys):
         else: raise AssertionError("field allowlist did not fail closed")
 
 
+def test_primary_source_non_200_raises_source_unavailable():
+    # A 403/5xx from EQUITY_L.csv is a bounded, recoverable condition, surfaced as a
+    # typed SourceUnavailable so the entry point can distinguish it from a real fault.
+    from nse_identity_backfill import SourceUnavailable
+    conn = Conn([(1, "Ardee Industries Ltd", "EXACT", None, dt.date(2026, 8, 11)), None])
+    session = Mock(); session.get.return_value = Response(b"", status=403)
+    try:
+        refresh(conn, session, limit=1, quote_limit=0, write=False, today=dt.date(2026, 8, 11))
+    except SourceUnavailable as exc:
+        assert "403" in str(exc)
+    else:
+        raise AssertionError("non-200 primary source must raise SourceUnavailable")
+    assert conn.commits == 0  # nothing written on an unavailable source
+
+
+def test_source_unavailable_is_a_clean_no_op_that_exits_zero(capsys):
+    # main() must NOT raise (process exit 0) when the source is unavailable: a nightly
+    # run that reaches the lane and fills nothing is a no-op, not a job failure. The
+    # skip is still visible in the run log, and the connection is always released.
+    from nse_identity_backfill import SourceUnavailable
+    fake = Mock(); fake.close = Mock()
+    with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+         patch("psycopg2.connect", return_value=fake), \
+         patch("nse_fetch.prime", return_value=Mock()), \
+         patch("nse_identity_backfill.refresh",
+               side_effect=SourceUnavailable("EQUITY_L.csv returned HTTP 403")):
+        result = backfill_main(["--dry-run", "--limit", "4", "--quote-limit", "2"])
+    assert result["updates"] == 0 and result["selected"] == 0
+    assert result["skipped"] == "source_unavailable" and "403" in result["detail"]
+    assert result["rows"] == []
+    out = capsys.readouterr().out
+    assert '"skipped": "source_unavailable"' in out  # visible, not silent
+    fake.close.assert_called_once()  # connection released on the no-op path
+
+
+def test_real_fault_still_exits_non_zero(capsys):
+    # A genuine fault (here a DB/driver error raised inside refresh) is NOT swallowed:
+    # it propagates so the process exits non-zero. Only SourceUnavailable is a no-op.
+    fake = Mock(); fake.close = Mock()
+    with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+         patch("psycopg2.connect", return_value=fake), \
+         patch("nse_fetch.prime", return_value=Mock()), \
+         patch("nse_identity_backfill.refresh", side_effect=RuntimeError("connection reset")):
+        try:
+            backfill_main(["--dry-run", "--limit", "4", "--quote-limit", "2"])
+        except RuntimeError as exc:
+            assert "connection reset" in str(exc)
+        else:
+            raise AssertionError("a real fault must propagate (non-zero exit)")
+    fake.close.assert_called_once()  # connection still released via finally
+
+
 def test_cron_and_capture_workflow_have_structural_handshake_order():
     cron = Path("pipeline/cron.py").read_text()
     assert cron.index('2c. NSE discovery') < cron.index('2d. bounded NSE identity') < cron.index('2e/2f. SBI ingest') < cron.index('3. NSE per-IPO lifecycle')

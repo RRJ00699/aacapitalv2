@@ -1,0 +1,115 @@
+name: AACapital daily pipeline
+
+# COMMIT 2 of "Actions scheduling (probe + gated daily)". Written only after the probe
+# proved which lanes are reachable from GitHub-hosted runners:
+#   - NSE discovery (nseindia.com/api/*)  : CONFIRMED working from Actions (live calls,
+#                                           7 real IPOs returned).
+#   - DATABASE_URL                        : CONFIRMED reachable from the runner.
+#   - ISIN/listing-date backfill sources  : isolated by probe-nse.yml CHECK 1 (EQUITY_L.csv
+#                                           primary) and CHECK 2 (quote-equity fallback).
+#
+# LANE SPLIT (Phase 1, conservative):
+#   * Runs on Actions   : environment preflight, NSE discovery, ISIN/listing-date backfill,
+#                         SBI ingest (only if owner-approved), NSE per-IPO lifecycle,
+#                         Kite refresh (VALIDATE-ONLY), snapshot publication proof.
+#   * Stays owner-PC    : SEBI RHP + SBI PDF DOWNLOADS. Those heavy scrapers were NOT
+#                         probe-validated from runner IPs, so the scheduled run passes
+#                         --skip-download. cron.py already SKIPS (never fails) any lane
+#                         whose config/approval is absent; this workflow does not weaken
+#                         those gates.
+#
+# ISIN-SOURCE GATE: if probe CHECK 1/CHECK 2 come back non-200, the backfill degrades to a
+# CLEAN NO-OP and the whole job stays green -- nse_identity_backfill.py now raises
+# SourceUnavailable on a non-200 primary source and exits 0 with a visible
+# "skipped: source_unavailable" marker (fixed in Commit 2), so no hard gate is required.
+# The ISIN fill then continues on the owner PC where the source is reachable.
+on:
+  schedule:
+    # 08:15 IST == 02:45 UTC. Weekdays only (Mon-Fri). Cron is evaluated in UTC.
+    - cron: '45 2 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many IPOs to process'
+        required: false
+        default: '10'
+      skip_download:
+        description: 'Leave TRUE to keep SEBI/SBI downloads owner-PC-only (Phase 1 default). Set FALSE to test runner-side downloads.'
+        type: boolean
+        default: true
+
+concurrency:
+  # Two runs must never overlap (a schedule tick colliding with a manual dispatch, or a
+  # long run overrunning into the next day). Writers are idempotent, but a paid extraction
+  # racing a second run wastes money. Do NOT cancel-in-progress: let the first run finish;
+  # the second queues.
+  group: aacapital-daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read            # nothing is committed back; documents live in R2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt boto3 pymupdf rapidfuzz playwright
+          # Chromium is only needed when runner-side downloads are enabled (dispatch only);
+          # the scheduled run uses --skip-download and does not need a browser.
+          if [ "${{ github.event.inputs.skip_download }}" = "false" ]; then
+            python -m playwright install --with-deps chromium
+          fi
+
+      - name: Run daily pipeline
+        # Secrets are read ONLY as ${{ secrets.NAME }} and never echoed. cron.py prints
+        # variable NAMES and states, never values (see environment_preflight).
+        # NOTE: the manual pipeline.yml reads R2_ACCOUNT_ID / R2_DOCUMENT_BUCKET /
+        # SNAPSHOT_PUBLISH_URL from `vars`; this workflow reads them from `secrets` as the
+        # task specifies, so add them as repository *secrets* (not variables).
+        env:
+          DATABASE_URL:          ${{ secrets.DATABASE_URL }}
+          R2_ACCOUNT_ID:         ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:      ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY:  ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_DOCUMENT_BUCKET:    ${{ secrets.R2_DOCUMENT_BUCKET }}
+          SNAPSHOT_PUBLISH_URL:  ${{ secrets.SNAPSHOT_PUBLISH_URL }}
+          SNAPSHOT_PUBLISH_KEY:  ${{ secrets.SNAPSHOT_PUBLISH_KEY }}
+          # Kite: live token handoff, VALIDATE-ONLY (no rotation/writes beyond the legacy
+          # DB token hand-off the flags below explicitly authorize).
+          KITE_API_KEY:          ${{ secrets.KITE_API_KEY }}
+          KITE_API_SECRET:       ${{ secrets.KITE_API_SECRET }}
+          KITE_USER_ID:          ${{ secrets.KITE_USER_ID }}
+          KITE_PASSWORD:         ${{ secrets.KITE_PASSWORD }}
+          KITE_TOTP_SECRET:      ${{ secrets.KITE_TOTP_SECRET }}
+          ALLOW_LEGACY_KITE_DB_TOKEN_WRITE: '1'
+          KITE_REFRESH_VALIDATE_ONLY:       '1'
+        run: |
+          # Phase 1: keep SEBI/SBI downloads owner-PC-only by default; dispatch
+          # skip_download=false to test runner-side scraping. Scheduled runs have no
+          # inputs, so the default (skip downloads) applies.
+          SKIP="--skip-download"
+          if [ "${{ github.event.inputs.skip_download }}" = "false" ]; then SKIP=""; fi
+          python pipeline/cron.py --limit "${{ github.event.inputs.limit || '10' }}" $SKIP
+
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-pipeline-log-${{ github.run_number }}
+          path: |
+            pipeline/drive_manifest.json
+            pipeline/snapshot_publication_ledger.json
+            pipeline/rhp_v2full/*_summary.json
+          retention-days: 14
+          if-no-files-found: ignore

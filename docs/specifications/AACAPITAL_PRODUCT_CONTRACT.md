@@ -83,10 +83,10 @@ Missing-data rule: absent inputs render as "—"/"pending", never as estimates
 
 | Source | Data | Ingestion | Refresh | Cost | Failure behavior |
 |---|---|---|---|---|---|
-| Chittorgarh (cloud API) | IPO calendar, prices, sizes, BRLMs, ISIN | `_scripts/scrape_chittorgarh.py` (Playwright, backoff+UA rotation) | 2×/day pipeline | free | retries → zero-total = ntfy + step fail |
+| ~~Chittorgarh (cloud API)~~ *(RETIRED — quarantined, not run)* | formerly IPO calendar, prices, sizes, BRLMs, ISIN | `compatibility/scripts/scrape_chittorgarh.py` (quarantined; superseded by NSE discovery via `pipeline/nse_lifecycle.py`) | — | — | n/a — not run |
 | NSE | discovery, bhavcopy delivery %, pre-open | `ipo/fetch_nse_ipos.py`, `fetch_delivery_bhavcopy.py`, `nse_preopen_capture.py` | pipeline / listing-day | free | skip + sink |
 | SEBI | RHP PDFs | `_scripts/fetch_new_rhps.py` (direct-URL first, viewer fallback) | pipeline | free | all-failed = ntfy + exit 1 |
-| SBI Securities | IPO note PDFs | `download_sbi_notes.py` → `parse_sbi_notes.py` | pipeline | free | skip + sink |
+| SBI Securities | IPO note PDFs | `download_sbi_notes.py` → R2 Sonnet lane (`pipeline/sbi_ongoing.py`) | pipeline | free (extraction may be paid, owner-approved) | skip + sink |
 | investorgain | GMP | `scrape_investorgain_gmp.py` (4-attempt backoff) | pipeline | free | graceful skip + ntfy; GMP stales |
 | IPOMatrix | enrichment (cookie) | `ipomatrix_ingest.py` | pipeline drip | free (cookie ~30d) | skip; cookie rotation via Settings |
 | Zerodha Kite | candles, OHLC, live ticks, quotes, depth | `refresh_kite_token.py` (TOTP 08:00 IST) → ticker/candle scripts | daily token; ticks listing-day | Kite Connect subscription | token stale → Kite steps skip + ntfy URGENT |

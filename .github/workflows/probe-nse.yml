@@ -55,6 +55,43 @@ jobs:
           echo "-------------------------------------------------------------------------------"
           echo "Paste the three 'browser=' codes into the PR before Commit 2 is written."
 
+      - name: Backfill-source isolation (the two the first probe did not separate)
+        # The daily ISIN/listing-date backfill (pipeline/nse_identity_backfill.py) has a
+        # PRIMARY source and a FALLBACK source. The first probe reported them mixed in with
+        # the handshake; these two checks isolate each with an explicit verdict so the gate
+        # decision for Commit 2 is unambiguous.
+        run: |
+          set -u
+          echo "== CHECK 1: backfill PRIMARY (EQUITY_L.csv, bare curl) =="
+          echo "   Must be 200, or the nightly ISIN fill's primary source is dead."
+          primary=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv || echo "000")
+          if [ "$primary" = "200" ]; then
+            echo "   RESULT: primary=200 OK -> ISIN primary source reachable from Actions."
+          else
+            echo "   RESULT: primary=$primary NOT-200 -> ISIN PRIMARY is dead from runner IPs;"
+            echo "           gate the ISIN backfill source off Actions (owner-PC-only)."
+          fi
+          echo
+          echo "== CHECK 2: backfill FALLBACK (quote-equity, browser UA) =="
+          echo "   Distinguish a REAL 200 from a 403 the code currently swallows as not_found."
+          fallback=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
+            -H 'Accept: application/json,text/plain,*/*' \
+            -H 'Accept-Language: en-US,en;q=0.9' \
+            'https://www.nseindia.com/api/quote-equity?symbol=RELIANCE' || echo "000")
+          if [ "$fallback" = "200" ]; then
+            echo "   RESULT: fallback=200 OK -> quote fallback genuinely reachable."
+          elif [ "$fallback" = "403" ]; then
+            echo "   RESULT: fallback=403 -> the fallback is BLOCKED; the backfill would record"
+            echo "           these as 'not_found' (silent). Gate the fallback off Actions."
+          else
+            echo "   RESULT: fallback=$fallback -> neither a clean 200 nor a plain 403; inspect."
+          fi
+          echo
+          echo "GATE INPUT for Commit 2 -> primary=$primary fallback=$fallback"
+          echo "Paste this line into the PR."
+
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

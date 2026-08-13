@@ -27,14 +27,23 @@ def test_every_production_script_is_caller_evidenced_keep():
 
 def test_inventory_records_every_quarantine_move():
     moved = [row for row in _inventory() if row.get("move_destination") and "/tests/" not in row["old_path"]]
-    assert len(moved) == 120
+    assert len(moved) == 121
     assert sum(row["move_destination"] == "compatibility/scripts/" for row in moved) == 86
-    assert sum(row["move_destination"] == "_archive/scripts/" for row in moved) == 34
+    assert sum(row["move_destination"] == "_archive/scripts/" for row in moved) == 35
     for row in moved:
         assert row["old_path"].startswith("_scripts/")
         assert row["classification"] == row["caller_evidence"] == "UNREACHABLE"
         assert (ROOT / row["path"]).is_file()
         assert not (ROOT / row["old_path"]).exists()
+
+
+def test_every_inventory_path_exists_on_disk():
+    """Ratchet gap that let the SBI archive move leave stale in-place rows: assert every
+    inventory `path` resolves to a real file. A move must rewrite the row's `path` to the
+    new location (with old_path/move_destination), not leave a dangling _scripts/ path."""
+    dangling = [row["path"] for row in _inventory()
+                if row.get("path") and not (ROOT / row["path"]).exists()]
+    assert not dangling, "inventory paths with no file on disk: " + ", ".join(dangling)
 
 
 def test_production_does_not_import_or_execute_quarantine_code():

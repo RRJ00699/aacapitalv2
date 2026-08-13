@@ -27,7 +27,7 @@ if __name__=="__main__":
     except Exception: pass
 import psycopg2
 
-ENGINE_VERSION="v2-verdict-2"   # bumped 08-02: narrowed JUNK line + latest-score reads
+ENGINE_VERSION="v2-verdict-3"   # bumped: pure decide() extraction + pinned missing-financials->WATCH (was v2-verdict-2: narrowed JUNK line + latest-score reads)
 RED_FLAG_MAX  =2                # GOOD tolerates at most this many red flags
 
 # The owner's LOCKED junk line — ONLY these signals are JUNK. Everything else
@@ -81,16 +81,21 @@ def _junk_facts(cur, ipo_id):
     sz=cur.fetchone(); sz=float(sz[0]) if sz and sz[0] is not None else None
     return mf, sz
 
-def compute_decision(conn, ipo_id, good_set="strong"):
-    """Return dict(verdict, reasons[], evidence). good_set: 'strong'={STRONG} or 'fav'={FAVORABLE,STRONG}."""
-    cur=conn.cursor()
-    val=_latest_valuation(cur, ipo_id)
-    score, band, missing = (val[0], val[1], val[2] or []) if val else (None, None, ["no_valuation"])
-    red_count, junk_sigs, measured, has_row = _rhp(cur, ipo_id)
-    mf, size = _junk_facts(cur, ipo_id)
+def decide(*, score, band, missing, red_count, junk_sigs, measured, has_row, mf, size,
+           good_set="strong"):
+    """Pure JUNK/WATCH/GOOD decision from already-fetched facts — no DB, so it is
+    unit-testable offline. compute_decision() reads the facts and delegates here.
+
+    MISSING FINANCIALS -> WATCH, NEVER JUNK. The ONLY JUNK triggers are the owner-locked
+    STRUCTURAL signals below (mf_shares_bid==0, issue_size_cr<150, a SEVERE_JUNK RHP
+    signal). An absent valuation / missing financial inputs is never a JUNK trigger: it
+    gates GOOD off (so the row cannot be GOOD) and falls through to the WATCH bucket. This
+    is enforced by ordering — no `missing`-derived condition ever returns JUNK — and pinned
+    by pipeline/test_verdict_engine.py."""
     reasons=[]
 
-    # 1) JUNK — owner's locked line (first match wins)
+    # 1) JUNK — owner's locked STRUCTURAL line (first match wins). None of these is
+    #    "missing financials"; missing financials cannot reach a JUNK return.
     if mf is not None and mf==0:
         return dict(verdict="JUNK", reasons=["mf_zero"], score=score, band=band,
                     evidence=dict(mf_shares_bid=mf))
@@ -109,6 +114,8 @@ def compute_decision(conn, ipo_id, good_set="strong"):
     #     signals is positive evidence of cleanliness, not absent measurement.
     # It is NOT clean when: benign flags exist but the count is unmeasured (case A -> WATCH,
     # "red_flags_unmeasured"), or no extraction row exists at all (no evidence -> WATCH).
+    # `missing` (which includes missing financials) gates GOOD off here, guaranteeing that
+    # missing-financials rows drop to WATCH.
     good_bands = {"STRONG"} if good_set=="strong" else {"STRONG","FAVORABLE"}
     if measured:
         rhp_clean = red_count<=RED_FLAG_MAX
@@ -121,7 +128,7 @@ def compute_decision(conn, ipo_id, good_set="strong"):
         return dict(verdict="GOOD", reasons=reasons, score=score, band=band,
                     evidence=dict(red_flag_count=red_count, score_band=band, measured=measured))
 
-    # 2) WATCH — everything else that isn't JUNK (the pending bucket)
+    # 2) WATCH — everything else that isn't JUNK (the pending bucket), missing financials included.
     if missing: reasons.append("missing_inputs:"+",".join(missing[:4]))
     if not has_row: reasons.append("no_rhp_analysis")                 # no evidence at all
     elif (not measured) and junk_sigs: reasons.append("red_flags_unmeasured")  # case A
@@ -131,6 +138,19 @@ def compute_decision(conn, ipo_id, good_set="strong"):
     if not reasons: reasons.append("pending")
     return dict(verdict="WATCH", reasons=reasons, score=score, band=band,
                 evidence=dict(red_flag_count=red_count, score_band=band, measured=measured, missing=missing[:4]))
+
+
+def compute_decision(conn, ipo_id, good_set="strong"):
+    """Return dict(verdict, reasons[], evidence). good_set: 'strong'={STRONG} or 'fav'={FAVORABLE,STRONG}.
+    Reads the latest facts from the DB and delegates the taxonomy to the pure decide()."""
+    cur=conn.cursor()
+    val=_latest_valuation(cur, ipo_id)
+    score, band, missing = (val[0], val[1], val[2] or []) if val else (None, None, ["no_valuation"])
+    red_count, junk_sigs, measured, has_row = _rhp(cur, ipo_id)
+    mf, size = _junk_facts(cur, ipo_id)
+    return decide(score=score, band=band, missing=missing, red_count=red_count,
+                  junk_sigs=junk_sigs, measured=measured, has_row=has_row, mf=mf, size=size,
+                  good_set=good_set)
 
 def write_decision(conn, ipo_id, d):
     cur=conn.cursor()

@@ -113,7 +113,6 @@ The closure contains 47 production files, including the root:
 - `_scripts/lib/stage_state.py`
 - `_scripts/lineage_registry.py`
 - `_scripts/nse_preopen_capture.py`
-- `_scripts/parse_sbi_notes.py`
 - `_scripts/purge_candles_after_lockin.py`
 - `_scripts/reconcile_listing_dates.py`
 - `_scripts/refresh_kite_token.py`
@@ -154,7 +153,6 @@ The closure contains 47 production files, including the root:
 - `_scripts/lineage_registry.py` → `_scripts/rhp_sonnet.py` (relative script argument)
 - `_scripts/lineage_registry.py` → `_scripts/sbi_haiku_extract.py` (relative script argument)
 - `_scripts/lineage_registry.py` → `_scripts/scrape_investorgain_gmp.py` (relative script argument)
-- `_scripts/parse_sbi_notes.py` → `_scripts/schema_sync.py` (python import)
 - `_scripts/refresh_kite_token.py` → `_scripts/lib/notify.py` (python import)
 - `_scripts/rhp_auto.py` → `_scripts/fetch_new_rhps.py` (relative script argument)
 - `_scripts/rhp_auto.py` → `_scripts/fetch_new_rhps.py` (script path)
@@ -189,7 +187,6 @@ The closure contains 47 production files, including the root:
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/kite_connect.py` (python import)
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/lib/notify.py` (python import)
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/lineage_registry.py` (relative script argument)
-- `_scripts/run_ipo_pipeline_lean.py` → `_scripts/parse_sbi_notes.py` (relative script argument)
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/purge_candles_after_lockin.py` (relative script argument)
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/reconcile_listing_dates.py` (relative script argument)
 - `_scripts/run_ipo_pipeline_lean.py` → `_scripts/rhp_auto.py` (relative script argument)

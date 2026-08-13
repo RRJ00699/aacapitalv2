@@ -256,6 +256,46 @@ def test_entrypoint_from_any_working_directory_stops_cleanly_without_database(cw
     assert completed.stdout.rstrip().endswith("STOP: required environment variable absent: DATABASE_URL")
 
 
+def test_db_retries_transient_connect_failures_then_succeeds(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://offline")
+    calls = {"n": 0}
+    def flaky(dsn, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise cron.psycopg2.OperationalError("could not translate host name (DNS)")
+        return "CONN"
+    monkeypatch.setattr(cron.psycopg2, "connect", flaky)
+    slept = []
+    conn = cron.db(attempts=4, base_delay=0.01, sleep=slept.append)
+    assert conn == "CONN" and calls["n"] == 3 and len(slept) == 2  # backed off twice
+
+
+def test_db_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://offline")
+    def always_fail(dsn, **kwargs):
+        raise cron.psycopg2.OperationalError("dns down")
+    monkeypatch.setattr(cron.psycopg2, "connect", always_fail)
+    with pytest.raises(cron.psycopg2.OperationalError):
+        cron.db(attempts=2, base_delay=0.0, sleep=lambda s: None)
+
+
+def test_with_db_reconnects_on_dead_session_and_always_closes(monkeypatch):
+    conns = []
+    class FakeConn:
+        def __init__(self): self.closed = False
+        def close(self): self.closed = True
+    monkeypatch.setattr(cron, "db", lambda **k: conns.append(FakeConn()) or conns[-1])
+    calls = {"n": 0}
+    def fn(conn):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise cron.psycopg2.OperationalError("server closed the connection unexpectedly")
+        return "OK"
+    assert cron.with_db(fn, attempts=2) == "OK"
+    assert calls["n"] == 2 and len(conns) == 2      # reconnected once
+    assert all(c.closed for c in conns)             # every connection released
+
+
 def test_runbook_path_and_commands_contract():
     text = (cron.REPO_ROOT / "docs/runbooks/DAILY_RUN.md").read_text(encoding="utf-8")
     assert "C:\\aacapital-v2" in text

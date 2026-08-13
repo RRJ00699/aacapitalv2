@@ -39,10 +39,12 @@ Source of truth for the list: the writers themselves — `fill_v2.py`, `fill_ipo
 - **Writer:** `kite_fetch.py` (`fetch_candles_15m` → `upsert_candles_15m`), run as **cron
   step 6** (`cron.py`, `kite_fetch.py --ids <ids> --write`). Table is created idempotently
   by `ensure_15m_table` on the first `--write` run — no manual DDL step.
-- **Reader:** the top/bottom (Wyckoff) detector is the *intended* consumer. **As of this
-  writing NOTHING reads it yet** — the detector is not wired to it. This is recorded on
-  purpose: an unread table is what made `intraday_30d` look droppable; it must not be
-  treated as debris on that basis.
+- **Reader:** the stored 15-min bars ARE read. `research/backtests/forensic.py` gates its
+  universe on `EXISTS (SELECT 1 FROM market_candles_15m …)` and reads `ts,o,h,l,c,v` from
+  the table, and `pipeline/completeness.py` reads `min(ts)` from it to compute coverage.
+  (The top/bottom (Wyckoff) `topout_online.py` detector reads 15-min bars live from Kite,
+  not from this table.) It must not be treated as debris — an unread table is what made
+  `intraday_30d` look droppable, and this one is not unread.
 - **NOT V1 debris.** It **supersedes** the dropped `intraday_30d` (which had a misleading
   "30d" name, held 10 years of bars, and carried **no primary key** so nothing could
   upsert into it safely). `intraday_30d` and its data are gone permanently — Neon's restore

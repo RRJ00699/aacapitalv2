@@ -43,34 +43,25 @@ Last verified against code: 2026-07-22
 | News | ipo_news (this release) | — |
 | Listing review tape | journey candles (D0-D5 via /api/ipo/journey), listing fields | VWAP, delivery %, turnover (Kite/NSE bhavcopy — next) |
 
-## THE ONE-TABLE DECISION (owner, 2026-07-22 — architecture, locked)
-ipo_consolidated becomes the GOLDEN serving table: every field the UI shows
-lives there as a column — including rhp_sonnet_json + sbi_haiku_json copies.
-Source precedence per field: IPOMatrix (primary) -> NSE (fallback) ->
-Chittorgarh detail page; fill-empty-only; one consolidation job backfills.
-Other tables may live as raw sources but are NOT backfilled unless needed,
-and routes stop join-hunting across them. Column set from the SBIFUNDS
-golden reference: lot_size, face_value, isin, allotment_date, refund_date,
-credit_date, anchor_amount_cr, anchor_lock30_date, anchor_lock90_date,
-sub_day1_x, sub_day2_x, sub_day3_x, bnii_x, snii_x, total_applications,
-employee_discount, employee_quota_shares, shareholder_quota_shares,
-promoter_pre_pct, promoter_post_pct, mcap_cr, issue_expenses_cr,
-registrar_name, registrar_phone, registrar_email, ronw, ebitda_margin,
-price_to_book, gmp_history_json, financials_3y_json, rhp_sonnet_json,
-sbi_haiku_json. IMPLEMENTED (this PR): schema_sync creates DURABLE ipo_golden + the VIEW
-ipo_master (= consolidated LEFT JOIN golden) — one object for every read.
-Why not columns on ipo_consolidated directly: that table is REBUILT every
-pipeline run (build_ipo_consolidated_v2), and the wiped-listing-tape
-incident test blocks exactly that hazard — the guard caught this design
-before it shipped and would have wiped the owner's hand-backfilled data
-nightly. consolidate_master.py (--apply; PC-runnable with Neon
-DATABASE_URL) fills ipo_golden: intelligence scalars, RHP Sonnet + SBI
-Haiku full_json copies, street article (sanity-guarded), and candles_json
-(listing→lock-in daily OHLCV, grows daily, never shrinks). AUTOMATED: runs
-every lean-pipeline cycle + admin job 'consolidate'. Remaining slices:
-routes/UI read ipo_master; Chittorgarh detail-page scrape feeds the fields
-intelligence lacks (lot size, timetable, day-wise subscription, expenses,
-registrar, GMP history); NSE fallback per precedence.
+## THE ONE-TABLE DECISION (2026-07-22) — SUPERSEDED, do not implement
+The "one golden serving table" plan below is RETIRED. It proposed making
+`ipo_consolidated` (plus a durable `ipo_golden` and an `ipo_master` view) the
+single serving object every route reads, backfilled by a `consolidate_master.py`
+consolidation job. That architecture was never adopted as the serving spine and
+its tables are now forbidden: `ipo_consolidated`, `ipo_golden`, and `ipo_master`
+are in the `FORBIDDEN` set enforced by `tests/contracts/test_no_v1_tables.py`,
+`consolidate_master.py` is absent from `_scripts/` (enforced by
+`tests/contracts/test_repository_spine.py::test_consolidated_compatibility_is_not_called_by_production`),
+and there is no `consolidate` admin job.
+
+The real serving spine is the **V2 canonical facts + versioned KV snapshots**
+described in `docs/architecture/CANONICAL_SPINE.md`: the pipeline publishes
+immutable, versioned KV snapshots (`ipo-command:v6`, `ipo-details:isin:*:v1`,
+`journey:isin:*:v1`) and the public consumers read those snapshots from KV — not
+a golden/master serving table. Field precedence and enrichment live in the V2
+`fill_v2`/intelligence path, not a nightly consolidation rebuild. This section is
+kept only to record that the one-table decision was reversed; for the current
+architecture read `CANONICAL_SPINE.md`.
 
 ## Next slices (in order)
 1. Listing Review view UI (state machine + outcome summary + observations
