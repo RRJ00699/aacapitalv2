@@ -167,15 +167,16 @@ def spent_today(conn):
 
 
 def select_active(conn, limit, backfill=False):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur = conn.cursor()
     if backfill:
-        cur.execute("""SELECT id,name_display,listing_date FROM ipo i
-                       WHERE in_backtest_universe=TRUE AND i.is_mainboard=TRUE
+        cur.execute(f"""SELECT id,name_display,listing_date FROM ipo i
+                       WHERE in_backtest_universe=TRUE AND {CANONICAL_UNIVERSE_SQL}
                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
         return cur.fetchall(), "BACKFILL (most recently listed)"
-    cur.execute("""SELECT i.id,i.name_display,i.listing_date FROM ipo i
+    cur.execute(f"""SELECT i.id,i.name_display,i.listing_date FROM ipo i
       LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-      WHERE i.is_mainboard=TRUE AND ii.ipo_id IS NOT NULL
+      WHERE {CANONICAL_UNIVERSE_SQL}
       AND ((i.listing_date IS NOT NULL AND i.listing_date>=current_date-%s)
         OR (i.listing_date IS NULL AND (ii.close_date>=current_date-30
           OR ii.open_date>=current_date-30 OR EXISTS

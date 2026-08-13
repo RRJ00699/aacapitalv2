@@ -31,6 +31,11 @@ def test_freshness_uses_ist_and_rejects_partial_current_session():
     assert input_is_fresh(evaluated, dt.date(2026, 8, 13), after_close)
     assert input_is_fresh(dt.datetime(2026,8,7,10,tzinfo=utc), dt.date(2026,8,7),
                           dt.datetime(2026,8,10,8,tzinfo=IST))
+    # Target stopped Friday while market-wide reference reached Wednesday.
+    assert not input_is_fresh(dt.datetime(2026,8,7,10,tzinfo=utc), dt.date(2026,8,12),
+                              dt.datetime(2026,8,12,11,tzinfo=IST))
+    assert not input_is_fresh(dt.datetime(2026,8,12,10,tzinfo=utc), None,
+                              dt.datetime(2026,8,12,16,tzinfo=IST))
 
 
 def test_sourced_bearish_candle_definitions_are_preserved():

@@ -41,9 +41,9 @@ SEVERE_JUNK = {"sebi_action", "going_concern", "fraud", "inflated_figures"}
 # is_mainboard alone is unreliable (fill_ipo defaults it to True), so it doesn't exclude
 # SME issues — add the >=Rs.150cr floor so we don't write verdicts for IPOs not traded.
 # (NULL issue_size => kept, via COALESCE, for size-pending upcoming names.)
-UNIVERSE_SQL = ("SELECT i.id FROM ipo i WHERE i.is_mainboard=TRUE "
-                "AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id) "
-                "ORDER BY i.id")
+def universe_sql():
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    return f"SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL} ORDER BY i.id"
 
 def _latest_valuation(cur, ipo_id):
     # newest v2-score-% row (was hardcoded 'v2-score-1'). LIKE excludes v2-rhp-1, which
@@ -162,7 +162,7 @@ def write_decision(conn, ipo_id, d):
     conn.commit()
 
 def _universe(cur):
-    cur.execute(UNIVERSE_SQL)
+    cur.execute(universe_sql())
     return [r[0] for r in cur.fetchall()]
 
 def report(good_set=None):

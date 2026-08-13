@@ -41,25 +41,19 @@ def get_credentials_from_db() -> tuple[str, str]:
         raise Exception("DATABASE_URL not set")
 
     conn = psycopg2.connect(DATABASE_URL)
-    cur  = conn.cursor()
-    cur.execute("""SELECT key, value, updated_at FROM platform_config
-                   WHERE key IN ('kite_api_key','kite_access_token')""")
-    rows = cur.fetchall()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT key, value, updated_at FROM platform_config
+                       WHERE key IN ('kite_api_key','kite_access_token')""")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
 
     values = {row[0]: row[1] for row in rows}
-    if not values.get("kite_access_token"):
-        raise Exception(
-            "No kite_access_token in Neon platform_config.\n"
-            "Run: python _scripts/refresh_kite_token.py"
-        )
-
-    key = values.get("kite_api_key") or API_KEY
-    if not key:
-        raise Exception("No KITE_API_KEY available")
-    updated_at = next((row[2] for row in rows if row[0] == "kite_access_token"), None)
-    log.info(f"Kite credentials from DB (token updated: {str(updated_at)[:16]})")
-    return key, values["kite_access_token"]
+    key, token = values.get("kite_api_key"), values.get("kite_access_token")
+    if not key or not token:
+        raise Exception("Incomplete database Kite credential pair; configure both kite_api_key and kite_access_token")
+    return key, token
 
 
 def get_token_from_db() -> str:

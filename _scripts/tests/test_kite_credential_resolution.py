@@ -35,3 +35,38 @@ def test_partial_pairs_fail_without_mixing(monkeypatch):
     monkeypatch.delenv("KITE_ACCESS_TOKEN", raising=False)
     with pytest.raises(Exception, match="Incomplete environment"):
         module.resolve_credentials()
+
+
+def test_database_token_only_never_mixes_environment_key(monkeypatch):
+    class Cursor:
+        def execute(self, _sql): pass
+        def fetchall(self): return [("kite_access_token", "db-token", None)]
+    class Conn:
+        def cursor(self): return Cursor()
+        def close(self): pass
+    module.DATABASE_URL = "postgresql://configured"
+    monkeypatch.setattr(module.psycopg2, "connect", lambda _dsn: Conn())
+    monkeypatch.setenv("KITE_API_KEY", "env-key")
+    monkeypatch.delenv("KITE_ACCESS_TOKEN", raising=False)
+    with pytest.raises(Exception, match="Incomplete environment"):
+        module.resolve_credentials()
+
+
+def test_query_exception_always_closes_connection(monkeypatch):
+    class Conn:
+        closed = False
+        def cursor(self): raise RuntimeError("query failed")
+        def close(self): self.closed = True
+    conn = Conn(); module.DATABASE_URL = "postgresql://configured"
+    monkeypatch.setattr(module.psycopg2, "connect", lambda _dsn: conn)
+    with pytest.raises(RuntimeError, match="query failed"):
+        module.get_credentials_from_db()
+    assert conn.closed
+
+
+def test_refresh_and_fetch_resolve_identical_database_pair(monkeypatch):
+    module.DATABASE_URL = "postgresql://configured"
+    monkeypatch.setattr(module, "get_credentials_from_db", lambda: ("db-key", "db-token"))
+    refresh_pair = module.resolve_credentials()[:2]
+    fetch_pair = module.resolve_credentials()[:2]
+    assert refresh_pair == fetch_pair == ("db-key", "db-token")

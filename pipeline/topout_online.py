@@ -216,11 +216,11 @@ def input_is_fresh(evaluated, latest_completed_session, now=None):
     return latest_completed_session is not None and evaluated_ist.date() >= latest_completed_session
 
 def run(conn, *, limit, dry_run, ids=None):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur=conn.cursor()
     clause="AND i.id = ANY(%s)" if ids is not None else ""
     params=([ids, limit] if ids is not None else [limit])
-    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE i.is_mainboard=TRUE
-      AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id) AND EXISTS
+    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL} AND EXISTS
       (SELECT 1 FROM market_candles_15m c WHERE c.ipo_id=i.id) {clause}
       ORDER BY i.id LIMIT %s""", params)
     targets=cur.fetchall()
@@ -231,12 +231,12 @@ def run(conn, *, limit, dry_run, ids=None):
         cur.execute("SELECT ts,o,h,l,c,v FROM market_candles_15m WHERE ipo_id=%s ORDER BY ts", (ipo_id,))
         bars=[dict(zip(("ts","o","h","l","c","v"), row)) for row in cur.fetchall()]
         result=detect_top(bars); evaluated=bars[-1]["ts"]
-        # market_candles is the existing structured session source: it naturally
-        # represents weekends and exchange holidays without a guessed calendar.
-        cur.execute("""SELECT max(d) FROM market_candles WHERE ipo_id=%s
-                       AND d <= CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::time < time '15:30'
+        # market_candles is the existing market-wide structured session source: it
+        # represents weekends and exchange holidays without comparing an IPO to itself.
+        cur.execute("""SELECT max(d) FROM market_candles WHERE
+                       d <= CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::time < time '15:30'
                          THEN (now() AT TIME ZONE 'Asia/Kolkata')::date-1
-                         ELSE (now() AT TIME ZONE 'Asia/Kolkata')::date END""", (ipo_id,))
+                         ELSE (now() AT TIME ZONE 'Asia/Kolkata')::date END""")
         latest_session=(cur.fetchone() or [None])[0]
         if not input_is_fresh(evaluated, latest_session):
             payload={"detector_version":DETECTOR_VERSION,

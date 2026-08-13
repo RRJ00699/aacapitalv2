@@ -452,9 +452,9 @@ def run_downloads(context, manifest: dict, args) -> None:
             if p and Path(p).exists():
                 continue                      # resume: already have it
             rec["status"] = "pending"         # manifest says ok but file gone
-        if st.startswith("failed") and not args.retry_failed:
-            continue
-        if rec.get("attempts", 0) > MAX_RETRIES and not args.retry_failed:
+        # Normal cron runs self-heal failures while the bounded attempt budget remains.
+        # --retry-failed is an explicit owner override for exhausted entries only.
+        if rec.get("attempts", 0) >= MAX_RETRIES and not args.retry_failed:
             continue
         todo.append((url, rec))
 
@@ -503,14 +503,22 @@ def run_downloads(context, manifest: dict, args) -> None:
         f"manifest={MANIFEST_PATH}  failures={FAIL_LOG}")
     pending = sum(1 for r in manifest["filings"].values()
                   if r.get("status", "pending") == "pending")
+    exhausted = sum(1 for r in manifest["filings"].values()
+                    if str(r.get("status", "")).startswith("failed")
+                    and int(r.get("attempts", 0)) >= MAX_RETRIES)
+    retry_scheduled = sum(1 for r in manifest["filings"].values()
+                          if str(r.get("status", "")).startswith("failed")
+                          and int(r.get("attempts", 0)) < MAX_RETRIES)
     retries = sum(max(0, int(r.get("attempts", 0)) - 1)
                   for r in manifest["filings"].values())
     print("SEBI_DOWNLOAD_SUMMARY=" + json.dumps({
           "this_run": {"succeeded": run_succeeded, "failed": run_failed,
                        "retries": run_retries},
           "backlog": {"succeeded": ok_n, "failed": bad, "pending": pending,
-                      "retries": retries},
-          "status": "PARTIAL" if bad else ("RETRY_PENDING" if pending else "OK")},
+                      "retries": retries, "retry_scheduled": retry_scheduled,
+                      "owner_action_exhausted": exhausted},
+          "status": "PARTIAL" if (run_failed or exhausted) else
+                    ("RETRY_PENDING" if (pending or retry_scheduled) else "OK")},
           sort_keys=True))
 
 

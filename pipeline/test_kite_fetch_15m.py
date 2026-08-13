@@ -48,7 +48,7 @@ def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monke
     class Conn:
         def cursor(self): return Cursor()
         def rollback(self): raise AssertionError("rerun must not fail")
-    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77, True, True)
+    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77, True, "listed")
     monkeypatch.setattr(lane, "select_targets", lambda conn, limit, ids: [target])
     monkeypatch.setattr(lane, "get_kite", lambda: object())
     requested = []
@@ -75,12 +75,12 @@ def test_transient_classification_is_bounded_to_transport_failures():
 
 def test_explicit_ids_are_deduplicated_and_every_unique_id_has_one_outcome(monkeypatch):
     today = dt.datetime.now(lane.IST).date()
-    rows = [(1,"I","", "eligible small",today,11,True,True),
-            (2,"I","", "Bagmane shape",today,22,True,False),
-            (3,"I","", "SME",today,33,False,True)]
+    rows = [(1,"I","", "eligible small",today,11,True,"listed"),
+            (2,"I","", "announced no issue",None,None,True,"announced"),
+            (3,"I","", "SME",today,33,False,"listed")]
     monkeypatch.setattr(lane, "select_targets", lambda *_: rows)
     result = lane.run(object(), limit=1, ids=lane.parse_ids("1,2,3,4,1"), dry_run=True)
     assert result["requested"] == 4 and result["eligible"] == 1
-    assert result["exclusions"] == {"unclassified_missing_issue":1,
+    assert result["exclusions"] == {"missing_listing_date":1,
                                      "out_of_universe":1, "not_found":1}
     assert len(result["ipos"]) == 4

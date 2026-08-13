@@ -346,6 +346,7 @@ def ntfy_line(rep):
 
 
 def main():
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids", help="comma-separated ipo ids")
     ap.add_argument("--limit", type=int, default=5)
@@ -364,8 +365,7 @@ def main():
     if a.ids:
         ids = [int(x) for x in a.ids.split(",") if x.strip()]
     else:
-        cur.execute("""SELECT i.id FROM ipo i WHERE i.is_mainboard=TRUE
-                        AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+        cur.execute(f"""SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL}
                         ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
         ids = [r[0] for r in cur.fetchall()]
 

@@ -42,6 +42,19 @@ DISCOVERY_APIS = (
     ("current", NSE_BASE + "/api/ipo-current-issue"),
     ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
 )
+
+# Single production selector owned beside official NSE discovery. It deliberately uses
+# only spine fields populated by discovery/backfill. The current schema has no structured
+# security-kind field, so a REIT/InvIT incorrectly stored as mainboard cannot be repaired
+# by SQL here; that row requires its canonical is_mainboard value to be corrected at ingest.
+CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
+                          "upper(COALESCE(i.status,'')) IN "
+                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED')")
+CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "LISTED"}
+
+def canonical_spine_eligible(is_mainboard, status):
+    """Python twin for explicit-ID outcome accounting."""
+    return is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
 HEADERS = {
     "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),

@@ -32,15 +32,15 @@ def select_targets(conn, limit: int, ids: list[int] | None = None):
     """Select exact IDs or the progress-safe canonical 100-day mainboard cohort."""
     cur = conn.cursor()
     id_clause = "AND i.id = ANY(%s)" if ids is not None else ""
-    eligibility = "" if ids is not None else """AND i.is_mainboard=TRUE
-        AND EXISTS(SELECT 1 FROM ipo_issue eligible_issue WHERE eligible_issue.ipo_id=i.id)
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    eligibility = "" if ids is not None else f"""AND {CANONICAL_UNIVERSE_SQL}
         AND i.listing_date BETWEEN
         ((now() AT TIME ZONE 'Asia/Kolkata')::date - 100)
         AND (now() AT TIME ZONE 'Asia/Kolkata')::date AND i.kite_token IS NOT NULL"""
     limit_clause = "" if ids is not None else "LIMIT %s"
     params = ([ids] if ids is not None else [limit])
     cur.execute(f"""SELECT i.id,i.isin,i.symbol,i.name_display,i.listing_date,i.kite_token,
-                            i.is_mainboard, EXISTS(SELECT 1 FROM ipo_issue ii WHERE ii.ipo_id=i.id)
+                            i.is_mainboard, i.status
       FROM ipo i
       LEFT JOIN (SELECT ipo_id,max(ts) AS latest FROM market_candles_15m GROUP BY ipo_id) c
         ON c.ipo_id=i.id
@@ -78,10 +78,10 @@ def run(conn, *, limit: int, dry_run: bool, ids: list[int] | None = None,
         summary["ipos"].append({"ipo_id": missing_id, "status": "not_found"})
     today = dt.datetime.now(IST).date()
     eligible = []
+    from nse_fetch import canonical_spine_eligible
     for row in targets:
-        ipo_id, _isin, _symbol, name, listing_date, token, is_mainboard, has_issue = row
-        reason = ("out_of_universe" if is_mainboard is not True else
-                  "unclassified_missing_issue" if not has_issue else
+        ipo_id, _isin, _symbol, name, listing_date, token, is_mainboard, status = row
+        reason = ("out_of_universe" if not canonical_spine_eligible(is_mainboard, status) else
                   "missing_listing_date" if listing_date is None else
                   "outside_window" if not (today - dt.timedelta(days=100) <= listing_date <= today) else
                   "missing_token" if token is None else None)
@@ -104,7 +104,7 @@ def run(conn, *, limit: int, dry_run: bool, ids: list[int] | None = None,
     kite = get_kite()
     cur = conn.cursor()
     end = dt.datetime.now(IST)
-    for ipo_id, _isin, _symbol, name, listing_date, token, _mainboard, _has_issue in targets:
+    for ipo_id, _isin, _symbol, name, listing_date, token, _mainboard, _status in targets:
         summary["attempted"] += 1
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         latest = (cur.fetchone() or [None])[0]

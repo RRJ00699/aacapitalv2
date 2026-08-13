@@ -320,21 +320,20 @@ def main():
         from fill_v2 import ensure_15m_table
         with_db(ensure_15m_table)          # idempotent; creates market_candles_15m once
     def select_targets(conn):
+        from nse_fetch import CANONICAL_UNIVERSE_SQL
         cur = conn.cursor()
         if a.ids:
             ids = [int(x) for x in a.ids.split(",") if x.strip()]
-            cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
-                            WHERE i.is_mainboard=TRUE
-                              AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+            cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
+                            WHERE {CANONICAL_UNIVERSE_SQL}
                               AND i.id = ANY(%s) ORDER BY i.id""", (ids,))
             return cur.fetchall()
         # Scope is aligned to the official structured mainboard spine and the 100-day
         # monitoring window. An ipo_issue row is required classification evidence;
         # issue size is deliberately not an eligibility condition.
-        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+        cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
                         FROM ipo i
-                        WHERE i.is_mainboard=TRUE
-                          AND EXISTS(SELECT 1 FROM ipo_issue classified WHERE classified.ipo_id=i.id)
+                        WHERE {CANONICAL_UNIVERSE_SQL}
                           AND i.listing_date BETWEEN current_date-100 AND current_date
                         ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
         return cur.fetchall()
