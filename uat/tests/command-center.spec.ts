@@ -2,7 +2,10 @@
 // screen-state honesty, driven against the seeded fixture server.
 import { test, expect, noHorizontalOverflow } from "./_base";
 
-// Fabricated "edge"/win-rate claims that must NOT appear anywhere in the UI.
+// Uncontracted historical-performance claims that must NOT appear anywhere in
+// the UI until strategy_backtest{cohort,win_rate,n,median} ships as an evidenced
+// producer field (docs/runbooks/PROJECT_CONTROL.md §4c). Includes the reworded
+// "X of 10 worked" grade-card stats and the band-percentage line.
 const FORBIDDEN = [
   "77% edge",
   "77% win",
@@ -12,6 +15,14 @@ const FORBIDDEN = [
   "72.7%",
   "respected 78",
   "based on how 370",
+  "of 10 worked",
+  "n=370",
+  "70%",
+  "73%",
+  "79%",
+  "81%",
+  "15 years",
+  "370 IPOs",
 ];
 
 test.describe("Command Center — truthfulness", () => {

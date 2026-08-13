@@ -59,14 +59,15 @@ function scoreColor(score: number | null): string {
   return C.red;
 }
 
-function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | null; conf: number | null; sub?: string; tally?: boolean; band?: string | null; win?: number | null }) {
-  // tally mode: ipo_score v0 is a backtested additive tally (-4..+6), NOT a
-  // percent — showing it on a 0-100 arc made every IPO read as 0/1/-2 garbage
-  // (Rakesh 2026-07-17). Number = signed tally; arc = position within the
-  // tally's true range (visual only).
+function ScoreDial({ score, conf, sub, tally, band }: { score: number | null; conf: number | null; sub?: string; tally?: boolean; band?: string | null }) {
+  // tally mode: ipo_score v0 is an additive rule tally (-4..+6), NOT a percent.
+  // The dial shows the QUALITATIVE grade (score_band) + the signed tally; it does
+  // NOT render an uncontracted backtested win% (score_expected_win). Historical
+  // win-rates return only once strategy_backtest ships as an evidenced producer
+  // field — see docs/runbooks/PROJECT_CONTROL.md §4c. Arc = tally position (visual).
   const col = tally ? (score != null && score >= 2 ? C.green : score != null && score <= -1 ? C.red : C.amber) : scoreColor(score);
   const pct = score == null ? 0
-    : tally ? (win != null ? Math.max(0, Math.min(100, Number(win))) : Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100)))
+    : tally ? Math.max(0, Math.min(100, ((Number(score) + 4) / 10) * 100))
     : Math.max(0, Math.min(100, score));
   const r = 30, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
   return (
@@ -84,13 +85,13 @@ function ScoreDial({ score, conf, sub, tally, band, win }: { score: number | nul
           ? <span style={{ fontSize: 7.5, color: C.dim, textAlign: "center", lineHeight: 1.2 }}>scores at{"\n"}listing</span>
           : tally
             ? <>
-                {/* BIG number = backtested win% (what a user grasps); the raw
-                   tally is the small signed chip below. Fixes "0/1/-2 means
-                   nothing" — the number people see is now 60-81, not the tally. */}
-                <span style={{ ...num, fontSize: 24, fontWeight: 800, color: col, lineHeight: 1 }}>
-                  {win != null ? `${Math.round(Number(win))}%` : (band ? String(band).slice(0, 4) : "—")}</span>
-                <span style={{ fontSize: 7.5, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.15 }}>
-                  {band ? String(band).toLowerCase() : ""}{win != null ? " hist" : ""}</span>
+                {/* BIG = the qualitative grade (score_band). No win% renders —
+                   that is an uncontracted historical stat (see §4c). */}
+                <span style={{ fontWeight: 800, color: col, lineHeight: 1.05, textAlign: "center",
+                  textTransform: "uppercase", letterSpacing: 0.2, padding: "0 3px",
+                  fontSize: band && String(band).length > 7 ? 9 : band && String(band).length > 5 ? 11 : 13 }}>
+                  {band ? String(band) : "—"}</span>
+                <span style={{ fontSize: 7.5, color: C.meta, marginTop: 1, textAlign: "center", lineHeight: 1.15 }}>grade</span>
                 <span style={{ ...num, fontSize: 8, color: C.dim, marginTop: 1 }}>
                   tally {Number(score) > 0 ? `+${Math.round(Number(score))}` : Math.round(Number(score))}</span>
               </>
@@ -423,7 +424,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           </div>
         </div>
         <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-          <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} win={isQuality ? null : (c.score_expected_win as number | null)} />
+          <ScoreDial score={score} conf={isQuality ? (c.quality_conf as number | null) : conf} sub={isQuality ? "quality · pre-list" : "trade tally"} tally={!isQuality} band={isQuality ? null : (c.score_band as string | null)} />
           {(() => {
             const r = c.sbi_rating ? String(c.sbi_rating) : null;
             if (!r) return null;

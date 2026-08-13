@@ -165,7 +165,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
         <ThemeToggle compact />
       </div>
       <p style={{ fontSize: 13, color: C.meta, marginTop: 0, marginBottom: 18 }}>
-        Pipeline health first, then one-click job runs. web → Neon only; the VM polls and runs it. Signed in as {adminEmail}.
+        Pipeline health first, then one-click job runs. The web only enqueues to Neon; the scheduled runner (cron.py) claims and runs each job. Signed in as {adminEmail}.
       </p>
 
       {/* Operations overview — the 8 AM answer: first failing lane + action. */}
@@ -178,8 +178,8 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
           background: C.amberBg, border: `1px solid ${C.amberBd}`, color: C.amber,
           borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 16,
         }}>
-          job_runs table is unavailable — provision it with explicit migration tooling; nothing runs until{" "}
-          <code>job_runner.py</code> is scheduled on the VM (cron, every minute).
+          job_runs table is unavailable — provision it with explicit migration tooling; nothing runs until the{" "}
+          scheduled runner (<code>cron.py</code>) is active.
         </div>
       )}
       {loadErr && (
