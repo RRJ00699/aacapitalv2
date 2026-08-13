@@ -320,11 +320,12 @@ def main():
         from fill_v2 import ensure_15m_table
         with_db(ensure_15m_table)          # idempotent; creates market_candles_15m once
     def select_targets(conn):
+        from universe import SQL as universe_sql
         cur = conn.cursor()
         if a.ids:
             ids = [int(x) for x in a.ids.split(",") if x.strip()]
-            cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
-                            WHERE id = ANY(%s) ORDER BY id""", (ids,))
+            cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
+                            WHERE {universe_sql} AND i.id = ANY(%s) ORDER BY i.id""", (ids,))
             return cur.fetchall()
         # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
         # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
@@ -332,9 +333,9 @@ def main():
         # the SAME 699 the pipeline scores/verdicts. Scalar subquery (not a JOIN) so a
         # multi-row ipo_issue can't fan out the target list. NULL size -> treated as
         # large (999999), matching the engines' COALESCE.
-        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+        cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
                         FROM ipo i
-                        WHERE i.is_mainboard = TRUE
+                        WHERE {universe_sql}
                           AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
                                         WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
                         ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
@@ -369,6 +370,10 @@ def main():
             for n in r["notes"]:
                 print(f"       [note] {n}")
             ok += 1 if r["token"] else 0
+            # Authentication/request errors are returned as notes by process so that
+            # one IPO cannot abort the batch. They still make this selected target fail.
+            if any("candles failed:" in note for note in r["notes"]):
+                failed += 1
         except Exception as e:
             failed += 1
             print(f"  ! id={ipo_id}: {type(e).__name__}: {str(e)[:120]}")
@@ -378,7 +383,7 @@ def main():
     # A step where EVERY IPO threw is a failed step. Exiting 0 let the 08-01 cron print
     # "6. Kite candles + listing outcomes  ok" over four CheckViolations — a green light
     # on a run in which nothing was written is worse than no light at all.
-    if targets and failed == len(targets):
+    if targets and failed:
         sys.exit(1)
 
 

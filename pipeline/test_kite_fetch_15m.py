@@ -29,7 +29,7 @@ def test_selector_is_progress_safe_without_issue_size_exclusion():
         def execute(self, sql, params):
             normalized = " ".join(sql.split())
             assert "issue_size_cr" not in normalized
-            assert "i.is_mainboard=TRUE" in normalized
+            assert "COALESCE(i.is_mainboard,FALSE)=TRUE" in normalized
             assert "c.latest ASC NULLS FIRST" in normalized
             assert "i.id = ANY(%s)" in normalized
             assert params == [[9, 3], 2]
@@ -47,7 +47,7 @@ def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monke
     class Conn:
         def cursor(self): return Cursor()
         def rollback(self): raise AssertionError("rerun must not fail")
-    target = (7, "INE", "SMALL", "Small Mainboard", dt.date(2026, 1, 1), 77)
+    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77)
     monkeypatch.setattr(lane, "select_targets", lambda conn, limit, ids: [target])
     monkeypatch.setattr(lane, "get_kite", lambda: object())
     requested = []

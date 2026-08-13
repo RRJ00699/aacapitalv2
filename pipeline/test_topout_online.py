@@ -17,6 +17,11 @@ def test_no_signal_and_researched_lower_high_watch_are_deterministic():
     assert result["watch_kind"] == "A"
 
 
+def test_newest_fourth_lower_high_bar_enters_watch():
+    result = detect_top([bar(high, high - 2, high - 1) for high in (10, 9, 8, 7)])
+    assert result["state"] == "WATCH"
+
+
 def test_sourced_bearish_candle_definitions_are_preserved():
     shooting_star = [(None, 9.0, 12.0, 8.9, 9.2, 10)]
     assert bearish_candle(shooting_star, 0)

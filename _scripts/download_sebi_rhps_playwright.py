@@ -496,6 +496,14 @@ def run_downloads(context, manifest: dict, args) -> None:
               if str(r.get("status", "")).startswith("failed"))
     log(f"Done. ok={ok_n}  failed={bad}  "
         f"manifest={MANIFEST_PATH}  failures={FAIL_LOG}")
+    pending = sum(1 for r in manifest["filings"].values()
+                  if r.get("status", "pending") == "pending")
+    retries = sum(max(0, int(r.get("attempts", 0)) - 1)
+                  for r in manifest["filings"].values())
+    print("SEBI_DOWNLOAD_SUMMARY=" + json.dumps({"succeeded": ok_n, "failed": bad,
+          "pending": pending, "retries": retries,
+          "status": "PARTIAL" if bad else ("RETRY_PENDING" if pending else "OK")},
+          sort_keys=True))
 
 
 # ----------------------------------------------------------------------------

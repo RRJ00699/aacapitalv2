@@ -223,11 +223,10 @@ def test_source_unavailable_is_a_clean_no_op_that_exits_zero(capsys):
          patch("nse_identity_backfill.refresh",
                side_effect=SourceUnavailable("EQUITY_L.csv returned HTTP 403")):
         result = backfill_main(["--dry-run", "--limit", "4", "--quote-limit", "2"])
-    assert result["updates"] == 0 and result["selected"] == 0
-    assert result["skipped"] == "source_unavailable" and "403" in result["detail"]
-    assert result["rows"] == []
+    assert result["status"] == "skipped"
+    assert result["reason"] == "source_unavailable" and "403" in result["evidence"]["detail"]
     out = capsys.readouterr().out
-    assert '"skipped": "source_unavailable"' in out  # visible, not silent
+    assert '"status": "skipped"' in out  # visible, not a fabricated zero measurement
     fake.close.assert_called_once()  # connection released on the no-op path
 
 

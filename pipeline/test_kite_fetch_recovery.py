@@ -71,7 +71,9 @@ def test_later_ipo_runs_after_earlier_ipo_database_failure(monkeypatch, capsys):
                 "bars_15m": 0, "outcome": None, "notes": []}
 
     monkeypatch.setattr(lane, "process", process)
-    lane.main()
+    with pytest.raises(SystemExit) as exc:
+        lane.main()
+    assert exc.value.code == 1
     output = capsys.readouterr().out
     assert called == [1, 2]
     assert "Traceback (most recent call last)" in output

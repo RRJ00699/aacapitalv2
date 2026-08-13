@@ -279,7 +279,7 @@ def test_db_raises_after_exhausting_retries(monkeypatch):
         cron.db(attempts=2, base_delay=0.0, sleep=lambda s: None)
 
 
-def test_with_db_reconnects_on_dead_session_and_always_closes(monkeypatch):
+def test_with_db_does_not_retry_callback_and_always_closes(monkeypatch):
     conns = []
     class FakeConn:
         def __init__(self): self.closed = False
@@ -291,9 +291,21 @@ def test_with_db_reconnects_on_dead_session_and_always_closes(monkeypatch):
         if calls["n"] == 1:
             raise cron.psycopg2.OperationalError("server closed the connection unexpectedly")
         return "OK"
-    assert cron.with_db(fn, attempts=2) == "OK"
-    assert calls["n"] == 2 and len(conns) == 2      # reconnected once
-    assert all(c.closed for c in conns)             # every connection released
+    with pytest.raises(cron.psycopg2.OperationalError):
+        cron.with_db(fn)
+    assert calls["n"] == 1 and len(conns) == 1
+    assert conns[0].closed
+
+
+def test_sbi_writer_cannot_be_callback_retried(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cron, "db", lambda: SimpleNamespace(close=lambda: None))
+    def run_sbi_lane(_conn):
+        calls.append(1)
+        raise cron.psycopg2.OperationalError("ambiguous commit")
+    with pytest.raises(cron.psycopg2.OperationalError):
+        cron.with_db(run_sbi_lane)
+    assert calls == [1]
 
 
 def test_runbook_path_and_commands_contract():

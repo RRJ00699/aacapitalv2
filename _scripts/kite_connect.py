@@ -31,30 +31,39 @@ except Exception:
 
 log = logging.getLogger(__name__)
 
-API_KEY      = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+API_KEY      = os.environ.get("KITE_API_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
-def get_token_from_db() -> str:
+def get_credentials_from_db() -> tuple[str, str]:
     """Read active Kite access token from Neon platform_config."""
     if not DATABASE_URL:
         raise Exception("DATABASE_URL not set")
 
     conn = psycopg2.connect(DATABASE_URL)
     cur  = conn.cursor()
-    cur.execute("SELECT value, updated_at FROM platform_config WHERE key = 'kite_access_token'")
-    row = cur.fetchone()
+    cur.execute("""SELECT key, value, updated_at FROM platform_config
+                   WHERE key IN ('kite_api_key','kite_access_token')""")
+    rows = cur.fetchall()
     conn.close()
 
-    if not row:
+    values = {row[0]: row[1] for row in rows}
+    if not values.get("kite_access_token"):
         raise Exception(
             "No kite_access_token in Neon platform_config.\n"
             "Run: python _scripts/refresh_kite_token.py"
         )
 
-    token, updated_at = row
-    log.info(f"Token from DB (updated: {str(updated_at)[:16]})")
-    return token
+    key = values.get("kite_api_key") or API_KEY
+    if not key:
+        raise Exception("No KITE_API_KEY available")
+    updated_at = next((row[2] for row in rows if row[0] == "kite_access_token"), None)
+    log.info(f"Kite credentials from DB (token updated: {str(updated_at)[:16]})")
+    return key, values["kite_access_token"]
+
+
+def get_token_from_db() -> str:
+    return get_credentials_from_db()[1]
 
 
 def get_token() -> str:
@@ -83,7 +92,10 @@ def get_token() -> str:
 
 def get_kite() -> KiteConnect:
     """Return an authenticated KiteConnect instance."""
-    token = get_token()
-    kite  = KiteConnect(api_key=API_KEY)
+    if DATABASE_URL:
+        api_key, token = get_credentials_from_db()
+    else:
+        api_key, token = API_KEY, get_token()
+    kite  = KiteConnect(api_key=api_key)
     kite.set_access_token(token)
     return kite

@@ -76,7 +76,7 @@ def run_ipo(b, CLIMAX, REJECT, LH_N, MA_N, ACCEL, NBAR, VOLWIN, RETEST,
     ar_low=None; ar_low_frozen=None; retest_high=None; retest_vol=None
     trigger=None; max_state="IDLE"; fire_path=None
     _order={"IDLE":0,"BC_ARMED":1,"AR_CONFIRMED":2,"FAILED_RETEST":3,"SOW_FIRE":4}
-    for t in range(n-1):
+    for t in range(n):
         if hs[t] is None: continue
         # --- TIER 2 watch state (silent) ---
         if t>=LH_N:
@@ -103,7 +103,7 @@ def run_ipo(b, CLIMAX, REJECT, LH_N, MA_N, ACCEL, NBAR, VOLWIN, RETEST,
 
         # Researched Tier-1 contract: decision is emitted only once the next real bar
         # supplies rejection confirmation. This is the sole permitted next-bar read.
-        next_close = cs[t+1]
+        next_close = cs[t+1] if t + 1 < n else None
         if (is_new_high and climax and next_close is not None
                 and next_close < hs[t]*(1-REJECT/100)):
             alert_bar=t+1; alert_px=next_close; fire_path="TIER1_REJECTION"
@@ -205,10 +205,11 @@ def level_is_permitted(conn):
     return not definitions or "obs_type" not in definitions or "level" in definitions
 
 def run(conn, *, limit, dry_run, ids=None):
+    from universe import SQL as universe_sql
     cur=conn.cursor()
     clause="AND i.id = ANY(%s)" if ids is not None else ""
     params=([ids, limit] if ids is not None else [limit])
-    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE EXISTS
+    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE {universe_sql} AND EXISTS
       (SELECT 1 FROM market_candles_15m c WHERE c.ipo_id=i.id) {clause}
       ORDER BY i.id LIMIT %s""", params)
     targets=cur.fetchall()
@@ -219,6 +220,20 @@ def run(conn, *, limit, dry_run, ids=None):
         cur.execute("SELECT ts,o,h,l,c,v FROM market_candles_15m WHERE ipo_id=%s ORDER BY ts", (ipo_id,))
         bars=[dict(zip(("ts","o","h","l","c","v"), row)) for row in cur.fetchall()]
         result=detect_top(bars); evaluated=bars[-1]["ts"]
+        # The detector must never turn yesterday's partial supply into a new signal.
+        session = dt.datetime.now(evaluated.tzinfo).date()
+        if dt.datetime.now(evaluated.tzinfo).time() < dt.time(15, 30):
+            session -= dt.timedelta(days=1)
+        while session.weekday() >= 5:
+            session -= dt.timedelta(days=1)
+        if evaluated.date() < session:
+            payload={"detector_version":DETECTOR_VERSION,
+                     "evaluated_through_bar":evaluated.isoformat(), "label":"DISCOVERY",
+                     "state":"STALE_INPUT", "alert":False, "trigger":None,
+                     "max_state":"STALE_INPUT"}
+            counts["STALE_INPUT"]=counts.get("STALE_INPUT",0)+1
+            states.append({"ipo_id":ipo_id,"name":name,"inserted":0,**payload})
+            continue
         payload={"detector_version":DETECTOR_VERSION,"evaluated_through_bar":evaluated.isoformat(),
                  "label":"DISCOVERY",**result}
         inserted=0
