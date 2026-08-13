@@ -54,17 +54,20 @@ test("fieldDisplay distinguishes states and surfaces proxy label", () => {
   assert.deepEqual(fieldDisplay({ state: "MISSING", value: null }).node, { kind: "empty" });
 });
 
-test("splitEvidence separates SBI from RHP/STRUCTURED", () => {
+test("splitEvidence buckets SBI, RHP+STRUCTURED, and other without mislabeling", () => {
   const ev = [
     { excerpt: "rhp words", page_number: 42, source_type: "RHP" },
     { excerpt: "sbi words", page_number: 7, source_type: "SBI" },
     { excerpt: "struct", page_number: 3, source_type: "STRUCTURED" },
+    { excerpt: "house", page_number: 9, source_type: "HOUSE_RULE" },
   ];
-  const { rhp, sbi } = splitEvidence(ev);
+  const { rhp, sbi, other } = splitEvidence(ev);
   assert.equal(sbi.length, 1);
   assert.equal(sbi[0].excerpt, "sbi words");
-  assert.equal(rhp.length, 2);
-  assert.deepEqual(splitEvidence(null), { rhp: [], sbi: [] });
+  assert.equal(rhp.length, 2); // RHP + STRUCTURED
+  assert.equal(other.length, 1); // HOUSE_RULE is NOT presented as RHP
+  assert.equal(other[0].source_type, "HOUSE_RULE");
+  assert.deepEqual(splitEvidence(null), { rhp: [], sbi: [], other: [] });
 });
 
 test("derived issue metrics are labeled and honest when inputs are missing", () => {

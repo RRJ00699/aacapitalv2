@@ -137,12 +137,20 @@ export type EvidenceItem = {
   source_type?: string | null;
 };
 
-/** SBI excerpts split from everything else (RHP / STRUCTURED land in rhp). */
-export function splitEvidence(evidence: unknown): { rhp: EvidenceItem[]; sbi: EvidenceItem[] } {
+/**
+ * Verified evidence bucketed by source_type so provenance is never mislabeled:
+ * - rhp:   RHP + STRUCTURED (the disclosure-document evidence, §5)
+ * - sbi:   SBI research-note excerpts (§6)
+ * - other: any other source_type (e.g. HOUSE_RULE) — rendered under its own
+ *          label, never presented as RHP.
+ */
+export function splitEvidence(evidence: unknown): { rhp: EvidenceItem[]; sbi: EvidenceItem[]; other: EvidenceItem[] } {
   const list: EvidenceItem[] = Array.isArray(evidence) ? (evidence as EvidenceItem[]) : [];
-  const sbi = list.filter((e) => String(e?.source_type ?? "").toUpperCase() === "SBI");
-  const rhp = list.filter((e) => String(e?.source_type ?? "").toUpperCase() !== "SBI");
-  return { rhp, sbi };
+  const st = (e: EvidenceItem) => String(e?.source_type ?? "").toUpperCase();
+  const sbi = list.filter((e) => st(e) === "SBI");
+  const rhp = list.filter((e) => st(e) === "RHP" || st(e) === "STRUCTURED");
+  const other = list.filter((e) => !["SBI", "RHP", "STRUCTURED"].includes(st(e)));
+  return { rhp, sbi, other };
 }
 
 // ── Presentation-derived issue metrics (§2), labeled pro-forma ──────────────

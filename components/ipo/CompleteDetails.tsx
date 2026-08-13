@@ -135,7 +135,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
   const marketCap = deriveMarketCap(issuePrice, postShares);
   const lotValue = deriveLotValue(lotSize, issuePrice);
 
-  const { rhp, sbi } = splitEvidence(d.verified_evidence);
+  const { rhp, sbi, other } = splitEvidence(d.verified_evidence);
   const register = buildMissingRegister(d);
   const period = p?.provenance?.financial_period ? String(p.provenance.financial_period) : null;
   const basis = p?.provenance?.financial_basis ? String(p.provenance.financial_basis) : null;
@@ -219,6 +219,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
               <Badge label="VERIFIED FACT" tone="good" /><Badge label="DETERMINISTIC PRO-FORMA" tone="info" />
               <Badge label="SCENARIO / OPTIONALITY" tone="watch" />
             </div>
+            <Metric label="Status / evidence class" text={`${String(pv.status)} · ${classLabel(pv.classification)}`} cls={classLabel(pv.classification)} />
             {verifiedRows.map((m) => <Metric key={m.label} label={m.label} text={m.text} cls="VERIFIED FACT" note={periodNote} />)}
             {proFormaRows.map((m) => <Metric key={m.label} label={m.label} text={m.text} cls="DETERMINISTIC PRO-FORMA" note={pv?.formulas?.[proFormaFormulaKey(m.label)] as string | undefined} />)}
             {canonMissing.length ? <small style={{ color: C.meta, display: "block", marginTop: 6 }}>Missing pro-forma inputs: {canonMissing.map(humanizeKey).join(", ")}.</small> : null}
@@ -270,6 +271,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
       {/* §5 RHP EVIDENCE */}
       <Section id="rhp-evidence" title="RHP evidence" tone="green" sub={`${rhp.length} excerpt${rhp.length === 1 ? "" : "s"}`}>
         <EvidenceList items={rhp} empty="No verified RHP excerpts are currently available." />
+        {other.length ? <><div className="subhd">Other structured evidence</div><EvidenceList items={other} empty="" /></> : null}
       </Section>
 
       {/* §6 SBI EVIDENCE */}
@@ -292,7 +294,9 @@ export default function CompleteDetails({ details: d }: { details: R }) {
       <Section id="governance" title="Governance & risk">
         {Object.entries(gov).map(([k, f]) => <FieldRow key={k} label={humanizeKey(k)} f={f as DetailField} />)}
         <FieldRow label="Red-flag count" f={{ state: ai.red_flag_count != null ? "AVAILABLE" : "PENDING", value: ai.red_flag_count ?? null, reason: ai.reason }} />
-        <FieldRow label="Junk signals" f={{ state: ai.state === "AVAILABLE" ? "AVAILABLE" : "PENDING", value: Array.isArray(ai.junk_signals) && ai.junk_signals.length ? ai.junk_signals : null, reason: ai.state === "AVAILABLE" ? "No junk signals recorded." : ai.reason }} />
+        <FieldRow label="Junk signals" f={ai.state === "AVAILABLE"
+          ? { state: "AVAILABLE", value: Array.isArray(ai.junk_signals) && ai.junk_signals.length ? ai.junk_signals : ["None recorded"] }
+          : { state: "PENDING", value: null, reason: ai.reason || "AI analysis has not yet run." }} />
       </Section>
 
       {/* §8 PERSISTED DECISION — Company Quality, kept visually separate */}
@@ -316,6 +320,8 @@ export default function CompleteDetails({ details: d }: { details: R }) {
         <FieldRow label="Day-1 close" f={o.d1_close} fmt={fmtRupee} />
         <FieldRow label="Best close" f={o.best_close} fmt={fmtRupee} />
         <FieldRow label="Worst close" f={o.worst_close} fmt={fmtRupee} />
+        <FieldRow label="Held positive vs open" f={o.hold_positive_vs_open} />
+        <FieldRow label="Winner (≥35% vs issue)" f={o.winner_35} />
         <FieldRow label="Pool" f={o.pool} />
         <FieldRow label="Ceiling indicator (non-executable)" f={o.ceiling_20} />
         <FieldRow label="Computed at" f={o.computed_at} />
