@@ -71,6 +71,10 @@ cf-secrets.json
 uat-report/artifacts/
 uat-report/index.html
 uat-results/
+uat-shots/
 
 # owner-gated SBI extraction run manifests (may contain model output/errors)
 /artifacts/sbi-extraction/
+
+# OpenNext (Cloudflare) build output — never commit
+/.open-next/

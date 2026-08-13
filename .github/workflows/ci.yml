@@ -16,8 +16,14 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit
+      - name: Unit tests (lib TypeScript)
+        run: npm test
       - name: Build with database variables absent
         run: env -u DATABASE_URL -u NEON_DATABASE_URL npx next build
+      # OpenNext (Cloudflare) build must stay green — production is deployed via
+      # opennextjs-cloudflare, so a Next build passing is not sufficient on its own.
+      - name: OpenNext (Cloudflare) build
+        run: env -u DATABASE_URL -u NEON_DATABASE_URL npx opennextjs-cloudflare build
       # Route runtime tier (A1/A2/A3) + admin auth-gating (B7) need node_modules,
       # so they run HERE — in the python job they would skip loudly.
       - uses: actions/setup-python@v5

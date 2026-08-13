@@ -345,26 +345,26 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
   const edges: Edge[] = [
     ...(lifecycle ? [{ label: "Timeline", value: lifecycle.v, sub: lifecycle.s, state: lifecycle.st } as Edge] : []),
     { label: "Anchors", value: anc != null ? String(anc) : "—",
-      sub: anc != null ? (anc > 30 ? "30+ · 77% edge" : "below 30") : "awaiting",
+      sub: anc != null ? (anc > 30 ? "30+ · strong book" : "below 30") : "awaiting",
       state: anc == null ? "na" : anc > 30 ? "pass" : "neutral" },
     { label: "OFS mix", value: ofsPct != null ? `${ofsPct}%` : "—",
       // Phase-7 (2026-07-20): ">60 = promoter cash-out" was an evidence-free
-      // interpretation of a structured number. The BACKTESTED fact is the
-      // fresh-vs-OFS win-rate split; seller identity/motive needs the RHP.
-      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy · 82%" : ofsPct > 60 ? "OFS-heavy" : "mixed") : "awaiting",
+      // interpretation of a structured number. Describe the fresh-vs-OFS mix
+      // qualitatively; no hard-coded win-rate is asserted on the card.
+      sub: ofsPct != null ? (ofsPct < 30 ? "fresh-heavy" : ofsPct > 60 ? "OFS-heavy" : "mixed") : "awaiting",
       state: ofsPct == null ? "na" : ofsPct < 30 ? "pass" : ofsPct > 60 ? "warn" : "neutral" },
     { label: "PE vs peer", value: peRatio != null ? `${peRatio.toFixed(2)}×` : ipoPe != null ? `${ipoPe.toFixed(0)}` : "—",
-      sub: peRatio != null ? (peRatio < 0.6 ? "cheap · 77% edge" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
+      sub: peRatio != null ? (peRatio < 0.6 ? "cheap vs peers" : peRatio > 1 ? "above peers" : "near peers") : peerPe == null ? "awaiting peer P/E" : "awaiting",
       state: peRatio == null ? "na" : peRatio < 0.6 ? "pass" : "neutral" },
     { label: "QIB", value: qib != null ? `${qib}×` : "—",
-      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× · 78% zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
+      sub: qib != null ? (qib >= 5 && qib <= 25 ? "5–25× zone" : qib > 25 ? "hot book" : "light book") : "awaiting close",
       state: qib == null ? "na" : qib >= 5 && qib <= 25 ? "pass" : "neutral" },
     // Band tile: a bare ₹high just repeated the IPO PRICE tile (Rakesh's
     // redundancy call, 2026-07-16). Show the low–high RANGE when we have it;
     // when we don't, the tile is pure duplication — drop it.
     ...(bandHigh != null && bandLow != null && bandLow < bandHigh ? [{
       label: "Band", value: `₹${bandLow}–${bandHigh}`,
-      sub: bandHigh < 300 ? "under ₹300 · wins" : "premium band",
+      sub: bandHigh < 300 ? "under ₹300 · affordable" : "premium band",
       state: (bandHigh < 300 ? "pass" : "neutral") } as Edge] : []),
   ];
 
@@ -400,7 +400,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
                 marginLeft: 8, color: C.green, background: C.greenBg,
                 border: `1px solid ${C.greenBd}`, borderRadius: 999,
                 padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>
-                ◆ HOUSE STACK · 72.7%
+                ◆ HOUSE STACK
               </span>
             ) : null}
           </div>
@@ -504,7 +504,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
               -20% drawdown risk is 23.6% vs 32.4% baseline. */}
           {c.house_stack === true ? (
             <div style={{ fontSize: 10.5, color: C.green, fontWeight: 700, marginBottom: 6 }}>
-              ◆ House Stack — historically {String(c.house_stack_stat ?? "")}; drawdown risk 23.6% vs 32.4% baseline
+              ◆ House Stack — 30+ anchors, ≥₹200cr, fresh-issue all align. The strongest configuration for sitting through a dip.
             </div>
           ) : null}
           <button onClick={() => onJourney?.(sym)} style={{
@@ -599,7 +599,7 @@ export default function IpoCard({ c, onJourney, onLive }: { c: Row; onJourney?: 
           if (pe != null && ppe != null && ppe > 0 && pe / ppe <= 0.8) good.push({ text: `Priced BELOW sector median (${(pe / ppe).toFixed(1)}×)` });
           if (c.quality_promoter === true) good.push({ text: "Quality promoter track record" });
           if (c.house_stack === true)
-            good.push({ text: "HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue — 72.7% win, +17.2% median (D30, n=55)" });
+            good.push({ text: "HOUSE STACK: 30+ anchors + ≥₹200cr + fresh-issue all align" });
           if (clear > 0 && raised.length === 0) good.push({ text: `${clear} governance checks clear — no auditor/SEBI/pledge flags` });
         }
         const items = [...bad.slice(0, 5), ...good.slice(0, Math.max(0, 5 - Math.min(bad.length, 5)))];

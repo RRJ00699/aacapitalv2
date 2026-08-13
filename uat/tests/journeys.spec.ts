@@ -93,12 +93,15 @@ test.describe("AACapital user journeys", () => {
       .or(page.getByText("UAT Listed Ltd")).first()).toBeVisible(); // .first AFTER the union (strict mode)
   });
 
-  test("J10 · rules disclose backtest sample sizes (n=) and win rates", async ({ watched: page }) => {
+  test("J10 · grade ladder is shown; no fabricated backtest n=/win-rates in the engine strip", async ({ watched: page }) => {
     await page.goto("/dashboard/ipo2");
-    // Existing disclosure: every graded band shows n= and win %. Full
-    // table/date-range/version provenance is tracker item F3 (UAT_TRACKER).
-    await expect(page.getByText(/n=\d+/).first()).toBeVisible();
-    await expect(page.getByText(/\d+% /).first()).toBeVisible();
+    // W4 truthfulness: the pre-listing grade is explained qualitatively. Cohort
+    // win-rates and hard-coded sample sizes (n=) are NOT displayed until a
+    // validated backtest field ships in the payload (docs/PROJECT_CONTROL.md).
+    await expect(page.getByText(/Every IPO gets a grade before it lists/i)).toBeVisible();
+    await expect(page.getByText(/of 10 worked/i)).toHaveCount(0);
+    await expect(page.getByText(/based on how 370/i)).toHaveCount(0);
+    await expect(page.getByText(/Validated cohort win-rates are not shown/i)).toBeVisible();
   });
 
   test("layout · no horizontal overflow on any project viewport", async ({ watched: page }) => {

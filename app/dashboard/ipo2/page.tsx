@@ -6,11 +6,12 @@ import React from "react";
 // live capture exists. Ships at /dashboard/ipo2 for side-by-side verification;
 // cutover to /dashboard/ipo is a separate one-line commit after approval.
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useThemeControls } from "@/lib/theme";
 import AppShell from "@/components/app-shell/AppShell";
 import MarketsSidebar from "@/components/ipo/MarketsSidebar";
 import IpoCard from "@/components/ipo/IpoCard";
 import { Skeleton, EmptyState, ErrorState } from "@/components/ui/primitives";
+import ThemeToggle from "@/components/ui/ThemeToggle";
+import { PendingState } from "@/components/ui/states";
 import ListingReview from "@/components/ipo/ListingReview";
 
 class CardBoundary extends React.Component<{children: React.ReactNode}, {err: boolean}> {
@@ -30,35 +31,25 @@ const C = { bg:"var(--t-bg)", surface:"var(--t-surface)", surface2:"var(--t-surf
   red:"var(--t-red)", redBg:"var(--t-redBg)", redBd:"var(--t-redBd)", grayBg:"var(--t-grayBg)", gold:"var(--t-gold)" };
 const MONO = "var(--f-mono)";
 
-function ThemeToggle() {
-  const { mode, isDark, setMode } = useThemeControls();
-  // cycle: auto → light → dark → auto
-  const next = mode === "auto" ? "light" : mode === "light" ? "dark" : "auto";
-  const label = mode === "auto" ? "🌗 Auto" : mode === "light" ? "☀️ Day" : "🌙 Night";
-  return (
-    <button onClick={() => setMode(next)}
-      title={`Theme: ${mode} (tap to change)`}
-      style={{ border:`1px solid ${C.border}`, background:C.surface, color:C.text,
-        borderRadius:10, padding:"6px 13px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>
-      {label}
-    </button>
-  );
-}
-
 const BAND: Record<string,{c:string;bg:string;bd:string}> = {
   STRONG:{c:C.green,bg:C.greenBg,bd:C.greenBd}, FAVORABLE:{c:C.blue,bg:C.blueBg,bd:C.blueBd},
   NEUTRAL:{c:C.meta,bg:C.grayBg,bd:C.border}, AVOID:{c:C.red,bg:C.redBg,bd:C.redBd} };
+// Playbook setups — qualitative descriptions of the entry rules the pipeline
+// applies. No hard-coded win-rate/"edge" percentages: those are a validated-
+// backtest field that must arrive from the producer before any number renders
+// here (see docs/PROJECT_CONTROL.md → payload_fields_unavailable). The `s`
+// slot names the setup class, never a fabricated statistic.
 const PLAYS = [
-  { t:"1 · MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"92% win · +19% med · positive floor", c:C.green,
-    d:"A large issue (over ₹2000 crore) that opens at or above its IPO price. Best when it opens +15% or more. Buy at listing open. Two iterations passed (2026-07-10 and 2026-07-13); even the unlucky day stays positive. Institutions must keep buying these for weeks — the price is supported." },
-  { t:"2 · MORE THAN 30 ANCHORS — confirmed buy signal", s:"77% win vs 68% · tail halves", c:C.green,
-    d:"Tested 2026-07-13. IPOs with 30+ anchor investors win 77% buying at open (vs 68% below 30), and the downside tail shrinks from −6.6% to −2.6%. 50+ anchors is even stronger (79%). A heavy anchor book means big institutions are committed." },
-  { t:"3 · THE STACK — 30+ anchors + mega + positive open", s:"85% win · +13% med · ~zero floor", c:C.green,
-    d:"Tested 2026-07-13. Layer the two edges: a mega issue, opening positive, with 30+ anchors = 85% win and a near-zero downside. The single cleanest setup. When all three line up, this is the trade." },
-  { t:"4 · LOW PRICE BAND + FRESH ISSUE — strong", s:"82–90% win · small tail", c:C.blue,
-    d:"Tested 2026-07-13. Cheaper bands (under ₹300) win far more at open (77–90%) than expensive ones (₹600+ sag to 58%). Fresh-issue IPOs (under 30% OFS) win 82% vs OFS-heavy. Cheap + fresh + 30 anchors reached 94% (small sample — promising)." },
-  { t:"AVOID · small, pricey, or euphoric", s:"skip — this is the profit", c:C.red,
-    d:"Under ₹500cr: 63% win, worst tail — skip. Band over ₹600 or OFS-heavy: weak. Opened +50% or more: the pop is priced in and ~1 in 3.5 fades to a loss. Skipping these IS the strategy." },
+  { t:"1 · MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"core setup", c:C.green,
+    d:"A large issue (over ₹2000 crore) that opens at or above its IPO price — strongest when it opens +15% or more. Buy at listing open. A heavy, well-supported book means institutions keep buying for weeks." },
+  { t:"2 · MORE THAN 30 ANCHORS — confirming signal", s:"confirming signal", c:C.green,
+    d:"A large anchor book (30+ investors, stronger at 50+) means big institutions are committed ahead of listing. Used as a confirmation on top of the core setup, not as a standalone entry." },
+  { t:"3 · THE STACK — 30+ anchors + mega + positive open", s:"stacked setup", c:C.green,
+    d:"Layer the setups: a mega issue, opening positive, with 30+ anchors. The cleanest configuration — when all three line up, the buy-at-open case is at its strongest." },
+  { t:"4 · LOW PRICE BAND + FRESH ISSUE", s:"supporting setup", c:C.blue,
+    d:"Cheaper bands (under ₹300) and fresh-issue IPOs (under 30% OFS) have historically been more resilient at open than expensive, OFS-heavy issues. A supporting factor, not the entry on its own." },
+  { t:"AVOID · small, pricey, or euphoric", s:"skip", c:C.red,
+    d:"Under ₹500cr, band over ₹600, OFS-heavy, or opened +50%+ (the pop is already priced in): skip. Skipping these is part of the strategy." },
   { t:"GATE · RHP quality read (before listing)", s:"junk filter, not the entry", c:C.amber,
     d:"Before listing, the RHP forensic read flags clean / watch / reject. A reject is a hard pass regardless of how it opens. This is the quality filter that keeps junk out — separate from the buy-at-open signals above." } ];
 
@@ -68,9 +59,9 @@ const D = (v: unknown) => String(v ?? "").slice(0, 10);
 
 function Chip({ b }: { b?: string | null }) {
   const s = BAND[b || ""] || BAND.NEUTRAL;
-  const TIP: Record<string,string> = { STRONG:"9 of 10 like this made money (15-yr history)",
-    FAVORABLE:"7.6 of 10 like this made money", NEUTRAL:"about average — 7 of 10 made money",
-    AVOID:"a coin flip historically — we skip these" };
+  const TIP: Record<string,string> = { STRONG:"Strongest pre-listing grade — most setup rules met",
+    FAVORABLE:"Favourable grade — several setup rules met", NEUTRAL:"Neutral grade — mixed signals",
+    AVOID:"Avoid grade — fails the setup rules, we skip these" };
   return <span title={TIP[b || ""] || "not enough data to grade yet"}
     style={{color:s.c,background:s.bg,border:`1px solid ${s.bd}`,borderRadius:8,
     padding:"2px 9px",fontSize:11,fontWeight:700,cursor:"help"}}>{b || "UNSCORED"}</span>;
@@ -725,7 +716,7 @@ function Spark({ ticks, floor, ceil }: { ticks: R[]; floor: number|null; ceil: n
       {ceil != null && <><line x1="0" y1={y(ceil)} x2={W} y2={y(ceil)} stroke={C.blue} strokeDasharray="6 4"/>
         <text x="5" y={y(ceil)-4} fontSize="10" fill={C.blue}>ceiling ₹{ceil}</text></>}
       {floor != null && <><line x1="0" y1={y(floor)} x2={W} y2={y(floor)} stroke={C.red} strokeDasharray="6 4"/>
-        <text x="5" y={y(floor)+12} fontSize="10" fill={C.red}>floor ₹{floor} · respected 78%/75% hist.</text></>}
+        <text x="5" y={y(floor)+12} fontSize="10" fill={C.red}>floor ₹{floor}</text></>}
       <path d={path(vw)} fill="none" stroke={C.dim} strokeWidth="1.7" strokeDasharray="2 4"/>
       <path d={path(px)} fill="none" stroke={C.green} strokeWidth="2.3"/>
     </svg>);
@@ -959,7 +950,22 @@ function IpoCommand() {
   // poll on an interval — that kept Neon compute awake 24/7 and drove the bill up.
   // The user can pull-to-refresh or reopen the app to re-fetch.
 
-  const cards = d?.cards || [];
+  // REIT/InvIT are not IPO opportunities. The producer filters them at the
+  // source (lib/v2 SQL), but the consumer guards defensively: any that leak
+  // through are pulled OUT of the opportunity list and shown in a visibly-
+  // excluded strip, never graded as a normal IPO. Detected from identity
+  // fields already in the payload (company_name / sym) — no new field.
+  const isReitInvit = (c: R) => {
+    const name = String(c.company_name || "");
+    const sym = String(c.sym || "");
+    return /\b(reit|invit)\b/i.test(name) || /(INVIT|REIT)/i.test(sym);
+  };
+  const allCards = d?.cards || [];
+  const cards = allCards.filter(c => !isReitInvit(c));
+  const excludedReit = allCards.filter(isReitInvit);
+  // Junk-floor exclusions counted by the producer (issue size < floor). Shown
+  // as an honest count only; never fabricated when the field is absent.
+  const filteredCount = (() => { const n = (d as {filtered_count?: unknown} | null)?.filtered_count; return typeof n === "number" ? n : null; })();
   const degraded = (d as {degraded?: string} | null)?.degraded;
   // BUG A fix: canonicalize before de-duping so symbol variants (LASER / LASER-EQ)
   // collapse to ONE chip + ONE card. Root cause of the recurring double-Laser.
@@ -1026,25 +1032,26 @@ function IpoCommand() {
       </div>
       {!d && <div style={{marginTop:12}}><Skeleton h={120} n={4}/></div>}
 
-      {/* engine strip — plain-English grades, rigor one line below */}
+      {/* engine strip — what the pre-listing grade means. Grades are ordered
+          worst→best; no cohort win-rate numbers render here until a validated
+          backtest field ships in the payload (see PROJECT_CONTROL). */}
       <div style={{...card,marginTop:12}}>
         <div style={{display:"flex",gap:22,alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{maxWidth:300}}>
+          <div style={{maxWidth:340}}>
             <div style={{fontWeight:800,fontSize:14}}>Every IPO gets a grade before it lists</div>
-            <div style={{fontSize:12,color:C.meta}}>based on how 370 IPOs behaved over the last 15 years</div>
+            <div style={{fontSize:12,color:C.meta}}>from the setup rules the prospectus and issue terms meet — best on the right</div>
           </div>
-          {[["STRONG grade","8.1 of 10 worked","n=43",C.green],
-            ["FAVORABLE","7.9 of 10 worked","n=92",C.blue],
-            ["NEUTRAL","7.3 of 10 worked","n=145",C.text],
-            ["AVOID grade","6 of 10 — skip","n=93",C.red]].map((s,i)=>(
-            <div key={i} title="worked = made money buying at the listing open and selling at the best close within 10 trading days">
+          {[["AVOID grade","skip",C.red],
+            ["NEUTRAL","mixed",C.text],
+            ["FAVORABLE","several rules",C.blue],
+            ["STRONG grade","most rules",C.green]].map((s,i)=>(
+            <div key={i} title="Grade reflects how many buy-at-open setup rules the issue meets before listing">
               <div style={{fontSize:10.5,color:C.meta,textTransform:"uppercase",letterSpacing:.4}}>{s[0]}</div>
-              <div style={{fontSize:17,fontWeight:800,color:s[3] as string}}>{s[1]}</div>
-              <div style={{fontSize:12,color:C.meta}}>{s[2]}</div></div>))}
+              <div style={{fontSize:15,fontWeight:800,color:s[2] as string}}>{s[1]}</div></div>))}
         </div>
         <div style={{fontSize:11.5,color:C.dim,marginTop:8}}>
-          “Worked” = best close within 10 sessions beat the open (a CEILING, not an executable exit — see Playbook for real exit rules).
-          Bands verified monotonic on clean data (spec §2A): AVOID 60% → NEUTRAL 73% → FAVORABLE 79% → STRONG 81% · baseline 72%/+5.9 (n=370).
+          The grade is a research signal, not a buy call — it ranks how well an issue fits the playbook setups, worst (AVOID) to best (STRONG).
+          Validated cohort win-rates are not shown until they arrive from the pipeline as an evidenced field.
         </div>
       </div>
 
@@ -1276,6 +1283,25 @@ function IpoCommand() {
               background:vFilter===k?C.blueBg:C.surface,color:vFilter===k?C.blue:C.meta}}>
               {k==="ALL"?"All":k}</span>))}
         </div>
+        {/* Exclusions — honest, visible, and never graded as opportunities.
+            REIT/InvIT records and sub-floor junk issues are called out here
+            rather than silently disappearing. */}
+        {(excludedReit.length > 0 || (filteredCount != null && filteredCount > 0)) && (
+          <div style={{border:`1px solid ${C.border}`,background:C.grayBg,borderRadius:10,padding:"9px 12px",margin:"0 0 10px"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:.5,textTransform:"uppercase",color:C.meta}}>Excluded — not IPO opportunities</div>
+            {excludedReit.length > 0 && (
+              <div style={{fontSize:12,color:C.sub,marginTop:5}}>
+                {excludedReit.length} REIT/InvIT record{excludedReit.length>1?"s":""} held out of grading:{" "}
+                {excludedReit.map(c=>String(c.company_name||c.sym||"")).filter(Boolean).join(" · ")}
+              </div>
+            )}
+            {filteredCount != null && filteredCount > 0 && (
+              <div style={{fontSize:12,color:C.sub,marginTop:5}}>
+                {filteredCount} record{filteredCount>1?"s":""} ruled out by the issue-size junk floor (producer).
+              </div>
+            )}
+          </div>
+        )}
         {cards.filter(c=>c.state!=="INWINDOW"||liveCanon.includes(canonSym(String(c.sym)))===false).map((c,i)=>{
           if (liveCanon.includes(canonSym(String(c.sym)))) return null;
           if (vFilter!=="ALL" && String(c.verdict||"")!==vFilter) return null;
@@ -1291,6 +1317,13 @@ function IpoCommand() {
             <button onClick={()=>setVFilter("ALL")} style={{fontSize:11,fontWeight:700,padding:"6px 12px",
               borderRadius:999,border:`1px solid ${C.border}`,background:C.surface,color:C.sub,cursor:"pointer"}}>Show all</button>
           </EmptyState>}
+        {/* Loaded, but the producer returned no gradable IPOs — pending, not empty
+            zeros. Missing data is never shown as "0 opportunities". */}
+        {d && vFilter==="ALL" && cards.length===0 && excludedReit.length===0 &&
+          <PendingState title="No IPOs in the current window"
+            detail="The nightly pipeline hasn't published any gradable IPOs for this window yet. This is a pending state, not a zero."
+            source="ipo-command snapshot"
+            asOf={d ? new Date().toLocaleString() : null} />}
       </>}
 
       {/* PLAYBOOK */}
@@ -1300,15 +1333,15 @@ function IpoCommand() {
         <div style={{...card, background:C.amberBg, border:`1.5px solid ${C.amberBd}`}}>
           <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:16}}>The House Rules — the whole strategy in 3 lines</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:10}}>
-            Written so anyone in the family can follow it. Tested 2026-07-13 on 585 clean IPOs (2016+).
+            Written so anyone in the family can follow it. Research signal, not a buy call.
           </div>
           {[
             ["1","BUY giants that open positive — with 30+ anchors best",
-             "Issue over ₹2,000 crore, opening at or above IPO price (best +15%+). Add 30 or more anchor investors and the win rate climbs to 85% with almost no downside. Buy at listing open."],
+             "Issue over ₹2,000 crore, opening at or above IPO price (best +15%+). A large anchor book (30+ investors) is the strongest confirmation. Buy at listing open."],
             ["2","SKIP small, pricey, euphoric, and rejects",
              "Under ₹500cr, band over ₹600, opened +50%+, or an RHP-reject: skip. The pop is priced in or the risk is real. Skipping IS the strategy."],
             ["3","Cheaper + fresh beats expensive + OFS",
-             "Low price bands (under ₹300) and fresh-issue IPOs (not sell-heavy) win far more at open. Two iterations passed (2026-07-10, 2026-07-13)."],
+             "Low price bands (under ₹300) and fresh-issue IPOs (not sell-heavy) have historically been more resilient at open than expensive, OFS-heavy issues."],
           ].map(([n,t,d2])=>(
             <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderTop:n!=="1"?`1px solid ${C.border}`:"none"}}>
               <div style={{minWidth:34,height:34,borderRadius:"50%",background:C.gold,color:C.bg,
@@ -1318,25 +1351,25 @@ function IpoCommand() {
             </div>))}
           <div style={{marginTop:10,padding:"9px 12px",background:C.greenBg,border:`1px solid ${C.greenBd}`,
             borderRadius:9,fontSize:12.5,color:C.green}}>
-            <b>The honest math (two iterations: 2026-07-10 &amp; 2026-07-13):</b> the core giant-opens-positive trade wins
-            ~92 in 100; adding 30+ anchors on a mega issue reaches <b>85% with a near-zero downside floor</b>.
-            Everything outside the rules — small, pricey, euphoric, or reject — is watch-only.
+            <b>The idea:</b> the core trade is a giant issue that opens positive, strongest when a large anchor book confirms it.
+            Everything outside the rules — small, pricey, euphoric, or reject — is watch-only. Validated cohort win-rates
+            render here once they arrive from the pipeline as an evidenced field.
           </div>
         </div>
 
         <div style={card}>
-          <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:15}}>The two strategies — validated</b>
+          <b style={{fontFamily:"var(--f-display)",letterSpacing:-0.2,fontSize:15}}>The two strategies</b>
           <div style={{fontSize:11.5,color:C.meta,marginTop:2,marginBottom:12}}>
             Two layers: a <b>quality gate</b> (before listing) and a <b>tradeable signal</b> (buy-at-open).
-            Tradeable signal tested <b>2026-07-13</b> on 585 clean IPOs (2016+); quality gate = RHP forensic read of 448 prospectuses.
+            The quality gate is an RHP forensic read; the tradeable signal is the buy-at-open setup.
           </div>
           {[
             ["Q","Quality gate (before listing)",C.blue,C.blueBg,C.blueBd,
              "RHP forensic read of the prospectus → clean / watch / reject. A reject is a hard pass. This is the junk filter, not the entry — it tells you what NOT to touch.",
-             "448 prospectuses read"],
+             "junk filter"],
             ["T","Tradeable signal (buy at open)",C.green,C.greenBg,C.greenBd,
-             "Giant issue (>₹2000cr) opening positive, best at +15%+. The measured open-buy edge. Small issues (<500cr) and euphoric >50% pops are excluded.",
-             "92% win · +20% median · n=25"],
+             "Giant issue (>₹2000cr) opening positive, best at +15%+. The buy-at-open setup. Small issues (<500cr) and euphoric >50% pops are excluded.",
+             "buy-at-open"],
           ].map(([tag,name,col,bg,bd,desc,stat])=>(
             <div key={tag} style={{display:"flex",gap:12,padding:"11px 0",borderTop:tag!=="S1"?`1px solid ${C.border}`:"none"}}>
               <div style={{minWidth:38,height:38,borderRadius:9,background:bg,border:`1px solid ${bd}`,color:col,
@@ -1348,8 +1381,8 @@ function IpoCommand() {
                 <div style={{fontSize:12.5,color:C.sub,marginTop:3}}>{desc}</div></div>
             </div>))}
           <div style={{marginTop:10,padding:"9px 12px",background:C.grayBg,borderRadius:9,fontSize:12,color:C.meta}}>
-            <b>Golden rule (tested):</b> euphoric opens &gt;50% and issues under ₹500cr = skip.
-            The edge is the giant opening positive — not the pop. GMP is context only; QIB level and ROE showed no edge in the test.
+            <b>Golden rule:</b> euphoric opens &gt;50% and issues under ₹500cr = skip.
+            The setup is the giant opening positive — not the pop. GMP is context only.
           </div>
         </div>
 
@@ -1362,9 +1395,9 @@ function IpoCommand() {
               <b>{p.t}</b><span style={{...num,fontWeight:800,color:p.c}}>{p.s}</span></div>
             <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>{p.d}</div></div>))}
         <div style={card}><b style={{fontSize:13}}>Risk, always on screen</b>
-          <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Drawdown median −9% · tail −22% — size for the tail.
-            Floor = first-5-session low, respected 78%; a close below it is the exit, not a dip-buy.
-            GMP = context only · QIB level = priced in · ROE = noise. All tested.</div></div>
+          <div style={{fontSize:12.5,color:C.meta,marginTop:4}}>Size for the downside tail — these are volatile listings.
+            Floor = first-5-session low; a close below it is the exit, not a dip-buy.
+            GMP = context only · QIB level = largely priced in.</div></div>
       </>}
 
       {/* OPEN NOW */}

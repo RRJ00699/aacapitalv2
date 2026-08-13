@@ -5,6 +5,11 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = Number(process.env.UAT_PORT || 4123);
 const BASE = process.env.UAT_BASE_URL || `http://localhost:${PORT}`;
 const isSmoke = !!process.env.UAT_BASE_URL; // smoke = external URL, read-only
+// Offline/pre-provisioned runners: point at an already-installed Chromium via
+// PW_CHROMIUM_PATH so `playwright install` isn't required. Unset in CI (which
+// installs the pinned browser), so CI behaviour is unchanged.
+const chromiumPath = process.env.PW_CHROMIUM_PATH || undefined;
+const launchOptions = chromiumPath ? { executablePath: chromiumPath } : undefined;
 
 export default defineConfig({
   testDir: "uat/tests",
@@ -19,6 +24,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     video: "retain-on-failure",
     screenshot: "only-on-failure",
+    ...(launchOptions ? { launchOptions } : {}),
   },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.02 } },
   // Fixture server for PR runs; smoke runs point UAT_BASE_URL at a deploy.
