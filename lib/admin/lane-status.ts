@@ -8,7 +8,7 @@
 // daily lane missing. Unit-tested by lib/admin/lane-status.test.ts.
 //
 // NOTE: this module is NOT wired to any Neon-backed web route (that would make
-// the web plane a recurring DB wake source — see docs/PROJECT_CONTROL.md
+// the web plane a recurring DB wake source — see docs/runbooks/PROJECT_CONTROL.md
 // zero-wake rule). It is the ready consumer for a future KV-published
 // pipeline-health snapshot; until that producer contract exists, the Admin
 // overview renders a configuration-required state instead of calling it.

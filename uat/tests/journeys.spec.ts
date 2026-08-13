@@ -97,7 +97,7 @@ test.describe("AACapital user journeys", () => {
     await page.goto("/dashboard/ipo2");
     // W4 truthfulness: the pre-listing grade is explained qualitatively. Cohort
     // win-rates and hard-coded sample sizes (n=) are NOT displayed until a
-    // validated backtest field ships in the payload (docs/PROJECT_CONTROL.md).
+    // validated backtest field ships in the payload (docs/runbooks/PROJECT_CONTROL.md).
     await expect(page.getByText(/Every IPO gets a grade before it lists/i)).toBeVisible();
     await expect(page.getByText(/of 10 worked/i)).toHaveCount(0);
     await expect(page.getByText(/based on how 370/i)).toHaveCount(0);

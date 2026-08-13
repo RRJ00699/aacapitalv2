@@ -1,7 +1,7 @@
 "use client";
 // app/dashboard/admin/OperationsOverview.tsx — the 8 AM answer, ZERO-WAKE.
 //
-// Web-plane rule (docs/PROJECT_CONTROL.md): the deployed app must not become a
+// Web-plane rule (docs/runbooks/PROJECT_CONTROL.md): the deployed app must not become a
 // recurring Neon wake source. This overview therefore consumes ONLY the
 // KV-backed /api/ipo-command snapshot, fetched ONCE on mount plus a manual
 // refresh — no interval polling, and NO Neon-backed admin routes
@@ -9,7 +9,7 @@
 // and are intentionally NOT called here; see lib/admin/no-neon-contract.test.ts).
 //
 // Live per-lane pipeline health needs a producer that publishes run health to
-// KV (contract: pipeline-health:v1 — recorded in docs/PROJECT_CONTROL.md, to be
+// KV (contract: pipeline-health:v1 — recorded in docs/runbooks/PROJECT_CONTROL.md, to be
 // built by the next Codex producer task, NOT here). Until it exists, lane health
 // renders as a configuration-required state. The pure lane classifier
 // (lib/admin/lane-status.ts) is the ready consumer for that snapshot.
@@ -38,7 +38,7 @@ async function loadCommand(): Promise<CommandFetch> {
 }
 
 // An honest "we don't have this field yet" tile — the requested producer field
-// is named so it can be cross-checked against docs/PROJECT_CONTROL.md.
+// is named so it can be cross-checked against docs/runbooks/PROJECT_CONTROL.md.
 function Unavailable({ label, field }: { label: string; field: string }) {
   return (
     <div style={{ border: "1px dashed var(--c-border)", borderRadius: 10, padding: "9px 11px", background: "var(--c-surface)" }}>
@@ -142,7 +142,7 @@ export default function OperationsOverview() {
       </div>
 
       {/* Honest unavailable fields — each names the exact producer field wanted.
-          Logged in docs/PROJECT_CONTROL.md → payload_fields_unavailable. */}
+          Logged in docs/runbooks/PROJECT_CONTROL.md → payload_fields_unavailable. */}
       <div style={{ marginTop: 14 }}>
         <div style={{ ...tileLabel, marginBottom: 6 }}>Requested, not yet in any KV payload</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>

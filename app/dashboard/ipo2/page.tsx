@@ -37,7 +37,7 @@ const BAND: Record<string,{c:string;bg:string;bd:string}> = {
 // Playbook setups — qualitative descriptions of the entry rules the pipeline
 // applies. No hard-coded win-rate/"edge" percentages: those are a validated-
 // backtest field that must arrive from the producer before any number renders
-// here (see docs/PROJECT_CONTROL.md → payload_fields_unavailable). The `s`
+// here (see docs/runbooks/PROJECT_CONTROL.md → payload_fields_unavailable). The `s`
 // slot names the setup class, never a fabricated statistic.
 const PLAYS = [
   { t:"1 · MEGA issue (>₹2000cr) opening positive — THE CORE TRADE", s:"core setup", c:C.green,
