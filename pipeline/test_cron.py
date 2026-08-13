@@ -335,6 +335,15 @@ def test_partial_step_is_retry_required_and_nonzero(capsys, monkeypatch):
     assert "total status: partial/retry_required" in capsys.readouterr().out
 
 
+def test_exhausted_sebi_backlog_is_owner_visible(capsys, monkeypatch):
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    step = {"step":"SEBI", "status":"partial", "duration":0,
+            "reason":"PARTIAL", "owner_action":"owner: retry or resolve 2 exhausted SEBI filing(s)"}
+    assert cron.report([step], 0, dry=False, targets=[]) == 3
+    output = capsys.readouterr().out
+    assert "owner actions still required: owner: retry or resolve 2 exhausted" in output
+
+
 def test_runbook_path_and_commands_contract():
     text = (cron.REPO_ROOT / "docs/runbooks/DAILY_RUN.md").read_text(encoding="utf-8")
     assert "C:\\aacapital-v2" in text

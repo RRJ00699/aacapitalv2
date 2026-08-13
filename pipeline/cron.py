@@ -359,6 +359,9 @@ def attach_sebi_status(item):
     data = json.loads(lines[-1])
     item["counts"] = {f"this_run_{key}": value for key, value in data.get("this_run", {}).items()}
     item["counts"].update({f"backlog_{key}": value for key, value in data.get("backlog", {}).items()})
+    exhausted = data.get("backlog", {}).get("owner_action_exhausted", 0)
+    if exhausted:
+        item["owner_action"] = f"owner: retry or resolve {exhausted} exhausted SEBI filing(s)"
     if data.get("status") in {"PARTIAL", "RETRY_PENDING"}:
         item.update(status="partial", reason=data["status"])
 
@@ -460,7 +463,8 @@ def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, sp
            else (snapshot.get("reason", snapshot["status"]) if snapshot else "not run")))
     print(f"paid calls: {'0 (dry-run)' if dry else f'bounded by ${cap:.2f}; measured ${spent:.3f}'}")
     print(f"production writes: {'0 (dry-run)' if dry else 'authorized by this live command; see steps'}")
-    actions = [s["reason"] for s in steps if s.get("reason", "").startswith("owner:")]
+    actions = [value for s in steps for value in (s.get("reason"), s.get("owner_action"))
+               if value and value.startswith("owner:")]
     print("owner actions still required: " + ("; ".join(actions) if actions else "none"))
     print("=" * 72)
     return 1 if failed else (3 if partial else 0)

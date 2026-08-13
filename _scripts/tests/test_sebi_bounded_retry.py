@@ -1,8 +1,18 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
+# Playwright is optional in CI; these tests exercise only pure manifest accounting.
+playwright = ModuleType("playwright")
+sync_api = ModuleType("playwright.sync_api")
+sync_api.sync_playwright = lambda: None
+sync_api.TimeoutError = type("TimeoutError", (Exception,), {})
+sync_api.Error = type("Error", (Exception,), {})
+playwright.sync_api = sync_api
+sys.modules.setdefault("playwright", playwright)
+sys.modules.setdefault("playwright.sync_api", sync_api)
 
 SPEC = importlib.util.spec_from_file_location(
     "sebi_retry", Path(__file__).parents[1] / "download_sebi_rhps_playwright.py")
