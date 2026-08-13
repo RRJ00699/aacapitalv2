@@ -92,6 +92,8 @@ def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status,
                     "rc": rc, "output": f"KITE_REFRESH_STATUS={marker}\n"}
         marker_output = ({cron.KITE_FETCH_15M_SCRIPT:
                           'FIFTEEN_MIN_CANDLES={"selected":1}',
+                          cron.KITE_FETCH_SCRIPT:
+                          'KITE_DAILY_SUMMARY={"selected":1,"token_resolved":1,"token_unresolved":0,"failed":0}',
                           cron.TOP_DETECTOR_SCRIPT:
                           'TOP_DETECTOR={"selected":1,"state_counts":{}}'}
                          .get(target, ""))
@@ -143,7 +145,7 @@ def test_zero_target_report_has_timings_counts_and_snapshot_proof(capsys, monkey
     output = capsys.readouterr().out
     assert "END-OF-RUN REPORT" in output
     assert "runtime: 2.5s" in output
-    assert "active IPOs: 0" in output
+    assert "active pipeline IPOs: 0 | market IPOs: 0" in output
     assert "consumer_source=active" in output
 
 
@@ -242,7 +244,7 @@ def test_select_active_operational_error_reaches_end_of_run_without_uncaught_tra
     assert "Active IPO selector = failed" in output
     assert "selector failed; dependent cohort work skipped" in output
     assert "no active IPOs selected" not in output
-    assert "active IPOs: UNKNOWN — selector failed" in output
+    assert "active pipeline IPOs: UNKNOWN — selector failed" in output
     assert "END-OF-RUN REPORT" in output
 
 
@@ -342,6 +344,57 @@ def test_exhausted_sebi_backlog_is_owner_visible(capsys, monkeypatch):
     assert cron.report([step], 0, dry=False, targets=[]) == 3
     output = capsys.readouterr().out
     assert "owner actions still required: owner: retry or resolve 2 exhausted" in output
+
+
+def _sebi_item(payload):
+    return {"step": "SEBI RHP download", "status": "ok", "duration": 0,
+            "output": "SEBI_DOWNLOAD_SUMMARY=" + __import__("json").dumps(payload)}
+
+
+def test_healthy_bounded_sebi_progress_is_green_and_backlog_visible(capsys, monkeypatch):
+    item = _sebi_item({"this_run":{"succeeded":4,"failed":0,"retries":0},
+                       "backlog":{"pending":1033,"owner_action_exhausted":0},
+                       "status":"RETRY_PENDING"})
+    cron.attach_sebi_status(item)
+    assert item["status"] == "ok" and item["reason"] == "ok/progress_pending"
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    assert cron.report([item], 0, dry=False, targets=[], market_targets=[]) == 0
+    assert "backlog_pending=1033" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [
+    {"this_run":{"succeeded":3,"failed":1}, "backlog":{"pending":1}, "status":"PARTIAL"},
+    {"this_run":{"succeeded":4,"failed":0},
+     "backlog":{"pending":1,"owner_action_exhausted":1}, "status":"PARTIAL"},
+])
+def test_sebi_failure_or_exhaustion_remains_nonzero(payload, monkeypatch):
+    item = _sebi_item(payload); cron.attach_sebi_status(item)
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    assert item["status"] == "partial"
+    assert cron.report([item], 0, dry=False, targets=[], market_targets=[]) == 3
+
+
+def test_empty_sebi_backlog_is_green_and_missing_summary_fails_closed():
+    item = _sebi_item({"this_run":{"succeeded":0,"failed":0},
+                       "backlog":{"pending":0,"owner_action_exhausted":0}, "status":"OK"})
+    cron.attach_sebi_status(item); assert item["status"] == "ok"
+    broken = {"status":"ok", "output":"", "step":"SEBI", "duration":0}
+    cron.attach_sebi_status(broken); assert broken["status"] == "failed"
+
+
+def test_market_selector_is_independent_listed_stale_first_cohort():
+    class Cursor:
+        def execute(self, sql, params):
+            normalized = " ".join(sql.split())
+            assert "i.listing_date IS NOT NULL" in normalized
+            assert "NULLIF(trim(i.symbol),'') IS NOT NULL" in normalized
+            assert "issue_size_cr" not in normalized
+            assert "GREATEST(d.latest,m.latest) ASC NULLS FIRST" in normalized
+            assert params == (cron.ACTIVE_DAYS, 2)
+        def fetchall(self): return [(20,"Ardee",__import__("datetime").date.today()), (21,"Stale",__import__("datetime").date.today())]
+    class Conn:
+        def cursor(self): return Cursor()
+    assert [row[0] for row in cron.select_market(Conn(), 2)] == [20, 21]
 
 
 def test_runbook_path_and_commands_contract():

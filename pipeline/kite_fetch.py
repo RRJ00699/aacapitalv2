@@ -20,7 +20,7 @@ writers into the V2 tables.
   python kite_fetch.py --limit 5 --write
   python kite_fetch.py --ids 285 --write --days 60
 """
-import os, sys, io, argparse, datetime as dt, traceback
+import os, sys, io, argparse, datetime as dt, traceback, json
 from pathlib import Path
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -345,6 +345,8 @@ def main():
         for ipo_id, isin, symbol, name, listing_date in targets:
             print(f"  dry id={ipo_id} isin={isin} symbol={symbol} listing_date={listing_date} name={name}")
         print("  Nothing was written; Kite authentication/network calls were not attempted.")
+        print("KITE_DAILY_SUMMARY=" + json.dumps({"selected": len(targets),
+              "token_resolved": 0, "token_unresolved": len(targets), "failed": 0}, sort_keys=True))
         return
     try:
         kite = get_kite()
@@ -377,6 +379,9 @@ def main():
             traceback.print_exc(file=sys.stdout)
     print(f"\n  done. {ok}/{len(targets)} with a token · {failed} failed."
           + ("" if write else "  Nothing was written."))
+    print("KITE_DAILY_SUMMARY=" + json.dumps({"selected": len(targets),
+          "token_resolved": ok, "token_unresolved": len(targets)-ok,
+          "failed": failed}, sort_keys=True))
     # A step where EVERY IPO threw is a failed step. Exiting 0 let the 08-01 cron print
     # "6. Kite candles + listing outcomes  ok" over four CheckViolations — a green light
     # on a run in which nothing was written is worse than no light at all.
