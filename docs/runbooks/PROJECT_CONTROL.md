@@ -149,6 +149,21 @@ snapshot name: pipeline-health:v1  (KV, published by the pipeline like ipo-comma
 Contextual themes (market-session, verdict-driven, time-of-day) are **out of
 scope** and remain an owner decision — not built in the theme v1.
 
+### 4c. Deferred producer contracts (backlog — Codex owns, Claude consumes)
+
+These are removals recorded as **deferred contracts, not silent deletions**: the
+data returns to the UI the moment there is an evidenced producer behind it.
+
+| # | Backlog item | Owner → Consumer | State |
+| --- | --- | --- | --- |
+| B-1 | **Codex producer: publish `strategy_backtest{cohort, win_rate, n, median}`** as a contracted, evidenced field so quantitative performance can return to the UI. Until then, `playbook_verdict` / `house_stack_stat` historical percentages must **not** render. UI (Claude) consumes `strategy_backtest` only after it ships. | Codex → Claude | NOT STARTED |
+| B-2 | **Codex producer: publish `pipeline-health:v1`** (KV snapshot, §4a) so the Admin overview can show live per-lane health without a Neon web query. UI classifier (`lib/admin/lane-status.ts`) is ready and unit-tested. | Codex → Claude | NOT STARTED |
+
+Rationale: the "77%-edge"-class percentages were removed from the Command Center
+this cycle because nothing evidenced backed them at the consumer. B-1 is the path
+for those numbers to come back — owned by Codex (the producer), consumed by Claude
+(the UI) only once the contract exists.
+
 ---
 
 ## 5. Capability rows
