@@ -73,7 +73,8 @@ def test_kite_fetch_requires_structured_refresh_success():
     assert not cron.kite_refresh_guarantees_fetch("skipped", "SKIPPED_NOT_ACTIVATED")
     assert not cron.kite_refresh_guarantees_fetch("failed", "FAILED_LOGIN")
     assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_ROTATED")
-    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_VALIDATED_ONLY")
+    assert not cron.kite_refresh_guarantees_fetch("skipped", "SUCCESS_VALIDATED_ONLY")
+    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_VALIDATED_HANDED_OFF")
 
 
 @pytest.mark.parametrize("refresh_status,marker,expected_calls", [

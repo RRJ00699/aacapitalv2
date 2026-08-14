@@ -34,7 +34,8 @@ SNAPSHOT_PUBLISH_SCRIPT = "pipeline/publish_snapshot_with_ledger.py"
 # Canonical snapshot producer invoked by the protected publisher: "warm_kv.py"
 
 KITE_REFRESH_STATUS_TO_STEP = {
-    "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "ok",
+    "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "skipped",
+    "SUCCESS_VALIDATED_HANDED_OFF": "ok",
     "SKIPPED_NOT_ACTIVATED": "skipped", "FAILED_LOGIN": "failed",
     "FAILED_ROTATION": "failed", "FAILED_VERIFICATION": "failed",
 }
@@ -346,7 +347,7 @@ def classify_kite_refresh(returncode, output):
 def kite_refresh_guarantees_fetch(refresh_status, structured_status):
     """Only structured refresh success proves kite_fetch's token source is usable."""
     return (refresh_status == "ok"
-            and structured_status in {"SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY"})
+            and structured_status in {"SUCCESS_ROTATED", "SUCCESS_VALIDATED_HANDED_OFF"})
 
 
 def attach_lane_counts(item, key):
@@ -434,6 +435,7 @@ def run_kite_live(ids, rotation_missing):
     """Refresh then fetch only when the refresh proves the shared token is usable."""
     results = []
     token_ready = False
+    structured = None
     if rotation_missing:
         results.append(skip("Kite token refresh", "owner: configure " +
                             ", ".join(rotation_missing) + " for activated rotation"))
@@ -444,6 +446,9 @@ def run_kite_live(ids, rotation_missing):
         refresh["status"] = refresh_status
         if structured == "SKIPPED_NOT_ACTIVATED":
             refresh["reason"] = "owner: activate Kite token rotation"
+        elif structured == "SUCCESS_VALIDATED_ONLY":
+            refresh["reason"] = ("owner: set ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1 "
+                                 "with KITE_REFRESH_VALIDATE_ONLY=1")
         results.append(refresh)
         token_ready = kite_refresh_guarantees_fetch(refresh_status, structured)
     if token_ready:
@@ -469,10 +474,12 @@ def run_kite_live(ids, rotation_missing):
             if detector["status"] != "failed": attach_lane_counts(detector, "TOP_DETECTOR")
             results.append(detector)
     else:
-        results.append(skip("Daily candles/outcomes",
-                            "owner: refresh did not guarantee a usable kite_fetch token"))
-        results.append(skip("15-min candles", "owner: refresh did not guarantee a usable kite_fetch token"))
-        results.append(skip("TOP DISCOVERY", "owner: 15-min candle supply unavailable"))
+        reason = ("owner: set ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1 with "
+                  "KITE_REFRESH_VALIDATE_ONLY=1" if structured == "SUCCESS_VALIDATED_ONLY"
+                  else "owner: refresh did not guarantee a usable kite_fetch token")
+        results.append(skip("Daily candles/outcomes", reason))
+        results.append(skip("15-min candles", reason))
+        results.append(skip("TOP DISCOVERY", reason))
     return results
 
 

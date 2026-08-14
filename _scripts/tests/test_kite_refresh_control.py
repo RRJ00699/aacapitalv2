@@ -45,6 +45,32 @@ def test_login_success_validate_only(monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == "KITE_REFRESH_STATUS=SUCCESS_VALIDATED_ONLY"
 
 
+def test_validate_only_with_legacy_handoff_is_downstream_ready(monkeypatch, capsys):
+    monkeypatch.setenv("KITE_REFRESH_VALIDATE_ONLY", "1")
+    monkeypatch.setenv("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE", "1")
+    monkeypatch.setenv("KITE_REFRESH_TEST_VERIFICATION", "success")
+    refresh = load_refresh(); pairs = []
+    monkeypatch.setattr(refresh, "legacy_save_to_db",
+                        lambda key, token: pairs.append((key, token)) or True)
+    assert refresh.main() == 0
+    assert pairs == [(refresh.API_KEY, "test-only-sensitive-access-token")]
+    output = capsys.readouterr().out
+    assert output.strip() == "KITE_REFRESH_STATUS=SUCCESS_VALIDATED_HANDED_OFF"
+    assert "test-only-sensitive-access-token" not in output
+
+
+def test_failed_handoff_cannot_report_ready(monkeypatch, capsys):
+    monkeypatch.setenv("KITE_REFRESH_VALIDATE_ONLY", "1")
+    monkeypatch.setenv("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE", "1")
+    monkeypatch.setenv("KITE_REFRESH_TEST_VERIFICATION", "success")
+    refresh = load_refresh()
+    monkeypatch.setattr(refresh, "legacy_save_to_db",
+                        lambda *_: (_ for _ in ()).throw(RuntimeError("write failed")))
+    monkeypatch.setattr(refresh, "_alert", lambda *_: None)
+    assert refresh.main() == 1
+    assert capsys.readouterr().out.strip() == "KITE_REFRESH_STATUS=FAILED_ROTATION"
+
+
 def test_missing_broker_config_fails_only_when_activated(monkeypatch, capsys):
     refresh = load_refresh()
     assert refresh.main() == 0
@@ -105,7 +131,7 @@ def test_default_has_no_database_or_kv_token_write(monkeypatch):
     refresh = load_refresh()
     monkeypatch.setattr(refresh.psycopg2, "connect",
                         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("database write")))
-    refresh.legacy_save_to_db("secret-token")
+    refresh.legacy_save_to_db("secret-key", "secret-token")
     source = SCRIPT.read_text(encoding="utf8")
     assert "KVNamespace" not in source
     assert "broker:kite:access-token" not in source
@@ -126,10 +152,13 @@ def test_legacy_database_write_requires_explicit_rollback_flag(monkeypatch):
         def close(self): pass
 
     monkeypatch.setattr(refresh.psycopg2, "connect", lambda *_a, **_k: Connection())
-    refresh.legacy_save_to_db("secret-token")
+    refresh.legacy_save_to_db("secret-key", "secret-token")
     assert executed == []
     monkeypatch.setenv("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE", "1")
-    refresh.legacy_save_to_db("secret-token")
+    refresh.legacy_save_to_db("secret-key", "secret-token")
+    assert executed == []
+    monkeypatch.setenv("KITE_REFRESH_VALIDATE_ONLY", "1")
+    refresh.legacy_save_to_db("secret-key", "secret-token")
     assert any("platform_config" in query for query, _ in executed)
     assert any("kite_session" in query for query, _ in executed)
 
@@ -154,7 +183,8 @@ def test_cron_classifies_every_structured_status():
     spec.loader.exec_module(cron)
     expected = {
         "SUCCESS_ROTATED": (0, "ok"),
-        "SUCCESS_VALIDATED_ONLY": (0, "ok"),
+        "SUCCESS_VALIDATED_ONLY": (0, "skipped"),
+        "SUCCESS_VALIDATED_HANDED_OFF": (0, "ok"),
         "SKIPPED_NOT_ACTIVATED": (0, "skipped"),
         "FAILED_LOGIN": (1, "failed"),
         "FAILED_ROTATION": (1, "failed"),

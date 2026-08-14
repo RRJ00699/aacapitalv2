@@ -165,22 +165,24 @@ def exchange_token(request_token: str) -> str:
     return data["access_token"]
 
 
-def legacy_save_to_db(access_token: str):
-    """Temporary rollback switch. Disabled unless ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1.
+def legacy_save_to_db(api_key: str, access_token: str) -> bool:
+    """Atomically hand off one complete credential pair for owner-PC candle jobs.
 
     TODO/ADR Stage 2: delete this function and its call immediately after all
     three owner proofs are complete: broker Worker Secret rotation succeeds,
     broker verification succeeds, and rollback drill succeeds.
     """
-    if os.environ.get("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") != "1":
+    if not (os.environ.get("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") == "1"
+            and os.environ.get("KITE_REFRESH_VALIDATE_ONLY") == "1"):
         log.info("legacy platform_config token write skipped")
-        return
+        return False
     log.warning("LEGACY development-only platform_config token write enabled")
     conn = psycopg2.connect(DATABASE_URL)
-    cur  = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    # Ensure table exists
-    cur.execute("""
+        # Ensure table exists
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS platform_config (
             key        VARCHAR(255) PRIMARY KEY,
             value      TEXT NOT NULL,
@@ -188,8 +190,15 @@ def legacy_save_to_db(access_token: str):
         )
     """)
 
-    # Upsert token
-    cur.execute("""
+        # API key and access token are committed in the same transaction. Downstream
+        # resolution therefore reads a pair from one source, never a mixed pair.
+        cur.execute("""
+        INSERT INTO platform_config (key, value, updated_at)
+        VALUES ('kite_api_key', %s, NOW())
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    """, [api_key])
+        cur.execute("""
         INSERT INTO platform_config (key, value, updated_at)
         VALUES ('kite_access_token', %s, NOW())
         ON CONFLICT (key)
@@ -197,7 +206,7 @@ def legacy_save_to_db(access_token: str):
     """, [access_token])
 
     # Also record last refresh time
-    cur.execute("""
+        cur.execute("""
         INSERT INTO platform_config (key, value, updated_at)
         VALUES ('kite_token_refreshed_at', %s, NOW())
         ON CONFLICT (key)
@@ -208,22 +217,25 @@ def legacy_save_to_db(access_token: str):
     # kite_session, NOT platform_config. Missing this bridge left the worker
     # bookless on the 2026-07-16 listing morning (last web login was June 13).
     # Upsert the same fresh token there so both stores refresh together.
-    cur.execute("""
+        cur.execute("""
         UPDATE kite_session
            SET access_token = %s, created_at = NOW(),
                expires_at = NOW() + interval '20 hours'
          WHERE user_id = 'owner'
     """, (access_token,))
-    if cur.rowcount == 0:
-        cur.execute("""
+        if cur.rowcount == 0:
+            cur.execute("""
             INSERT INTO kite_session (access_token, user_id, created_at, expires_at)
             VALUES (%s, 'owner', NOW(), NOW() + interval '20 hours')
         """, (access_token,))
-    log.info("Token bridged to kite_session (worker store)")
-
-    conn.commit()
-    conn.close()
-    log.info(f"Token saved to Neon platform_config + kite_session")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    log.info("Complete Kite credential pair handed off to database")
+    return True
 
 
 def rotate_worker_secret(access_token: str) -> None:
@@ -316,8 +328,8 @@ def _alert(msg: str):
 
 
 STATUSES = {
-    "SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY", "SKIPPED_NOT_ACTIVATED",
-    "FAILED_LOGIN", "FAILED_ROTATION", "FAILED_VERIFICATION",
+    "SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY", "SUCCESS_VALIDATED_HANDED_OFF",
+    "SKIPPED_NOT_ACTIVATED", "FAILED_LOGIN", "FAILED_ROTATION", "FAILED_VERIFICATION",
 }
 
 
@@ -366,17 +378,18 @@ def main():
         _alert("Kite login/token exchange failed. Listing-day ticker and candle sync will skip until fixed.")
         return _finish("FAILED_LOGIN")
 
-    try:
-        legacy_save_to_db(access_token)
-    except Exception as exc:
-        log.error("Explicit legacy rollback write failed: %s", type(exc).__name__)
-        _alert("Explicit legacy Kite token rollback write failed.")
-        return _finish("FAILED_ROTATION")
-
     if os.environ.get("EXECUTE_CLOUDFLARE_SECRET_ROTATION") != "1":
         if os.environ.get("KITE_REFRESH_VALIDATE_ONLY") == "1":
             if verify_token(access_token):
-                log.info("Kite token validated; broker activation remains disabled")
+                if os.environ.get("ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") == "1":
+                    try:
+                        legacy_save_to_db(API_KEY, access_token)
+                    except Exception as exc:
+                        log.error("Kite credential handoff failed: %s", type(exc).__name__)
+                        _alert("Validated Kite credential pair could not be handed off.")
+                        return _finish("FAILED_ROTATION")
+                    return _finish("SUCCESS_VALIDATED_HANDED_OFF")
+                log.info("Kite token validated in-process; downstream handoff disabled")
                 return _finish("SUCCESS_VALIDATED_ONLY")
             log.error("Kite token validation failed; live overlay remains disabled")
             _alert("Kite token validation failed. Live overlay remains disabled.")

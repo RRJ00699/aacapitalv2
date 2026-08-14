@@ -33,10 +33,11 @@ def test_no_kite_token_written_to_kv_or_public_env():
 def test_rotation_default_does_not_write_platform_config_token():
     src = read("_scripts", "refresh_kite_token.py")
     assert "def legacy_save_to_db" in src
-    assert 'ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") != "1"' in src
+    assert 'ALLOW_LEGACY_KITE_DB_TOKEN_WRITE") == "1"' in src
+    assert 'KITE_REFRESH_VALIDATE_ONLY") == "1"' in src
     assert "rotate_worker_secret(access_token)" in src
     main_after = src.split("def main():", 1)[1]
-    assert "save_to_db(access_token)" not in main_after.replace("legacy_save_to_db(access_token)", "")
+    assert "legacy_save_to_db(API_KEY, access_token)" in main_after
     assert "access_token[:8]" not in src
 
 
