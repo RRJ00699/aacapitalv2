@@ -70,3 +70,12 @@ def test_compute_decision_delegates_to_pure_decide():
     # compute_decision reads facts then calls decide(); the pure function is the taxonomy.
     src = inspect.getsource(ve.compute_decision)
     assert "decide(" in src
+
+
+def test_execution_and_diff_use_identical_shared_cohort():
+    assert "universe_sql()" in inspect.getsource(ve._universe)
+    src = inspect.getsource(ve.diff)
+    assert "universe_sql()" in src
+    assert "ipo_issue" not in src
+    # Shared predicate admits discovery-created announced mainboard rows without issue rows.
+    assert "ANNOUNCED" in ve.universe_sql().upper()

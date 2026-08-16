@@ -20,7 +20,7 @@ writers into the V2 tables.
   python kite_fetch.py --limit 5 --write
   python kite_fetch.py --ids 285 --write --days 60
 """
-import os, sys, io, argparse, datetime as dt, traceback
+import os, sys, io, argparse, datetime as dt, traceback, json
 from pathlib import Path
 if __name__ == "__main__":
     try: sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -320,23 +320,21 @@ def main():
         from fill_v2 import ensure_15m_table
         with_db(ensure_15m_table)          # idempotent; creates market_candles_15m once
     def select_targets(conn):
+        from nse_fetch import CANONICAL_UNIVERSE_SQL
         cur = conn.cursor()
         if a.ids:
             ids = [int(x) for x in a.ids.split(",") if x.strip()]
-            cur.execute("""SELECT id, isin, symbol, name_display, listing_date FROM ipo
-                            WHERE id = ANY(%s) ORDER BY id""", (ids,))
+            cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date FROM ipo i
+                            WHERE {CANONICAL_UNIVERSE_SQL}
+                              AND i.id = ANY(%s) ORDER BY i.id""", (ids,))
             return cur.fetchall()
-        # Scope ALIGNED to the score/verdict engines (score_engine.py): is_mainboard
-        # AND issue_size_cr >= 150cr. Was in_backtest_universe (641 rows), which left
-        # 105 score-scope IPOs with no candle attempt at all — kite candles must cover
-        # the SAME 699 the pipeline scores/verdicts. Scalar subquery (not a JOIN) so a
-        # multi-row ipo_issue can't fan out the target list. NULL size -> treated as
-        # large (999999), matching the engines' COALESCE.
-        cur.execute("""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
+        # Scope is aligned to the official structured mainboard spine and the 100-day
+        # monitoring window. An ipo_issue row is required classification evidence;
+        # issue size is deliberately not an eligibility condition.
+        cur.execute(f"""SELECT i.id, i.isin, i.symbol, i.name_display, i.listing_date
                         FROM ipo i
-                        WHERE i.is_mainboard = TRUE
-                          AND COALESCE((SELECT ii.issue_size_cr FROM ipo_issue ii
-                                        WHERE ii.ipo_id = i.id LIMIT 1), 999999) >= 150
+                        WHERE {CANONICAL_UNIVERSE_SQL}
+                          AND i.listing_date BETWEEN current_date-100 AND current_date
                         ORDER BY i.listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
         return cur.fetchall()
     targets = with_db(select_targets)
@@ -347,6 +345,8 @@ def main():
         for ipo_id, isin, symbol, name, listing_date in targets:
             print(f"  dry id={ipo_id} isin={isin} symbol={symbol} listing_date={listing_date} name={name}")
         print("  Nothing was written; Kite authentication/network calls were not attempted.")
+        print("KITE_DAILY_SUMMARY=" + json.dumps({"selected": len(targets),
+              "token_resolved": 0, "token_unresolved": len(targets), "failed": 0}, sort_keys=True))
         return
     try:
         kite = get_kite()
@@ -369,16 +369,23 @@ def main():
             for n in r["notes"]:
                 print(f"       [note] {n}")
             ok += 1 if r["token"] else 0
+            # Authentication/request errors are returned as notes by process so that
+            # one IPO cannot abort the batch. They still make this selected target fail.
+            if any("candles failed:" in note for note in r["notes"]):
+                failed += 1
         except Exception as e:
             failed += 1
             print(f"  ! id={ipo_id}: {type(e).__name__}: {str(e)[:120]}")
             traceback.print_exc(file=sys.stdout)
     print(f"\n  done. {ok}/{len(targets)} with a token · {failed} failed."
           + ("" if write else "  Nothing was written."))
+    print("KITE_DAILY_SUMMARY=" + json.dumps({"selected": len(targets),
+          "token_resolved": ok, "token_unresolved": len(targets)-ok,
+          "failed": failed}, sort_keys=True))
     # A step where EVERY IPO threw is a failed step. Exiting 0 let the 08-01 cron print
     # "6. Kite candles + listing outcomes  ok" over four CheckViolations — a green light
     # on a run in which nothing was written is worse than no light at all.
-    if targets and failed == len(targets):
+    if targets and failed:
         sys.exit(1)
 
 

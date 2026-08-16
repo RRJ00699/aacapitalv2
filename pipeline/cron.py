@@ -34,7 +34,8 @@ SNAPSHOT_PUBLISH_SCRIPT = "pipeline/publish_snapshot_with_ledger.py"
 # Canonical snapshot producer invoked by the protected publisher: "warm_kv.py"
 
 KITE_REFRESH_STATUS_TO_STEP = {
-    "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "ok",
+    "SUCCESS_ROTATED": "ok", "SUCCESS_VALIDATED_ONLY": "skipped",
+    "SUCCESS_VALIDATED_HANDED_OFF": "ok",
     "SKIPPED_NOT_ACTIVATED": "skipped", "FAILED_LOGIN": "failed",
     "FAILED_ROTATION": "failed", "FAILED_VERIFICATION": "failed",
 }
@@ -109,31 +110,37 @@ def db(*, attempts=4, base_delay=2.0, sleep=time.sleep):
     raise last  # pragma: no cover - the loop returns or raises above
 
 
-def with_db(fn, *args, attempts=2, **kwargs):
-    """Run fn(conn) on a fresh connection. If the session dies mid-call
-    (OperationalError), reconnect and retry the whole unit of work, bounded by attempts.
-    The pipeline's writers are idempotent (COALESCE-empty-only / ON CONFLICT), so a retry
-    never double-applies. db() itself already retries the connect. measure_db() wraps this,
-    so report-critical reads inherit both the connect retry and the session-death retry."""
-    last = None
+def with_db(fn, *args, **kwargs):
+    """Invoke an arbitrary callback exactly once; only connection opening retries."""
+    conn = db()
+    try:
+        return fn(conn, *args, **kwargs)
+    finally:
+        conn.close()
+
+
+def with_db_read_retry(fn, *args, attempts=2, **kwargs):
+    """Retry a report-only SELECT callback on a fresh session.
+
+    This helper is deliberately used only by ``measure_db``. Writers, SBI/R2,
+    paid work and publication must use the one-shot ``with_db`` seam above.
+    """
     for attempt in range(attempts):
         conn = db()
         try:
             return fn(conn, *args, **kwargs)
-        except psycopg2.OperationalError as exc:
-            last = exc
-            if attempt == attempts - 1:
+        except psycopg2.OperationalError:
+            if attempt + 1 == attempts:
                 raise
         finally:
             conn.close()
-    raise last  # pragma: no cover - the loop returns or raises above
 
 
 def measure_db(steps, name, fn, default, *args, **kwargs):
     """Run one report-critical DB measurement without jeopardising the report."""
     started = time.monotonic()
     try:
-        return with_db(fn, *args, **kwargs), True
+        return with_db_read_retry(fn, *args, **kwargs), True
     except Exception as exc:
         tail = traceback.format_exc().strip().splitlines()[-12:]
         print(f"\n=== {name}\n    failed - {type(exc).__name__}: {exc}")
@@ -161,15 +168,16 @@ def spent_today(conn):
 
 
 def select_active(conn, limit, backfill=False):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur = conn.cursor()
     if backfill:
-        cur.execute("""SELECT id,name_display,listing_date FROM ipo
-                       WHERE in_backtest_universe=TRUE AND COALESCE(is_mainboard,TRUE)=TRUE
+        cur.execute(f"""SELECT id,name_display,listing_date FROM ipo i
+                       WHERE in_backtest_universe=TRUE AND {CANONICAL_UNIVERSE_SQL}
                        ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (limit,))
         return cur.fetchall(), "BACKFILL (most recently listed)"
-    cur.execute("""SELECT i.id,i.name_display,i.listing_date FROM ipo i
+    cur.execute(f"""SELECT i.id,i.name_display,i.listing_date FROM ipo i
       LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-      WHERE i.is_mainboard=TRUE
+      WHERE {CANONICAL_UNIVERSE_SQL}
       AND ((i.listing_date IS NOT NULL AND i.listing_date>=current_date-%s)
         OR (i.listing_date IS NULL AND (ii.close_date>=current_date-30
           OR ii.open_date>=current_date-30 OR EXISTS
@@ -178,6 +186,27 @@ def select_active(conn, limit, backfill=False):
       ORDER BY COALESCE(i.listing_date,current_date+365) DESC LIMIT %s""",
                 (ACTIVE_DAYS, DOC_FRESH_DAYS, limit))
     return cur.fetchall(), f"ACTIVE (unlisted, or listed within {ACTIVE_DAYS}d)"
+
+
+def select_market(conn, limit):
+    """Independently bounded listed cohort, prioritising missing then stale bars."""
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    cur = conn.cursor()
+    cur.execute(f"""SELECT i.id,i.name_display,i.listing_date
+      FROM ipo i
+      LEFT JOIN (SELECT ipo_id,max(d)::timestamptz AS latest FROM market_candles GROUP BY ipo_id) d
+        ON d.ipo_id=i.id
+      LEFT JOIN (SELECT ipo_id,max(ts) AS latest FROM market_candles_15m GROUP BY ipo_id) m
+        ON m.ipo_id=i.id
+      WHERE {CANONICAL_UNIVERSE_SQL}
+        AND i.listing_date IS NOT NULL
+        AND i.listing_date BETWEEN (now() AT TIME ZONE 'Asia/Kolkata')::date-%s
+                               AND (now() AT TIME ZONE 'Asia/Kolkata')::date
+        AND NULLIF(trim(i.symbol),'') IS NOT NULL
+      ORDER BY (d.latest IS NULL AND m.latest IS NULL) DESC,
+               GREATEST(d.latest,m.latest) ASC NULLS FIRST,i.id
+      LIMIT %s""", (ACTIVE_DAYS, limit))
+    return cur.fetchall()
 
 
 def script(relative: str) -> Path:
@@ -267,6 +296,12 @@ def discovery_counts(item):
 def identity_counts(item):
     data = next((value for value in reversed(structured_objects(item.get("output", "")))
                  if "selected" in value and "rows" in value), None)
+    skipped = next((value for value in reversed(structured_objects(item.get("output", "")))
+                    if value.get("status") == "skipped"), None)
+    if skipped:
+        item.update(status="skipped", reason=skipped.get("reason", "source_unavailable"))
+        item["evidence"] = skipped.get("evidence")
+        return {}
     if data is None:
         item.update(status="failed", reason="required child output contract absent: identity counts")
         return {}
@@ -312,7 +347,7 @@ def classify_kite_refresh(returncode, output):
 def kite_refresh_guarantees_fetch(refresh_status, structured_status):
     """Only structured refresh success proves kite_fetch's token source is usable."""
     return (refresh_status == "ok"
-            and structured_status in {"SUCCESS_ROTATED", "SUCCESS_VALIDATED_ONLY"})
+            and structured_status in {"SUCCESS_ROTATED", "SUCCESS_VALIDATED_HANDED_OFF"})
 
 
 def attach_lane_counts(item, key):
@@ -336,6 +371,45 @@ def attach_lane_counts(item, key):
                           **{f"state_{k}": v for k, v in data.get("state_counts", {}).items()}}
 
 
+def attach_daily_counts(item):
+    prefix = "KITE_DAILY_SUMMARY="
+    lines = [line[len(prefix):] for line in item.get("output", "").splitlines()
+             if line.startswith(prefix)]
+    if not lines:
+        item.update(status="failed", reason="required child output contract absent: KITE_DAILY_SUMMARY")
+        return
+    try:
+        item["counts"] = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        item.update(status="failed", reason="malformed KITE_DAILY_SUMMARY")
+
+
+def attach_sebi_status(item):
+    prefix = "SEBI_DOWNLOAD_SUMMARY="
+    lines = [line[len(prefix):] for line in item.get("output", "").splitlines()
+             if line.startswith(prefix)]
+    if not lines:
+        item.update(status="failed", reason="required downloader summary absent")
+        return
+    try:
+        data = json.loads(lines[-1])
+    except (json.JSONDecodeError, TypeError):
+        item.update(status="failed", reason="malformed downloader summary")
+        return
+    item["counts"] = {f"this_run_{key}": value for key, value in data.get("this_run", {}).items()}
+    item["counts"].update({f"backlog_{key}": value for key, value in data.get("backlog", {}).items()})
+    exhausted = data.get("backlog", {}).get("owner_action_exhausted", 0)
+    if exhausted:
+        item["owner_action"] = f"owner: retry or resolve {exhausted} exhausted SEBI filing(s)"
+    current = data.get("this_run", {})
+    backlog = data.get("backlog", {})
+    if (data.get("status") == "RETRY_PENDING" and current.get("succeeded", 0) > 0
+            and current.get("failed", 0) == 0 and not exhausted):
+        item.update(status="ok", reason="ok/progress_pending")
+    elif data.get("status") in {"PARTIAL", "RETRY_PENDING"}:
+        item.update(status="partial", reason=data["status"])
+
+
 def completeness_plan(conn, ids):
     from completeness import check_completeness
     return [check_completeness(conn, ipo_id) for ipo_id in ids]
@@ -344,15 +418,24 @@ def completeness_plan(conn, ids):
 def completeness_counts(before, after=None):
     later = {row["ipo_id"]: row for row in (after or before)}
     return {str(row["ipo_id"]):
-            f"{row['completeness_pct']}->{later[row['ipo_id']]['completeness_pct']}% "
-            f"missing={later[row['ipo_id']]['missing']} retry={later[row['ipo_id']]['retry_lanes']}"
+            f"before={row['completeness_pct']}% after={later[row['ipo_id']]['completeness_pct']}% "
+            f"missing={len(later[row['ipo_id']]['missing'])} pending={len(later[row['ipo_id']]['pending'])} "
+            f"retry={later[row['ipo_id']]['retry_lanes']}"
             for row in before}
+
+
+def write_completeness_manifest(rows):
+    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    path = TEMP_ROOT / "completeness-missing.json"
+    path.write_text(json.dumps(rows, default=str, indent=2, sort_keys=True), encoding="utf-8")
+    return path
 
 
 def run_kite_live(ids, rotation_missing):
     """Refresh then fetch only when the refresh proves the shared token is usable."""
     results = []
     token_ready = False
+    structured = None
     if rotation_missing:
         results.append(skip("Kite token refresh", "owner: configure " +
                             ", ".join(rotation_missing) + " for activated rotation"))
@@ -363,25 +446,40 @@ def run_kite_live(ids, rotation_missing):
         refresh["status"] = refresh_status
         if structured == "SKIPPED_NOT_ACTIVATED":
             refresh["reason"] = "owner: activate Kite token rotation"
+        elif structured == "SUCCESS_VALIDATED_ONLY":
+            refresh["reason"] = ("owner: set ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1 "
+                                 "with KITE_REFRESH_VALIDATE_ONLY=1")
         results.append(refresh)
         token_ready = kite_refresh_guarantees_fetch(refresh_status, structured)
     if token_ready:
-        results.append(run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
-                           ["--ids", ids, "--write", "--no-15m"], timeout=900, cwd=PIPELINE_DIR))
+        daily = run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
+                    ["--ids", ids, "--write", "--no-15m"], timeout=900, cwd=PIPELINE_DIR)
+        if daily["status"] != "failed": attach_daily_counts(daily)
+        results.append(daily)
+        if daily["status"] == "failed":
+            reason = "daily candles/outcomes failed; dependent Kite lanes not run"
+            results.append(skip("15-min candles", reason))
+            results.append(skip("TOP DISCOVERY", reason))
+            return results
         limit = max(1, len([value for value in ids.split(",") if value]))
         candles = run("15-min candles", KITE_FETCH_15M_SCRIPT,
                       ["--ids", ids, "--limit", limit, "--write"], timeout=900, cwd=PIPELINE_DIR)
         if candles["status"] != "failed": attach_lane_counts(candles, "FIFTEEN_MIN_CANDLES")
         results.append(candles)
-        detector = run("TOP DISCOVERY", TOP_DETECTOR_SCRIPT,
-                       ["--ids", ids, "--limit", limit, "--write"], timeout=300, cwd=PIPELINE_DIR)
-        if detector["status"] != "failed": attach_lane_counts(detector, "TOP_DETECTOR")
-        results.append(detector)
+        if candles["status"] == "failed":
+            results.append(skip("TOP DISCOVERY", "15-min candles failed; TOP requires fresh input"))
+        else:
+            detector = run("TOP DISCOVERY", TOP_DETECTOR_SCRIPT,
+                           ["--ids", ids, "--limit", limit, "--write"], timeout=300, cwd=PIPELINE_DIR)
+            if detector["status"] != "failed": attach_lane_counts(detector, "TOP_DETECTOR")
+            results.append(detector)
     else:
-        results.append(skip("Daily candles/outcomes",
-                            "owner: refresh did not guarantee a usable kite_fetch token"))
-        results.append(skip("15-min candles", "owner: refresh did not guarantee a usable kite_fetch token"))
-        results.append(skip("TOP DISCOVERY", "owner: 15-min candle supply unavailable"))
+        reason = ("owner: set ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1 with "
+                  "KITE_REFRESH_VALIDATE_ONLY=1" if structured == "SUCCESS_VALIDATED_ONLY"
+                  else "owner: refresh did not guarantee a usable kite_fetch token")
+        results.append(skip("Daily candles/outcomes", reason))
+        results.append(skip("15-min candles", reason))
+        results.append(skip("TOP DISCOVERY", reason))
     return results
 
 
@@ -391,14 +489,17 @@ def classify_sbi_configuration(config):
             "WARNING_CONFIGURATION_ERROR": "warning"}.get(config.status, "configured")
 
 
-def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, spent=0.0):
+def report(steps, started, *, dry, targets, market_targets=None,
+           selector_available=True, market_selector_available=True, cap=0.0, spent=0.0):
     duration = time.monotonic() - started
     failed = [s for s in steps if s["status"] == "failed"]
-    total = "failed" if failed else ("dry" if dry else "ok")
+    partial = [s for s in steps if s["status"] == "partial"]
+    total = "failed" if failed else ("partial/retry_required" if partial else ("dry" if dry else "ok"))
     print("\n" + "=" * 72)
     print("END-OF-RUN REPORT")
     active = str(len(targets)) if selector_available else "UNKNOWN — selector failed"
-    print(f"total status: {total} | runtime: {duration:.1f}s | active IPOs: {active}")
+    market = str(len(market_targets or [])) if market_selector_available else "UNKNOWN — selector failed"
+    print(f"total status: {total} | runtime: {duration:.1f}s | active pipeline IPOs: {active} | market IPOs: {market}")
     for item in steps:
         why = f" | {item['reason']}" if item.get("reason") else ""
         print(f"{item['status']:7} {item['duration']:7.1f}s  {item['step']}{why}")
@@ -415,10 +516,11 @@ def report(steps, started, *, dry, targets, selector_available=True, cap=0.0, sp
            else (snapshot.get("reason", snapshot["status"]) if snapshot else "not run")))
     print(f"paid calls: {'0 (dry-run)' if dry else f'bounded by ${cap:.2f}; measured ${spent:.3f}'}")
     print(f"production writes: {'0 (dry-run)' if dry else 'authorized by this live command; see steps'}")
-    actions = [s["reason"] for s in steps if s.get("reason", "").startswith("owner:")]
+    actions = [value for s in steps for value in (s.get("reason"), s.get("owner_action"))
+               if value and value.startswith("owner:")]
     print("owner actions still required: " + ("; ".join(actions) if actions else "none"))
     print("=" * 72)
-    return 1 if failed else 0
+    return 1 if failed else (3 if partial else 0)
 
 
 def parse_args(argv=None):
@@ -449,8 +551,11 @@ def main(argv=None):
     if dry or args.skip_download or args.skip_rhp_download:
         steps.append(skip("SEBI RHP download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
-        steps.append(run("SEBI RHP download", RHP_DOWNLOAD_SCRIPT,
-                         ["--max", args.max_rhps], timeout=2400))
+        sebi = run("SEBI RHP download", RHP_DOWNLOAD_SCRIPT,
+                   ["--max", args.max_rhps], timeout=2400)
+        if sebi["status"] != "failed":
+            attach_sebi_status(sebi)
+        steps.append(sebi)
     if dry or args.skip_download:
         steps.append(skip("SBI note download", "dry-run: external download disabled" if dry else "owner: command-line download skip"))
     else:
@@ -480,6 +585,11 @@ def main(argv=None):
         print(f"selector: {scope}; selected={len(targets)}")
     ids = ",".join(str(row[0]) for row in targets)
     target_ids = [row[0] for row in targets]
+    market_targets, market_selector_ok = measure_db(
+        steps, "Market IPO selector", select_market, [], args.limit)
+    market_ids = ",".join(str(row[0]) for row in market_targets)
+    print(f"Market IPO selector = {'ok' if market_selector_ok else 'failed'}; selected="
+          f"{len(market_targets) if market_selector_ok else 'UNKNOWN'}")
     pre_completeness, pre_ok = (measure_db(steps, "Pre-run V2 completeness plan",
                                            completeness_plan, [], target_ids)
                                 if selector_ok and target_ids else ([], selector_ok))
@@ -538,7 +648,17 @@ def main(argv=None):
         steps.append(skip("Anchor allocation parsing",
                           "owner: BLOCKER_ANCHOR_OFFICIAL_SOURCE_UNPROVEN"))
         kite_ready, kite_missing, rotation_missing = kite_configuration()
-        if args.skip_kite or not kite_ready:
+        if not market_selector_ok:
+            reason = "market selector failed; dependent market work skipped"
+            steps.extend([skip("Kite token refresh", reason), skip("Daily candles/outcomes", reason),
+                          skip("15-min candles", reason), skip("TOP DISCOVERY", reason)])
+        elif not market_targets:
+            reason = "no eligible listed IPOs in market cohort"
+            steps.extend([skip("Kite token refresh", reason, counts={"selected": 0}),
+                          skip("Daily candles/outcomes", reason, counts={"selected": 0}),
+                          skip("15-min candles", reason, counts={"selected": 0}),
+                          skip("TOP DISCOVERY", reason, counts={"selected": 0})])
+        elif args.skip_kite or not kite_ready:
             reason = "owner: configure " + ", ".join(kite_missing) if not kite_ready else "owner: --skip-kite selected"
             steps.append(skip("Kite token refresh", reason))
             steps.append(skip("Daily candles/outcomes", reason))
@@ -546,18 +666,20 @@ def main(argv=None):
             steps.append(skip("TOP DISCOVERY", "owner: 15-min candle supply unavailable"))
         elif dry:
             steps.append(skip("Kite token refresh", "dry-run: authentication/network operation disabled"))
-            steps.append(run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
-                             ["--ids", ids, "--dry-run", "--no-15m"], dry=True, timeout=300, cwd=PIPELINE_DIR))
+            daily = run("Daily candles/outcomes", KITE_FETCH_SCRIPT,
+                        ["--ids", market_ids, "--dry-run", "--no-15m"], dry=True, timeout=300, cwd=PIPELINE_DIR)
+            if daily["status"] != "failed": attach_daily_counts(daily)
+            steps.append(daily)
             candles = run("15-min candles", KITE_FETCH_15M_SCRIPT,
-                          ["--ids", ids, "--limit", args.limit, "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR)
+                          ["--ids", market_ids, "--limit", len(market_targets), "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR)
             if candles["status"] != "failed": attach_lane_counts(candles, "FIFTEEN_MIN_CANDLES")
             steps.append(candles)
             detector = run("TOP DISCOVERY", TOP_DETECTOR_SCRIPT,
-                           ["--ids", ids, "--limit", args.limit, "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR)
+                           ["--ids", market_ids, "--limit", len(market_targets), "--dry-run"], dry=True, timeout=300, cwd=PIPELINE_DIR)
             if detector["status"] != "failed": attach_lane_counts(detector, "TOP_DETECTOR")
             steps.append(detector)
         else:
-            steps.extend(run_kite_live(ids, rotation_missing))
+            steps.extend(run_kite_live(market_ids, rotation_missing))
 
         if dry:
             steps.append(skip("RHP paid extraction", "dry-run: paid extraction disabled"))
@@ -578,8 +700,10 @@ def main(argv=None):
         post_completeness, post_ok = measure_db(steps, "Post-run V2 completeness measurement",
                                                 completeness_plan, [], target_ids)
         if post_ok:
+            manifest_path = write_completeness_manifest(post_completeness)
             steps.append({"step": "Post-run V2 completeness measurement",
                           "status": "dry" if dry else "ok", "duration": 0.0,
+                          "reason": f"full detail: {manifest_path}",
                           "counts": completeness_counts(pre_completeness, post_completeness)})
         steps.append(skip("Database-backed Listing rules layers",
                           "owner: rule_validation_results production producer is quarantined; canonical ownership decision required"))
@@ -610,7 +734,9 @@ def main(argv=None):
     after, after_ok = ((before, before_ok) if dry else
                        measure_db(steps, "Spend after measurement", spent_today, before))
     return report(steps, started, dry=dry, targets=targets,
-                  selector_available=selector_ok, cap=cap, spent=max(0.0, after-before))
+                  market_targets=market_targets, selector_available=selector_ok,
+                  market_selector_available=market_selector_ok,
+                  cap=cap, spent=max(0.0, after-before))
 
 
 if __name__ == "__main__":

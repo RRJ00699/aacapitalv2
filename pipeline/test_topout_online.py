@@ -1,6 +1,6 @@
 import datetime as dt
 
-from pipeline.topout_online import bearish_candle, detect_top
+from pipeline.topout_online import bearish_candle, detect_top, input_is_fresh, IST
 
 
 def bar(high, low, close, volume=10, opening=None):
@@ -15,6 +15,27 @@ def test_no_signal_and_researched_lower_high_watch_are_deterministic():
     result = detect_top(bars)
     assert result["state"] == "WATCH"
     assert result["watch_kind"] == "A"
+
+
+def test_newest_fourth_lower_high_bar_enters_watch():
+    result = detect_top([bar(high, high - 2, high - 1) for high in (10, 9, 8, 7)])
+    assert result["state"] == "WATCH"
+
+
+def test_freshness_uses_ist_and_rejects_partial_current_session():
+    utc = dt.timezone.utc
+    evaluated = dt.datetime(2026, 8, 13, 9, 30, tzinfo=utc)  # 15:00 IST
+    before_close = dt.datetime(2026, 8, 13, 9, 45, tzinfo=utc)  # 15:15 IST
+    after_close = dt.datetime(2026, 8, 13, 10, 1, tzinfo=utc)  # 15:31 IST
+    assert not input_is_fresh(evaluated, dt.date(2026, 8, 12), before_close)
+    assert input_is_fresh(evaluated, dt.date(2026, 8, 13), after_close)
+    assert input_is_fresh(dt.datetime(2026,8,7,10,tzinfo=utc), dt.date(2026,8,7),
+                          dt.datetime(2026,8,10,8,tzinfo=IST))
+    # Target stopped Friday while market-wide reference reached Wednesday.
+    assert not input_is_fresh(dt.datetime(2026,8,7,10,tzinfo=utc), dt.date(2026,8,12),
+                              dt.datetime(2026,8,12,11,tzinfo=IST))
+    assert not input_is_fresh(dt.datetime(2026,8,12,10,tzinfo=utc), None,
+                              dt.datetime(2026,8,12,16,tzinfo=IST))
 
 
 def test_sourced_bearish_candle_definitions_are_preserved():

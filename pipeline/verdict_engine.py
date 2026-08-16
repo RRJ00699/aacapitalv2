@@ -38,12 +38,11 @@ SEVERE_JUNK = {"sebi_action", "going_concern", "fraud", "inflated_figures"}
 
 # The verdict run covers mainboard IPOs (was in_backtest_universe=TRUE, which starved
 # every NEW listing of a V2 verdict — Indo-MIM/Lohia/Xtranet were stuck on v1-import).
-# is_mainboard alone is unreliable (fill_ipo defaults it to True), so it doesn't exclude
-# SME issues — add the >=Rs.150cr floor so we don't write verdicts for IPOs not traded.
-# (NULL issue_size => kept, via COALESCE, for size-pending upcoming names.)
-UNIVERSE_SQL = ("SELECT i.id FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id "
-                "WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 "
-                "ORDER BY i.id")
+# Reuse the discovery/backfill-owned structured spine selector. Incorrect canonical
+# is_mainboard data requires deterministic ingest/backfill repair, not a name heuristic.
+def universe_sql():
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    return f"SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL} ORDER BY i.id"
 
 def _latest_valuation(cur, ipo_id):
     # newest v2-score-% row (was hardcoded 'v2-score-1'). LIKE excludes v2-rhp-1, which
@@ -162,7 +161,7 @@ def write_decision(conn, ipo_id, d):
     conn.commit()
 
 def _universe(cur):
-    cur.execute(UNIVERSE_SQL)
+    cur.execute(universe_sql())
     return [r[0] for r in cur.fetchall()]
 
 def report(good_set=None):
@@ -185,8 +184,7 @@ def diff(good_set="strong", show_all=False):
     """READ-ONLY. BEFORE (current latest stored verdict) -> AFTER (recomputed) for every
     IPO whose verdict changes. JUNK->GOOD is broken out separately (finding #1)."""
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
-    cur.execute("""SELECT i.id, i.name_display FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-                   WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 ORDER BY i.id""")
+    cur.execute(universe_sql().replace("SELECT i.id", "SELECT i.id, i.name_display", 1))
     ipos=cur.fetchall()
     cur.execute("""SELECT DISTINCT ON (ipo_id) ipo_id, fundamental_verdict
                    FROM decisions ORDER BY ipo_id, decided_at DESC""")

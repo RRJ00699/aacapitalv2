@@ -298,8 +298,9 @@ def check_completeness(conn, ipo_id, today=None):
         val_missing = [m for m in v[1]
                        if not m.startswith(("pe_derived", "pb_derived", "ofs_pct_not"))
                        and not m.endswith("_not_in_rhp")]
-    for m in val_missing:
-        missing.append(f"valuation.{m}")
+    # ``valuation.<rows>`` is the single stable stage requirement. missing_inputs
+    # explains why an owned score row is null; it must not create denominator keys
+    # merely because the row was inserted. Keep it in detail, not requirements.
 
     # Has a v2-full RHP extraction landed? Decides whether RHP-only columns are
     # "missing" (extraction ran and did not produce it) or "awaiting" (never ran).
@@ -327,7 +328,8 @@ def check_completeness(conn, ipo_id, today=None):
                 pending=sorted(f"{k} ({v})" for k, v in pend.items()),
                 **summary,
                 present=sorted(present),
-                engine_version=(v[0] if v else None))
+                engine_version=(v[0] if v else None),
+                valuation_missing_inputs=sorted(val_missing))
 
 
 def ntfy_line(rep):
@@ -344,6 +346,7 @@ def ntfy_line(rep):
 
 
 def main():
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids", help="comma-separated ipo ids")
     ap.add_argument("--limit", type=int, default=5)
@@ -362,7 +365,7 @@ def main():
     if a.ids:
         ids = [int(x) for x in a.ids.split(",") if x.strip()]
     else:
-        cur.execute("""SELECT id FROM ipo WHERE in_backtest_universe=TRUE
+        cur.execute(f"""SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL}
                         ORDER BY listing_date DESC NULLS LAST LIMIT %s""", (a.limit,))
         ids = [r[0] for r in cur.fetchall()]
 

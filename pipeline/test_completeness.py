@@ -38,3 +38,13 @@ def test_subscription_no_row_to_partial_is_fixed_and_pending_stays_in_denominato
     assert partial["retry_lanes"] == ["NSE lifecycle", "anchor"]
     assert pending["completeness_pct"] == 0.0 and pending["retry_lanes"] == []
     assert retry_lane("subscription_snapshots.anchor_count") == "anchor"
+
+
+def test_empty_valuation_row_cannot_enlarge_denominator():
+    base_present = fields("financial_statements", FINANCIAL_FIELDS[:2])
+    base_missing = fields("financial_statements", FINANCIAL_FIELDS[2:])
+    absent = summarize_requirements(base_present, base_missing + ["valuation.<rows>"], {})
+    # Five nullable missing_inputs belong to the row's diagnostic detail, not requirements.
+    empty_row = summarize_requirements(base_present + ["valuation.<rows>"], base_missing, {})
+    assert absent["required_total"] == empty_row["required_total"] == 6
+    assert empty_row["completeness_pct"] >= absent["completeness_pct"]

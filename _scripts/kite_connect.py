@@ -31,30 +31,33 @@ except Exception:
 
 log = logging.getLogger(__name__)
 
-API_KEY      = os.environ.get("KITE_API_KEY", "br9m41pn8nvvywnl")
+API_KEY      = os.environ.get("KITE_API_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
-def get_token_from_db() -> str:
+def get_credentials_from_db() -> tuple[str, str]:
     """Read active Kite access token from Neon platform_config."""
     if not DATABASE_URL:
         raise Exception("DATABASE_URL not set")
 
     conn = psycopg2.connect(DATABASE_URL)
-    cur  = conn.cursor()
-    cur.execute("SELECT value, updated_at FROM platform_config WHERE key = 'kite_access_token'")
-    row = cur.fetchone()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT key, value, updated_at FROM platform_config
+                       WHERE key IN ('kite_api_key','kite_access_token')""")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
 
-    if not row:
-        raise Exception(
-            "No kite_access_token in Neon platform_config.\n"
-            "Run: python _scripts/refresh_kite_token.py"
-        )
+    values = {row[0]: row[1] for row in rows}
+    key, token = values.get("kite_api_key"), values.get("kite_access_token")
+    if not key or not token:
+        raise Exception("Incomplete database Kite credential pair; configure both kite_api_key and kite_access_token")
+    return key, token
 
-    token, updated_at = row
-    log.info(f"Token from DB (updated: {str(updated_at)[:16]})")
-    return token
+
+def get_token_from_db() -> str:
+    return get_credentials_from_db()[1]
 
 
 def get_token() -> str:
@@ -81,9 +84,29 @@ def get_token() -> str:
     )
 
 
+def resolve_credentials() -> tuple[str, str, str]:
+    """Return one complete, unmixed credential pair and its non-secret source."""
+    db_error = None
+    if DATABASE_URL:
+        try:
+            key, token = get_credentials_from_db()
+            return key, token, "database"
+        except Exception as exc:
+            db_error = type(exc).__name__
+    env_key = os.environ.get("KITE_API_KEY", "")
+    env_token = os.environ.get("KITE_ACCESS_TOKEN", "")
+    if env_key and env_token:
+        return env_key, env_token, "environment"
+    if env_key or env_token:
+        raise Exception("Incomplete environment Kite credential pair; set both KITE_API_KEY and KITE_ACCESS_TOKEN")
+    reason = f"; database lookup failed ({db_error})" if db_error else ""
+    raise Exception("No complete Kite credential pair available" + reason)
+
+
 def get_kite() -> KiteConnect:
     """Return an authenticated KiteConnect instance."""
-    token = get_token()
-    kite  = KiteConnect(api_key=API_KEY)
+    api_key, token, source = resolve_credentials()
+    log.info("Using Kite credentials from %s", source)
+    kite  = KiteConnect(api_key=api_key)
     kite.set_access_token(token)
     return kite

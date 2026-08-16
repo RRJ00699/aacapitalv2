@@ -16,6 +16,7 @@ TIER 2 (SILENT, never alerts): rounding-top WATCH, tracked two ways:
 The separately researched bottom mirror is not promoted in this owner-approved scope.
 """
 import os, argparse, datetime as dt, json, statistics as st
+from zoneinfo import ZoneInfo
 import psycopg2
 def f(x):
     try: return float(x)
@@ -76,7 +77,7 @@ def run_ipo(b, CLIMAX, REJECT, LH_N, MA_N, ACCEL, NBAR, VOLWIN, RETEST,
     ar_low=None; ar_low_frozen=None; retest_high=None; retest_vol=None
     trigger=None; max_state="IDLE"; fire_path=None
     _order={"IDLE":0,"BC_ARMED":1,"AR_CONFIRMED":2,"FAILED_RETEST":3,"SOW_FIRE":4}
-    for t in range(n-1):
+    for t in range(n):
         if hs[t] is None: continue
         # --- TIER 2 watch state (silent) ---
         if t>=LH_N:
@@ -103,7 +104,7 @@ def run_ipo(b, CLIMAX, REJECT, LH_N, MA_N, ACCEL, NBAR, VOLWIN, RETEST,
 
         # Researched Tier-1 contract: decision is emitted only once the next real bar
         # supplies rejection confirmation. This is the sole permitted next-bar read.
-        next_close = cs[t+1]
+        next_close = cs[t+1] if t + 1 < n else None
         if (is_new_high and climax and next_close is not None
                 and next_close < hs[t]*(1-REJECT/100)):
             alert_bar=t+1; alert_px=next_close; fire_path="TIER1_REJECTION"
@@ -204,11 +205,22 @@ def level_is_permitted(conn):
     definitions=" ".join(str(row[0]) for row in cur.fetchall()).lower()
     return not definitions or "obs_type" not in definitions or "level" in definitions
 
+IST = ZoneInfo("Asia/Kolkata")
+
+def input_is_fresh(evaluated, latest_completed_session, now=None):
+    """Use the stored daily-session series as the holiday-aware session source."""
+    now_ist = (now or dt.datetime.now(dt.timezone.utc)).astimezone(IST)
+    evaluated_ist = evaluated.astimezone(IST)
+    if evaluated_ist.date() == now_ist.date() and now_ist.time() < dt.time(15, 30):
+        return False
+    return latest_completed_session is not None and evaluated_ist.date() >= latest_completed_session
+
 def run(conn, *, limit, dry_run, ids=None):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur=conn.cursor()
     clause="AND i.id = ANY(%s)" if ids is not None else ""
     params=([ids, limit] if ids is not None else [limit])
-    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE EXISTS
+    cur.execute(f"""SELECT i.id,i.name_display FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL} AND EXISTS
       (SELECT 1 FROM market_candles_15m c WHERE c.ipo_id=i.id) {clause}
       ORDER BY i.id LIMIT %s""", params)
     targets=cur.fetchall()
@@ -219,6 +231,21 @@ def run(conn, *, limit, dry_run, ids=None):
         cur.execute("SELECT ts,o,h,l,c,v FROM market_candles_15m WHERE ipo_id=%s ORDER BY ts", (ipo_id,))
         bars=[dict(zip(("ts","o","h","l","c","v"), row)) for row in cur.fetchall()]
         result=detect_top(bars); evaluated=bars[-1]["ts"]
+        # market_candles is the existing market-wide structured session source: it
+        # represents weekends and exchange holidays without comparing an IPO to itself.
+        cur.execute("""SELECT max(d) FROM market_candles WHERE
+                       d <= CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::time < time '15:30'
+                         THEN (now() AT TIME ZONE 'Asia/Kolkata')::date-1
+                         ELSE (now() AT TIME ZONE 'Asia/Kolkata')::date END""")
+        latest_session=(cur.fetchone() or [None])[0]
+        if not input_is_fresh(evaluated, latest_session):
+            payload={"detector_version":DETECTOR_VERSION,
+                     "evaluated_through_bar":evaluated.isoformat(), "label":"DISCOVERY",
+                     "state":"STALE_INPUT", "alert":False, "trigger":None,
+                     "max_state":"STALE_INPUT"}
+            counts["STALE_INPUT"]=counts.get("STALE_INPUT",0)+1
+            states.append({"ipo_id":ipo_id,"name":name,"inserted":0,**payload})
+            continue
         payload={"detector_version":DETECTOR_VERSION,"evaluated_through_bar":evaluated.isoformat(),
                  "label":"DISCOVERY",**result}
         inserted=0

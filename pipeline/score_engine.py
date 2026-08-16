@@ -405,15 +405,16 @@ def selftest():
     conn.close(); return ok
 
 def run_all(write=False):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     conn=psycopg2.connect(os.environ["DATABASE_URL"]); cur=conn.cursor()
     # Was in_backtest_universe=TRUE, which skipped new listings on a manual --all run.
     # drive.py already scores new IPOs by calling compute_valuation directly; this makes
     # the batch run match that scope. is_mainboard defaults to True (unreliable), so add
     # the >=Rs.150cr floor to exclude SME issues (same scope as verdict_engine).
-    cur.execute("""SELECT i.id FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
-                   WHERE i.is_mainboard=TRUE AND COALESCE(ii.issue_size_cr,999999)>=150 ORDER BY i.id""")
+    cur.execute(f"""SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL}
+                   ORDER BY i.id""")
     ids=[r[0] for r in cur.fetchall()]
-    print(f"computing valuation for {len(ids)} mainboard IPOs (>=Rs.150cr) (write={write})")
+    print(f"computing valuation for {len(ids)} mainboard IPOs (write={write})")
     bands={}; scored=0
     for i,iid in enumerate(ids,1):
         v=compute_valuation(conn, iid)

@@ -207,11 +207,8 @@ def main(argv=None):
         # shape (so the orchestrator's counts parser still reads selected/updates) and
         # return so the process exits 0. A genuine fault (DB, parse, or any other
         # unexpected exception) is deliberately NOT caught here and still exits non-zero.
-        result = {"headers": [], "selected": 0,
-                  "selected_by_need": {"isin": 0, "listing_date": 0},
-                  "selector_quotas": {"isin": 0, "listing_date": 0},
-                  "quote_calls": 0, "updates": 0, "rows": [],
-                  "skipped": "source_unavailable", "detail": str(exc)}
+        result = {"status": "skipped", "reason": "source_unavailable",
+                  "evidence": {"source": "NSE EQUITY_L.csv", "detail": str(exc)}}
     finally:
         conn.close()
     print(json.dumps(result, default=str, indent=2, sort_keys=True))

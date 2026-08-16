@@ -73,7 +73,8 @@ def test_kite_fetch_requires_structured_refresh_success():
     assert not cron.kite_refresh_guarantees_fetch("skipped", "SKIPPED_NOT_ACTIVATED")
     assert not cron.kite_refresh_guarantees_fetch("failed", "FAILED_LOGIN")
     assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_ROTATED")
-    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_VALIDATED_ONLY")
+    assert not cron.kite_refresh_guarantees_fetch("skipped", "SUCCESS_VALIDATED_ONLY")
+    assert cron.kite_refresh_guarantees_fetch("ok", "SUCCESS_VALIDATED_HANDED_OFF")
 
 
 @pytest.mark.parametrize("refresh_status,marker,expected_calls", [
@@ -92,6 +93,8 @@ def test_kite_live_handshake_blocks_or_allows_fetch(monkeypatch, refresh_status,
                     "rc": rc, "output": f"KITE_REFRESH_STATUS={marker}\n"}
         marker_output = ({cron.KITE_FETCH_15M_SCRIPT:
                           'FIFTEEN_MIN_CANDLES={"selected":1}',
+                          cron.KITE_FETCH_SCRIPT:
+                          'KITE_DAILY_SUMMARY={"selected":1,"token_resolved":1,"token_unresolved":0,"failed":0}',
                           cron.TOP_DETECTOR_SCRIPT:
                           'TOP_DETECTOR={"selected":1,"state_counts":{}}'}
                          .get(target, ""))
@@ -143,7 +146,7 @@ def test_zero_target_report_has_timings_counts_and_snapshot_proof(capsys, monkey
     output = capsys.readouterr().out
     assert "END-OF-RUN REPORT" in output
     assert "runtime: 2.5s" in output
-    assert "active IPOs: 0" in output
+    assert "active pipeline IPOs: 0 | market IPOs: 0" in output
     assert "consumer_source=active" in output
 
 
@@ -209,7 +212,7 @@ def test_spend_query_failure_skips_paid_subprocess(monkeypatch, capsys, failed_m
         raise AssertionError(fn)
 
     monkeypatch.setattr(cron, "run", fake_run)
-    monkeypatch.setattr(cron, "with_db", fake_with_db)
+    monkeypatch.setattr(cron, "with_db_read_retry", fake_with_db)
     rc = cron.main(["--skip-download", "--skip-kite"])
     output = capsys.readouterr().out
     paid_calls = [call for call in calls if call[0] == "RHP paid extraction"]
@@ -242,7 +245,7 @@ def test_select_active_operational_error_reaches_end_of_run_without_uncaught_tra
     assert "Active IPO selector = failed" in output
     assert "selector failed; dependent cohort work skipped" in output
     assert "no active IPOs selected" not in output
-    assert "active IPOs: UNKNOWN — selector failed" in output
+    assert "active pipeline IPOs: UNKNOWN — selector failed" in output
     assert "END-OF-RUN REPORT" in output
 
 
@@ -279,7 +282,7 @@ def test_db_raises_after_exhausting_retries(monkeypatch):
         cron.db(attempts=2, base_delay=0.0, sleep=lambda s: None)
 
 
-def test_with_db_reconnects_on_dead_session_and_always_closes(monkeypatch):
+def test_with_db_does_not_retry_callback_and_always_closes(monkeypatch):
     conns = []
     class FakeConn:
         def __init__(self): self.closed = False
@@ -291,9 +294,108 @@ def test_with_db_reconnects_on_dead_session_and_always_closes(monkeypatch):
         if calls["n"] == 1:
             raise cron.psycopg2.OperationalError("server closed the connection unexpectedly")
         return "OK"
-    assert cron.with_db(fn, attempts=2) == "OK"
-    assert calls["n"] == 2 and len(conns) == 2      # reconnected once
-    assert all(c.closed for c in conns)             # every connection released
+    with pytest.raises(cron.psycopg2.OperationalError):
+        cron.with_db(fn)
+    assert calls["n"] == 1 and len(conns) == 1
+    assert conns[0].closed
+
+
+def test_sbi_writer_cannot_be_callback_retried(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cron, "db", lambda: SimpleNamespace(close=lambda: None))
+    def run_sbi_lane(_conn):
+        calls.append(1)
+        raise cron.psycopg2.OperationalError("ambiguous commit")
+    with pytest.raises(cron.psycopg2.OperationalError):
+        cron.with_db(run_sbi_lane)
+    assert calls == [1]
+
+
+def test_read_retry_uses_fresh_closed_connections_and_measurement_is_available(monkeypatch):
+    conns = []
+    class Conn:
+        def __init__(self): self.closed = False
+        def close(self): self.closed = True
+    monkeypatch.setattr(cron, "db", lambda: conns.append(Conn()) or conns[-1])
+    calls = []
+    def measurement(_conn):
+        calls.append(1)
+        if len(calls) == 1:
+            raise cron.psycopg2.OperationalError("dead read session")
+        return 0
+    steps = []
+    value, available = cron.measure_db(steps, "zero measurement", measurement, None)
+    assert value == 0 and available and calls == [1, 1]
+    assert len(conns) == 2 and all(conn.closed for conn in conns)
+    assert steps == []
+
+
+def test_partial_step_is_retry_required_and_nonzero(capsys, monkeypatch):
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    rc = cron.report([{"step":"SEBI", "status":"partial", "duration":0,
+                       "reason":"RETRY_PENDING"}], 0, dry=False, targets=[])
+    assert rc == 3
+    assert "total status: partial/retry_required" in capsys.readouterr().out
+
+
+def test_exhausted_sebi_backlog_is_owner_visible(capsys, monkeypatch):
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    step = {"step":"SEBI", "status":"partial", "duration":0,
+            "reason":"PARTIAL", "owner_action":"owner: retry or resolve 2 exhausted SEBI filing(s)"}
+    assert cron.report([step], 0, dry=False, targets=[]) == 3
+    output = capsys.readouterr().out
+    assert "owner actions still required: owner: retry or resolve 2 exhausted" in output
+
+
+def _sebi_item(payload):
+    return {"step": "SEBI RHP download", "status": "ok", "duration": 0,
+            "output": "SEBI_DOWNLOAD_SUMMARY=" + __import__("json").dumps(payload)}
+
+
+def test_healthy_bounded_sebi_progress_is_green_and_backlog_visible(capsys, monkeypatch):
+    item = _sebi_item({"this_run":{"succeeded":4,"failed":0,"retries":0},
+                       "backlog":{"pending":1033,"owner_action_exhausted":0},
+                       "status":"RETRY_PENDING"})
+    cron.attach_sebi_status(item)
+    assert item["status"] == "ok" and item["reason"] == "ok/progress_pending"
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    assert cron.report([item], 0, dry=False, targets=[], market_targets=[]) == 0
+    assert "backlog_pending=1033" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [
+    {"this_run":{"succeeded":3,"failed":1}, "backlog":{"pending":1}, "status":"PARTIAL"},
+    {"this_run":{"succeeded":4,"failed":0},
+     "backlog":{"pending":1,"owner_action_exhausted":1}, "status":"PARTIAL"},
+])
+def test_sebi_failure_or_exhaustion_remains_nonzero(payload, monkeypatch):
+    item = _sebi_item(payload); cron.attach_sebi_status(item)
+    monkeypatch.setattr(cron.time, "monotonic", lambda: 1)
+    assert item["status"] == "partial"
+    assert cron.report([item], 0, dry=False, targets=[], market_targets=[]) == 3
+
+
+def test_empty_sebi_backlog_is_green_and_missing_summary_fails_closed():
+    item = _sebi_item({"this_run":{"succeeded":0,"failed":0},
+                       "backlog":{"pending":0,"owner_action_exhausted":0}, "status":"OK"})
+    cron.attach_sebi_status(item); assert item["status"] == "ok"
+    broken = {"status":"ok", "output":"", "step":"SEBI", "duration":0}
+    cron.attach_sebi_status(broken); assert broken["status"] == "failed"
+
+
+def test_market_selector_is_independent_listed_stale_first_cohort():
+    class Cursor:
+        def execute(self, sql, params):
+            normalized = " ".join(sql.split())
+            assert "i.listing_date IS NOT NULL" in normalized
+            assert "NULLIF(trim(i.symbol),'') IS NOT NULL" in normalized
+            assert "issue_size_cr" not in normalized
+            assert "GREATEST(d.latest,m.latest) ASC NULLS FIRST" in normalized
+            assert params == (cron.ACTIVE_DAYS, 2)
+        def fetchall(self): return [(20,"Ardee",__import__("datetime").date.today()), (21,"Stale",__import__("datetime").date.today())]
+    class Conn:
+        def cursor(self): return Cursor()
+    assert [row[0] for row in cron.select_market(Conn(), 2)] == [20, 21]
 
 
 def test_runbook_path_and_commands_contract():
