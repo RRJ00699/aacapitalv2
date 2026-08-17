@@ -67,9 +67,12 @@ export async function GET() {
           .then(j => {
             const m = j?.chart?.result?.[0]?.meta
             if (!m?.regularMarketPrice) return null
-            const prev = m.chartPreviousClose || m.previousClose || m.regularMarketPrice
+            const prev = m.chartPreviousClose || m.previousClose || null
             return { symbol: sym, regularMarketPrice: m.regularMarketPrice,
-                     regularMarketChangePercent: prev ? ((m.regularMarketPrice - prev) / prev) * 100 : 0 }
+                     // Absent previous close -> null, never 0: a flat 0.00% and a
+                     // "no comparison available" are different facts.
+                     regularMarketChange: prev ? m.regularMarketPrice - prev : null,
+                     regularMarketChangePercent: prev ? ((m.regularMarketPrice - prev) / prev) * 100 : null }
           }).catch(() => null))
       ).then(rows => ({ quoteResponse: { result: rows.filter(Boolean) } })),
 
@@ -97,13 +100,16 @@ export async function GET() {
       for (const q of yahooRes.value?.quoteResponse?.result || []) {
         const m = META[q.symbol]
         if (!m) continue
-        const pct = +(q.regularMarketChangePercent ?? 0).toFixed(2)
+        // Dead-read fix (2026-08-17): `change` was `+(q.regularMarketChange ?? 0)`
+        // against a v8 mapping that never produced that key, so every row shipped
+        // a fabricated 0.00 point change. Both fields are now null when Yahoo
+        // gives no previous close.
         global[q.symbol] = {
           ...m,
           symbol:    q.symbol,
           price:     q.regularMarketPrice,
-          change:    +(q.regularMarketChange ?? 0).toFixed(2),
-          changePct: pct,
+          change:    q.regularMarketChange == null ? null : +q.regularMarketChange.toFixed(2),
+          changePct: q.regularMarketChangePercent == null ? null : +q.regularMarketChangePercent.toFixed(2),
         }
       }
     }
