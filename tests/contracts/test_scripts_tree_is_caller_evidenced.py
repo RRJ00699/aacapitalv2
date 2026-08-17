@@ -18,7 +18,10 @@ def _inventory():
 def test_every_production_script_is_caller_evidenced_keep():
     result = graph.analyze(ROOT).production()
     assert result.files == result.keep
-    assert len(result.keep) == 53
+    # 53 -> 54: _scripts/prod/env_utils.py returned from _archive/. It was never
+    # unreachable — the resolver could not see bare sibling imports below the top
+    # level, so kite_sync_and_predict.py's `from env_utils import ...` was missed.
+    assert len(result.keep) == 54
     classifications = {row["path"]: row["classification"] for row in _inventory()}
     assert {path: classifications.get(path) for path in result.files} == {
         path: "KEEP" for path in result.files
@@ -27,9 +30,11 @@ def test_every_production_script_is_caller_evidenced_keep():
 
 def test_inventory_records_every_quarantine_move():
     moved = [row for row in _inventory() if row.get("move_destination") and "/tests/" not in row["old_path"]]
-    assert len(moved) == 121
+    # 121 -> 120 and _archive 35 -> 34: the env_utils.py quarantine was a
+    # misclassification and has been reversed, so its row is no longer a move.
+    assert len(moved) == 120
     assert sum(row["move_destination"] == "compatibility/scripts/" for row in moved) == 86
-    assert sum(row["move_destination"] == "_archive/scripts/" for row in moved) == 35
+    assert sum(row["move_destination"] == "_archive/scripts/" for row in moved) == 34
     for row in moved:
         assert row["old_path"].startswith("_scripts/")
         assert row["classification"] == row["caller_evidence"] == "UNREACHABLE"
