@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from nse_fetch import parse_discovery_item
 from nse_identity_backfill import (parse_equity_master, quote_record, refresh,
     select_isin_candidates, select_listing_date_candidates, main as backfill_main,
-    _fill_empty)
+    _fill_empty, DB_CONNECT_TIMEOUT)
 from nse_lifecycle import reconcile_discovery
 
 
@@ -206,6 +206,8 @@ def test_primary_source_non_200_raises_source_unavailable():
         refresh(conn, session, limit=1, quote_limit=0, write=False, today=dt.date(2026, 8, 11))
     except SourceUnavailable as exc:
         assert "403" in str(exc)
+        assert exc.result["rows"][0]["outcome"] == "source_unavailable"
+        assert "elapsed_ms" in exc.result["rows"][0]
     else:
         raise AssertionError("non-200 primary source must raise SourceUnavailable")
     assert conn.commits == 0  # nothing written on an unavailable source
@@ -241,7 +243,7 @@ def test_real_fault_still_exits_non_zero(capsys):
         try:
             backfill_main(["--dry-run", "--limit", "4", "--quote-limit", "2"])
         except RuntimeError as exc:
-            assert "connection reset" in str(exc)
+            assert str(exc) == "backfill_failed"
         else:
             raise AssertionError("a real fault must propagate (non-zero exit)")
     fake.close.assert_called_once()  # connection still released via finally
@@ -258,3 +260,92 @@ def test_cron_and_capture_workflow_have_structural_handshake_order():
     capture = workflow.split("  capture:", 1)[1]
     assert "nse_identity_backfill.py" not in capture
     assert "20 3 * * 1-5" in capture
+
+
+def test_quote_unavailable_classes_are_not_not_found_and_have_no_retry():
+    row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
+    for response in (Response(status=429), Response(status=503)):
+        conn = RoutedConn([row], [])
+        session = Mock(); session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"), response]
+        result = refresh(conn, session, limit=1, quote_limit=1, write=False)
+        assert result["rows"][0]["outcome"] == "source_unavailable"
+        assert session.get.call_count == 2
+    conn = RoutedConn([row], [])
+    session = Mock(); session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"), TimeoutError("secret")]
+    result = refresh(conn, session, limit=1, quote_limit=1, write=False)
+    assert result["rows"][0]["outcome"] == "source_unavailable"
+    assert session.get.call_count == 2
+
+
+def test_quote_quota_wrong_symbol_and_invalid_json_are_distinct():
+    row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
+    conn = RoutedConn([row], []); session = Mock()
+    session.get.return_value = Response(b"SYMBOL,NAME OF COMPANY\n")
+    assert refresh(conn, session, limit=1, quote_limit=0)["rows"][0]["outcome"] == "not_attempted_quote_quota"
+    conn = RoutedConn([row], []); session = Mock()
+    session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"),
+        Response(payload={"meta": {"symbol": "OTHER"}, "info": {"companyName": "Exact Limited"}})]
+    assert refresh(conn, session, limit=1, quote_limit=1)["rows"][0]["outcome"] == "exact_symbol_mismatch"
+    conn = RoutedConn([row], []); bad = Response(); bad.json = Mock(side_effect=ValueError("bad"))
+    session = Mock(); session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"), bad]
+    assert refresh(conn, session, limit=1, quote_limit=1)["rows"][0]["outcome"] == "invalid_response"
+
+
+def test_deadline_stops_later_quotes_and_every_symbol_has_elapsed_record():
+    rows = [(1, "One Limited", "ONE", None, dt.date(2026, 8, 11)),
+            (2, "Two Limited", "TWO", None, dt.date(2026, 8, 11))]
+    now = [0.0]
+    clock = lambda: now[0]
+    conn = RoutedConn(rows, []); session = Mock()
+    def get(url, **kwargs):
+        if "EQUITY_L" in url: return Response(b"SYMBOL,NAME OF COMPANY\n")
+        now[0] = 1.1
+        return Response(status=503)
+    session.get.side_effect = get
+    result = refresh(conn, session, limit=3, quote_limit=2, deadline=1.0, clock=clock)
+    assert session.get.call_count == 2
+    assert result["rows"][1]["outcome"] == "not_attempted_deadline"
+    assert all("elapsed_ms" in row and row["outcome"] for row in result["rows"])
+
+
+def test_one_quote_failure_does_not_discard_later_valid_result():
+    rows = [(1, "One Limited", "ONE", None, dt.date(2026, 8, 11)),
+            (2, "Two Limited", "TWO", None, dt.date(2026, 8, 11))]
+    conn = RoutedConn(rows, []); session = Mock()
+    session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"), TimeoutError(),
+        Response(payload={"meta": {"symbol": "TWO", "isin": "INE000000002"},
+                          "info": {"companyName": "Two Limited"}})]
+    result = refresh(conn, session, limit=3, quote_limit=2, write=False)
+    assert [r["outcome"] for r in result["rows"]] == ["source_unavailable", "would_update"]
+
+
+def test_source_fact_failure_rolls_back_field_update():
+    conn = Conn(); conn.cur.rowcount = 1
+    with patch("fill_v2.log_source_fact", side_effect=RuntimeError("fact failed")):
+        try: _fill_empty(conn, 1, "isin", "INE000000001", write=True)
+        except RuntimeError: pass
+        else: raise AssertionError("source-fact failure must propagate")
+    assert conn.rollbacks == 1 and conn.commits == 0
+
+
+def test_final_commit_failure_is_sanitized_visible_and_rolls_back():
+    conn = RoutedConn([], []); conn.commit = Mock(side_effect=RuntimeError("dsn secret"))
+    session = Mock(); session.get.return_value = Response(b"SYMBOL,NAME OF COMPANY\n")
+    try: refresh(conn, session, write=True)
+    except RuntimeError as exc: assert str(exc) == "final_commit_failed"
+    else: raise AssertionError("commit failure must propagate")
+    assert conn.rollbacks == 1
+
+
+def test_main_uses_finite_db_policy_and_redacts_connection_failure(capsys):
+    secret = "postgresql://user:password@private/db?token=abc"
+    with patch.dict("os.environ", {"DATABASE_URL": secret}), \
+         patch("psycopg2.connect", side_effect=RuntimeError(secret)) as connect:
+        try: backfill_main(["--dry-run", "--max-runtime-seconds", "240"])
+        except RuntimeError as exc: assert str(exc) == "db_connect_failed"
+        else: raise AssertionError("connect failure must propagate")
+    kwargs = connect.call_args.kwargs
+    assert kwargs == {"connect_timeout": DB_CONNECT_TIMEOUT, "keepalives": 1,
+                      "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+    output = capsys.readouterr().out
+    assert secret not in output and "password" not in output and "token=abc" not in output

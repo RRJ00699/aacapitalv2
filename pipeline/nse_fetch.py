@@ -240,11 +240,24 @@ def parse_bid_details(payload):
     return rec
 
 
-def prime(cffi):
+def prime(cffi, *, timeout_for=None, record_timing=None, sleep=time.sleep, clock=time.monotonic):
+    """Create an NSE session using caller-supplied deadline and timing hooks."""
     s = cffi.Session(impersonate="chrome124")
-    s.get(NSE_BASE, headers=HEADERS, timeout=12); time.sleep(0.8)
-    s.get(NSE_BASE + "/market-data/all-upcoming-issues-ipo", headers=HEADERS, timeout=12)
-    time.sleep(0.8)
+    for url in (NSE_BASE, NSE_BASE + "/market-data/all-upcoming-issues-ipo"):
+        timeout = timeout_for(12) if timeout_for else 12
+        started = clock()
+        outcome = "found"
+        try:
+            response = s.get(url, headers=HEADERS, timeout=timeout)
+            if getattr(response, "status_code", 200) != 200:
+                outcome = "source_unavailable"
+        except Exception:
+            outcome = "source_unavailable"
+            raise
+        finally:
+            if record_timing:
+                record_timing("nse_prime", started, timeout, outcome)
+        sleep(timeout_for(0.8) if timeout_for else 0.8)
     return s
 
 
