@@ -6,15 +6,17 @@ from unittest.mock import Mock, patch
 from nse_fetch import parse_discovery_item
 from nse_identity_backfill import (parse_equity_master, quote_record, refresh,
     select_isin_candidates, select_listing_date_candidates, main as backfill_main,
-    _fill_empty, DB_CONNECT_TIMEOUT)
+    count_legacy_unresolved, _fill_empty, DB_CONNECT_TIMEOUT)
 from nse_lifecycle import reconcile_discovery
 
 
 class Cursor:
     def __init__(self, rows=()): self.rows, self.executed, self.rowcount = iter(rows), [], 0
     def execute(self, sql, params=()):
-        self.executed.append((" ".join(sql.split()), params)); self.params = params
-    def fetchone(self): return next(self.rows)
+        normalized = " ".join(sql.split())
+        self.executed.append((normalized, params)); self.params = params
+        self.is_count = normalized.startswith("SELECT count(*)")
+    def fetchone(self): return (0,) if getattr(self, "is_count", False) else next(self.rows, None)
     def fetchall(self): return list(itertools.islice(self.rows, self.params[-1]))
 
 
@@ -31,7 +33,8 @@ class RoutedCursor:
         self.executed, self.current, self.rowcount = [], [], 0
     def execute(self, sql, params=()):
         sql = " ".join(sql.split()); self.executed.append((sql, params))
-        if "isin IS NULL AND symbol" in sql: self.current = self.isin_rows[:params[-1]]
+        if sql.startswith("SELECT count(*)"): self.current = [(0,)]
+        elif "isin IS NULL AND symbol" in sql: self.current = self.isin_rows[:params[-1]]
         elif "listing_date IS NULL" in sql: self.current = self.listing_rows[:params[-1]]
         elif "WHERE isin=%s" in sql: self.current = [next(self.owners, None)]
         else: self.current = []
@@ -113,10 +116,37 @@ def test_selectors_are_bounded_and_encode_all_predicates():
     c = Conn([]); select_isin_candidates(c, dt.date(2026,8,11), 4)
     sql, params = c.cur.executed[0]
     assert "isin IS NULL" in sql and "symbol IS NOT NULL" in sql and "listing_date IS NOT NULL" in sql
-    assert params == (dt.date(2026,8,12), 4)
+    assert "BETWEEN %s AND %s" in sql
+    assert "NOT EXISTS" in sql
+    assert params == (dt.date(2026,5,3), dt.date(2026,8,12), 4)
     c = Conn([]); select_listing_date_candidates(c, 3); sql, params = c.cur.executed[0]
-    assert "listing_date IS NULL" in sql and "symbol IS NOT NULL" in sql and "status='announced'" in sql
+    assert "listing_date IS NULL" in sql and "symbol IS NOT NULL" in sql
+    assert "'ANNOUNCED','UPCOMING','OPEN','CLOSED'" in sql and "NOT EXISTS" in sql
     assert params == (3,)
+
+
+def test_active_backfill_window_and_legacy_count_are_structured_and_bounded():
+    today = dt.date(2026, 8, 17)
+    c = Conn([]); select_isin_candidates(c, today, 5)
+    sql, params = c.cur.executed[0]
+    assert "'ANNOUNCED','UPCOMING','OPEN','CLOSED'" in sql
+    assert "i.listing_date BETWEEN %s AND %s" in sql
+    assert params == (dt.date(2026, 5, 9), dt.date(2026, 8, 18), 5)
+    c = Conn([]); assert count_legacy_unresolved(c, today) == 0
+    legacy_sql = c.cur.executed[0][0]
+    assert "SELECT count(*)" in legacy_sql and "AND NOT" in legacy_sql
+    assert "NOT EXISTS" in legacy_sql and "REIT" in legacy_sql and "INVIT" in legacy_sql
+
+
+def test_daily_15m_top_and_active_consumers_share_canonical_predicate():
+    root = Path(__file__).parent
+    consumers = ("kite_fetch.py", "kite_fetch_15m.py", "topout_online.py", "cron.py")
+    for name in consumers:
+        text = (root / name).read_text(encoding="utf-8")
+        assert "CANONICAL_UNIVERSE_SQL" in text, name
+    canonical = (root / "nse_fetch.py").read_text(encoding="utf-8")
+    assert "canonical_issue.issue_type" in canonical
+    assert "IN ('REIT','INVIT')" in canonical
 
 
 CSV = "SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nEXACT,ARDEE INDUSTRIES LIMITED,11-Aug-2026,INE000000001\nMISMATCH,Other Limited,12-Aug-2026,INE000000002\n"
@@ -346,6 +376,7 @@ def test_main_uses_finite_db_policy_and_redacts_connection_failure(capsys):
         else: raise AssertionError("connect failure must propagate")
     kwargs = connect.call_args.kwargs
     assert kwargs == {"connect_timeout": DB_CONNECT_TIMEOUT, "keepalives": 1,
-                      "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+                      "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3,
+                      "options": "-c statement_timeout=30000 -c lock_timeout=5000"}
     output = capsys.readouterr().out
     assert secret not in output and "password" not in output and "token=abc" not in output

@@ -43,18 +43,23 @@ DISCOVERY_APIS = (
     ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
 )
 
-# Single production selector owned beside official NSE discovery. It deliberately uses
-# only spine fields populated by discovery/backfill. The current schema has no structured
-# security-kind field, so a REIT/InvIT incorrectly stored as mainboard cannot be repaired
-# by SQL here; that row requires its canonical is_mainboard value to be corrected at ingest.
+# Single production selector owned beside official NSE discovery. Security kind is
+# structured on ipo_issue; NOT EXISTS keeps the predicate usable by callers regardless
+# of whether they already join that table. Names and symbols are never classification.
 CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
                           "upper(COALESCE(i.status,'')) IN "
-                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED')")
+                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED') AND "
+                          "NOT EXISTS (SELECT 1 FROM ipo_issue canonical_issue "
+                          "WHERE canonical_issue.ipo_id=i.id AND "
+                          "upper(trim(COALESCE(canonical_issue.issue_type,''))) "
+                          "IN ('REIT','INVIT'))")
 CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "LISTED"}
 
-def canonical_spine_eligible(is_mainboard, status):
+def canonical_spine_eligible(is_mainboard, status, issue_type=None):
     """Python twin for explicit-ID outcome accounting."""
-    return is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
+    kind = str(issue_type or "").strip().upper()
+    return (is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
+            and kind not in {"REIT", "INVIT"})
 HEADERS = {
     "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),

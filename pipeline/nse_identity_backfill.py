@@ -38,20 +38,42 @@ class SourceUnavailable(RuntimeError):
 
 
 def select_isin_candidates(conn, today, limit):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur = conn.cursor()
     cur.execute("""SELECT id,name_display,symbol,isin,listing_date
-        FROM ipo WHERE isin IS NULL AND symbol IS NOT NULL AND listing_date IS NOT NULL
-        AND listing_date <= %s ORDER BY listing_date,id LIMIT %s""",
-        (today + dt.timedelta(days=1), limit))
+        FROM ipo i WHERE isin IS NULL AND symbol IS NOT NULL AND listing_date IS NOT NULL
+        AND """ + CANONICAL_UNIVERSE_SQL + """
+        AND (upper(COALESCE(i.status,'')) IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED')
+          OR (upper(COALESCE(i.status,''))='LISTED'
+            AND i.listing_date BETWEEN %s AND %s))
+        ORDER BY listing_date NULLS FIRST,id LIMIT %s""",
+        (today - dt.timedelta(days=100), today + dt.timedelta(days=1), limit))
     return cur.fetchall()
 
 
 def select_listing_date_candidates(conn, limit):
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
     cur = conn.cursor()
     cur.execute("""SELECT id,name_display,symbol,isin,listing_date
-        FROM ipo WHERE listing_date IS NULL AND symbol IS NOT NULL AND status='announced'
+        FROM ipo i WHERE listing_date IS NULL AND symbol IS NOT NULL AND """ + CANONICAL_UNIVERSE_SQL + """
+        AND upper(COALESCE(i.status,'')) IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED')
         ORDER BY created_at,id LIMIT %s""", (limit,))
     return cur.fetchall()
+
+
+def count_legacy_unresolved(conn, today):
+    """Count permanent historical misses excluded from the bounded active retry lane."""
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    cur = conn.cursor()
+    cur.execute("""SELECT count(*) FROM ipo i WHERE i.symbol IS NOT NULL
+      AND (i.isin IS NULL OR i.listing_date IS NULL)
+      AND NOT (""" + CANONICAL_UNIVERSE_SQL + """ AND (
+        (i.isin IS NULL AND (upper(COALESCE(i.status,'')) IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED')
+          OR (upper(COALESCE(i.status,''))='LISTED' AND i.listing_date BETWEEN %s AND %s)))
+        OR (i.listing_date IS NULL AND upper(COALESCE(i.status,''))
+          IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED'))))""",
+        (today - dt.timedelta(days=100), today + dt.timedelta(days=1)))
+    return int((cur.fetchone() or [0])[0])
 
 
 def parse_equity_master(content):
@@ -167,6 +189,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
     isin_rows = timed_db("selector_isin", lambda: select_isin_candidates(conn, today, isin_quota))
     listing_rows = timed_db("selector_listing_date", lambda: select_listing_date_candidates(conn, listing_quota))
     selected = isin_rows + listing_rows
+    legacy_unresolved = timed_db("legacy_unresolved_count", lambda: count_legacy_unresolved(conn, today))
 
     def unavailable(reason, outcome):
         exc = SourceUnavailable(reason)
@@ -175,6 +198,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
                       "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows)},
                       "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
                       "quote_calls": 0, "updates": 0,
+                      "legacy_unresolved_not_retried": legacy_unresolved,
                       "rows": [{"ipo_id": row[0], "symbol": row[2].strip().upper(),
                                 "outcome": outcome, "source_outcome": outcome,
                                 "source": "csv", "elapsed_ms": 0.0} for row in selected],
@@ -300,6 +324,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
             "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows)},
             "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
             "quote_calls": quote_calls,
+            "legacy_unresolved_not_retried": legacy_unresolved,
             "updates": updates, "rows": report, "timings": timings,
             "elapsed_ms": round((clock()-started_run)*1000, 3)}
 
@@ -311,7 +336,7 @@ def main(argv=None):
     ap.add_argument("--max-runtime-seconds", type=float, default=240)
     args = ap.parse_args(argv)
     if not (args.write ^ args.dry_run): raise SystemExit("choose exactly one of --write or --dry-run")
-    if args.limit < 0 or args.quote_limit < 0 or args.max_runtime_seconds <= 0: raise SystemExit("limits must be positive")
+    if args.limit < 0 or args.quote_limit < 0 or args.max_runtime_seconds < 1: raise SystemExit("runtime must be at least one second; row limits must be non-negative")
     isin_quota = (args.limit + 1) // 2 if args.limit > 1 else args.limit
     print("OPERATIONS_BUDGET " + json.dumps({"max_session_prime_calls": 2, "max_csv_calls": 1,
           "max_quote_calls": args.quote_limit, "max_selected_rows": args.limit,
@@ -326,7 +351,9 @@ def main(argv=None):
     try:
         conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=connect_timeout,
                                 keepalives=1, keepalives_idle=30,
-                                keepalives_interval=10, keepalives_count=3)
+                                keepalives_interval=10, keepalives_count=3,
+                                options=(f"-c statement_timeout={min(DB_STATEMENT_TIMEOUT_MS, int(args.max_runtime_seconds*1000))} "
+                                         f"-c lock_timeout={min(DB_LOCK_TIMEOUT_MS, int(args.max_runtime_seconds*1000))}"))
     except Exception:
         timings.append({"operation": "db_connect", "elapsed_ms": round((clock()-connect_started)*1000, 3),
                         "timeout_ms": connect_timeout*1000, "outcome": "error"})

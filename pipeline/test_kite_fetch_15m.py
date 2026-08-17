@@ -31,6 +31,8 @@ def test_selector_is_progress_safe_without_issue_size_exclusion():
             assert "issue_size_cr" not in normalized
             assert "issue_size_cr" not in normalized
             assert "c.latest ASC NULLS FIRST" in normalized
+            assert "canonical_issue.issue_type" in normalized
+            assert "IN ('REIT','INVIT')" in normalized
             assert "i.id = ANY(%s)" in normalized
             assert "LIMIT" not in normalized
             assert params == [[9, 3]]
@@ -38,6 +40,16 @@ def test_selector_is_progress_safe_without_issue_size_exclusion():
     class Conn:
         def cursor(self): return Cursor()
     assert lane.select_targets(Conn(), 2, [9, 3]) == []
+
+
+def test_cube_invit_is_excluded_but_mainboard_equity_control_remains_eligible():
+    from pipeline.nse_fetch import canonical_spine_eligible
+    cube = {"id": 11, "name": "Cube Highways Trust", "is_mainboard": True,
+            "status": "listed", "issue_type": "  invit "}
+    equity = {"id": 12, "name": "Normal Mainboard Limited", "is_mainboard": True,
+              "status": "listed", "issue_type": "EQUITY"}
+    assert not canonical_spine_eligible(cube["is_mainboard"], cube["status"], cube["issue_type"])
+    assert canonical_spine_eligible(equity["is_mainboard"], equity["status"], equity["issue_type"])
 
 
 def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monkeypatch):
@@ -48,7 +60,7 @@ def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monke
     class Conn:
         def cursor(self): return Cursor()
         def rollback(self): raise AssertionError("rerun must not fail")
-    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77, True, "listed")
+    target = (7, "INE", "", "Small Mainboard", dt.datetime.now(lane.IST).date(), 77, True, "listed", "EQUITY")
     monkeypatch.setattr(lane, "select_targets", lambda conn, limit, ids: [target])
     monkeypatch.setattr(lane, "get_kite", lambda: object())
     requested = []
@@ -75,9 +87,9 @@ def test_transient_classification_is_bounded_to_transport_failures():
 
 def test_explicit_ids_are_deduplicated_and_every_unique_id_has_one_outcome(monkeypatch):
     today = dt.datetime.now(lane.IST).date()
-    rows = [(1,"I","", "eligible small",today,11,True,"listed"),
-            (2,"I","", "announced no issue",None,None,True,"announced"),
-            (3,"I","", "SME",today,33,False,"listed")]
+    rows = [(1,"I","", "eligible small",today,11,True,"listed","EQUITY"),
+            (2,"I","", "announced no issue",None,None,True,"announced","EQUITY"),
+            (3,"I","", "SME",today,33,False,"listed","EQUITY")]
     monkeypatch.setattr(lane, "select_targets", lambda *_: rows)
     result = lane.run(object(), limit=1, ids=lane.parse_ids("1,2,3,4,1"), dry_run=True)
     assert result["requested"] == 4 and result["eligible"] == 1
