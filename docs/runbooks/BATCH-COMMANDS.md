@@ -1,6 +1,30 @@
-Status: CURRENT
+Status: SUPERSEDED by docs/runbooks/DAILY_RUN.md and docs/runbooks/PRODUCTION_JOBS.md
+Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md
 
-# AACapital — Batch Command Reference
+# AACapital — Batch Command Reference (SUPERSEDED — equity era, do not run)
+
+> **Do not run anything below.** This was the equity-era batch reference. Almost
+> nothing in it still exists. Verified against the tree on 2026-08-17:
+>
+> * **9 of the 10 referenced scripts are gone** from the paths shown —
+>   `fetch_fii_dii.py`, `fetch_live_ipos.py`, `run-intelligence-scoring.ts`,
+>   `fetch_shp.py`, `loaders/load-amfi.ts`, `backfill/backfill-earnings.ts`,
+>   `seed-intelligence-sample.ts`, `run-all.bat`, and both `sql/*.sql` files.
+>   Only `_scripts/engines/market_regime.py` still exists.
+> * **All 5 GitHub Actions workflows it names are gone** —
+>   `daily-intelligence.yml`, `daily-data-engine.yml`, `ipo-data-pipeline.yml`,
+>   `monthly-amfi.yml`, `quarterly-backfill.yml`. The live set is
+>   `.github/workflows/{ci,daily-pipeline,deploy,pipeline,preopen-capture,probe-nse,sbi-notes}.yml`.
+> * Its AMFI / shareholding / commentary-scoring lanes are the equity-era
+>   surface the product contract retired; `README.md` is contract-tested to
+>   carry no such claim.
+>
+> **Read instead:** `docs/runbooks/DAILY_RUN.md` for the owner's supported daily
+> command (`python pipeline\cron.py`), and `docs/runbooks/PRODUCTION_JOBS.md`
+> for the verified production caller map.
+>
+> Retained, not deleted: it is the record of what the equity era actually ran.
+
 # Run all commands from C:\aacapital-v2
 
 ## ── DAILY (run after 6 PM IST, Mon–Fri) ──────────────────────────────────────

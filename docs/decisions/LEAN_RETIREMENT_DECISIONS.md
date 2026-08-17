@@ -18,11 +18,13 @@ host left to run this against; kept so the record shows what was asked for):
 crontab -l 2>/dev/null | grep -E 'run_ipo_pipeline_lean|pipeline/cron.py|refresh_kite_token' || true
 ```
 
-> **Open conflict for the owner.** `docs/runbooks/VM_CRON_RUNBOOK.md` is still
-> stamped `Status: CURRENT` and describes the Hetzner VM as "the automation
-> engine". That contradicts the decommissioning confirmation this row now
-> records. This cleanup does not resolve the conflict — retiring or re-stamping
-> an operational runbook is an owner call, not a hygiene change.
+> **Resolved within this PR.** `docs/runbooks/VM_CRON_RUNBOOK.md` was still
+> stamped `Status: CURRENT` and described the Hetzner VM as "the automation
+> engine", contradicting the decommissioning this row records. It is now marked
+> `Status: SUPERSEDED by docs/runbooks/DAILY_RUN.md`, with its content retained.
+> The runbook is not deleted and its schedule table stands as the record of what
+> the VM ran. Reviving the VM lane would require re-stamping it, which is an
+> owner call.
 
 ## Capability decisions
 
