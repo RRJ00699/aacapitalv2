@@ -28,12 +28,13 @@ class Conn:
 
 
 class RoutedCursor:
-    def __init__(self, isin_rows, listing_rows, owners=()):
+    def __init__(self, isin_rows, listing_rows, owners=(), legacy_count=0):
         self.isin_rows, self.listing_rows, self.owners = isin_rows, listing_rows, iter(owners)
+        self.legacy_count = legacy_count
         self.executed, self.current, self.rowcount = [], [], 0
     def execute(self, sql, params=()):
         sql = " ".join(sql.split()); self.executed.append((sql, params))
-        if sql.startswith("SELECT count(*)"): self.current = [(0,)]
+        if sql.startswith("SELECT count(*)"): self.current = [(self.legacy_count,)]
         elif "isin IS NULL AND symbol" in sql: self.current = self.isin_rows[:params[-1]]
         elif "listing_date IS NULL" in sql: self.current = self.listing_rows[:params[-1]]
         elif "WHERE isin=%s" in sql: self.current = [next(self.owners, None)]
@@ -43,8 +44,8 @@ class RoutedCursor:
 
 
 class RoutedConn(Conn):
-    def __init__(self, isin_rows, listing_rows, owners=()):
-        self.cur = RoutedCursor(isin_rows, listing_rows, owners)
+    def __init__(self, isin_rows, listing_rows, owners=(), legacy_count=0):
+        self.cur = RoutedCursor(isin_rows, listing_rows, owners, legacy_count)
         self.commits = self.rollbacks = 0
 
 
@@ -136,6 +137,16 @@ def test_active_backfill_window_and_legacy_count_are_structured_and_bounded():
     legacy_sql = c.cur.executed[0][0]
     assert "SELECT count(*)" in legacy_sql and "AND NOT" in legacy_sql
     assert "NOT EXISTS" in legacy_sql and "REIT" in legacy_sql and "INVIT" in legacy_sql
+
+
+def test_historical_unresolved_rows_are_counted_without_quote_calls():
+    conn = RoutedConn([], [], legacy_count=7)
+    session = Mock(); session.get.return_value = Response(b"SYMBOL,NAME OF COMPANY\n")
+    result = refresh(conn, session, limit=10, quote_limit=10, write=False,
+                     today=dt.date(2026, 8, 17))
+    assert result["selected"] == 0
+    assert result["legacy_unresolved_not_retried"] == 7
+    assert result["quote_calls"] == 0 and session.get.call_count == 1
 
 
 def test_daily_15m_top_and_active_consumers_share_canonical_predicate():
@@ -260,6 +271,26 @@ def test_source_unavailable_is_a_clean_no_op_that_exits_zero(capsys):
     out = capsys.readouterr().out
     assert '"status": "skipped"' in out  # visible, not a fabricated zero measurement
     fake.close.assert_called_once()  # connection released on the no-op path
+
+
+def test_prime_transport_failure_is_clean_skip_but_programming_error_is_nonzero(capsys):
+    fake = Mock(); fake.close = Mock()
+    common = (patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}),
+              patch("psycopg2.connect", return_value=fake))
+    with common[0], common[1], patch("nse_fetch.prime", side_effect=TimeoutError("timed out")):
+        result = backfill_main(["--dry-run"])
+    assert result["status"] == "skipped" and result["reason"] == "source_unavailable"
+    assert "timed out" not in capsys.readouterr().out
+
+    fake = Mock(); fake.close = Mock()
+    with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+         patch("psycopg2.connect", return_value=fake), \
+         patch("nse_fetch.prime", side_effect=ValueError("programming sentinel")):
+        try: backfill_main(["--dry-run"])
+        except RuntimeError as exc: assert str(exc) == "backfill_failed"
+        else: raise AssertionError("programming errors must exit non-zero")
+    output = capsys.readouterr().out
+    assert "programming sentinel" not in output and '"reason": "backfill_failed"' in output
 
 
 def test_real_fault_still_exits_non_zero(capsys):

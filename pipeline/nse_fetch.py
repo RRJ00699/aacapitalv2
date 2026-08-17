@@ -256,8 +256,11 @@ def prime(cffi, *, timeout_for=None, record_timing=None, sleep=time.sleep, clock
             response = s.get(url, headers=HEADERS, timeout=timeout)
             if getattr(response, "status_code", 200) != 200:
                 outcome = "source_unavailable"
-        except Exception:
+        except (cffi.RequestsError, TimeoutError, ConnectionError):
             outcome = "source_unavailable"
+            raise
+        except Exception:
+            outcome = "error"
             raise
         finally:
             if record_timing:

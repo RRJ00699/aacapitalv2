@@ -376,8 +376,12 @@ def main(argv=None):
         def prime_timing(operation, started, timeout, outcome):
             timings.append({"operation": operation, "elapsed_ms": round((clock()-started)*1000, 3),
                             "timeout_ms": round(timeout*1000, 3), "outcome": outcome})
-        try: session = prime(requests, timeout_for=timeout_for, record_timing=prime_timing)
-        except Exception: raise SourceUnavailable("nse_prime unavailable") from None
+        try:
+            session = prime(requests, timeout_for=timeout_for, record_timing=prime_timing)
+        except DeadlineExceeded:
+            raise SourceUnavailable("nse_prime deadline exhausted") from None
+        except (requests.RequestsError, TimeoutError, ConnectionError):
+            raise SourceUnavailable("nse_prime transport unavailable") from None
         result = refresh(conn, session, limit=args.limit, quote_limit=args.quote_limit,
                          write=args.write, deadline=deadline, clock=clock, timings=timings)
     except SourceUnavailable as exc:
