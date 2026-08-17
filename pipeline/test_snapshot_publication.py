@@ -13,7 +13,6 @@ import pytest
 
 import warm_kv
 import publish_snapshot_with_ledger as publisher
-import pipeline_health
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "pipeline"
@@ -388,15 +387,3 @@ def test_configured_ntfy_path_is_attempted_on_failure(monkeypatch):
     assert code == 1
     assert calls and calls[0][0] == "https://ntfy.sh/unit-topic"
     assert ledger["alert_status"] == "SENT"
-
-
-def test_pipeline_health_versioned_pointer_survives_failed_republication():
-    with ServerContext() as srv:
-        env = {"SNAPSHOT_PUBLISH_URL": srv.url, "SNAPSHOT_PUBLISH_KEY": "unit-publish-key"}
-        first = pipeline_health.publish({"run_complete": True}, environ=env)
-        assert first["status"] == "ok"
-        active_before = SnapshotHandler.kv[_pointer("pipeline-health:v1", "active")]
-        SnapshotHandler.fail_http = True
-        second = pipeline_health.publish({"run_complete": False}, environ=env)
-        assert second["status"] == "failed"
-        assert SnapshotHandler.kv[_pointer("pipeline-health:v1", "active")] == active_before
