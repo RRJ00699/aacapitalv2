@@ -1463,6 +1463,16 @@ function IpoCommand() {
               <td style={{...td,fontSize:12,color:C.meta}}>{String(c.why_trade||c.why_caution||c.why_avoid||c.score_evidence||"—").split(" ; ")[0]}</td></tr>);})}</tbody>
         </table>
         <div style={{fontSize:12,color:C.dim,marginTop:8}}>Pre-listing scores use size/valuation only — the gap weight applies itself at the open.</div>
+        {/* Honest-gap note (2026-08-17 dead-field sweep): "GMP d-1" and "Why" read
+            card fields (gmp_day_before, why_trade/why_caution/why_avoid,
+            score_evidence) that NO producer ships — the V2 command payload
+            declares gmp/news/sbi dropped. They render "—" for every row today;
+            say why instead of leaving a permanently blank column unexplained. */}
+        <div style={{fontSize:11.5,color:C.meta,marginTop:4}}>
+          GMP d-1 is blank for every row: there is no maintained grey-market source (ipo-details reports GMP as STALE, available: no).
+          Why is blank because the command payload carries no decision-reason string — the persisted reasons live on the
+          Complete Details record instead.
+        </div>
       </div>}
 
       {/* POST-LISTING AUDIT */}

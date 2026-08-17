@@ -9,6 +9,10 @@ type GRow = { label: string; value: string; change: number | null; isPct?: boole
 const C = { surface:"var(--t-surface)", border:"var(--t-border)", line:"var(--t-line)", text:"var(--t-text)",
   sub:"var(--t-sub)", meta:"var(--t-meta)", green:"var(--t-green)", red:"var(--t-red)" };
 
+// The keys /api/market/global actually ships (Yahoo symbols), in display order.
+const GLOBAL_ORDER = ["^DJI","^NDX","^GSPC","^RUT","^FTSE","^GDAXI","^FCHI","^N225","^HSI","000001.SS","^KS11",
+  "GC=F","SI=F","CL=F","NG=F","HG=F","BTC-USD","ETH-USD","DX-Y.NYB","USDINR=X"];
+
 const has = (v: unknown) => v !== null && v !== undefined && v !== "" && !(typeof v === "number" && isNaN(v));
 const num = (v: unknown) => (has(v) ? Number(v) : NaN);
 const first = (...vals: unknown[]) => vals.find(has);
@@ -37,6 +41,7 @@ export default function MarketsSidebar() {
   const [glob, setGlob] = useState<GRow[]>([]);
   const [breadth, setBreadth] = useState<{adv?:number;dec?:number;unch?:number;asof?:string}|null>(null);
   const [asOf, setAsOf] = useState<string>("");
+  const [domGaps, setDomGaps] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,44 +52,62 @@ export default function MarketsSidebar() {
     ]).then(([gg, ss]) => {
       if (!live) return;
       const g = (gg?.india) || gg || {};
-      const s = (ss?.data) || (ss?.snapshot) || ss || {};
+      const s = (ss?.data) || ss || {};   // /api/market/snapshot answers { ok, data }
       setDom({
         nifty: fmt(first(g.nifty, s.nifty_price), 0),
         niftyChg: has(first(g.niftyChg, s.nifty_change_pct)) ? num(first(g.niftyChg, s.nifty_change_pct)) : null,
         bn: fmt(first(g.bankNifty, s.banknifty_price), 0),
         bnChg: has(first(g.bankNiftyChg, s.banknifty_change_pct)) ? num(first(g.bankNiftyChg, s.banknifty_change_pct)) : null,
         vix: fmt(first(g.vix, s.vix, s.india_vix), 2),
-        fii: cr(first(g.fii, s.fii_flow, s.fii_cash_flow)),
-        dii: cr(first(g.dii, s.dii_flow, s.dii_cash_flow)),
+        // fii_cash_flow / dii_cash_flow were also dead reads: /api/market/snapshot
+        // ships fii_flow / dii_flow, and /api/market/global ships india.fii / .dii.
+        fii: cr(first(g.fii, s.fii_flow)),
+        dii: cr(first(g.dii, s.dii_flow)),
         pcr: fmt(first(g.pcr, s.pcr), 2),
       });
-      // global rows — the API returns a global map; build labeled rows
+      // Global rows. DEAD-READ FIX (2026-08-17): this used to look the map up by
+      // slugs — mk("dowjones"), mk("nasdaq"), … — which /api/market/global has
+      // never shipped; it keys by Yahoo symbol (^DJI, ^NDX, …). Every labeled
+      // row therefore resolved to null and the rail silently fell through to a
+      // raw-key fallback that printed "^DJI" as the label. Same class of bug as
+      // ListingReview's c.candles_json: a read of a field no payload carries.
+      // It now reads the real keys and the label/flag the API already ships.
       const gm = (gg?.global) || {};
       setBreadth(gg?.breadth || null);
       if (gg?.as_of) setAsOf(new Date(gg.as_of).toLocaleTimeString());
-      const mk = (k:string,label:string) => {
-        const row = gm[k]; if(!row) return null;
-        const val = first(row.value, row.price, row.last);
+      const rows: GRow[] = [];
+      for (const key of GLOBAL_ORDER) {
+        const row = gm[key];
+        if (!row || !has(row.price)) continue;      // absent stays absent — no zero row
+        // U4 contract (_scripts/tests/test_ux_premium.py pins this exact line):
+        // a percent field is always preferred over a point change, so a point
+        // change can never wear a % suffix. change_pct is kept as a defensive
+        // alias only — /api/market/global ships changePct.
         const pct = first(row.changePct, row.change_pct);
-        const chg = has(pct) ? pct : row.change;
-        return { label, value: fmt(val, 2), change: has(chg)?num(chg):null, isPct: has(pct) } as GRow;
-      };
-      const rows = [
-        mk("dowjones","🇺🇸 Dow"), mk("nasdaq","🇺🇸 Nasdaq"), mk("sp500","🇺🇸 S&P 500"),
-        mk("ftse","🇬🇧 FTSE"), mk("dax","🇩🇪 DAX"), mk("nikkei","🇯🇵 Nikkei"),
-        mk("hangseng","🇭🇰 Hang Seng"), mk("shanghai","🇨🇳 Shanghai"),
-        mk("gold","🥇 Gold"), mk("crude","🛢️ Crude"), mk("btc","₿ Bitcoin"), mk("usdinr","💵 USD/INR"),
-      ].filter(Boolean) as GRow[];
-      // fallback: if the API shape differs, flatten whatever object we got
-      if (!rows.length && gm && typeof gm === "object") {
-        for (const [k,v] of Object.entries<any>(gm)) {
-          const val = first(v?.value, v?.price, v?.last);
-          const pct = v?.changePct;
-          const chg = has(pct) ? pct : v?.change;
-          if (has(val)) rows.push({ label:k, value:fmt(val,2), change:has(chg)?num(chg):null, isPct:has(pct) });
-        }
+        rows.push({
+          label: [row.flag, row.label].filter(Boolean).join(" ") || key,
+          value: fmt(row.price, 2),
+          change: has(pct) ? num(pct) : null,
+          isPct: has(pct),
+        });
+      }
+      // Anything the API adds that this order does not name yet still renders,
+      // under its own shipped label rather than a bare symbol.
+      for (const [key, row] of Object.entries<any>(gm)) {
+        if (GLOBAL_ORDER.includes(key) || !has(row?.price)) continue;
+        rows.push({
+          label: [row.flag, row.label].filter(Boolean).join(" ") || key,
+          value: fmt(row.price, 2),
+          change: has(row?.changePct) ? num(row.changePct) : null,
+          isPct: has(row?.changePct),
+        });
       }
       setGlob(rows);
+      setDomGaps([
+        ...(has(first(g.pcr, s.pcr)) ? [] : ["PCR"]),
+        ...(has(first(g.fii, s.fii_flow)) ? [] : ["FII"]),
+        ...(has(first(g.dii, s.dii_flow)) ? [] : ["DII"]),
+      ]);
       setLoading(false);
     });
     return () => { live = false; };
@@ -103,6 +126,12 @@ export default function MarketsSidebar() {
           <Tile label="FII" value={dom.fii} tone={dom.fii.startsWith("+")?"up":dom.fii.startsWith("-")?"down":null}/>
           <Tile label="DII" value={dom.dii} tone={dom.dii.startsWith("+")?"up":dom.dii.startsWith("-")?"down":null}/>
         </div>
+        {domGaps.length ? (
+          <div style={{ fontSize:10.5, color:C.meta, marginTop:8 }}>
+            {domGaps.join(" · ")} unavailable — no maintained producer ships these fields
+            (FII/DII need daily_institutional_flows, which was never built; PCR needs a market_snapshot row).
+          </div>
+        ) : null}
       </div>
       {breadth ? (<div style={{fontSize:11.5,margin:"2px 2px 8px",color:C.sub}}>
         <b style={{color:C.green}}>Adv {breadth.adv ?? "—"}</b>{" · "}
