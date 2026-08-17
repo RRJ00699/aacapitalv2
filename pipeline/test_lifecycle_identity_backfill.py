@@ -454,7 +454,47 @@ def test_main_uses_finite_db_policy_and_redacts_connection_failure(capsys):
         else: raise AssertionError("connect failure must propagate")
     kwargs = connect.call_args.kwargs
     assert kwargs == {"connect_timeout": DB_CONNECT_TIMEOUT, "keepalives": 1,
-                      "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3,
-                      "options": "-c statement_timeout=30000 -c lock_timeout=5000"}
+                      "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+    assert "options" not in kwargs
     output = capsys.readouterr().out
     assert secret not in output and "password" not in output and "token=abc" not in output
+
+
+def test_session_timeouts_are_set_before_source_work():
+    events = []
+    conn = Mock()
+    conn.cursor.return_value.execute.side_effect = lambda sql, _params: events.append(sql)
+    def primed(*_args, **_kwargs):
+        events.append("prime")
+        return Mock()
+    with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+         patch("psycopg2.connect", return_value=conn), \
+         patch("nse_fetch.prime", side_effect=primed), \
+         patch("nse_identity_backfill.refresh", return_value={"selected": 0}):
+        backfill_main(["--dry-run"])
+    assert events[:3] == ["SET statement_timeout = %s", "SET lock_timeout = %s", "prime"]
+
+
+def test_session_timeout_configuration_failure_is_nonzero_before_network_or_writes(capsys):
+    for failing_sql in ("SET statement_timeout = %s", "SET lock_timeout = %s"):
+        executed = []
+        conn = Mock()
+        def execute(sql, _params):
+            executed.append(sql)
+            if sql == failing_sql:
+                raise RuntimeError("configuration sentinel")
+        conn.cursor.return_value.execute.side_effect = execute
+        with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+             patch("psycopg2.connect", return_value=conn), \
+             patch("nse_fetch.prime") as prime:
+            try: backfill_main(["--write"])
+            except RuntimeError as exc: assert str(exc) == "backfill_failed"
+            else: raise AssertionError("session timeout configuration failure must be non-zero")
+        prime.assert_not_called()
+        conn.commit.assert_not_called()
+        assert not any(sql.startswith("UPDATE") for sql in executed)
+        conn.rollback.assert_called_once()
+        conn.close.assert_called_once()
+    output = capsys.readouterr().out
+    assert "configuration sentinel" not in output
+    assert output.count('"reason": "backfill_failed"') == 2

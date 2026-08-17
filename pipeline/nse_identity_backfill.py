@@ -361,9 +361,7 @@ def main(argv=None):
     try:
         conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=connect_timeout,
                                 keepalives=1, keepalives_idle=30,
-                                keepalives_interval=10, keepalives_count=3,
-                                options=(f"-c statement_timeout={min(DB_STATEMENT_TIMEOUT_MS, int(args.max_runtime_seconds*1000))} "
-                                         f"-c lock_timeout={min(DB_LOCK_TIMEOUT_MS, int(args.max_runtime_seconds*1000))}"))
+                                keepalives_interval=10, keepalives_count=3)
     except Exception:
         timings.append({"operation": "db_connect", "elapsed_ms": round((clock()-connect_started)*1000, 3),
                         "timeout_ms": connect_timeout*1000, "outcome": "error"})
