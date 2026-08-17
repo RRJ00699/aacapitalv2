@@ -1,6 +1,5 @@
 path	classification	caller	caller_type	transitive_caller	proposed_action	reason	root_caller	direct_caller	complete_caller_chain	v1_tables	sbi_dependency	old_path	caller_evidence	v1_status	move_destination
 .coveragerc	UNKNOWN				RETAIN	tracked-file inventory; retained pending complete runtime-caller evidence
-.covprobe.vm.pid2096.Xfn05yqx.HNQIp837rWOh	UNKNOWN				RETAIN	tracked-file inventory; retained pending complete runtime-caller evidence
 .gitattributes	UNKNOWN				RETAIN	tracked-file inventory; retained pending complete runtime-caller evidence
 .github/workflows/ci.yml	IN_USE				RETAIN	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
 .github/workflows/deploy.yml	IN_USE				RETAIN	imports, string paths, scripts, workflows, tests, routes, and docs reviewed
