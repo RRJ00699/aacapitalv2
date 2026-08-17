@@ -1,7 +1,10 @@
 import datetime as dt
 import itertools
 from pathlib import Path
+import sqlite3
 from unittest.mock import Mock, patch
+
+import pytest
 
 from nse_fetch import parse_discovery_item
 from nse_identity_backfill import (parse_equity_master, quote_record, refresh,
@@ -54,6 +57,23 @@ def discovery(name="New Limited", symbol="COLLIDE", isin=None, category="MAINBOA
     return parse_discovery_item({"companyName": name, "symbol": symbol, "isin": isin,
         "category": category, "issueStartDate": "10-Aug-2026", "issueEndDate": "12-Aug-2026",
         "priceBand": "100-110", "lotSize": "10"})
+
+
+@pytest.mark.parametrize(("field", "marker"), [
+    ("category", "SME"), ("board", "EMERGE"),
+    ("issueType", "REIT"), ("series", "INVIT"),
+])
+def test_discovery_structured_non_mainboard_markers_are_excluded(field, marker):
+    item = {"companyName": "Structured Vehicle", "symbol": "STRUCT", "category": "IPO",
+            field: f"  {marker.lower()}  "}
+    assert parse_discovery_item(item) is None
+
+
+def test_discovery_ordinary_ipo_control_remains_mainboard():
+    row = parse_discovery_item({"companyName": "Ordinary Limited", "symbol": "ORDINARY",
+                                "category": "IPO", "issueType": "BOOK BUILT",
+                                "series": "EQ", "board": "MAINBOARD"})
+    assert row is not None and row["is_mainboard"] is True
 
 
 def test_symbol_is_never_used_as_identity_but_exact_name_is():
@@ -119,11 +139,12 @@ def test_selectors_are_bounded_and_encode_all_predicates():
     sql, params = c.cur.executed[0]
     assert "isin IS NULL" in sql and "symbol IS NOT NULL" in sql and "listing_date IS NOT NULL" in sql
     assert "BETWEEN %s AND %s" in sql
-    assert "NOT EXISTS" in sql
+    assert "i.is_mainboard=TRUE" in sql
     assert params == (dt.date(2026,5,3), dt.date(2026,8,12), 4)
     c = Conn([]); select_listing_date_candidates(c, 3); sql, params = c.cur.executed[0]
     assert "listing_date IS NULL" in sql and "symbol IS NOT NULL" in sql
-    assert "'ANNOUNCED','UPCOMING','OPEN','CLOSED'" in sql and "NOT EXISTS" in sql
+    assert "'ANNOUNCED','UPCOMING','OPEN','CLOSED'" in sql
+    assert "i.is_mainboard=TRUE" in sql
     assert params == (3,)
 
 
@@ -137,7 +158,7 @@ def test_active_backfill_window_and_legacy_count_are_structured_and_bounded():
     c = Conn([]); assert count_legacy_unresolved(c, today) == 0
     legacy_sql = c.cur.executed[0][0]
     assert "SELECT count(*)" in legacy_sql and "AND NOT" in legacy_sql
-    assert "NOT EXISTS" in legacy_sql and "REIT" in legacy_sql and "INVIT" in legacy_sql
+    assert "i.is_mainboard=TRUE" in legacy_sql
 
 
 def test_historical_unresolved_rows_are_counted_without_quote_calls():
@@ -157,8 +178,31 @@ def test_daily_15m_top_and_active_consumers_share_canonical_predicate():
         text = (root / name).read_text(encoding="utf-8")
         assert "CANONICAL_UNIVERSE_SQL" in text, name
     canonical = (root / "nse_fetch.py").read_text(encoding="utf-8")
-    assert "canonical_issue.issue_type" in canonical
-    assert "IN ('REIT','INVIT')" in canonical
+    assert "i.is_mainboard=TRUE" in canonical
+
+
+def test_selectors_execute_against_canonical_schema_fixture():
+    raw = sqlite3.connect(":memory:")
+    raw.executescript("""CREATE TABLE ipo(
+      id INTEGER PRIMARY KEY,name_display TEXT,symbol TEXT,isin TEXT,listing_date TEXT,
+      status TEXT,is_mainboard BOOLEAN,created_at TEXT);
+      CREATE TABLE ipo_issue(ipo_id INTEGER,issue_price NUMERIC,band_lo NUMERIC,band_hi NUMERIC);
+      INSERT INTO ipo VALUES
+        (11,'Cube Highways Trust','CUBEINVIT',NULL,'2026-08-01','listed',FALSE,'2026-01-01'),
+        (12,'Equity Listed','EQUITY',NULL,'2026-08-01','listed',TRUE,'2026-01-01'),
+        (13,'Equity Upcoming','UPCOMING',NULL,NULL,'announced',TRUE,'2026-08-01');""")
+    class CursorAdapter:
+        def __init__(self, cursor): self.cursor = cursor
+        def execute(self, sql, params=()):
+            values = tuple(value.isoformat() if isinstance(value, dt.date) else value for value in params)
+            return self.cursor.execute(sql.replace("%s", "?"), values)
+        def fetchall(self): return self.cursor.fetchall()
+    class SchemaConn:
+        def cursor(self): return CursorAdapter(raw.cursor())
+    today = dt.date(2026, 8, 17)
+    assert [row[0] for row in select_isin_candidates(SchemaConn(), today, 10)] == [12]
+    assert [row[0] for row in select_listing_date_candidates(SchemaConn(), 10)] == [13]
+    raw.close()
 
 
 CSV = "SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nEXACT,ARDEE INDUSTRIES LIMITED,11-Aug-2026,INE000000001\nMISMATCH,Other Limited,12-Aug-2026,INE000000002\n"

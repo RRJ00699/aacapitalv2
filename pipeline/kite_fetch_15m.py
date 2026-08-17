@@ -40,8 +40,7 @@ def select_targets(conn, limit: int, ids: list[int] | None = None):
     limit_clause = "" if ids is not None else "LIMIT %s"
     params = ([ids] if ids is not None else [limit])
     cur.execute(f"""SELECT i.id,i.isin,i.symbol,i.name_display,i.listing_date,i.kite_token,
-                            i.is_mainboard, i.status,
-                            (SELECT max(ii.issue_type) FROM ipo_issue ii WHERE ii.ipo_id=i.id) AS issue_type
+                            i.is_mainboard, i.status
       FROM ipo i
       LEFT JOIN (SELECT ipo_id,max(ts) AS latest FROM market_candles_15m GROUP BY ipo_id) c
         ON c.ipo_id=i.id
@@ -81,8 +80,8 @@ def run(conn, *, limit: int, dry_run: bool, ids: list[int] | None = None,
     eligible = []
     from nse_fetch import canonical_spine_eligible
     for row in targets:
-        ipo_id, _isin, _symbol, name, listing_date, token, is_mainboard, status, issue_type = row
-        reason = ("out_of_universe" if not canonical_spine_eligible(is_mainboard, status, issue_type) else
+        ipo_id, _isin, _symbol, name, listing_date, token, is_mainboard, status = row
+        reason = ("out_of_universe" if not canonical_spine_eligible(is_mainboard, status) else
                   "missing_listing_date" if listing_date is None else
                   "outside_window" if not (today - dt.timedelta(days=100) <= listing_date <= today) else
                   "missing_token" if token is None else None)
@@ -105,7 +104,7 @@ def run(conn, *, limit: int, dry_run: bool, ids: list[int] | None = None,
     kite = get_kite()
     cur = conn.cursor()
     end = dt.datetime.now(IST)
-    for ipo_id, _isin, _symbol, name, listing_date, token, _mainboard, _status, _issue_type in targets:
+    for ipo_id, _isin, _symbol, name, listing_date, token, _mainboard, _status in targets:
         summary["attempted"] += 1
         cur.execute("SELECT max(ts) FROM market_candles_15m WHERE ipo_id=%s", (ipo_id,))
         latest = (cur.fetchone() or [None])[0]

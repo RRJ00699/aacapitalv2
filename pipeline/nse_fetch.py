@@ -43,23 +43,17 @@ DISCOVERY_APIS = (
     ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
 )
 
-# Single production selector owned beside official NSE discovery. Security kind is
-# structured on ipo_issue; NOT EXISTS keeps the predicate usable by callers regardless
-# of whether they already join that table. Names and symbols are never classification.
+# Single production selector owned beside official NSE discovery. It uses only fields
+# present on the canonical ipo spine; structured security-kind filtering happens before
+# ingestion in parse_discovery_item rather than against a nonexistent schema column.
 CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
                           "upper(COALESCE(i.status,'')) IN "
-                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED') AND "
-                          "NOT EXISTS (SELECT 1 FROM ipo_issue canonical_issue "
-                          "WHERE canonical_issue.ipo_id=i.id AND "
-                          "upper(trim(COALESCE(canonical_issue.issue_type,''))) "
-                          "IN ('REIT','INVIT'))")
+                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED')")
 CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "LISTED"}
 
-def canonical_spine_eligible(is_mainboard, status, issue_type=None):
+def canonical_spine_eligible(is_mainboard, status):
     """Python twin for explicit-ID outcome accounting."""
-    kind = str(issue_type or "").strip().upper()
-    return (is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
-            and kind not in {"REIT", "INVIT"})
+    return is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
 HEADERS = {
     "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
@@ -299,8 +293,10 @@ def parse_discovery_item(item):
     symbol = _first(item, "symbol", "ticker")
     isin = _first(item, "isin", "ISIN", "issueIsin")
     if not name: return None
-    category = (_first(item, "category", "issueType", "series", "board") or "").upper()
-    if "SME" in category: return None
+    classification = " ".join(str(item.get(key) or "").strip().upper()
+                              for key in ("category", "issueType", "series", "board"))
+    if re.search(r"\b(?:SME|EMERGE|REIT|INVIT)\b", classification):
+        return None
     price = _first(item, "priceBand", "priceRange", "issuePrice", "price") or ""
     prices = [_num(v) for v in re.findall(r"[\d,.]+", price)]
     prices = [v for v in prices if v is not None]
@@ -309,7 +305,7 @@ def parse_discovery_item(item):
     isin = isin.upper() if isin and re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin.upper()) else None
     return {"name": name, "symbol": symbol.upper() if symbol else None,
             "isin": isin,
-            "is_mainboard": not any(marker in category for marker in ("SME", "EMERGE")),
+            "is_mainboard": True,
             "open_date": _discovery_date(_first(item, "issueStartDate", "openDate",
                 "bidOpenDate", "issueOpenDate", "startDate")),
             "close_date": _discovery_date(_first(item, "issueEndDate", "closeDate",
