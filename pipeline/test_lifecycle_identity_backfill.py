@@ -21,10 +21,11 @@ class Cursor:
 
 
 class Conn:
-    def __init__(self, rows=()): self.cur, self.commits, self.rollbacks = Cursor(rows), 0, 0
+    def __init__(self, rows=()): self.cur, self.commits, self.rollbacks, self.closes = Cursor(rows), 0, 0, 0
     def cursor(self): return self.cur
     def commit(self): self.commits += 1
     def rollback(self): self.rollbacks += 1
+    def close(self): self.closes += 1
 
 
 class RoutedCursor:
@@ -46,7 +47,7 @@ class RoutedCursor:
 class RoutedConn(Conn):
     def __init__(self, isin_rows, listing_rows, owners=(), legacy_count=0):
         self.cur = RoutedCursor(isin_rows, listing_rows, owners, legacy_count)
-        self.commits = self.rollbacks = 0
+        self.commits = self.rollbacks = self.closes = 0
 
 
 def discovery(name="New Limited", symbol="COLLIDE", isin=None, category="MAINBOARD"):
@@ -338,6 +339,47 @@ def test_quote_unavailable_classes_are_not_not_found_and_have_no_retry():
     assert session.get.call_count == 2
 
 
+def test_csv_and_quote_transport_failures_never_write_or_commit():
+    row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
+    csv_conn = RoutedConn([row], [])
+    csv_session = Mock(); csv_session.get.side_effect = TimeoutError("csv timeout")
+    from nse_identity_backfill import SourceUnavailable
+    try: refresh(csv_conn, csv_session, limit=1, quote_limit=1, write=True)
+    except SourceUnavailable: pass
+    else: raise AssertionError("CSV timeout must be source unavailable")
+    assert csv_conn.commits == 0
+    assert not any(sql.startswith("UPDATE") for sql, _ in csv_conn.cur.executed)
+
+    quote_conn = RoutedConn([row], [])
+    quote_session = Mock(); quote_session.get.side_effect = [
+        Response(b"SYMBOL,NAME OF COMPANY\n"), TimeoutError("quote timeout")]
+    result = refresh(quote_conn, quote_session, limit=1, quote_limit=1, write=True)
+    assert result["rows"][0]["outcome"] == "source_unavailable"
+    assert quote_conn.commits == 0
+    assert not any(sql.startswith("UPDATE") for sql, _ in quote_conn.cur.executed)
+
+
+def test_csv_and_quote_programming_errors_are_sanitized_nonzero_failures(capsys):
+    cases = [
+        (RoutedConn([], []), Mock(get=Mock(side_effect=TypeError("csv programming sentinel")))),
+        (RoutedConn([(1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))], []),
+         Mock(get=Mock(side_effect=[Response(b"SYMBOL,NAME OF COMPANY\n"),
+                                   AttributeError("quote programming sentinel")]))),
+    ]
+    for conn, session in cases:
+        with patch.dict("os.environ", {"DATABASE_URL": "postgresql://offline"}), \
+             patch("psycopg2.connect", return_value=conn), \
+             patch("nse_fetch.prime", return_value=session):
+            try: backfill_main(["--write", "--limit", "1", "--quote-limit", "1"])
+            except RuntimeError as exc: assert str(exc) == "backfill_failed"
+            else: raise AssertionError("programming errors must exit non-zero")
+        assert conn.commits == 0 and conn.rollbacks >= 1
+        assert not any(sql.startswith("UPDATE") for sql, _ in conn.cur.executed)
+    output = capsys.readouterr().out
+    assert "programming sentinel" not in output
+    assert output.count('"reason": "backfill_failed"') == 2
+
+
 def test_quote_quota_wrong_symbol_and_invalid_json_are_distinct():
     row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
     conn = RoutedConn([row], []); session = Mock()
@@ -390,11 +432,16 @@ def test_source_fact_failure_rolls_back_field_update():
 
 
 def test_final_commit_failure_is_sanitized_visible_and_rolls_back():
-    conn = RoutedConn([], []); conn.commit = Mock(side_effect=RuntimeError("dsn secret"))
-    session = Mock(); session.get.return_value = Response(b"SYMBOL,NAME OF COMPANY\n")
-    try: refresh(conn, session, write=True)
-    except RuntimeError as exc: assert str(exc) == "final_commit_failed"
-    else: raise AssertionError("commit failure must propagate")
+    row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
+    conn = RoutedConn([row], []); conn.commit = Mock(side_effect=RuntimeError("dsn secret"))
+    conn.cur.rowcount = 1
+    session = Mock(); session.get.side_effect = [
+        Response(b"SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\n"
+                 b"EXACT,Exact Limited,11-Aug-2026,INE000000001\n")]
+    with patch("fill_v2.log_source_fact"):
+        try: refresh(conn, session, limit=1, write=True)
+        except RuntimeError as exc: assert str(exc) == "final_commit_failed"
+        else: raise AssertionError("commit failure must propagate")
     assert conn.rollbacks == 1
 
 

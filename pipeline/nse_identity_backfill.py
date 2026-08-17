@@ -11,6 +11,8 @@ import os
 import re
 import time
 
+from curl_cffi import requests as cffi_requests
+
 EQUITY_MASTER_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity?symbol={symbol}"
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
@@ -212,7 +214,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
     except DeadlineExceeded:
         csv_outcome = "not_attempted_deadline"
         raise unavailable("equity_master deadline exhausted", csv_outcome)
-    except Exception:
+    except (cffi_requests.RequestsError, TimeoutError, ConnectionError):
         csv_outcome = "source_unavailable"
         raise unavailable("equity_master request unavailable", csv_outcome)
     finally:
@@ -246,27 +248,35 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
                 quote_outcome = "found"; status = None
                 try:
                     quote = session.get(QUOTE_URL.format(symbol=requested), timeout=quote_timeout)
+                except (cffi_requests.RequestsError, TimeoutError, ConnectionError):
+                    quote_outcome = source_outcome = "source_unavailable"
+                else:
                     status = getattr(quote, "status_code", 200)
                     if status == 429 or status >= 500:
                         quote_outcome = source_outcome = "source_unavailable"
                     elif status != 200:
                         quote_outcome = source_outcome = "invalid_response"
                     else:
-                        try: payload = quote.json()
-                        except Exception:
+                        try:
+                            payload = quote.json()
+                        except ValueError:
                             quote_outcome = source_outcome = "invalid_response"
                         else:
-                            returned = str(((payload or {}).get("meta") or {}).get("symbol") or
-                                           ((payload or {}).get("info") or {}).get("symbol") or "").strip().upper()
-                            if returned and returned != requested:
-                                quote_outcome = source_outcome = "exact_symbol_mismatch"
+                            if not isinstance(payload, dict):
+                                quote_outcome = source_outcome = "invalid_response"
                             else:
-                                official = quote_record(payload, requested)
-                                if official is None:
+                                meta, info = payload.get("meta") or {}, payload.get("info") or {}
+                                if not isinstance(meta, dict) or not isinstance(info, dict):
                                     quote_outcome = source_outcome = "invalid_response"
-                                else: source_outcome = "found"
-                except Exception:
-                    quote_outcome = source_outcome = "source_unavailable"
+                                else:
+                                    returned = str(meta.get("symbol") or info.get("symbol") or "").strip().upper()
+                                    if returned and returned != requested:
+                                        quote_outcome = source_outcome = "exact_symbol_mismatch"
+                                    else:
+                                        official = quote_record(payload, requested)
+                                        if official is None:
+                                            quote_outcome = source_outcome = "invalid_response"
+                                        else: source_outcome = "found"
                 item = {"operation": "quote", "symbol": requested,
                         "elapsed_ms": round((clock()-quote_started)*1000, 3),
                         "timeout_ms": round(quote_timeout*1000, 3), "outcome": quote_outcome}
@@ -315,7 +325,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
                        "outcome": "updated" if changed else ("would_update" if prospective and not write else "no_value"),
                        "source_outcome": "found", "source": source, "fields": changed if write else prospective,
                        "elapsed_ms": round((clock()-row_started)*1000, 3)})
-    if write:
+    if write and updates:
         try: timed_db("final_commit", conn.commit)
         except Exception:
             try: conn.rollback()
