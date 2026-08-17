@@ -135,15 +135,31 @@ export default function ListingReview({ c }: { c: R }) {
       let details: R | null = null;
       let detailsNote: string | null = null;
       if (ISIN_RE.test(isin)) {
-        const dr = await fetch(`/api/ipo/details/${encodeURIComponent(isin)}`, { signal: ac.signal });
-        if (dr.ok) {
-          const body = obj(await dr.json());
-          if (body?.schema_version === "ipo-details-v1") details = body;
-          else detailsNote = "The details snapshot for this ISIN does not carry the ipo-details-v1 contract, so no listing outcome is shown.";
-        } else if (dr.status === 404) {
-          detailsNote = `No ipo-details-v1 snapshot is published for ${isin} — the listing-outcome record is built only for the pipeline's bounded universe.`;
-        } else {
-          detailsNote = `Listing-outcome record unavailable (${dr.status}).`;
+        // OWN FAILURE BOUNDARY. The details record is the OPTIONAL half of this
+        // screen: it fills the listing-outcome section only. A rejected fetch or
+        // malformed JSON here must never discard the journey candles and the
+        // top-structure observation we already hold — it degrades this one
+        // section to an honest note and nothing else. Only the journey request
+        // (above) can fail the whole screen.
+        try {
+          const dr = await fetch(`/api/ipo/details/${encodeURIComponent(isin)}`, { signal: ac.signal });
+          if (dr.ok) {
+            const body = obj(await dr.json());
+            if (body?.schema_version === "ipo-details-v1") details = body;
+            else detailsNote = "The details snapshot for this ISIN does not carry the ipo-details-v1 contract, so no listing outcome is shown.";
+          } else if (dr.status === 404) {
+            detailsNote = `No ipo-details-v1 snapshot is published for ${isin} — the listing-outcome record is built only for the pipeline's bounded universe.`;
+          } else {
+            detailsNote = `Listing-outcome record unavailable (${dr.status}).`;
+          }
+        } catch (e: unknown) {
+          // An abort is this effect being replaced, not a data problem: let the
+          // outer handler drop it so no stale result is stored.
+          if ((e as { name?: string })?.name === "AbortError") throw e;
+          details = null;
+          detailsNote = `The listing-outcome record for ${isin} could not be read (${
+            e instanceof Error ? e.message : "request failed"
+          }). Nothing below is affected — the sessions and observations come from the journey snapshot.`;
         }
       } else {
         detailsNote = "No ISIN resolved for this selection, and the listing-outcome record is keyed by ISIN.";

@@ -79,13 +79,26 @@ const pendingDetails = {
 
 type Page = import("@playwright/test").Page;
 
-async function openReview(page: Page, journey: unknown, details: unknown | null) {
-  await page.route("**/api/ipo/journey*", (r) => r.fulfill({ json: journey as object }));
-  await page.route("**/api/ipo/details/*", (r) =>
-    details ? r.fulfill({ json: details as object })
-      : r.fulfill({ status: 404, json: { state: "not_found", isin: ISIN, error: "Details snapshot not found" } }));
+/** How the OPTIONAL details request behaves. Journey is the required half. */
+type DetailsMode = "ok" | "notFound" | "reject" | "malformed";
+
+async function routeReview(page: Page, journey: unknown, details: unknown | null, mode: DetailsMode = "ok",
+                           journeyMode: "ok" | "reject" = "ok") {
+  await page.route("**/api/ipo/journey*", (r) =>
+    journeyMode === "reject" ? r.abort("failed") : r.fulfill({ json: journey as object }));
+  await page.route("**/api/ipo/details/*", (r) => {
+    if (mode === "reject") return r.abort("failed");
+    if (mode === "malformed") return r.fulfill({ status: 200, contentType: "application/json", body: '{"schema_version": "ipo-deta' });
+    if (mode === "notFound" || !details)
+      return r.fulfill({ status: 404, json: { state: "not_found", isin: ISIN, error: "Details snapshot not found" } });
+    return r.fulfill({ json: details as object });
+  });
   await page.goto("/dashboard/ipo2?ipo=UATPOST");
   await page.getByRole("button", { name: /Switch to Listing Review/i }).click();
+}
+
+async function openReview(page: Page, journey: unknown, details: unknown | null, mode: DetailsMode = "ok") {
+  await routeReview(page, journey, details, mode);
   await expect(page.getByTestId("listing-review")).toBeVisible();
 }
 
@@ -230,6 +243,55 @@ test.describe("Listing Review — honest gaps", () => {
   });
 });
 
+test.describe("Listing Review — the details request has its OWN failure boundary", () => {
+  // The details record fills ONE section. A failure there must never discard the
+  // journey candles and the top-structure observation the screen already holds;
+  // only a failed/malformed JOURNEY request may fail the whole screen.
+  // These three use the raw `page` fixture, not `watched`: an aborted request is
+  // logged to the browser console by design, and that noise is the simulation,
+  // not an app error. Every other test in this file keeps the console guard.
+  async function expectJourneyHalfIntact(page: Page) {
+    const panel = review(page);
+    await expect(panel.getByTestId("listing-review")).toHaveCount(0); // sanity: `panel` IS the record
+    for (const session of ["D0", "D1", "D2", "D3", "D4"]) {
+      await expect(panel.getByRole("rowheader", { name: session })).toBeVisible();
+    }
+    await expect(panel.getByRole("cell", { name: "₹498", exact: true })).toBeVisible();
+    await expect(panel.getByText("DISCOVERY", { exact: true }).first()).toBeVisible();
+    await expect(panel.getByText("TOP", { exact: true }).first()).toBeVisible();
+    await expect(panel.getByText(/distribution structure/).first()).toBeVisible();
+    // Nothing outcome-dependent is invented in the details record's absence.
+    // (₹470 / ₹476 are NOT listed here: those are candle values the journey
+    // snapshot itself carries, and they must keep rendering.)
+    const text = await panel.innerText();
+    for (const fabricated of ["₹460", "₹552", "2.2%", "₹0", "AVAILABLE"]) {
+      expect(text, `outcome value invented with no details record: ${fabricated}`).not.toContain(fabricated);
+    }
+  }
+
+  test("details fetch REJECTS → tape and TOP observation survive", async ({ page }) => {
+    await openReview(page, richJourney, richDetails, "reject");
+    await expect(review(page).getByText(/could not be read/)).toBeVisible();
+    await expect(review(page).getByText(/Nothing below is affected/)).toBeVisible();
+    await expectJourneyHalfIntact(page);
+    // The whole-screen error must NOT have been rendered.
+    await expect(page.getByText("Listing review unavailable")).toHaveCount(0);
+  });
+
+  test("details returns MALFORMED JSON → tape and TOP observation survive", async ({ page }) => {
+    await openReview(page, richJourney, richDetails, "malformed");
+    await expect(review(page).getByText(/could not be read/)).toBeVisible();
+    await expectJourneyHalfIntact(page);
+    await expect(page.getByText("Listing review unavailable")).toHaveCount(0);
+  });
+
+  test("a failed JOURNEY request — and only that — fails the whole screen", async ({ page }) => {
+    await routeReview(page, richJourney, richDetails, "ok", "reject");
+    await expect(page.getByText("Listing review unavailable")).toBeVisible();
+    await expect(page.getByTestId("listing-review")).toHaveCount(0);
+  });
+});
+
 test.describe("Listing Review at 380px", () => {
   test.use({ viewport: { width: 380, height: 900 } });
 
@@ -245,5 +307,11 @@ test.describe("Listing Review at 380px", () => {
     await openReview(page, emptyJourney, pendingDetails);
     await noHorizontalOverflow(page);
     await expect(review(page).getByText("Candle data not yet available.")).toBeVisible();
+  });
+
+  test("the details-degraded review has no horizontal overflow at 380px", async ({ page }) => {
+    await openReview(page, richJourney, richDetails, "reject");
+    await noHorizontalOverflow(page);
+    await expect(review(page).getByRole("rowheader", { name: "D0" })).toBeVisible();
   });
 });
