@@ -79,8 +79,9 @@ def compute_valuation(conn, ipo_id):
     iss=cur.fetchone()
     issue_price_raw, band_hi, _band_lo, issue_size_raw, ofs_raw = (
         iss if iss is not None else (None, None, None, None, None))
-    issue_price = float(issue_price_raw) if issue_price_raw is not None else (
-        float(band_hi) if band_hi is not None else None)
+    # A price band is not the persisted final issue price. Price-dependent
+    # valuation remains unavailable until issue_price has canonical provenance.
+    issue_price = float(issue_price_raw) if issue_price_raw is not None else None
     issue_size = float(issue_size_raw) if issue_size_raw is not None else None
     ofs_cr = float(ofs_raw) if ofs_raw is not None else None
     if issue_price is None: missing.append("issue_price")

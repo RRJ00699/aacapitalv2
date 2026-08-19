@@ -21,7 +21,7 @@ kf = _load("kite_fetch", "kite_fetch.py")
 # the REAL listing_outcomes shape for the fields derive_outcome writes (prod types)
 DDL = """DROP SCHEMA public CASCADE; CREATE SCHEMA public;
 CREATE TABLE market_candles(ipo_id bigint, d date, o numeric, h numeric, l numeric, c numeric, v bigint);
-CREATE TABLE ipo_issue(ipo_id bigint, issue_price numeric, band_hi numeric);
+CREATE TABLE ipo_issue(ipo_id bigint, issue_price numeric, band_lo numeric, band_hi numeric);
 CREATE TABLE listing_outcomes(ipo_id bigint, listing_open numeric, d1_close numeric,
   gap_pct numeric, pool text, best_close numeric, worst_close numeric,
   ceiling_20 boolean, hold_positive_vs_open boolean, winner_35 boolean);"""

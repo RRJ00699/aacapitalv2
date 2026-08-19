@@ -53,6 +53,23 @@ def _coalesce_update(conn, table, match_cols, match_vals, fields, source=None, i
     return action
 
 # ============================================================ 1. ipo_issue
+def validate_issue_economics(values, minimum_face_band_ratio=None):
+    """Validate the merged canonical issue row before any mutation."""
+    lo, hi, price, face = (values.get(k) for k in ("band_lo", "band_hi", "issue_price", "face_value"))
+    try:
+        lo = float(lo) if lo is not None else None; hi = float(hi) if hi is not None else None
+        price = float(price) if price is not None else None; face = float(face) if face is not None else None
+    except (TypeError, ValueError): return "source_invalid_unit:non_numeric"
+    if lo is not None and lo <= 0 or hi is not None and hi <= 0: return "source_invalid_unit:non_positive_band"
+    if lo is not None and hi is not None and lo > hi: return "source_invalid_unit:invalid_ordering"
+    if price is not None and price <= 0: return "source_invalid_unit:non_positive_issue_price"
+    if price is not None and lo is not None and price < lo: return "source_invalid_unit:issue_price_below_band"
+    if price is not None and hi is not None and price > hi: return "source_invalid_unit:issue_price_above_band"
+    if minimum_face_band_ratio is not None and face is not None and face > 0 and hi is not None and hi / face < minimum_face_band_ratio:
+        return "source_invalid_unit:band_materially_below_face_value"
+    return None
+
+
 def upsert_ipo_issue(conn, ipo_id, record, source="nse"):
     """Issue economics, 1 row/IPO, key=ipo_id. COALESCE so NSE+IPOMatrix don't clobber."""
     cur=conn.cursor()
@@ -60,11 +77,31 @@ def upsert_ipo_issue(conn, ipo_id, record, source="nse"):
             ["open_date","close_date","allotment_date","band_lo","band_hi","issue_price",
              "lot_size","face_value","fresh_cr","ofs_cr","issue_size_cr","registrar","brlm_count"]
             if record.get(k) is not None}
-    # ensure row exists w/ updated_at
-    cur.execute("SELECT 1 FROM ipo_issue WHERE ipo_id=%s",(ipo_id,))
-    if cur.fetchone() is None:
+    cur.execute("""SELECT open_date,close_date,allotment_date,band_lo,band_hi,issue_price,
+      lot_size,face_value,fresh_cr,ofs_cr,issue_size_cr,registrar,brlm_count
+      FROM ipo_issue WHERE ipo_id=%s""",(ipo_id,))
+    existing = cur.fetchone()
+    names = ["open_date","close_date","allotment_date","band_lo","band_hi","issue_price",
+             "lot_size","face_value","fresh_cr","ofs_cr","issue_size_cr","registrar","brlm_count"]
+    merged = dict(zip(names, existing or [None] * len(names))); merged.update(fields)
+    invalid = validate_issue_economics(merged)
+    face, hi = merged.get("face_value"), merged.get("band_hi")
+    if not invalid and face is not None and hi is not None:
+        # Derive the lower sanity boundary from the canonical population. The
+        # first percentile ignores isolated bad rows; one decimal order below
+        # that observed floor identifies scale-suffix loss rather than a cheap IPO.
+        cur.execute("""SELECT percentile_cont(0.01) WITHIN GROUP (ORDER BY band_hi/face_value)
+          FROM ipo_issue WHERE face_value>0 AND band_hi>=face_value""")
+        reference = cur.fetchone()
+        if not reference or reference[0] is None:
+            invalid = "source_invalid_unit:face_band_reference_unavailable"
+        else:
+            invalid = validate_issue_economics(merged, float(reference[0]) / 10)
+    if invalid:
+        conn.rollback()
+        return invalid
+    if existing is None:
         cur.execute("INSERT INTO ipo_issue(ipo_id,updated_at) VALUES(%s,now())",(ipo_id,))
-        conn.commit()
     if fields:
         sets=[f"{f} = COALESCE({f}, %s)" for f in fields]+["updated_at=now()"]
         cur.execute(f"UPDATE ipo_issue SET {', '.join(sets)} WHERE ipo_id=%s",

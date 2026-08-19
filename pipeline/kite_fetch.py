@@ -177,7 +177,7 @@ def derive_outcome(conn, ipo_id):
     raw_issue = float(r[0]) if r and r[0] is not None else None
     band_lo = float(r[1]) if r and r[1] is not None else None
     band_hi = float(r[2]) if r and r[2] is not None else None
-    issue_price = raw_issue if raw_issue is not None else band_hi
+    issue_price = raw_issue
     issue_valid = bool(issue_price and issue_price > 0)
     if issue_valid and band_lo is not None and issue_price < band_lo * .99: issue_valid = False
     if issue_valid and band_hi is not None and issue_price > band_hi * 1.01: issue_valid = False

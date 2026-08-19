@@ -67,6 +67,8 @@ HEADERS = {
 # RHP extractor: convert in ONE place, refuse unknown units rather than assume crore.
 UNIT_CR = {"crore": 1.0, "cr": 1.0, "million": 0.1, "mn": 0.1,
            "lakh": 0.01, "lakhs": 0.01, "lac": 0.01, "billion": 100.0, "bn": 100.0}
+PRICE_UNIT_RUPEES = {"": 1.0, "rupee": 1.0, "rupees": 1.0,
+                     "thousand": 1000.0, "thousands": 1000.0}
 
 MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
@@ -106,6 +108,27 @@ def _amount_to_cr(text):
     if v is None: return None, "unparseable_amount"
     if f is None: return None, f"unknown_unit:{unit}"
     return round(v * f, 4), None
+
+
+def _price_range_rupees(text):
+    """Parse NSE's explicit per-share price units; unknown/mixed units fail closed."""
+    bare = re.fullmatch(r"\s*([\d,]+(?:\.\d+)?)\s*(?:-|to)\s*([\d,]+(?:\.\d+)?)\s*", text or "", re.I)
+    if bare:
+        return ((_num(bare.group(1)), _num(bare.group(2))), None)
+    matches = re.findall(r"(?:Rs\.?|Re\.?|₹)\s*([\d,]+(?:\.\d+)?)\s*([A-Za-z]*)", text or "", re.I)
+    if not matches: return None, "price_range:no_amount_found"
+    values = []
+    for number, raw_unit in matches:
+        unit = raw_unit.lower()
+        # Words belonging to the surrounding prose are not monetary scale suffixes.
+        if unit in {"to", "per", "each", "equity", "share"}: unit = ""
+        factor = PRICE_UNIT_RUPEES.get(unit)
+        if factor is None: return None, f"price_range:unknown_unit:{unit}"
+        value = _num(number)
+        if value is None: return None, "price_range:unparseable_amount"
+        values.append(value * factor)
+    if len(values) not in (1, 2): return None, "price_range:unexpected_cardinality"
+    return ((values[0], values[-1]), None)
 
 
 # A firm name can CONTAIN "and" — "D and A Financial Services Private Limited" is ONE
@@ -156,13 +179,15 @@ def parse_issue_info(payload):
             m = re.search(r"([\d,]+)\s*Equity\s*Shares", d[key], re.I)
             if m: rec["lot_size"] = int(_num(m.group(1)))
 
-    # Price Range: "Rs. 203 to Rs. 214 per Equity Share"
+    # NSE uses ordinary rupees and, for some large nominal values, an explicit
+    # "Thousand" suffix. The suffix is part of the value and must not be discarded.
     if "price range" in d:
-        nums = re.findall(r"(?:Rs\.?|₹)\s*([\d,.]+)", d["price range"])
-        if len(nums) >= 2:
-            rec["band_lo"], rec["band_hi"] = _num(nums[0]), _num(nums[1])
-        elif len(nums) == 1:
-            rec["band_lo"] = rec["band_hi"] = _num(nums[0])
+        parsed, price_note = _price_range_rupees(d["price range"])
+        extras["official_price_range_raw"] = d["price range"]
+        if parsed:
+            rec["band_lo"], rec["band_hi"] = parsed
+        else:
+            notes.append(price_note or "price_range:source_invalid_unit")
 
     # Issue Period: "09-Jul-2026 to 13-Jul-2026"
     if "issue period" in d:
@@ -298,8 +323,8 @@ def parse_discovery_item(item):
     if re.search(r"\b(?:SME|EMERGE|REIT|INVIT)\b", classification):
         return None
     price = _first(item, "priceBand", "priceRange", "issuePrice", "price") or ""
-    prices = [_num(v) for v in re.findall(r"[\d,.]+", price)]
-    prices = [v for v in prices if v is not None]
+    parsed_prices, _price_note = _price_range_rupees(price)
+    prices = list(parsed_prices or ())
     lot = _num(_first(item, "lotSize", "marketLot", "minBidQuantity"))
     issue_size = _num(_first(item, "issueSizeCr"))
     isin = isin.upper() if isin and re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin.upper()) else None
@@ -366,6 +391,13 @@ def apply_to_db(conn, ipo_id, payload, source="nse", *, subscription_final=True,
     rep = {"ipo_id": ipo_id, "issue_fields": sorted(issue.keys()) if apply_issue else [],
            "subs_fields": sorted(subs.keys()) if apply_subscription else [], "extras": sorted(extras.keys()),
            "notes": notes, "subs_action": "none", "subs_diff": [], "spine": []}
+    price_unit_error = next((note for note in notes if note.startswith("price_range:")), None)
+    if apply_issue and price_unit_error:
+        # Reject the complete issue write, including identity/source facts. Partial
+        # economics would make the malformed official observation look accepted.
+        apply_issue = False
+        rep["issue_fields"] = []
+        rep["notes"].append("source_invalid_unit")
 
     # IDENTITY SPINE FIRST. metaInfo carries the ISIN and it was previously only logged
     # to source_facts — so ipo.isin stayed NULL while the value sat in hand, and
@@ -381,7 +413,13 @@ def apply_to_db(conn, ipo_id, payload, source="nse", *, subscription_final=True,
         rep["spine"].append(f"isin={extras['isin']}")
 
     if apply_issue and issue:
-        upsert_ipo_issue(conn, ipo_id, issue, source=source)
+        issue_status = upsert_ipo_issue(conn, ipo_id, issue, source=source)
+        if issue_status.startswith("source_invalid_unit"):
+            rep["notes"].append(issue_status)
+            rep["issue_fields"] = []
+        elif extras.get("official_price_range_raw"):
+            log_source_fact(conn, ipo_id, "official_price_range_raw",
+                            extras["official_price_range_raw"], source)
 
     # AN ALL-ZERO PAYLOAD MEANS "NOT REPORTED YET", NOT "ZERO DEMAND".
     # NSE returns the bidDetails table before an issue has any bids, so a pre-close fetch
