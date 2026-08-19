@@ -45,12 +45,17 @@ CREATE TABLE documents(sha256 TEXT PRIMARY KEY, ipo_id BIGINT, doc_type TEXT);
 CREATE TABLE rhp_findings(
   id BIGSERIAL PRIMARY KEY, ipo_id BIGINT, prompt_version TEXT, red_flag_count INT,
   junk_signals TEXT[], analyzed_at TIMESTAMPTZ DEFAULT now());
+-- valuation/decisions column lists come from their engines' own INSERTs
+-- (score_engine.write_valuation, verdict_engine.write_decision), not from memory.
 CREATE TABLE valuation(
-  id BIGSERIAL PRIMARY KEY, ipo_id BIGINT, engine_version TEXT, score NUMERIC,
-  score_band TEXT, missing_inputs TEXT[], computed_at TIMESTAMPTZ DEFAULT now());
+  id BIGSERIAL PRIMARY KEY, ipo_id BIGINT, computed_at TIMESTAMPTZ DEFAULT now(),
+  engine_version TEXT, pe NUMERIC, pb NUMERIC, roe NUMERIC, roce NUMERIC, de NUMERIC,
+  rev_cagr_3y NUMERIC, ofs_pct NUMERIC, peer_median_pe NUMERIC, score NUMERIC,
+  score_band TEXT, inputs_used JSONB, missing_inputs TEXT[]);
 CREATE TABLE decisions(
-  id BIGSERIAL PRIMARY KEY, ipo_id BIGINT, verdict TEXT, engine_version TEXT,
-  decided_at TIMESTAMPTZ DEFAULT now());
+  id BIGSERIAL PRIMARY KEY, ipo_id BIGINT, decided_at TIMESTAMPTZ DEFAULT now(),
+  engine_version TEXT, fundamental_verdict TEXT, listing_action TEXT,
+  reasons JSONB, evidence_refs JSONB);
 CREATE TABLE market_candles(ipo_id BIGINT, d DATE, o NUMERIC, h NUMERIC, l NUMERIC,
   c NUMERIC, v BIGINT, PRIMARY KEY(ipo_id, d));
 CREATE TABLE market_candles_15m(ipo_id BIGINT, ts TIMESTAMPTZ, o NUMERIC, h NUMERIC,

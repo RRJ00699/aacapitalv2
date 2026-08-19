@@ -31,6 +31,7 @@ KITE_FETCH_15M_SCRIPT = "pipeline/kite_fetch_15m.py"
 TOP_DETECTOR_SCRIPT = "pipeline/topout_online.py"
 DRIVE_SCRIPT = "pipeline/drive.py"
 SNAPSHOT_PUBLISH_SCRIPT = "pipeline/publish_snapshot_with_ledger.py"
+RULE_VALIDATION_SCRIPT = "pipeline/rule_validation.py"
 # Canonical snapshot producer invoked by the protected publisher: "warm_kv.py"
 
 KITE_REFRESH_STATUS_TO_STEP = {
@@ -67,6 +68,8 @@ ENVIRONMENT = (
     ("SNAPSHOT_PUBLISH_URL", "snapshot publication", "owner: configure snapshot publication"),
     ("SNAPSHOT_PUBLISH_KEY", "snapshot publication", "owner: configure snapshot publication"),
     ("NTFY_TOPIC", "drive.py completeness alerts", "owner: configure completeness alerts (optional)"),
+    ("RULE_VALIDATION_OWNER_APPROVED", "rule_validation_results writes",
+     "optional; without it the rules step reports but persists nothing"),
 )
 
 
@@ -705,8 +708,18 @@ def main(argv=None):
                           "status": "dry" if dry else "ok", "duration": 0.0,
                           "reason": f"full detail: {manifest_path}",
                           "counts": completeness_counts(pre_completeness, post_completeness)})
-        steps.append(skip("Database-backed Listing rules layers",
-                          "owner: rule_validation_results production producer is quarantined; canonical ownership decision required"))
+        # Bounded, free, and owner-gated only when it persists. The dry run still
+        # evaluates every rule and reports NOT_EVALUABLE with the absent inputs named,
+        # which is the point: a rule nobody can evaluate must be visible, not silent.
+        if dry:
+            steps.append(run("Database-backed Listing rules layers", RULE_VALIDATION_SCRIPT,
+                             ["--dry-run"], dry=True, timeout=600, cwd=PIPELINE_DIR))
+        elif os.environ.get("RULE_VALIDATION_OWNER_APPROVED") != "1":
+            steps.append(run("Database-backed Listing rules layers", RULE_VALIDATION_SCRIPT,
+                             ["--dry-run"], timeout=600, cwd=PIPELINE_DIR))
+        else:
+            steps.append(run("Database-backed Listing rules layers", RULE_VALIDATION_SCRIPT,
+                             ["--write"], timeout=600, cwd=PIPELINE_DIR))
     elif not selector_ok:
         steps.append(skip("active IPO processing", "selector failed; dependent cohort work skipped",
                           counts={"selected": 0}))
