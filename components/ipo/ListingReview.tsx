@@ -19,7 +19,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Card, SectionHeader, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { VARS as C, FONT, type Tone } from "@/lib/theme";
 import {
-  fieldDisplay, toValueNode, absenceCopy, lifecycleFacts, LIFECYCLE_UNKNOWN,
+  fieldDisplay, toValueNode, absenceCopy, absenceLine, lifecycleFacts, LIFECYCLE_UNKNOWN,
   type DetailField, type FieldState, type ValueNode, type LifecycleFacts,
 } from "@/lib/ui/details-format";
 import {
@@ -64,8 +64,8 @@ function Value({ node }: { node: ValueNode }) {
  * producer's own reason wherever it wrote one, a lifecycle-specific sentence
  * where it only left its generic default. The badge keeps the payload's state.
  */
-function StateRow({ label, state, hasValue, node, lead, reason, source, asOf, caption, producer }: {
-  label: string; state: FieldState; hasValue: boolean; node: ValueNode; lead?: string;
+function StateRow({ label, state, hasValue, node, line, reason, source, asOf, caption, producer }: {
+  label: string; state: FieldState; hasValue: boolean; node: ValueNode; line?: string;
   reason?: string | null; source?: string | null; asOf?: string | null; caption?: string | null;
   producer?: string | null;
 }) {
@@ -76,7 +76,7 @@ function StateRow({ label, state, hasValue, node, lead, reason, source, asOf, ca
       <div className="lval">
         {hasValue
           ? <b><Value node={node} /></b>
-          : <span style={{ color: C.dim }}>{lead ?? (state === "PENDING" ? "pending" : "not available")}{reason ? ` — ${reason}` : ""}</span>}
+          : <span style={{ color: C.dim }}>{line ?? `${state === "PENDING" ? "pending" : "not available"}${reason ? ` — ${reason}` : ""}`}</span>}
       </div>
       <Badge label={state} tone={STATE_TONE[state]} />
       {meta
@@ -103,7 +103,7 @@ function FieldRow({ label, field, format, caption, k, lc = LIFECYCLE_UNKNOWN }: 
     : toValueNode(f?.value);
   const gap = fd.hasValue ? null : absenceCopy(k, f, lc);
   return <StateRow label={label} state={fd.state} hasValue={fd.hasValue} node={node}
-    lead={gap?.lead} reason={gap ? gap.reason : fd.reason} source={fd.source} asOf={fd.as_of}
+    line={gap ? absenceLine(gap) : undefined} reason={fd.reason} source={fd.source} asOf={fd.as_of}
     caption={caption ?? null} producer={gap?.producer ?? null} />;
 }
 

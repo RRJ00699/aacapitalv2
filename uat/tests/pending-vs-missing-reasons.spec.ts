@@ -87,6 +87,18 @@ const listedWithGaps = {
   },
 };
 
+// Priced, pre-listing, and all offer-for-sale: `fresh_issue_cr` is absent
+// because there IS no fresh issue, not because nothing has been filed yet.
+const pureOfs = {
+  ...unpriced,
+  issue: {
+    ...unpriced.issue,
+    issue_price: { state: "AVAILABLE", value: 460, reason: null, source: "ipo_issue" },
+    issue_size_cr: { state: "AVAILABLE", value: 900, reason: null, source: "ipo_issue" },
+    ofs_cr: { state: "AVAILABLE", value: 900, reason: null, source: "ipo_issue" },
+  },
+};
+
 type Page = import("@playwright/test").Page;
 async function open(page: Page, body: unknown) {
   await page.route(`**/api/ipo/details/${ISIN}`, (r) => r.fulfill({ json: body as object }));
@@ -98,8 +110,12 @@ const record = (page: Page) => page.getByTestId("complete-details");
 test.describe("Complete Details — an unpriced, unlisted IPO", () => {
   test("the issue price reads as pending with its own reason, not the generic V2 line", async ({ watched: page }) => {
     await open(page, unpriced);
-    await expect(record(page).getByText("pending — set when the issue is priced").first()).toBeVisible();
+    // EXACT, not a substring: an earlier build joined the lead word onto a
+    // reason that already carried it and rendered "pending — pending — …".
+    await expect(record(page).getByText("pending — set when the issue is priced", { exact: true }).first()).toBeVisible();
     const text = await record(page).innerText();
+    expect(text, "the lead word must not be printed twice").not.toContain("pending — pending");
+    expect(text, "nor the other way round").not.toContain("not available — not available");
     expect(text, "the producer's generic default must not reach the screen").not.toContain(GENERIC);
     expect(text, "an unpriced issue must never render as a zero").not.toContain("₹0");
   });
@@ -109,6 +125,7 @@ test.describe("Complete Details — an unpriced, unlisted IPO", () => {
     const text = await record(page).innerText();
     for (const sentence of [
       "pending — set when the issue is priced",
+      "pending — the v2 scoring engine runs on the issue price, which is not set yet",
       "pending — set when the price band is announced",
       "pending — set when the issue size is filed with the offer document",
       "pending — the fresh-issue amount is set when the offer document is filed",
@@ -116,7 +133,6 @@ test.describe("Complete Details — an unpriced, unlisted IPO", () => {
       "pending — fixed with the price band",
       "pending — carried with the issue terms once they are filed",
       "pending — set when the exchange confirms the listing date",
-      "pending — the v2 scoring engine runs on the issue price, which is not set yet",
       "pending — a persisted decision is not yet available",
     ]) {
       expect(text, `missing honest reason: ${sentence}`).toContain(sentence);
@@ -158,11 +174,27 @@ test.describe("Complete Details — an unpriced, unlisted IPO", () => {
   });
 });
 
+test.describe("Complete Details — a priced, pre-listing pure offer for sale", () => {
+  test("a structurally absent field is not called pending just because it has not listed", async ({ watched: page }) => {
+    await open(page, pureOfs);
+    const text = await record(page).innerText();
+    expect(text, "the OFS side is filed, so the fresh-issue gap is not 'pending'")
+      .not.toContain("pending — the fresh-issue amount is set when the offer document is filed");
+    expect(text).toContain("a pure offer for sale has no fresh-issue amount");
+    // The band is likewise not pending once the issue carries a price.
+    expect(text).not.toContain("pending — set when the price band is announced");
+    expect(text).toContain("a fixed-price issue has no band");
+    // The lifecycle still explains what it genuinely explains.
+    expect(text).toContain("pending — set when the exchange confirms the listing date");
+    expect(text).not.toContain(GENERIC);
+  });
+});
+
 test.describe("Complete Details — a priced, listed IPO", () => {
   test("the same absent fields become real gaps, each naming its producer", async ({ watched: page }) => {
     await open(page, listedWithGaps);
     const text = await record(page).innerText();
-    expect(text).toContain("No price band is recorded for this IPO in the issue record.");
+    expect(text).toContain("No low end of the price band is recorded");
     expect(text).toContain("No v2-score valuation row is stored for this IPO.");
     expect(text).toContain("producer: ipo_issue");
     expect(text).toContain("producer: valuation");

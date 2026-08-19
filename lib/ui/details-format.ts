@@ -204,7 +204,11 @@ export function buildMissingRegister(d: Record<string, unknown>): MissingRow[] {
       const state = (v as DetailField).state;
       if (state === "MISSING" || state === "PENDING") {
         const copy = absenceCopy(`${branch}.${k}`, v as DetailField, facts);
-        add(`${group}: ${humanizeKey(k)}`, copy.reason ?? "Not available.", copy.producer ?? "—");
+        // "pending — …" in the register too: the row and the register must read
+        // the same. The "not available" lead is dropped — the column heading
+        // ("Why it's missing") already says it.
+        const reason = copy.lead === "pending" ? absenceLine(copy) : copy.reason ?? "Not available.";
+        add(`${group}: ${humanizeKey(k)}`, reason, copy.producer ?? "—");
       }
     }
   };
@@ -237,6 +241,7 @@ export function looksSerialized(text: string): boolean {
   return text.includes("[object Object]") || /^\s*[[{].*[\]}]\s*$/.test(text);
 }
 
+
 // ── Pending vs missing: honest absence copy ─────────────────────────────────
 // The producer's `field()` helper stamps ONE default sentence on every absent
 // scalar it does not have a specific reason for:
@@ -250,12 +255,13 @@ export function looksSerialized(text: string): boolean {
 // rewrite `DetailField.state`: the state belongs to the payload, and only the
 // human-readable sentence (and the lead word in front of it) is ours.
 //
-// Nothing here invents a lifecycle field. The only lifecycle date this snapshot
-// carries is the listing date, so the two gates below are derived from what is
-// already in the payload:
-//   listed  — `listing_outcome` leaves are PENDING only while the IPO has not
-//             listed (the producer's own `outcomePending`), MISSING after.
-//   priced  — `issue.issue_price` is AVAILABLE.
+// Nothing here invents a lifecycle field. Everything below is derived from what
+// the payload already carries:
+//   listed — `listing_outcome` leaves are PENDING only while the IPO has not
+//            listed (the producer's own `outcomePending`), MISSING after.
+//   priced — `issue.issue_price` is AVAILABLE.
+//   filed  — which leaves ARE available, so a lifecycle excuse can be withdrawn
+//            when a sibling proves the record has already been filed this far.
 
 /** The producer's default absence sentence. Its presence means "no reason written". */
 export const GENERIC_ABSENCE_REASON = "Data is not available from the current V2 source.";
@@ -268,27 +274,34 @@ export function isGenericReason(reason: string | null | undefined): boolean {
 /**
  * What the payload itself says about where this IPO is in its life.
  * `listed: null` means the record carries no listing-outcome branch at all, so
- * nothing is claimed either way.
+ * nothing is claimed either way. `filed` holds the dotted paths of every leaf
+ * that actually has a value.
  */
-export type LifecycleFacts = { listed: boolean | null; priced: boolean };
-export const LIFECYCLE_UNKNOWN: LifecycleFacts = { listed: null, priced: false };
+export type LifecycleFacts = { listed: boolean | null; priced: boolean; filed: ReadonlySet<string> };
+export const LIFECYCLE_UNKNOWN: LifecycleFacts = { listed: null, priced: false, filed: new Set<string>() };
+
+const SCANNED_BRANCHES = ["identity", "issue", "valuation", "decision", "listing_outcome"] as const;
 
 export function lifecycleFacts(details: Record<string, unknown> | null | undefined): LifecycleFacts {
-  const outcome = isPlainObject(details?.listing_outcome) ? details!.listing_outcome as Record<string, unknown> : null;
-  let leaves = 0;
-  let pending = 0;
-  if (outcome) {
-    for (const v of Object.values(outcome)) {
-      if (!isPlainObject(v) || typeof (v as DetailField).state !== "string") continue;
-      leaves += 1;
-      if ((v as DetailField).state === "PENDING") pending += 1;
+  const filed = new Set<string>();
+  let outcomeLeaves = 0;
+  let outcomePending = 0;
+  for (const branch of SCANNED_BRANCHES) {
+    const node = isPlainObject(details?.[branch]) ? details![branch] as Record<string, unknown> : null;
+    if (!node) continue;
+    for (const [key, value] of Object.entries(node)) {
+      if (!isPlainObject(value) || typeof (value as DetailField).state !== "string") continue;
+      if (fieldDisplay(value as DetailField).hasValue) filed.add(`${branch}.${key}`);
+      if (branch === "listing_outcome") {
+        outcomeLeaves += 1;
+        if ((value as DetailField).state === "PENDING") outcomePending += 1;
+      }
     }
   }
-  const issue = isPlainObject(details?.issue) ? details!.issue as Record<string, unknown> : null;
-  const priceField = issue && isPlainObject(issue.issue_price) ? issue.issue_price as DetailField : undefined;
   return {
-    listed: leaves === 0 ? null : pending > 0 ? false : true,
-    priced: fieldDisplay(priceField).hasValue,
+    listed: outcomeLeaves === 0 ? null : outcomePending > 0 ? false : true,
+    priced: filed.has("issue.issue_price"),
+    filed,
   };
 }
 
@@ -301,7 +314,27 @@ export function lifecycleFacts(details: Record<string, unknown> | null | undefin
  *   has been written. `decision.verdict` is the one leaf it forgets.
  */
 type AbsenceGate = "listing" | "pricing" | "decision";
-type ReasonEntry = { gate: AbsenceGate; pending: string; missing: string };
+
+type ReasonEntry = {
+  gate: AbsenceGate;
+  /**
+   * The explanation ONLY. The lead word ("pending") is added by the renderer,
+   * so this must never start with it — otherwise the row reads
+   * "pending — pending — …".
+   */
+  pending: string;
+  /** When the lifecycle does not explain the gap. */
+  missing: string;
+  /**
+   * Leaves whose presence withdraws the lifecycle excuse: the record has
+   * demonstrably been filed this far and this one is still empty, so calling it
+   * "pending" would be the same kind of guess this whole pass exists to remove.
+   * A pure offer for sale, for instance, has no fresh-issue amount at all.
+   */
+  siblings?: readonly string[];
+  /** Said instead of `missing` when a sibling proves the record was filed. */
+  filed?: string;
+};
 
 /**
  * Every field whose absence the lifecycle explains. A field NOT in this book
@@ -311,53 +344,63 @@ type ReasonEntry = { gate: AbsenceGate; pending: string; missing: string };
 const REASON_BOOK: Record<string, ReasonEntry> = {
   "identity.listing_date": {
     gate: "listing",
-    pending: "pending — set when the exchange confirms the listing date",
+    pending: "set when the exchange confirms the listing date",
     missing: "No listing date is recorded for this IPO.",
   },
   "issue.issue_price": {
     gate: "listing",
-    pending: "pending — set when the issue is priced",
+    pending: "set when the issue is priced",
     missing: "No issue price is recorded for this IPO in the issue record.",
   },
   "issue.band_low": {
     gate: "listing",
-    pending: "pending — set when the price band is announced",
-    missing: "No price band is recorded for this IPO in the issue record.",
+    pending: "set when the price band is announced",
+    missing: "No low end of the price band is recorded in the issue record.",
+    siblings: ["issue.band_high", "issue.issue_price"],
+    filed: "No low end of the price band is recorded, though the issue record already carries this issue's other pricing — a fixed-price issue has no band.",
   },
   "issue.band_high": {
     gate: "listing",
-    pending: "pending — set when the price band is announced",
-    missing: "No price band is recorded for this IPO in the issue record.",
+    pending: "set when the price band is announced",
+    missing: "No high end of the price band is recorded in the issue record.",
+    siblings: ["issue.band_low", "issue.issue_price"],
+    filed: "No high end of the price band is recorded, though the issue record already carries this issue's other pricing — a fixed-price issue has no band.",
   },
   "issue.issue_size_cr": {
     gate: "listing",
-    pending: "pending — set when the issue size is filed with the offer document",
+    pending: "set when the issue size is filed with the offer document",
     missing: "No issue size is recorded for this IPO in the issue record.",
   },
   "issue.fresh_issue_cr": {
     gate: "listing",
-    pending: "pending — the fresh-issue amount is set when the offer document is filed",
+    pending: "the fresh-issue amount is set when the offer document is filed",
     missing: "No fresh-issue amount is recorded for this IPO in the issue record.",
+    siblings: ["issue.ofs_cr"],
+    filed: "Not recorded in the issue record, which carries the offer-for-sale side of this issue — a pure offer for sale has no fresh-issue amount.",
   },
   "issue.ofs_cr": {
     gate: "listing",
-    pending: "pending — the offer-for-sale amount is set when the offer document is filed",
+    pending: "the offer-for-sale amount is set when the offer document is filed",
     missing: "No offer-for-sale amount is recorded for this IPO in the issue record.",
+    siblings: ["issue.fresh_issue_cr"],
+    filed: "Not recorded in the issue record, which carries the fresh-issue side of this issue — an all-fresh issue has no offer-for-sale amount.",
   },
   "issue.lot_size": {
     gate: "listing",
-    pending: "pending — fixed with the price band",
+    pending: "fixed with the price band",
     missing: "No lot size is recorded for this IPO in the issue record.",
+    siblings: ["issue.issue_price", "issue.band_low", "issue.band_high"],
   },
   "issue.face_value": {
     gate: "listing",
-    pending: "pending — carried with the issue terms once they are filed",
+    pending: "carried with the issue terms once they are filed",
     missing: "No face value is recorded for this IPO in the issue record.",
+    siblings: ["issue.issue_size_cr", "issue.issue_price"],
   },
   "decision.verdict": {
     gate: "decision",
-    pending: "pending — a persisted decision is not yet available",
-    missing: "pending — a persisted decision is not yet available",
+    pending: "a persisted decision is not yet available",
+    missing: "a persisted decision is not yet available",
   },
 };
 
@@ -365,7 +408,7 @@ const REASON_BOOK: Record<string, ReasonEntry> = {
 // engine cannot compute without an issue price. One entry, applied to each.
 const VALUATION_ENTRY: ReasonEntry = {
   gate: "pricing",
-  pending: "pending — the v2 scoring engine runs on the issue price, which is not set yet",
+  pending: "the v2 scoring engine runs on the issue price, which is not set yet",
   missing: "No v2-score valuation row is stored for this IPO.",
 };
 for (const leaf of ["score", "band", "engine_version", "computed_at", "peer_median_pe",
@@ -384,6 +427,11 @@ export const HONEST_REASON_KEYS: readonly string[] = Object.keys(REASON_BOOK).so
  */
 export type AbsenceCopy = { lead: "pending" | "not available"; reason: string | null; producer: string | null };
 
+/** The one place lead and reason are joined, so they can never be joined twice. */
+export function absenceLine(copy: AbsenceCopy): string {
+  return copy.reason ? `${copy.lead} — ${copy.reason}` : copy.lead;
+}
+
 export function absenceCopy(
   key: string | undefined,
   f: DetailField | null | undefined,
@@ -395,10 +443,11 @@ export function absenceCopy(
   // A reason the producer actually wrote is the producer's to keep.
   if (!isGenericReason(f?.reason) || !entry)
     return { lead: state === "PENDING" ? "pending" : "not available", reason: f?.reason ?? null, producer };
-  const explainable = entry.gate === "decision"
+  const filedAlready = entry.siblings?.some((sibling) => facts.filed.has(sibling)) ?? false;
+  const explainable = !filedAlready && (
+    entry.gate === "decision"
     || (entry.gate === "listing" && facts.listed !== true)
-    || (entry.gate === "pricing" && !facts.priced);
-  return explainable
-    ? { lead: "pending", reason: entry.pending, producer }
-    : { lead: "not available", reason: entry.missing, producer };
+    || (entry.gate === "pricing" && !facts.priced));
+  if (explainable) return { lead: "pending", reason: entry.pending, producer };
+  return { lead: "not available", reason: filedAlready ? entry.filed ?? entry.missing : entry.missing, producer };
 }

@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  absenceCopy, lifecycleFacts, isGenericReason, buildMissingRegister,
+  absenceCopy, absenceLine, lifecycleFacts, isGenericReason, buildMissingRegister,
   GENERIC_ABSENCE_REASON, HONEST_REASON_KEYS, LIFECYCLE_UNKNOWN,
   type DetailField,
 } from "./details-format";
@@ -41,11 +41,18 @@ const listed = {
 };
 
 test("lifecycle is read from the payload, never from a clock", () => {
-  assert.deepEqual(lifecycleFacts(preListing), { listed: false, priced: false });
-  assert.deepEqual(lifecycleFacts(listed), { listed: true, priced: true });
+  const pre = lifecycleFacts(preListing);
+  assert.equal(pre.listed, false);
+  assert.equal(pre.priced, false);
+  const post = lifecycleFacts(listed);
+  assert.equal(post.listed, true);
+  assert.equal(post.priced, true);
+  assert.ok(post.filed.has("issue.issue_price"));
+  assert.ok(post.filed.has("listing_outcome.listing_open"));
+  assert.equal(post.filed.has("issue.band_low"), false); // absent leaves are not "filed"
   // No listing_outcome branch at all asserts nothing either way.
-  assert.deepEqual(lifecycleFacts({ issue: {} }), { listed: null, priced: false });
-  assert.deepEqual(lifecycleFacts(null), { listed: null, priced: false });
+  assert.equal(lifecycleFacts({ issue: {} }).listed, null);
+  assert.equal(lifecycleFacts(null).listed, null);
 });
 
 test("the producer's generic default is recognised; a written reason is not", () => {
@@ -58,22 +65,66 @@ test("the producer's generic default is recognised; a written reason is not", ()
 test("Molbio: an unpriced issue reads as pending, not as a broken source", () => {
   const copy = absenceCopy("issue.issue_price", preListing.issue.issue_price, lifecycleFacts(preListing));
   assert.equal(copy.lead, "pending");
-  assert.equal(copy.reason, "pending — set when the issue is priced");
+  // The RENDERED line, not a substring of it — a reason that carried its own
+  // "pending" prefix produced "pending — pending — …" on screen.
+  assert.equal(absenceLine(copy), "pending — set when the issue is priced");
   assert.equal(copy.producer, "ipo_issue");
-  assert.ok(!copy.reason!.includes("V2 source"));
+});
+
+test("no reason ever carries its own lead word, so no line can say it twice", () => {
+  const both = [lifecycleFacts(preListing), lifecycleFacts(listed)];
+  for (const key of HONEST_REASON_KEYS) {
+    for (const facts of both) {
+      const line = absenceLine(absenceCopy(key, { state: "MISSING", value: null, reason: GENERIC_ABSENCE_REASON, source: "x" }, facts));
+      assert.ok(!/^(pending|not available) — (pending|not available)\b/.test(line), `doubled lead on ${key}: ${line}`);
+      assert.ok(!line.includes("V2 source"), `generic reason survived on ${key}`);
+    }
+  }
+});
+
+test("a filed sibling withdraws the lifecycle excuse — a pure OFS is not pending", () => {
+  // Priced, pre-listing, all-OFS: fresh_cr is absent because there IS no fresh
+  // issue, not because the offer document has not been filed.
+  const pureOfs = {
+    issue: {
+      issue_price: { state: "AVAILABLE", value: 460, source: "ipo_issue" },
+      issue_size_cr: { state: "AVAILABLE", value: 900, source: "ipo_issue" },
+      ofs_cr: { state: "AVAILABLE", value: 900, source: "ipo_issue" },
+      fresh_issue_cr: producerMissing("ipo_issue"),
+      band_low: producerMissing("ipo_issue"),
+    },
+    listing_outcome: { listing_open: { state: "PENDING", value: null, reason: "pending until the IPO lists.", source: "listing_outcomes" } },
+  };
+  const facts = lifecycleFacts(pureOfs);
+  assert.equal(facts.listed, false); // still pre-listing …
+  const fresh = absenceCopy("issue.fresh_issue_cr", pureOfs.issue.fresh_issue_cr, facts);
+  assert.equal(fresh.lead, "not available"); // … but the OFS side is filed
+  assert.match(fresh.reason!, /pure offer for sale has no fresh-issue amount/);
+  // Same rule for a band on an already-priced issue.
+  const band = absenceCopy("issue.band_low", pureOfs.issue.band_low, facts);
+  assert.equal(band.lead, "not available");
+  assert.match(band.reason!, /fixed-price issue has no band/);
+});
+
+test("with nothing filed, the same two fields ARE pending", () => {
+  const facts = lifecycleFacts(preListing);
+  assert.equal(absenceLine(absenceCopy("issue.fresh_issue_cr", producerMissing("ipo_issue"), facts)),
+    "pending — the fresh-issue amount is set when the offer document is filed");
+  assert.equal(absenceLine(absenceCopy("issue.band_low", preListing.issue.band_low, facts)),
+    "pending — set when the price band is announced");
 });
 
 test("the same field on a LISTED IPO is a real gap, and names the producer", () => {
   const copy = absenceCopy("issue.band_low", listed.issue.band_low, lifecycleFacts(listed));
   assert.equal(copy.lead, "not available");
-  assert.equal(copy.reason, "No price band is recorded for this IPO in the issue record.");
+  assert.match(copy.reason!, /No low end of the price band is recorded/);
   assert.equal(copy.producer, "ipo_issue");
 });
 
 test("valuation waits on the issue price, not on the listing", () => {
   const pending = absenceCopy("valuation.score", preListing.valuation.score, lifecycleFacts(preListing));
-  assert.equal(pending.lead, "pending");
-  assert.match(pending.reason!, /scoring engine runs on the issue price/);
+  assert.equal(absenceLine(pending),
+    "pending — the v2 scoring engine runs on the issue price, which is not set yet");
   // Priced and still absent: the engine owed a row and there is none.
   const gap = absenceCopy("valuation.score", listed.valuation.score, lifecycleFacts(listed));
   assert.equal(gap.lead, "not available");
@@ -82,8 +133,7 @@ test("valuation waits on the issue price, not on the listing", () => {
 
 test("decision.verdict says what the producer already says about its siblings", () => {
   const copy = absenceCopy("decision.verdict", producerMissing("decisions"), lifecycleFacts(listed));
-  assert.equal(copy.lead, "pending");
-  assert.equal(copy.reason, "pending — a persisted decision is not yet available");
+  assert.equal(absenceLine(copy), "pending — a persisted decision is not yet available");
 });
 
 test("a reason the producer actually wrote is never overwritten", () => {
@@ -98,6 +148,10 @@ test("an unknown field keeps the payload's own sentence, generic included", () =
   const copy = absenceCopy("issue.some_future_field", producerMissing("ipo_issue"), lifecycleFacts(preListing));
   assert.equal(copy.reason, GENERIC_ABSENCE_REASON);
   assert.equal(copy.lead, "not available");
+});
+
+test("absenceLine never leaves a dangling dash when there is no reason", () => {
+  assert.equal(absenceLine({ lead: "not available", reason: null, producer: null }), "not available");
 });
 
 test("a PENDING payload state keeps its lead word even with no book entry", () => {

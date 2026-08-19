@@ -11,7 +11,7 @@ import { VARS as C, FONT, type Tone } from "@/lib/theme";
 import {
   fieldDisplay, toValueNode, humanizeKey, classLabel, splitEvidence,
   deriveMarketCap, deriveLotValue, buildMissingRegister, fmtNum, fmtCr, fmtRupee,
-  absenceCopy, lifecycleFacts, LIFECYCLE_UNKNOWN,
+  absenceCopy, absenceLine, lifecycleFacts, LIFECYCLE_UNKNOWN,
   type ValueNode, type DetailField, type FieldState, type EvidenceItem, type LifecycleFacts,
 } from "@/lib/ui/details-format";
 
@@ -65,7 +65,7 @@ function FieldRow({ label, f, fmt, k, lc = LIFECYCLE_UNKNOWN }:
       <div className="dval">
         {gap === null
           ? <b><Value node={node} /></b>
-          : <span style={{ color: C.dim }}>{gap.lead}{gap.reason ? ` — ${gap.reason}` : ""}</span>}
+          : <span style={{ color: C.dim }}>{absenceLine(gap)}</span>}
         {fd.proxyLabel ? <> <Badge label={fd.proxyLabel} tone="watch" title="Proxy — not a disclosed or reported company ratio" /></> : null}
       </div>
       <Badge label={fd.state} tone={STATE_TONE[fd.state]} />
@@ -253,7 +253,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
         <FieldRow label="House score" k="valuation.score" f={v.score} lc={lc} />
         <div className="drow">
           <span className="dlabel">Verdict band</span>
-          <div className="dval">{fieldDisplay(v.band).hasValue ? <Badge label={String(v.band.value)} /> : <span style={{ color: C.dim }}>{bandGap.lead}{bandGap.reason ? ` — ${bandGap.reason}` : ""}</span>}</div>
+          <div className="dval">{fieldDisplay(v.band).hasValue ? <Badge label={String(v.band.value)} /> : <span style={{ color: C.dim }}>{absenceLine(bandGap)}</span>}</div>
           <Badge label={fieldDisplay(v.band).state} tone={STATE_TONE[fieldDisplay(v.band).state]} />
           <small className="dmeta">qualitative label only — no historical-performance %</small>
         </div>
@@ -323,7 +323,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
       <Section id="decision" title="Persisted decision — company quality" tone="amber">
         <div className="drow">
           <span className="dlabel">Verdict</span>
-          <div className="dval">{fieldDisplay(dec.verdict).hasValue ? <Badge label={String(dec.verdict.value)} /> : <span style={{ color: C.dim }}>{verdictGap.lead}{verdictGap.reason ? ` — ${verdictGap.reason}` : ""}</span>}</div>
+          <div className="dval">{fieldDisplay(dec.verdict).hasValue ? <Badge label={String(dec.verdict.value)} /> : <span style={{ color: C.dim }}>{absenceLine(verdictGap)}</span>}</div>
           <Badge label={fieldDisplay(dec.verdict).state} tone={STATE_TONE[fieldDisplay(dec.verdict).state]} />
           <small className="dmeta">stored verdict — displayed as persisted, not relabeled</small>
         </div>

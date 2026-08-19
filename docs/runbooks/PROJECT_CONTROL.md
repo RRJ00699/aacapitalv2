@@ -531,21 +531,34 @@ VERIFIED DONE until the owner signs off.
   its reasons through the same `absenceCopy()`, so the §10 register cannot quote
   a different sentence from the row above it.
 
-**Every reason string this cycle changed** — all of them replace the single
-generic default, and each is chosen by the gate in its row:
+- **A lifecycle excuse expires when a sibling proves the record was filed.**
+  "Not yet listed" alone would mislabel a gap that is structural rather than
+  pending: a **pure offer for sale** has no fresh-issue amount, and a
+  **fixed-price issue** has no band. Each such field therefore names the
+  siblings whose presence withdraws its excuse
+  (`fresh_issue_cr` ↔ `ofs_cr`, band ↔ band/issue price, `lot_size` ← pricing,
+  `face_value` ← issue size / price). With a sibling filed, the row says what
+  the record actually holds instead of calling the gap pending.
+- **Lead and reason are joined in exactly one place** (`absenceLine()`), so the
+  word "pending" cannot be printed twice. The reason strings store the
+  explanation *only*; the lead word is the renderer's.
 
-| Field (payload path) | Gate | Reason when the lifecycle explains it | Reason when it does not |
+**Every reason string this cycle changed** — all of them replace the single
+generic default. The middle column is the line as rendered (lead + reason);
+the stored reason is the part after the dash.
+
+| Field (payload path) | Gate | Rendered when the lifecycle explains it | Rendered when it does not |
 | --- | --- | --- | --- |
-| `identity.listing_date` | not yet listed | `pending — set when the exchange confirms the listing date` | `No listing date is recorded for this IPO.` |
-| `issue.issue_price` | not yet listed | `pending — set when the issue is priced` | `No issue price is recorded for this IPO in the issue record.` |
-| `issue.band_low` | not yet listed | `pending — set when the price band is announced` | `No price band is recorded for this IPO in the issue record.` |
-| `issue.band_high` | not yet listed | `pending — set when the price band is announced` | `No price band is recorded for this IPO in the issue record.` |
-| `issue.issue_size_cr` | not yet listed | `pending — set when the issue size is filed with the offer document` | `No issue size is recorded for this IPO in the issue record.` |
-| `issue.fresh_issue_cr` | not yet listed | `pending — the fresh-issue amount is set when the offer document is filed` | `No fresh-issue amount is recorded for this IPO in the issue record.` |
-| `issue.ofs_cr` | not yet listed | `pending — the offer-for-sale amount is set when the offer document is filed` | `No offer-for-sale amount is recorded for this IPO in the issue record.` |
-| `issue.lot_size` | not yet listed | `pending — fixed with the price band` | `No lot size is recorded for this IPO in the issue record.` |
-| `issue.face_value` | not yet listed | `pending — carried with the issue terms once they are filed` | `No face value is recorded for this IPO in the issue record.` |
-| `valuation.score` | not yet priced | `pending — the v2 scoring engine runs on the issue price, which is not set yet` | `No v2-score valuation row is stored for this IPO.` |
+| `identity.listing_date` | not yet listed | `pending — set when the exchange confirms the listing date` | `not available — No listing date is recorded for this IPO.` |
+| `issue.issue_price` | not yet listed | `pending — set when the issue is priced` | `not available — No issue price is recorded for this IPO in the issue record.` |
+| `issue.band_low` | not yet listed, no band/price filed | `pending — set when the price band is announced` | `No low end of the price band is recorded…` — and, with pricing already filed, `…though the issue record already carries this issue's other pricing — a fixed-price issue has no band.` |
+| `issue.band_high` | not yet listed, no band/price filed | `pending — set when the price band is announced` | as `band_low`, for the high end |
+| `issue.issue_size_cr` | not yet listed | `pending — set when the issue size is filed with the offer document` | `not available — No issue size is recorded for this IPO in the issue record.` |
+| `issue.fresh_issue_cr` | not yet listed, no OFS filed | `pending — the fresh-issue amount is set when the offer document is filed` | with the OFS side filed: `Not recorded in the issue record, which carries the offer-for-sale side of this issue — a pure offer for sale has no fresh-issue amount.` |
+| `issue.ofs_cr` | not yet listed, no fresh side filed | `pending — the offer-for-sale amount is set when the offer document is filed` | with the fresh side filed: `Not recorded in the issue record, which carries the fresh-issue side of this issue — an all-fresh issue has no offer-for-sale amount.` |
+| `issue.lot_size` | not yet listed, no price/band filed | `pending — fixed with the price band` | `not available — No lot size is recorded for this IPO in the issue record.` |
+| `issue.face_value` | not yet listed, no size/price filed | `pending — carried with the issue terms once they are filed` | `not available — No face value is recorded for this IPO in the issue record.` |
+| `valuation.score` | not yet priced | `pending — the v2 scoring engine runs on the issue price, which is not set yet` | `not available — No v2-score valuation row is stored for this IPO.` |
 | `valuation.band` | not yet priced | *(same pair)* | *(same pair)* |
 | `valuation.engine_version` | not yet priced | *(same pair)* | *(same pair)* |
 | `valuation.computed_at` | not yet priced | *(same pair)* | *(same pair)* |
