@@ -11,11 +11,26 @@ import re
 from typing import Any, Callable
 
 MODEL = "claude-sonnet-4-6"
-PROMPT_VERSION = "sbi-v1.4"
-LEGACY_COMPLETION_PROMPT_VERSIONS = ("sbi-v1.3",)
+# sbi-v1.5: the word ceiling no longer applies to RESOLVED excerpts. The two regimes
+# must be distinguishable in provenance, so the identity is bumped; v1.4 stays a
+# COMPLETION identity so documents already extracted under it are not re-extracted and
+# not re-paid for.
+PROMPT_VERSION = "sbi-v1.5"
+LEGACY_COMPLETION_PROMPT_VERSIONS = ("sbi-v1.4", "sbi-v1.3")
 EVIDENCE_TRANSPORT_VERSION = "sbi-evidence-refs-v1"
 MAX_EVIDENCE_REFS = 3
+# The 15-word ceiling exists to stop PARAPHRASE, and it only makes sense for text the
+# model wrote. It does not apply to a RESOLVED excerpt: that text is lifted byte-true
+# from the page by Python after the refs are checked, and up to three joined source
+# lines routinely exceed fifteen words. Applying it there rejected honest evidence — the
+# owner's 08-19 pilot dropped 9 of 10 claims, every one for "excerpt exceeds 15 words".
+#
+# What actually guarantees integrity for a resolved excerpt is structural and is
+# unchanged: at most MAX_EVIDENCE_REFS refs, one page, contiguous, in order, and
+# resolved from real page bytes. The character cap below only bounds payload size; it is
+# not a wording rule.
 MAX_EVIDENCE_WORDS = 15
+MAX_EVIDENCE_CHARS = 1200
 SOURCE_TYPE = "SBI"
 TOOL_NAME = "record_sbi_extraction"
 
@@ -70,8 +85,9 @@ upper/lower price band, or generic "valued at" is never a fair or target value.
 
 Every claim/fact must contain one to three contiguous evidence_refs from exactly one
 page. Copy the stable IDs printed before source lines. Never invent, omit, reorder, or
-join non-contiguous IDs. Python resolves those IDs to the exact excerpt and page. The
-resolved excerpt must contain no more than fifteen words.
+join non-contiguous IDs. Python resolves those IDs to the exact excerpt and page, so
+cite every line the evidence actually needs — the resolved excerpt is not held to a word
+budget. Do not cite lines the claim does not rest on.
 
 Every claim needs statement and kind; every scalar fact needs field and value. Do not
 calculate or infer house fair value, pro-forma EPS, P/E, ROE, ROCE, FCF, margin of
@@ -271,16 +287,19 @@ def parse_extraction(response: str | bytes | dict[str, Any], *, doc_id: int,
         raise SBIExtractionError("claims exceeds maximum of 10")
     if len(facts) > 3:
         raise SBIExtractionError("scalar_facts exceeds maximum of 3")
+    # pages present -> resolve_evidence_refs() built every excerpt from real page bytes.
+    # pages absent -> the excerpt is whatever the model wrote, and the word ceiling holds.
+    resolved = pages is not None
     clean_claims, clean_facts, dropped = [], [], []
     for position, claim in enumerate(claims):
-        reason = _claim_error(claim)
+        reason = _claim_error(claim, resolved=resolved)
         if reason:
             dropped.append({"item_type": "claim", "position": position, "reason": reason})
         else:
             clean_claims.append({**claim, "doc_id": doc_id, "source_type": SOURCE_TYPE,
                                  "model": MODEL, "prompt_version": PROMPT_VERSION})
     for position, fact in enumerate(facts):
-        reason = _scalar_error(fact)
+        reason = _scalar_error(fact, resolved=resolved)
         if reason:
             dropped.append({"item_type": "scalar_fact", "position": position, "reason": reason})
         else:
@@ -303,13 +322,25 @@ def _confidence_error(value):
     return None if valid else "invalid confidence"
 
 
-def _claim_error(claim):
+def _excerpt_error(excerpt, *, resolved):
+    """Bound the excerpt. Byte-true page text is capped by SIZE; model text by WORDS."""
+    if resolved:
+        if len(str(excerpt)) > MAX_EVIDENCE_CHARS:
+            return f"excerpt exceeds {MAX_EVIDENCE_CHARS} characters"
+        return None
+    if len(str(excerpt).split()) > MAX_EVIDENCE_WORDS:
+        return "excerpt exceeds 15 words"
+    return None
+
+
+def _claim_error(claim, *, resolved=False):
     if not isinstance(claim, dict): return "item must be an object"
     if claim.get("kind") not in CLAIM_KINDS: return "unsupported kind"
     if not claim.get("statement") or not claim.get("excerpt"): return "missing required statement/excerpt fields"
     unexpected = set(claim) - CLAIM_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
-    if len(str(claim["excerpt"]).split()) > MAX_EVIDENCE_WORDS: return "excerpt exceeds 15 words"
+    excerpt_error = _excerpt_error(claim["excerpt"], resolved=resolved)
+    if excerpt_error: return excerpt_error
     statement = str(claim["statement"]).strip()
     if "\n" in statement or "\r" in statement: return "statement must be single-line"
     if len(statement.split()) > 40: return "statement exceeds 40 words"
@@ -318,14 +349,15 @@ def _claim_error(claim):
     return _confidence_error(claim.get("confidence"))
 
 
-def _scalar_error(fact):
+def _scalar_error(fact, *, resolved=False):
     if not isinstance(fact, dict): return "item must be an object"
     if fact.get("field") not in SCALAR_FIELDS: return "unsupported field"
     if fact.get("value") in (None, ""): return "missing or empty value"
     if not fact.get("excerpt"): return "missing required excerpt field"
     unexpected = set(fact) - SCALAR_KEYS
     if unexpected: return f"unsupported fields: {sorted(unexpected)}"
-    if len(str(fact["excerpt"]).split()) > MAX_EVIDENCE_WORDS: return "excerpt exceeds 15 words"
+    excerpt_error = _excerpt_error(fact["excerpt"], resolved=resolved)
+    if excerpt_error: return excerpt_error
     evidence = str(fact["excerpt"])
     if fact.get("field") == "sbi_rating":
         rating = re.sub(r"[\s_-]+", " ", str(fact.get("value", "")).strip().upper())
