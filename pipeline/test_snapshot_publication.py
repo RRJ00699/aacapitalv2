@@ -1,6 +1,7 @@
 import http.server
 import json
 import os
+import re
 import shutil
 import socketserver
 import subprocess
@@ -217,6 +218,16 @@ def test_real_producer_chain_origin_without_trailing_slash_switches_active_point
         assert details_active
         details = json.loads(SnapshotHandler.kv[_data_key("ipo-details:isin:INE000000001:v1", details_active)])
         assert details["schema_version"] == "ipo-details-v1"
+        expected = {"pipeline-health:v1", "market-india:v1",
+                    "journey-15m:isin:INE000000001:v1",
+                    "listing-cumulative-volume:isin:INE000000001:v1",
+                    "listing-ticks:isin:INE000000001:v1"}
+        assert expected <= {_pointer(name, "active").split("snapshot:",1)[1].rsplit(":active",1)[0]
+                            for name in expected if SnapshotHandler.kv.get(_pointer(name, "active"))}
+        health_version = SnapshotHandler.kv[_pointer("pipeline-health:v1", "active")]
+        health = json.loads(SnapshotHandler.kv[_data_key("pipeline-health:v1", health_version)])
+        assert health["run_complete"] is True and health["paid_calls"]["used_usd"] == 0
+        assert "postgresql://" not in json.dumps(health)
 
 
 def test_real_builder_fixture_executes_and_checks_ipo_identity_and_date_parameter_sql():
@@ -264,7 +275,7 @@ def test_schema_smoke_requires_real_read_only_neon_but_not_publication_credentia
 def test_schema_smoke_cannot_skip_details_sql_when_selected_universe_is_empty():
     """Regression: stale Details columns must fail schema smoke even on a zero-IPO day."""
     builder = (ROOT / "pipeline/build/build_snapshots.ts").read_text(encoding="utf-8")
-    assert "const detailIds = selected.length || !schemaSmoke" in builder
+    assert re.search(r"const detailIds =\s*selected.length \|\| !schemaSmoke", builder)
     assert ": [-1]" in builder
     assert 'fetchDetailsRows(sql, detailIds)' in builder
     assert 'atBuilderStage("ipo-details"' in builder

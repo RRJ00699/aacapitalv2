@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 
 from pipeline.topout_online import bearish_candle, detect_top, input_is_fresh, IST
 
@@ -69,7 +70,7 @@ def test_snapshot_route_and_journey_ui_keep_top_discovery_kv_only():
     builder = (root / "pipeline/build/build_snapshots.ts").read_text()
     route = (root / "app/api/ipo/journey/route.ts").read_text()
     ui = (root / "app/dashboard/journey/page.tsx").read_text()
-    assert "level_observation:latestLevel" in builder
+    assert re.search(r"level_observation:\s*latestLevel", builder)
     assert "journey:isin:" in builder and "obs_type='level'" in builder
     assert "level_observation" in route
     assert "@neondatabase" not in route and "sql`" not in route

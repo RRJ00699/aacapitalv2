@@ -252,7 +252,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
                     quote_outcome = source_outcome = "source_unavailable"
                 else:
                     status = getattr(quote, "status_code", 200)
-                    if status == 429 or status >= 500:
+                    if status == 403 or status == 429 or status >= 500:
                         quote_outcome = source_outcome = "source_unavailable"
                     elif status != 200:
                         quote_outcome = source_outcome = "invalid_response"

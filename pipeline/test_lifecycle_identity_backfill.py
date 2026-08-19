@@ -542,3 +542,13 @@ def test_session_timeout_configuration_failure_is_nonzero_before_network_or_writ
     output = capsys.readouterr().out
     assert "configuration sentinel" not in output
     assert output.count('"reason": "backfill_failed"') == 2
+
+def test_quote_http_403_is_source_unavailable_and_never_writes_identity():
+    row = (1, "Exact Limited", "EXACT", None, dt.date(2026, 8, 11))
+    conn = RoutedConn([row], [])
+    session = Mock(); session.get.side_effect = [Response(b"SYMBOL,NAME OF COMPANY\n"), Response(status=403)]
+    result = refresh(conn, session, limit=1, quote_limit=1, write=True)
+    assert result["rows"][0]["outcome"] == "source_unavailable"
+    assert result["rows"][0]["source_outcome"] == "source_unavailable"
+    assert conn.commits == 0
+    assert not any(sql.startswith("UPDATE") for sql, _ in conn.cur.executed)
