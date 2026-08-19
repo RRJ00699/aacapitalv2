@@ -80,12 +80,36 @@ def retry_lane(field):
 
 
 def summarize_requirements(present, missing, pending):
-    """Summarize one fixed stage requirement set without row-shape dependence."""
+    """Summarize one stage's requirement set. The percentage measures what is DUE.
+
+    PENDING IS NOT IN THE DENOMINATOR, and that is the whole point. Requirements arrive
+    in waves as an IPO advances, and a wave can only be judged on what it made obtainable:
+
+      ids 1099 and 1100, owner's 08-16 run, went before=60.0% -> after=54.5% because the
+      NSE lifecycle step backfilled their listing date mid-run. The stage advanced
+      closed -> listed, which adds 8 requirements: 3 arrived immediately as facts
+      (listing_date, symbol, issue_price), 1 was a genuine new gap (decisions), and 4
+      were NOT YET DUE on listing day — kite_token (the instrument may not be in the NSE
+      dump on day 1), listing_outcomes, market_candles and market_candles_15m (no session
+      has closed yet). Counting those 4 as denominator dragged the score down for facts
+      that nothing could have fetched. Nothing was lost and three facts were gained, and
+      the number still fell.
+
+    Counting only what is due also makes the percentage AGREE with `complete`, which is
+    already defined as "no blocking gaps" and ignores pending entirely. Under the old
+    denominator an IPO could be COMPLETE and 0.0% at the same time.
+
+    This is not manufactured monotonicity. A field that is genuinely obtainable and
+    absent stays in `missing`, in the denominator, and in its retry lane — `decisions`
+    above still counts against 1099/1100 and still names the score/verdict lane, because
+    verdict_engine reads valuation/rhp/subscription/issue facts that are all present. Only
+    NOT-YET-DUE requirements are held out, and they stay visible in `required_pending`."""
     required_present = len(present)
-    required_total = required_present + len(missing) + len(pending)
+    required_total = required_present + len(missing)
     return {
         "required_present": required_present,
         "required_total": required_total,
+        "required_pending": len(pending),
         "completeness_pct": (round(100 * required_present / required_total, 1)
                              if required_total else 100.0),
         "retry_lanes": sorted({retry_lane(field) for field in missing}),
@@ -383,7 +407,8 @@ def main():
             print(f"       - {m}")
         for m in r.get("pending", []):
             print(f"       . {m}  [not due yet]")
-        print(f"     completeness {r['required_present']}/{r['required_total']} ({r['completeness_pct']}%)")
+        print(f"     completeness {r['required_present']}/{r['required_total']} due "
+              f"({r['completeness_pct']}%) · {r['required_pending']} pending")
         if r["retry_lanes"]:
             print(f"     retry lanes: {', '.join(r['retry_lanes'])}")
     print(f"\n  RUN SUMMARY: {len(reps)} IPOs, {ncomplete} COMPLETE, "

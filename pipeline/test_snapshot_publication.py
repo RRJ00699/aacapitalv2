@@ -37,12 +37,57 @@ def test_warm_kv_missing_executable_fails_clearly(monkeypatch):
 
 def test_warm_kv_passes_exact_resolved_command(monkeypatch):
     calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
     monkeypatch.setattr(warm_kv, "resolve_npx", lambda: "/bin/npx")
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append((cmd, kw)))
+    monkeypatch.setattr(subprocess, "run", fake_run)
     warm_kv.publish(limit=7, concurrency=2, dry_run=True)
     assert calls[0][0] == ["/bin/npx", "tsx", "pipeline/build/build_snapshots.ts", "--limit=7", "--concurrency=2", "--dry-run"]
-    assert calls[0][1]["check"] is True
     assert calls[0][1]["cwd"] == str(ROOT)
+    # The builder's bytes are decoded HERE, where Node's UTF-8 and the Windows launcher's
+    # console code page are mixed. A byte the parent cannot decode must never fail a
+    # publication that already succeeded.
+    assert calls[0][1]["capture_output"] is True
+    assert calls[0][1]["encoding"] == "utf-8" and calls[0][1]["errors"] == "replace"
+    assert "shell" not in calls[0][1], "shell=False is the default and must stay default"
+
+
+def test_windows_launcher_path_with_a_space_is_never_joined_into_a_string(monkeypatch):
+    """D5: the owner's suspected culprit, "C:\\Program Files\\nodejs\\npx.CMD"."""
+    windows_npx = r"C:\Program Files\nodejs\npx.CMD"
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(shutil, "which",
+                        lambda name: windows_npx if name in ("npx", "npx.cmd") else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert warm_kv.resolve_npx() == windows_npx
+    assert warm_kv.build_command(limit=25, concurrency=4)[0] == windows_npx
+    warm_kv.publish(limit=25, concurrency=4)
+    cmd, kwargs = calls[0]
+    assert isinstance(cmd, list) and cmd[0] == windows_npx, "argv must stay a list"
+    assert kwargs.get("shell") in (None, False)
+    # Every argument is its own element: nothing is split on the space in "Program Files".
+    assert cmd == [windows_npx, "tsx", "pipeline/build/build_snapshots.ts",
+                   "--limit=25", "--concurrency=4"]
+
+
+def test_builder_failure_carries_the_child_diagnostic_into_the_ledger(monkeypatch):
+    """check=True without capture raises with stdout=None; the ledger then said nothing."""
+    monkeypatch.setattr(warm_kv, "resolve_npx", lambda: "/bin/npx")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+        cmd, 7, stdout="partial output", stderr="tsx: cannot find module"))
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        warm_kv.publish()
+    assert exc.value.returncode == 7
+    assert exc.value.stdout == "partial output"
+    assert "cannot find module" in exc.value.stderr
 
 
 class SnapshotEndpoint(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -387,3 +432,110 @@ def test_configured_ntfy_path_is_attempted_on_failure(monkeypatch):
     assert code == 1
     assert calls and calls[0][0] == "https://ntfy.sh/unit-topic"
     assert ledger["alert_status"] == "SENT"
+
+
+# ------------------------------------------------------------------ D5, post-publication
+# The owner's cron run published all 16 keys and then exited 1, while the same builder
+# invoked standalone exits 0. Everything the standalone command does NOT do lives after
+# publication: decoding the builder's stream, parsing the publication record out of it,
+# and proving the active pointer. Each of those could fail a run whose publication had
+# already fully succeeded.
+
+def test_publication_record_is_found_even_when_it_shares_a_line():
+    """A cmd.exe banner or npm notice on the builder's line must not erase the proof."""
+    clean = '{"stage":"publication","label":"globals","published":{"ipo-command:v6":"v9"}}'
+    assert publisher.publication_versions(clean) == {"ipo-command:v6": "v9"}
+    for polluted in (
+        'npm notice New major version of npm available! ' + clean,
+        clean + '  (16 keys)',
+        'C:\\Program Files\\nodejs\\npx.CMD ' + clean,
+        clean + "\r",
+    ):
+        assert publisher.publication_versions(polluted) == {"ipo-command:v6": "v9"}, polluted
+
+
+def test_a_bare_scalar_on_its_own_line_cannot_raise_attributeerror():
+    """json.loads("25") returns an int; the old line parser then called .get() on it."""
+    record = '{"stage":"publication","published":{"ipo-command:v6":"v3"}}'
+    assert publisher.publication_versions("25\nnull\n\"text\"\n[1,2]\n" + record) == {
+        "ipo-command:v6": "v3"}
+
+
+def test_publisher_and_cron_read_this_process_output_the_same_way():
+    """One discipline for reading a child's structured output, two processes."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cron_for_scanner", ROOT / "pipeline" / "cron.py")
+    cron = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cron)
+    sample = ('snapshot builder command: /bin/npx tsx build.ts\n'
+              '{"stage":"publication","published":{"a":"v1"}} trailing text\n'
+              'not json at all\n'
+              '{"SNAPSHOT_CONSUMER_PROOF":{"snapshots_published":16}}\n')
+    assert publisher.structured_objects(sample) == cron.structured_objects(sample)
+
+
+PUBLICATION_RECORD = '{"stage":"publication","label":"globals","published":{"ipo-command:v6":"v9"}}'
+
+
+def fake_npx(tmp_path, body):
+    """A stand-in launcher on PATH, named as Windows would name it."""
+    binaries = tmp_path / "bin"
+    binaries.mkdir(exist_ok=True)
+    launcher = binaries / ("npx.cmd" if os.name == "nt" else "npx")
+    launcher.write_text(body, encoding="utf-8")
+    launcher.chmod(0o755)
+    return binaries
+
+
+def test_warm_kv_survives_a_byte_the_parent_could_not_have_decoded(tmp_path, monkeypatch):
+    """cmd.exe writes its banners in the console code page, not Node's UTF-8."""
+    binaries = fake_npx(tmp_path, "#!/bin/sh\nprintf 'notice \\235 done\\n'\n"
+                                  f"printf '%s\\n' '{PUBLICATION_RECORD}'\n")
+    monkeypatch.setenv("PATH", str(binaries))
+    completed = warm_kv.publish(limit=25, concurrency=4)
+    assert completed.returncode == 0
+    assert "\ufffd" in completed.stdout, "the undecodable byte was replaced, not raised"
+    # ...and the publication record on the other side of it is still readable.
+    assert publisher.publication_versions(completed.stdout) == {"ipo-command:v6": "v9"}
+
+
+def test_an_undecodable_byte_does_not_erase_a_publication_from_the_ledger(tmp_path):
+    """End to end: the record survives the decode boundary and reaches the ledger.
+
+    The stand-in launcher publishes nothing, so the pointer proof correctly fails — but
+    the ledger must still show that keys went live, which is only possible if the parent
+    decoded and parsed a stream carrying a byte Node never wrote.
+    """
+    binaries = fake_npx(tmp_path, "#!/bin/sh\nprintf 'launcher \\235 banner\\n'\n"
+                                  f"printf '%s\\n' '{PUBLICATION_RECORD}'\n")
+    with ServerContext() as srv:
+        res = run_publisher(srv.url, extra_env={"PATH": str(binaries)})
+        assert res.returncode != 0            # nothing really moved the active pointer
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+        assert ledger["phase"] == "publication-proof"
+        assert ledger["published_snapshots"] == 1
+        assert ledger["last_known_good_kv_remains_active"] is False
+
+
+def test_ledger_records_what_actually_went_live_before_the_proof_runs():
+    """A post-publication failure must not claim the last-known-good KV is still active."""
+    with ServerContext() as srv:
+        SnapshotHandler.skip_pointer = True     # keys land; the active pointer does not move
+        res = run_publisher(srv.url)
+        assert res.returncode != 0
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+        assert ledger["phase"] == "publication-proof"
+        assert ledger["published_snapshots"] > 0
+        assert ledger["last_known_good_kv_remains_active"] is False
+
+
+def test_a_failure_before_the_builder_still_reports_the_last_known_good_kv_as_active():
+    env = os.environ.copy(); env.pop("SNAPSHOT_PUBLISH_URL", None)
+    env["SNAPSHOT_PUBLISH_KEY"] = "k"; env.pop("NTFY_TOPIC", None)
+    LEDGER.unlink(missing_ok=True)
+    res = subprocess.run([sys.executable, "pipeline/publish_snapshot_with_ledger.py"],
+                         cwd=ROOT, env=env, text=True, capture_output=True, timeout=30)
+    assert res.returncode != 0
+    ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+    assert ledger["phase"] == "config"
+    assert ledger["last_known_good_kv_remains_active"] is True

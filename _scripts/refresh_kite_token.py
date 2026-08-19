@@ -21,8 +21,24 @@ import requests
 from kiteconnect import KiteConnect
 from datetime import datetime
 from dotenv import load_dotenv
-load_dotenv(".env.local")
-load_dotenv(".env")
+
+# TEST MODE MUST NOT INHERIT AMBIENT CONFIGURATION.
+#
+# load_dotenv() injects the developer's .env into os.environ at IMPORT time — that is,
+# after a test fixture has already cleared those names. The control tests load this
+# module to exercise main(), so on any machine with a populated .env the fixture's
+# isolation was undone the moment the module executed: EXECUTE_CLOUDFLARE_SECRET_ROTATION,
+# ALLOW_LEGACY_KITE_DB_TOKEN_WRITE, KITE_REFRESH_VALIDATE_ONLY and the broker URL/secret
+# all came back. That is why the suite fails on the owner's PC and passes in CI, and it
+# is not merely a wrong verdict: with the rotation flags ambient, running the tests
+# attempted a real `wrangler secret put` and a real broker verification against
+# production.
+#
+# Under KITE_REFRESH_TEST_MODE the process believes exactly what the test told it and
+# nothing else. Production is unaffected: the flag is set only by tests and CI.
+if os.environ.get("KITE_REFRESH_TEST_MODE") != "1":
+    load_dotenv(".env.local")
+    load_dotenv(".env")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger()

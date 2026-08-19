@@ -40,15 +40,70 @@ def test_three_bounded_refs_are_allowed_and_four_are_rejected():
             doc_id=7, pages=pages)
 
 
-def test_resolved_excerpt_retains_fifteen_word_ceiling():
-    short = "valid evidence"
-    long = " ".join(f"word{index}" for index in range(16))
-    raw = {"claims": [
-        {"kind": "verdict", "statement": "Valid.", "evidence_refs": ["P1:L001"]},
-        {"kind": "verdict", "statement": "Too long.", "evidence_refs": ["P1:L002"]},
-    ], "scalar_facts": []}
+def test_three_ref_resolved_excerpt_of_forty_words_is_accepted():
+    """D7: the owner's 08-19 pilot dropped 9 of 10 claims on "excerpt exceeds 15 words".
+
+    Those excerpts were RESOLVED — up to three source lines joined by Python from real
+    page bytes. A word budget written to stop paraphrase cannot apply to text the model
+    never wrote, and three joined lines of a research note routinely run past fifteen
+    words.
+    """
+    lines = [" ".join(f"word{index}" for index in range(row * 14, row * 14 + 14))
+             for row in range(3)]
+    raw = {"claims": [{"kind": "verdict", "statement": "Valid.",
+                       "evidence_refs": ["P1:L001", "P1:L002", "P1:L003"]}],
+           "scalar_facts": []}
+    parsed = sonnet.parse_extraction(raw, doc_id=7,
+                                     pages=[{"page_number": 1, "text": "\n".join(lines)}])
+    assert parsed["dropped_items"] == []
+    excerpt = parsed["claims"][0]["excerpt"]
+    assert len(excerpt.split()) == 42 > sonnet.MAX_EVIDENCE_WORDS
+    assert excerpt == "\n".join(lines)          # byte-true, in order, one page
+
+
+def test_the_structural_evidence_guarantees_are_unchanged():
+    """What actually protects a resolved excerpt: refs, page, order, contiguity."""
+    pages = [{"page_number": 1, "text": "one\ntwo\nthree\nfour"},
+             {"page_number": 2, "text": "five"}]
+
+    def claim(refs):
+        return {"claims": [{"kind": "verdict", "statement": "S.", "evidence_refs": list(refs)}],
+                "scalar_facts": []}
+
+    with pytest.raises(sonnet.EvidenceReferenceError, match="too many evidence_refs"):
+        sonnet.parse_extraction(claim(["P1:L001", "P1:L002", "P1:L003", "P1:L004"]),
+                                doc_id=7, pages=pages)
+    with pytest.raises(sonnet.EvidenceReferenceError, match="non-contiguous"):
+        sonnet.parse_extraction(claim(["P1:L001", "P1:L003"]), doc_id=7, pages=pages)
+    with pytest.raises(sonnet.EvidenceReferenceError, match="cross-page"):
+        sonnet.parse_extraction(claim(["P1:L004", "P2:L001"]), doc_id=7, pages=pages)
+    with pytest.raises(sonnet.EvidenceReferenceError, match="out-of-order"):
+        sonnet.parse_extraction(claim(["P1:L002", "P1:L001"]), doc_id=7, pages=pages)
+
+
+def test_a_resolved_excerpt_is_still_bounded_by_size():
+    """The replacement cap bounds payload, it does not police wording."""
+    pages = [{"page_number": 1,
+              "text": "kept evidence\n" + "x" * (sonnet.MAX_EVIDENCE_CHARS + 1)}]
     parsed = sonnet.parse_extraction(
-        raw, doc_id=7, pages=[{"page_number": 1, "text": f"{short}\n{long}"}])
+        {"claims": [{"kind": "verdict", "statement": "Kept.", "evidence_refs": ["P1:L001"]},
+                    {"kind": "verdict", "statement": "Oversized.", "evidence_refs": ["P1:L002"]}],
+         "scalar_facts": []}, doc_id=7, pages=pages)
+    assert len(parsed["claims"]) == 1
+    assert parsed["dropped_items"] == [
+        {"item_type": "claim", "position": 1,
+         "reason": f"excerpt exceeds {sonnet.MAX_EVIDENCE_CHARS} characters"}]
+
+
+def test_a_model_authored_excerpt_still_faces_the_word_ceiling():
+    """parse_extraction without pages is the model-authored path; paraphrase is capped."""
+    parsed = sonnet.parse_extraction(
+        {"claims": [
+            {"kind": "verdict", "statement": "Valid.", "excerpt": "short evidence",
+             "page_number": 1},
+            {"kind": "verdict", "statement": "Too long.", "page_number": 1,
+             "excerpt": " ".join(f"word{index}" for index in range(16))},
+         ], "scalar_facts": []}, doc_id=7)
     assert len(parsed["claims"]) == 1
     assert parsed["dropped_items"] == [
         {"item_type": "claim", "position": 1, "reason": "excerpt exceeds 15 words"}]
@@ -74,11 +129,12 @@ def test_tool_schema_has_refs_only_and_strict_transport():
     assert sonnet.EVIDENCE_TRANSPORT_VERSION == "sbi-evidence-refs-v1"
 
 
-def test_v14_provenance_keeps_v13_completion_compatibility():
+def test_v15_provenance_distinguishes_the_regimes_without_re_paying_for_v14():
+    """The identity change must not turn every completed document back into pending."""
     sql, params = sonnet.pending_documents_query()
-    assert sonnet.PROMPT_VERSION == "sbi-v1.4"
-    assert sonnet.completion_prompt_versions() == ("sbi-v1.4", "sbi-v1.3")
-    assert "sbi-v1.4" in params and "sbi-v1.3" in params
+    assert sonnet.PROMPT_VERSION == "sbi-v1.5"
+    assert sonnet.completion_prompt_versions() == ("sbi-v1.5", "sbi-v1.4", "sbi-v1.3")
+    assert "sbi-v1.5" in params and "sbi-v1.4" in params and "sbi-v1.3" in params
     assert sonnet.EVIDENCE_TRANSPORT_VERSION not in sql
     assert sonnet.EVIDENCE_TRANSPORT_VERSION not in params
 

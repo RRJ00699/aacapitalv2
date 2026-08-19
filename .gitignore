@@ -80,3 +80,10 @@ uat-shots/
 
 # OpenNext (Cloudflare) build output — never commit
 /.open-next/
+
+# Pipeline run artifacts — rewritten on every cron run and every test run, so they
+# would otherwise dirty the tree and conflict on every branch. Both are machine-local
+# state, never inputs: cron.py writes the completeness manifest under TEMP_ROOT, and
+# publish_snapshot_with_ledger.py rewrites the ledger before it is ever read.
+.tmp/
+pipeline/snapshot_publication_ledger.json

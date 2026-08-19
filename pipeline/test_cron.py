@@ -406,6 +406,8 @@ def test_runbook_path_and_commands_contract():
     assert len(text.splitlines()) <= 45
     assert "git switch main; git pull --ff-only origin main" in text
     assert "git reset --hard" not in text
-    assert "drive.py completeness alerts" in cron.ENVIRONMENT[-1][1]
+    consumers = {name: consumer for name, consumer, _effect in cron.ENVIRONMENT}
+    assert consumers["NTFY_TOPIC"] == "drive.py completeness alerts"
+    assert consumers["RULE_VALIDATION_OWNER_APPROVED"] == "rule_validation_results writes"
     assert "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1" in text
     assert "KITE_REFRESH_VALIDATE_ONLY=1" in text

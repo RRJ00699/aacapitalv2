@@ -9,7 +9,7 @@ from pipeline import fill_ipo, fill_v2, sbi_extraction_run as run, sbi_sonnet as
 
 def test_prompt_and_strict_tool_contract():
     assert sonnet.MODEL == "claude-sonnet-4-6"
-    assert sonnet.PROMPT_VERSION == "sbi-v1.4"
+    assert sonnet.PROMPT_VERSION == "sbi-v1.5"
     assert "evidence_refs" in sonnet.SYSTEM_PROMPT
     assert sonnet.SBI_EXTRACTION_TOOL["strict"] is True
     assert sonnet.TOOL_CHOICE == {

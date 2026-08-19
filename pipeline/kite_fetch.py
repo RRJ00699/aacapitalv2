@@ -211,7 +211,7 @@ def derive_outcome(conn, ipo_id):
 def process(kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_15m=True):
     """One IPO through the whole chain. Returns a step report."""
     from fill_v2 import upsert_candles, upsert_listing_outcome, upsert_candles_15m
-    from fill_ipo import upsert_ipo, _log_fact
+    from fill_ipo import _log_fact
     out = {"ipo_id": ipo_id, "token": None, "bars": 0, "bars_15m": 0,
            "outcome": None, "notes": []}
 
@@ -229,11 +229,25 @@ def process(kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_1
                                 "-> candles and listing_outcomes both blocked")
             return out
         if write:
-            # COALESCE-empty-only, so this can only fill a null token
+            # Write the token to the ROW WE WERE HANDED, by id.
+            #
+            # This used to go through upsert_ipo(), which re-resolves identity by
+            # isin -> name_norm. When the selected row has isin NULL and a name_norm that
+            # differs from _norm(name_display), that resolution finds nothing and INSERTs
+            # a NEW spine row — the token lands on a duplicate and the original id stays
+            # tokenless. CSM id 493 is the case: the daily lane reported a resolved
+            # token=195520769 while the 15-minute lane, selecting the same id, still
+            # reported missing_token.
+            #
+            # The candle lane never has identity to contribute; ipo_id is already in hand,
+            # so there is nothing to resolve and no reason it may ever create a row.
+            # COALESCE keeps the enrichment rule: a stored token is never overwritten,
+            # and never overwritten with NULL.
             def store_token(conn):
-                upsert_ipo(conn, dict(isin=isin, name_display=name,
-                                      name_norm=None, kite_token=token), source="kite")
                 cur = conn.cursor()
+                cur.execute("UPDATE ipo SET kite_token=COALESCE(kite_token,%s), "
+                            "updated_at=now() WHERE id=%s", (token, ipo_id))
+                _log_fact(cur, ipo_id, "kite_token", token, "kite")
                 _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
                 conn.commit()
             with_db(store_token)
