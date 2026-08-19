@@ -42,35 +42,54 @@ The totals below are the exact output of that command. The analyzer reads source
 - `script path`
 - `shell/script path`
 
-Python AST handling covers `import`, `from ... import ...`, constants passed to wrapper functions such as `step()`, subprocess/Popen/check-call/check-output argument lists, Python-executable command arrays, `os.system` command strings, explicit `_scripts/...` paths, bare script names resolved relative to `_scripts`, and shell/batch/PowerShell references. Reachability is recursively closed over every discovered edge. Docstrings and comments are excluded from executable path evidence.
+Python AST handling covers `import`, `from ... import ...` — including a bare sibling name resolved against the caller's OWN package, which is how Python resolves it when a script is run directly and `sys.path[0]` is the script's directory — constants passed to wrapper functions such as `step()`, subprocess/Popen/check-call/check-output argument lists, Python-executable command arrays, `os.system` command strings, explicit `_scripts/...` paths, bare script names resolved relative to `_scripts`, and shell/batch/PowerShell references. Reachability is recursively closed over every discovered edge. Docstrings and comments are excluded from executable path evidence.
 
 ## Production totals
 
 | Measure | Count |
 |---|---:|
-| TOTAL | 53 |
-| KEEP | 53 |
+| TOTAL | 54 |
+| KEEP | 54 |
 | UNREACHABLE | 0 |
 | UNKNOWN | 0 |
 | V1_TOTAL | 35 |
 | KEPT_WITH_V1 | 35 |
 | UNREACHABLE_WITH_V1 | 0 |
 
+**53 → 54 (2026-08-17): a resolver defect, not a new file.** `_scripts/prod/env_utils.py`
+was returned from `_archive/scripts/prod/`, where Phase 4B had put it as UNREACHABLE. It
+never was. `_scripts/prod/kite_sync_and_predict.py` — itself a KEEP file, and the
+entrypoint behind `npm run prod:market` / `prod:ipo` / `prod:all` — imports it with
+`from env_utils import ...`. Running a script directly puts its own directory on
+`sys.path[0]`, so that bare name resolves to its sibling; the resolver tried only the
+bare name and the `_scripts.`-prefixed name, never the caller's own package, so **every
+bare sibling import below the top level was invisible to this graph**. The quarantine
+broke all three `prod:*` entrypoints on a clean checkout, masked locally by a stale
+tracked `__pycache__/env_utils.cpython-312.pyc`. `V1_TOTAL` is unchanged because
+`env_utils.py` references no V1 table.
+
 Before the Phase 4B quarantine, the same production graph reported TOTAL=174, KEEP=54, UNREACHABLE=120, V1_TOTAL=122, KEPT_WITH_V1=36, and UNREACHABLE_WITH_V1=86. The 120 mechanically unreachable files were moved without source rewrites.
 
-Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, `_scripts/ipo_data_contract.csv`, and `_scripts/prod/__pycache__/env_utils.cpython-312.pyc`. The production view now contains only the 53 caller-evidenced KEEP files; quarantined files are outside `_scripts`.
+Production mode excludes exactly `_scripts/tests/**` and tracked files whose suffix is not in the executable/source suffix allowlist `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.sh`, `.ps1`, `.bat`, `.cmd`, and `.sql`. At this commit the latter exclusion is precisely `_scripts/.deploy-trigger`, `_scripts/VERIFY_V2.md`, `_scripts/ipo_autoupdate.patch`, and `_scripts/ipo_data_contract.csv`. The tracked `_scripts/prod/__pycache__/env_utils.cpython-312.pyc` that used to appear in this list is gone — it was untracked in the same change, and `_scripts/tests/test_prod_entrypoints_import.py` now fails if any bytecode is re-committed. The production view contains only the 54 caller-evidenced KEEP files; quarantined files are outside `_scripts`.
 
 ## Raw all-tracked totals
 
 | Measure | Count |
 |---|---:|
-| TOTAL | 267 |
+| TOTAL | 142 |
 | KEEP | 56 |
-| UNREACHABLE | 211 |
+| UNREACHABLE | 86 |
 | UNKNOWN | 0 |
-| V1_TOTAL | 154 |
+| V1_TOTAL | 65 |
 | KEPT_WITH_V1 | 35 |
-| UNREACHABLE_WITH_V1 | 118 |
+| UNREACHABLE_WITH_V1 | 30 |
+
+This table was stale and is corrected here: it still carried the pre-quarantine
+figures (TOTAL=267, UNREACHABLE=211, V1_TOTAL=154, UNREACHABLE_WITH_V1=118) after the
+120 unreachable files had already been moved out of `_scripts`. No test asserts the raw
+table — only the production table above is pinned, by
+`tests/contracts/test_scripts_caller_graph.py`. Values re-measured with
+`python tools/scripts_caller_graph.py --production`.
 
 ## Limitations and backstops
 
@@ -202,11 +221,11 @@ The closure contains 47 production files, including the root:
 
 ## Safe quarantine candidate count
 
-**0 production files** remain mechanically UNREACHABLE under `_scripts`; all 120 Phase 4B candidates were quarantined while the 53 KEEP files remained in place.
+**0 production files** remain mechanically UNREACHABLE under `_scripts`; all 120 Phase 4B candidates were quarantined while the KEEP files remained in place. One of those 120 — `_scripts/prod/env_utils.py` — was a misclassification and has been returned, taking KEEP from 53 to 54; see the production-totals note above.
 
 ## Method and regression
 
-`tests/contracts/test_scripts_caller_graph.py` uses a repository fixture to prove the previously missed `step(["foo.py"])` edge, a `subprocess.run(["python", "bar.py"])` edge, an explicit `_scripts/final.py` path, and transitive wrapper/import closure.
+`tests/contracts/test_scripts_caller_graph.py` uses a repository fixture to prove the previously missed `step(["foo.py"])` edge, a `subprocess.run(["python", "bar.py"])` edge, an explicit `_scripts/final.py` path, and transitive wrapper/import closure, plus a bare sibling import inside `_scripts/sub/` — the edge class whose absence caused the `env_utils.py` misclassification. That fixture case is unreachable under the old resolver and reachable under the current one, so it fails if the fix is reverted.
 
 ## PR #328 scoped lean cleanup delta
 

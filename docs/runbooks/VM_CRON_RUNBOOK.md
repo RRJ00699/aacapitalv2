@@ -1,12 +1,27 @@
-Status: CURRENT
+Status: SUPERSEDED by docs/runbooks/DAILY_RUN.md — the VM is decommissioned
 Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md
 Last verified against code: 2026-07-21
 Verified commit: efa45de
-Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md
 Last verified against VM: 2026-07-21 01:04 IST snapshot (owner-run)
 Verified commit on VM at snapshot: b3d9bcb (#255)
 
-# VM CRON RUNBOOK
+# VM CRON RUNBOOK (SUPERSEDED — the host no longer exists)
+
+> **The Hetzner VM this runbook operates is decommissioned (owner-confirmed).**
+> Nothing below can be run: there is no host to ssh to, no crontab to inspect,
+> and no `/root/aac` working directory. Its installer,
+> `setup_vm_cron.sh`, was archived to `_archive/scripts/` in the same cleanup that
+> added this marking.
+>
+> The SHA stamps above are from 2026-07-21 (`efa45de` in-repo, `b3d9bcb` on the
+> VM at snapshot) and were already the oldest verification stamps in `docs/`.
+>
+> **Read instead:** `docs/runbooks/DAILY_RUN.md` — the owner's supported daily
+> command is now `python pipeline\cron.py` on the owner's Windows workstation —
+> and `docs/runbooks/PRODUCTION_JOBS.md` for the verified caller map.
+>
+> Retained, not deleted: it is the record of the schedule the VM actually ran, and
+> the evidence behind `docs/decisions/LEAN_RETIREMENT_DECISIONS.md` B1.
 
 The VM (Hetzner, Nuremberg) is the automation engine. **Its system timezone is
 set to `Asia/Kolkata` (IST)** — verified 2026-07-21 via `timedatectl` — so

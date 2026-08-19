@@ -162,7 +162,17 @@ def _python_edges(repo: Path, caller: str, files: set[str], modules: dict[str, s
                     base = ".".join(parent[: len(parent) - node.level + 1] + ([base] if base else []))
                 names = [base] + ([f"{base}.{alias.name}" for alias in node.names] if base else [])
             for name in names:
-                for candidate in (name, f"_scripts.{name}"):
+                # Running a script directly puts ITS OWN directory on sys.path[0],
+                # so a bare `import sibling` inside _scripts/<sub>/ resolves within
+                # <sub> before anything else. Without the package-qualified
+                # candidate, every sibling import below the top level was invisible
+                # — which is how _scripts/prod/kite_sync_and_predict.py's
+                # `from env_utils import ...` came to be misread as UNREACHABLE.
+                # Candidates are not mutually exclusive on purpose: this graph
+                # decides what must be KEPT, so over-approximating an edge is safe
+                # while missing one deletes a live dependency.
+                candidates = ([f"{package}.{name}"] if package else []) + [name, f"_scripts.{name}"]
+                for candidate in candidates:
                     if (not caller.startswith("_scripts/") and candidate == f"_scripts.{name}"
                             and ((repo / PurePosixPath(caller).parent / f"{name.split('.')[0]}.py").exists()
                                  or (repo / PurePosixPath(caller).parent / name.split('.')[0] / "__init__.py").exists())):

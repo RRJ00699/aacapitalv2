@@ -1,10 +1,34 @@
-Status: CURRENT
+Status: SUPERSEDED by docs/architecture/CANONICAL_SPINE.md
+Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md
 
-# AACapital — CURRENT STATE (2026-07-08)
+# AACapital — CURRENT STATE (2026-07-08) — SUPERSEDED SESSION SNAPSHOT
 
-**This document supersedes ALL prior handovers and the 43-file "Tech Docs and Data Brain"
-archive.** Where an older doc disagrees with this one, this one wins. Update this file at the
-end of every working session; treat everything else as history.
+> **This is a 2026-07-08 session snapshot, not the current state.** Its own §7
+> claims this file is "the single source of truth"; that claim is retracted here.
+> `docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md` is AUTHORITATIVE, and
+> `docs/architecture/CANONICAL_SPINE.md` is the architectural orientation document.
+>
+> What is stale in it, verified against the tree on 2026-08-17:
+>
+> * **§3 describes the retired V1 tables as the live data layer** —
+>   `ipo_intelligence`, `ipo_consolidated`, `price_candles`. Those are on the
+>   FORBIDDEN list in `tests/contracts/test_no_v1_tables.py`. The V2 registry is
+>   `docs/specifications/V2_SCHEMA.md`.
+> * **§4's VM cron table is dead twice over** — the nightly it names,
+>   `run_ipo_pipeline.py`, is quarantined under `compatibility/scripts/`, and the
+>   VM itself is decommissioned. The daily driver is `pipeline/cron.py`.
+> * **§6's timer board expired in July 2026** (Kite key "expires Jul 10", etc.).
+> * §5 is a PR #49–#54 session log.
+>
+> **Read instead:** `CANONICAL_SPINE.md` (product boundary, data flow, ownership),
+> `docs/specifications/V2_SCHEMA.md` (tables), `docs/runbooks/PRODUCTION_JOBS.md`
+> (jobs and callers), `docs/runbooks/PROJECT_CONTROL.md` (live status).
+>
+> Retained, not deleted: §1's three-generation strategy table and §2's rejected
+> register are the provenance behind the locked MID 4–15% rule in the contract.
+
+**Historical text follows unchanged.** Where it disagrees with the documents above,
+they win.
 
 Personal Indian-equity IPO **post-listing** research tool. Trade the IPO as a market event
 after listing, not the allotment lottery. Motto: _research signal, not a buy call._

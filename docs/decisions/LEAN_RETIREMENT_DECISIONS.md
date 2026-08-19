@@ -7,15 +7,24 @@
 | Evidence | Finding | Status |
 |---|---|---|
 | `.github/workflows/pipeline.yml` | GitHub Actions does not schedule the lean pipeline; it is `workflow_dispatch` only and says “MANUAL DISPATCH ONLY — no schedule”. | VERIFIED |
-| `setup_vm_cron.sh` | The repository contains a legacy VM-cron installer that would schedule `_scripts/run_ipo_pipeline_lean.py` if installed. | VERIFIED |
-| Production VM | Installer presence does not prove installation. Actual VM crontab state is UNKNOWN pending owner read-only proof. | UNKNOWN |
+| `_archive/scripts/setup_vm_cron.sh` | A legacy VM-cron installer that *would* schedule `_scripts/run_ipo_pipeline_lean.py` **if a human ran it on the VM**. It is **archived, not installed, and never was installed by this repository** — no workflow, `job_runner.py` entry, `package.json` script, or module reference executes it. Moved from the repo root to `_archive/scripts/` (VM decommissioned, owner-confirmed) and retained as the historical evidence behind this row. | VERIFIED |
+| Production VM | Installer presence never proved installation, and the installer is now archived. The VM itself is decommissioned per owner confirmation; no crontab state remains to probe. The read-only probe below is retained for the record only. | SUPERSEDED — VM decommissioned |
 | `pipeline/cron.py` | Verified owner-PC daily driver from #327's two green owner acceptance runs. | VERIFIED |
 
-Owner read-only probe:
+Owner read-only probe (historical — the VM is decommissioned, so there is no
+host left to run this against; kept so the record shows what was asked for):
 
 ```bash
 crontab -l 2>/dev/null | grep -E 'run_ipo_pipeline_lean|pipeline/cron.py|refresh_kite_token' || true
 ```
+
+> **Resolved within this PR.** `docs/runbooks/VM_CRON_RUNBOOK.md` was still
+> stamped `Status: CURRENT` and described the Hetzner VM as "the automation
+> engine", contradicting the decommissioning this row records. It is now marked
+> `Status: SUPERSEDED by docs/runbooks/DAILY_RUN.md`, with its content retained.
+> The runbook is not deleted and its schedule table stands as the record of what
+> the VM ran. Reviving the VM lane would require re-stamping it, which is an
+> owner call.
 
 ## Capability decisions
 

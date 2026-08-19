@@ -3,8 +3,13 @@ Status: CURRENT
 # AACapital — End-to-End Automated Pipeline Spec
 
 The full "IPO appears → data fills → decision made" flow, source-of-truth to
-command-center, fully automated on the VM. This documents the target contract;
-the pipeline (`_scripts/run_ipo_pipeline.py`) is built to it.
+command-center. This documents the target contract; the canonical driver
+(`pipeline/cron.py`) is built to it.
+
+> Corrected 2026-08-17: this paragraph previously named `_scripts/run_ipo_pipeline.py`
+> as the implementing pipeline and "the VM" as the host. That script is quarantined
+> under `compatibility/scripts/` and the VM is decommissioned. The body below already
+> annotates the retired Chittorgarh lane correctly; only this heading was stale.
 
 ## 0. The principle
 An IPO enters our world the moment it appears on an NSE listing/upcoming feed.

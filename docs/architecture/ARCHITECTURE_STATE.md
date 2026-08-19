@@ -1,7 +1,21 @@
-# Architecture State
+# Architecture State (SUPERSEDED — PR #292 snapshot)
 
-Status: Accepted
+Status: SUPERSEDED by docs/runbooks/PROJECT_CONTROL.md
+Authority: docs/specifications/AACAPITAL_PRODUCT_CONTRACT.md
 Date: 2026-08-04
+
+> **This is a per-PR status snapshot, not a standing architecture record.** Every
+> section below is scoped to PR #292 on branch
+> `codex/implement-required-corrections-for-pr-#291` — including the "no `origin`
+> remote configured" blocker, which was an artifact of that working copy.
+>
+> **Read instead:** `docs/runbooks/PROJECT_CONTROL.md` for live status and
+> blockers, `docs/architecture/CANONICAL_SPINE.md` for the architecture itself,
+> and `docs/architecture/ARCHITECTURE_DECISIONS.md` for the standing ADRs — which
+> are append-only and are *not* superseded by this marking.
+>
+> Retained, not deleted: it records the state at which the zero-wake snapshot
+> architecture was accepted.
 
 ## Current milestone
 

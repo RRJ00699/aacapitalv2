@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+# coverage.py probe databases (SQLite) — never commit; see PR #280 regression
+.covprobe.*
 
 # next.js
 /.next/
