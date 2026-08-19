@@ -11,7 +11,8 @@ import { VARS as C, FONT, type Tone } from "@/lib/theme";
 import {
   fieldDisplay, toValueNode, humanizeKey, classLabel, splitEvidence,
   deriveMarketCap, deriveLotValue, buildMissingRegister, fmtNum, fmtCr, fmtRupee,
-  type ValueNode, type DetailField, type FieldState, type EvidenceItem,
+  absenceCopy, lifecycleFacts, LIFECYCLE_UNKNOWN,
+  type ValueNode, type DetailField, type FieldState, type EvidenceItem, type LifecycleFacts,
 } from "@/lib/ui/details-format";
 
 type R = Record<string, any>;
@@ -46,24 +47,31 @@ function Value({ node }: { node: ValueNode }) {
 }
 
 // ── A DetailField as a labeled row: value or honest missing/pending reason ───
-function FieldRow({ label, f, fmt }: { label: string; f?: DetailField; fmt?: (n: number) => string }) {
+// `k` is the field's payload path. When the producer wrote no reason of its own,
+// it selects the lifecycle-specific sentence for this field (see absenceCopy).
+// The badge keeps rendering the payload's own state — only the sentence and the
+// word in front of it are the UI's.
+function FieldRow({ label, f, fmt, k, lc = LIFECYCLE_UNKNOWN }:
+  { label: string; f?: DetailField; fmt?: (n: number) => string; k?: string; lc?: LifecycleFacts }) {
   const fd = fieldDisplay(f);
   const raw = f?.value;
   const node: ValueNode = !fd.hasValue ? { kind: "empty" }
     : fmt && typeof raw === "number" ? { kind: "scalar", text: fmt(raw) }
     : toValueNode(raw);
+  const gap = fd.hasValue ? null : absenceCopy(k, f, lc);
   return (
     <div className="drow">
       <span className="dlabel">{label}</span>
       <div className="dval">
-        {fd.hasValue
+        {gap === null
           ? <b><Value node={node} /></b>
-          : <span style={{ color: C.dim }}>{fd.state === "PENDING" ? "pending" : "not available"}{fd.reason ? ` — ${fd.reason}` : ""}</span>}
+          : <span style={{ color: C.dim }}>{gap.lead}{gap.reason ? ` — ${gap.reason}` : ""}</span>}
         {fd.proxyLabel ? <> <Badge label={fd.proxyLabel} tone="watch" title="Proxy — not a disclosed or reported company ratio" /></> : null}
       </div>
       <Badge label={fd.state} tone={STATE_TONE[fd.state]} />
       {fd.hasValue && (fd.source || fd.as_of)
         ? <small className="dmeta">{fd.source ? `source: ${fd.source}` : ""}{fd.as_of ? `${fd.source ? " · " : ""}as of ${fd.as_of}` : ""}</small>
+        : gap?.producer ? <small className="dmeta">producer: {gap.producer}</small>
         : null}
     </div>
   );
@@ -131,6 +139,15 @@ export default function CompleteDetails({ details: d }: { details: R }) {
   const p = d.intelligence_profile || null;
   const pv = p && p.valuation && p.valuation.status === "AVAILABLE" ? p.valuation : null;
 
+  // One lifecycle read for the whole record, taken from the payload itself: the
+  // listing-outcome leaves say whether the IPO has listed, and issue_price says
+  // whether it has been priced. Nothing is inferred from the wall clock.
+  const lc = lifecycleFacts(d);
+  // Two rows render their absent branch by hand (a Badge, not a value); give
+  // them the same sentence FieldRow would have used.
+  const bandGap = absenceCopy("valuation.band", v.band, lc);
+  const verdictGap = absenceCopy("decision.verdict", dec.verdict, lc);
+
   const issuePrice = fieldDisplay(issue.issue_price).hasValue ? Number(issue.issue_price.value) : null;
   const lotSize = fieldDisplay(issue.lot_size).hasValue ? Number(issue.lot_size.value) : null;
   const postShares = pv && finite(pv.post_issue_shares_cr) ? pv.post_issue_shares_cr : null;
@@ -175,7 +192,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
           {id.symbol ? <Badge label={String(id.symbol)} tone="neutral" mono /> : null}
           {id.isin ? <Badge label={String(id.isin)} tone="neutral" mono /> : null}
         </div>
-        <FieldRow label="Listing date" f={id.listing_date} />
+        <FieldRow label="Listing date" k="identity.listing_date" f={id.listing_date} lc={lc} />
         <FieldRow label="Sector / industry" f={miss("Not carried in the details snapshot.", "NSE / RHP classification")} />
         <FieldRow label="Lifecycle status" f={miss("No NSE lifecycle status field ships in v1.", "NSE lifecycle")} />
         <FieldRow label="Open / close / allotment dates" f={miss("Only the listing date ships in v1.", "NSE / Chittorgarh timeline")} />
@@ -183,14 +200,14 @@ export default function CompleteDetails({ details: d }: { details: R }) {
 
       {/* §2 ISSUE OVERVIEW */}
       <Section id="issue" title="Issue overview">
-        <FieldRow label="Issue price" f={issue.issue_price} fmt={fmtRupee} />
-        <FieldRow label="Band low" f={issue.band_low} fmt={fmtRupee} />
-        <FieldRow label="Band high" f={issue.band_high} fmt={fmtRupee} />
-        <FieldRow label="Issue size" f={issue.issue_size_cr} fmt={(n) => fmtCr(n)} />
-        <FieldRow label="Fresh issue" f={issue.fresh_issue_cr} fmt={(n) => fmtCr(n)} />
-        <FieldRow label="Offer for sale (OFS)" f={issue.ofs_cr} fmt={(n) => fmtCr(n)} />
-        <FieldRow label="Lot size" f={issue.lot_size} fmt={(n) => `${fmtNum(n)} sh`} />
-        <FieldRow label="Face value" f={issue.face_value} fmt={fmtRupee} />
+        <FieldRow label="Issue price" k="issue.issue_price" f={issue.issue_price} lc={lc} fmt={fmtRupee} />
+        <FieldRow label="Band low" k="issue.band_low" f={issue.band_low} lc={lc} fmt={fmtRupee} />
+        <FieldRow label="Band high" k="issue.band_high" f={issue.band_high} lc={lc} fmt={fmtRupee} />
+        <FieldRow label="Issue size" k="issue.issue_size_cr" f={issue.issue_size_cr} lc={lc} fmt={(n) => fmtCr(n)} />
+        <FieldRow label="Fresh issue" k="issue.fresh_issue_cr" f={issue.fresh_issue_cr} lc={lc} fmt={(n) => fmtCr(n)} />
+        <FieldRow label="Offer for sale (OFS)" k="issue.ofs_cr" f={issue.ofs_cr} lc={lc} fmt={(n) => fmtCr(n)} />
+        <FieldRow label="Lot size" k="issue.lot_size" f={issue.lot_size} lc={lc} fmt={(n) => `${fmtNum(n)} sh`} />
+        <FieldRow label="Face value" k="issue.face_value" f={issue.face_value} lc={lc} fmt={fmtRupee} />
         <div className="drow">
           <span className="dlabel">Market cap at issue</span>
           <div className="dval">{marketCap.available ? <b>{marketCap.text}</b> : <span style={{ color: C.dim }}>not available — {marketCap.reason}</span>}</div>
@@ -204,6 +221,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
           <small className="dmeta">{lotValue.formula}</small>
         </div>
         <FieldRow label="Reservation split (QIB / NII / retail)" f={issue.reservation_split} />
+        <p className="lifecycle-note">Pending vs missing is read from the only lifecycle date this snapshot carries — the listing date. No issue open / close date ships in v1, so a field the issue has not reached yet is called <em>pending</em>, never a defect.</p>
         <FieldRow label="Subscription (× times, per category)" f={miss("Subscription figures are not shipped in this snapshot.", "NSE archive")} />
       </Section>
 
@@ -232,23 +250,23 @@ export default function CompleteDetails({ details: d }: { details: R }) {
 
       {/* §4 VALUATION & FAIR VALUE — the decision core */}
       <Section id="valuation" title="Valuation & fair value" tone="blue">
-        <FieldRow label="House score" f={v.score} />
+        <FieldRow label="House score" k="valuation.score" f={v.score} lc={lc} />
         <div className="drow">
           <span className="dlabel">Verdict band</span>
-          <div className="dval">{fieldDisplay(v.band).hasValue ? <Badge label={String(v.band.value)} /> : <span style={{ color: C.dim }}>not available{v.band?.reason ? ` — ${v.band.reason}` : ""}</span>}</div>
+          <div className="dval">{fieldDisplay(v.band).hasValue ? <Badge label={String(v.band.value)} /> : <span style={{ color: C.dim }}>{bandGap.lead}{bandGap.reason ? ` — ${bandGap.reason}` : ""}</span>}</div>
           <Badge label={fieldDisplay(v.band).state} tone={STATE_TONE[fieldDisplay(v.band).state]} />
           <small className="dmeta">qualitative label only — no historical-performance %</small>
         </div>
         <FieldRow label="P/E" f={v.pe} fmt={mult} />
         <FieldRow label="P/B" f={v.pb} fmt={mult} />
-        <FieldRow label="P/E basis" f={v.pe_source} />
-        <FieldRow label="P/B basis" f={v.pb_source} />
-        <FieldRow label="Peer median P/E" f={v.peer_median_pe} fmt={mult} />
-        <FieldRow label="Engine version" f={v.engine_version} />
+        <FieldRow label="P/E basis" k="valuation.pe_source" f={v.pe_source} lc={lc} />
+        <FieldRow label="P/B basis" k="valuation.pb_source" f={v.pb_source} lc={lc} />
+        <FieldRow label="Peer median P/E" k="valuation.peer_median_pe" f={v.peer_median_pe} lc={lc} fmt={mult} />
+        <FieldRow label="Engine version" k="valuation.engine_version" f={v.engine_version} lc={lc} />
 
         <div className="subhd">House fair value</div>
-        <FieldRow label="Fair value low" f={v.fair_value_low} fmt={fmtRupee} />
-        <FieldRow label="Fair value high" f={v.fair_value_high} fmt={fmtRupee} />
+        <FieldRow label="Fair value low" k="valuation.fair_value_low" f={v.fair_value_low} lc={lc} fmt={fmtRupee} />
+        <FieldRow label="Fair value high" k="valuation.fair_value_high" f={v.fair_value_high} lc={lc} fmt={fmtRupee} />
         <div className="drow">
           <span className="dlabel">Margin of safety</span>
           <div className="dval">{marginOfSafety(v.margin_of_safety)}</div>
@@ -266,8 +284,8 @@ export default function CompleteDetails({ details: d }: { details: R }) {
           <p style={{ color: C.sub, fontSize: 12 }}>Not computable — a peer multiple and a positive pro-forma EPS are required{pv ? "" : "; canonical profile unavailable"}.</p>
         )}
         <FieldRow label="Earnings basis" f={earningsBasisField(p, v)} />
-        <FieldRow label="Inputs used" f={v.inputs_used} />
-        <FieldRow label="Missing inputs" f={v.missing_inputs} />
+        <FieldRow label="Inputs used" k="valuation.inputs_used" f={v.inputs_used} lc={lc} />
+        <FieldRow label="Missing inputs" k="valuation.missing_inputs" f={v.missing_inputs} lc={lc} />
       </Section>
 
       {/* §5 RHP EVIDENCE */}
@@ -305,14 +323,14 @@ export default function CompleteDetails({ details: d }: { details: R }) {
       <Section id="decision" title="Persisted decision — company quality" tone="amber">
         <div className="drow">
           <span className="dlabel">Verdict</span>
-          <div className="dval">{fieldDisplay(dec.verdict).hasValue ? <Badge label={String(dec.verdict.value)} /> : <span style={{ color: C.dim }}>pending — a persisted decision is not yet available</span>}</div>
+          <div className="dval">{fieldDisplay(dec.verdict).hasValue ? <Badge label={String(dec.verdict.value)} /> : <span style={{ color: C.dim }}>{verdictGap.lead}{verdictGap.reason ? ` — ${verdictGap.reason}` : ""}</span>}</div>
           <Badge label={fieldDisplay(dec.verdict).state} tone={STATE_TONE[fieldDisplay(dec.verdict).state]} />
           <small className="dmeta">stored verdict — displayed as persisted, not relabeled</small>
         </div>
         <FieldRow label="Reasons" f={dec.reasons} />
         <FieldRow label="Evidence" f={dec.evidence} />
         {dec.verdict?.value === "JUNK" ? <FieldRow label="Derived kill reason" f={dec.kill_reason} /> : null}
-        <FieldRow label="Engine version" f={v.engine_version} />
+        <FieldRow label="Engine version" k="valuation.engine_version" f={v.engine_version} lc={lc} />
       </Section>
 
       {/* §9 LISTING OUTCOME */}
@@ -367,6 +385,7 @@ export default function CompleteDetails({ details: d }: { details: R }) {
         .dlabel { color: ${C.meta}; font-size: 12px; }
         .dval { min-width: 0; font-size: 13px; }
         .dmeta { grid-column: 2 / 4; color: ${C.meta}; font-size: 10.5px; }
+        .lifecycle-note { color: ${C.meta}; font-size: 10.5px; margin: 8px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
         @media (max-width: 600px) {
           .drow { grid-template-columns: 1fr auto; }
           .dval, .dmeta { grid-column: 1 / 3; }

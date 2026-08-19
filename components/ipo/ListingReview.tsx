@@ -18,7 +18,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Card, SectionHeader, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { VARS as C, FONT, type Tone } from "@/lib/theme";
-import { fieldDisplay, toValueNode, type DetailField, type FieldState, type ValueNode } from "@/lib/ui/details-format";
+import {
+  fieldDisplay, toValueNode, absenceCopy, lifecycleFacts, LIFECYCLE_UNKNOWN,
+  type DetailField, type FieldState, type ValueNode, type LifecycleFacts,
+} from "@/lib/ui/details-format";
 import {
   tapeView, outcomeRows, deriveGap, hasShippedGap, discoveryView, listingDayFacts, toNumber,
   type JourneyResponse, type DiscoveryRow, type Trend,
@@ -55,42 +58,53 @@ function Value({ node }: { node: ValueNode }) {
   );
 }
 
-/** A row driven by DetailField.state: value when there is one, reason when not. */
-function StateRow({ label, state, hasValue, node, reason, source, asOf, caption }: {
-  label: string; state: FieldState; hasValue: boolean; node: ValueNode;
+/**
+ * A row driven by DetailField.state: value when there is one, reason when not.
+ * The absent branch prints `lead` + the sentence `absenceCopy` chose — the
+ * producer's own reason wherever it wrote one, a lifecycle-specific sentence
+ * where it only left its generic default. The badge keeps the payload's state.
+ */
+function StateRow({ label, state, hasValue, node, lead, reason, source, asOf, caption, producer }: {
+  label: string; state: FieldState; hasValue: boolean; node: ValueNode; lead?: string;
   reason?: string | null; source?: string | null; asOf?: string | null; caption?: string | null;
+  producer?: string | null;
 }) {
+  const meta = caption || (hasValue && (source || asOf)) || (!hasValue && producer);
   return (
     <div className="lrow">
       <span className="llabel">{label}</span>
       <div className="lval">
         {hasValue
           ? <b><Value node={node} /></b>
-          : <span style={{ color: C.dim }}>{state === "PENDING" ? "pending" : "not available"}{reason ? ` — ${reason}` : ""}</span>}
+          : <span style={{ color: C.dim }}>{lead ?? (state === "PENDING" ? "pending" : "not available")}{reason ? ` — ${reason}` : ""}</span>}
       </div>
       <Badge label={state} tone={STATE_TONE[state]} />
-      {caption || (hasValue && (source || asOf))
+      {meta
         ? <small className="lmeta">
             {caption ?? ""}
             {caption && hasValue && (source || asOf) ? " · " : ""}
             {hasValue && source ? `source: ${source}` : ""}
             {hasValue && asOf ? `${source ? " · " : ""}as of ${asOf}` : ""}
+            {!hasValue && producer ? `${caption ? " · " : ""}producer: ${producer}` : ""}
           </small>
         : null}
     </div>
   );
 }
 
-function FieldRow({ label, field, format, caption }: {
+function FieldRow({ label, field, format, caption, k, lc = LIFECYCLE_UNKNOWN }: {
   label: string; field?: unknown; format?: (n: number) => string; caption?: string | null;
+  k?: string; lc?: LifecycleFacts;
 }) {
   const f = (field && typeof field === "object" ? field : undefined) as DetailField | undefined;
   const fd = fieldDisplay(f);
   const node: ValueNode = !fd.hasValue ? { kind: "empty" }
     : format && typeof f?.value === "number" ? { kind: "scalar", text: format(f.value as number) }
     : toValueNode(f?.value);
+  const gap = fd.hasValue ? null : absenceCopy(k, f, lc);
   return <StateRow label={label} state={fd.state} hasValue={fd.hasValue} node={node}
-    reason={fd.reason} source={fd.source} asOf={fd.as_of} caption={caption ?? null} />;
+    lead={gap?.lead} reason={gap ? gap.reason : fd.reason} source={fd.source} asOf={fd.as_of}
+    caption={caption ?? null} producer={gap?.producer ?? null} />;
 }
 
 function Note({ children }: { children: ReactNode }) {
@@ -176,6 +190,10 @@ export default function ListingReview({ c }: { c: R }) {
   const listingDate = listingDateDisplay.hasValue ? str(obj(listingDateField)?.value)
     : (c.listing_date ? str(c.listing_date) : null);
 
+  // The same payload-derived lifecycle read Complete Details uses, so both
+  // screens call the same absence the same thing.
+  const lc = lifecycleFacts(details ?? undefined);
+
   const tape = tapeView(journey, issuePrice);
   const sessionsCaptured = tape.kind === "rows" ? tape.sessionsCaptured : 0;
   // `atMs` is the moment the snapshots were read — a value, not a render-time clock.
@@ -210,11 +228,11 @@ export default function ListingReview({ c }: { c: R }) {
         <SectionHeader>Listing-day outcome</SectionHeader>
         {details ? (
           <>
-            <FieldRow label="Issue price" field={issueField} format={(n) => `₹${n}`} />
+            <FieldRow label="Issue price" k="issue.issue_price" lc={lc} field={issueField} format={(n) => `₹${n}`} />
             {rows.map((row) => (
               <StateRow key={row.key} label={row.label} state={row.display.state} hasValue={row.display.hasValue}
                 node={row.node} reason={row.display.reason} source={row.display.source} asOf={row.display.as_of}
-                caption={row.caption} />
+                caption={row.caption} producer={row.display.hasValue ? null : row.display.source} />
             ))}
             {showDerivedGap ? (
               <div className="lrow">
