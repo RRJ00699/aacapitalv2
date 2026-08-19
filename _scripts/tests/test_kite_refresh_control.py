@@ -193,3 +193,62 @@ def test_cron_classifies_every_structured_status():
     for status, (returncode, classification) in expected.items():
         assert cron.classify_kite_refresh(
             returncode, f"KITE_REFRESH_STATUS={status}\n") == (classification, status)
+
+
+# ---------------------------------------------------------------------------- D4
+# Every failure of this file on the owner's PC had one cause: the module under test
+# calls load_dotenv() at IMPORT time, so a populated local .env re-injected the very
+# names the isolation fixture had just cleared. The verdicts were wrong, and worse, with
+# the rotation flags ambient the suite attempted a real wrangler secret rotation and a
+# real broker verification against production. CI passes only because its checkout has
+# no .env — which makes this exactly the kind of defect a green CI hides.
+HOSTILE_ENV = "\n".join([
+    "EXECUTE_CLOUDFLARE_SECRET_ROTATION=1",
+    "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1",
+    "KITE_REFRESH_VALIDATE_ONLY=1",
+    "KITE_BROKER_PROXY_URL=https://broker.owner.invalid",
+    "KITE_BROKER_PROXY_AUTH_SECRET=owner-broker-secret",
+    "NTFY_TOPIC=owner-topic",
+    "KITE_API_KEY=owner-key",
+    "DATABASE_URL=postgresql://owner@localhost/aac",
+]) + "\n"
+
+
+def test_a_populated_local_env_cannot_activate_anything_under_test_mode(tmp_path, monkeypatch, capsys):
+    """load_dotenv resolves .env relative to the process cwd, so this is the owner's PC."""
+    (tmp_path / ".env").write_text(HOSTILE_ENV, encoding="utf8")
+    (tmp_path / ".env.local").write_text(HOSTILE_ENV, encoding="utf8")
+    monkeypatch.chdir(tmp_path)
+    refresh = load_refresh()
+    monkeypatch.setattr(refresh, "_alert",
+                        lambda *_: pytest.fail("ambient .env reached an alerting path"))
+    assert refresh.main() == 0
+    assert capsys.readouterr().out.strip() == "KITE_REFRESH_STATUS=SKIPPED_NOT_ACTIVATED"
+    for name in ("EXECUTE_CLOUDFLARE_SECRET_ROTATION", "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE",
+                 "KITE_REFRESH_VALIDATE_ONLY", "KITE_BROKER_PROXY_URL",
+                 "KITE_BROKER_PROXY_AUTH_SECRET", "NTFY_TOPIC"):
+        assert os.environ.get(name) is None, f"{name} leaked in from the local .env"
+
+
+def test_importing_the_module_under_test_mode_performs_no_rotation(tmp_path, monkeypatch):
+    """The failure that mattered: the suite reached wrangler, not just a wrong verdict."""
+    (tmp_path / ".env").write_text(HOSTILE_ENV, encoding="utf8")
+    monkeypatch.chdir(tmp_path)
+    refresh = load_refresh()
+    # rotate_worker_secret() imports subprocess lazily and shells out to
+    # `npx wrangler secret put`; verify_broker() and legacy_save_to_db() reach the
+    # network and Neon. None of them may be reachable from an ambient .env.
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *_a, **_k: pytest.fail("test mode reached a real subprocess"))
+    monkeypatch.setattr(refresh.psycopg2, "connect",
+                        lambda *_a, **_k: pytest.fail("test mode reached a real database"))
+    monkeypatch.setattr(refresh.requests, "get",
+                        lambda *_a, **_k: pytest.fail("test mode reached the network"))
+    assert refresh.main() == 0
+
+
+def test_production_still_reads_dotenv_when_test_mode_is_absent(monkeypatch):
+    """The guard is scoped to test mode only; it must not disable real configuration."""
+    source = SCRIPT.read_text(encoding="utf8")
+    assert 'if os.environ.get("KITE_REFRESH_TEST_MODE") != "1":' in source
+    assert 'load_dotenv(".env.local")' in source and 'load_dotenv(".env")' in source
