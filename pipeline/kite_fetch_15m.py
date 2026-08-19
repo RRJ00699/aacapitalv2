@@ -33,7 +33,7 @@ def select_targets(conn, limit: int, ids: list[int] | None = None):
     cur = conn.cursor()
     id_clause = "AND i.id = ANY(%s)" if ids is not None else ""
     from nse_fetch import CANONICAL_UNIVERSE_SQL
-    eligibility = "" if ids is not None else f"""AND {CANONICAL_UNIVERSE_SQL}
+    eligibility = f"""AND {CANONICAL_UNIVERSE_SQL}
         AND i.listing_date BETWEEN
         ((now() AT TIME ZONE 'Asia/Kolkata')::date - 100)
         AND (now() AT TIME ZONE 'Asia/Kolkata')::date AND i.kite_token IS NOT NULL"""

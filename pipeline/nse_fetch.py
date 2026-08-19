@@ -43,10 +43,9 @@ DISCOVERY_APIS = (
     ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
 )
 
-# Single production selector owned beside official NSE discovery. It deliberately uses
-# only spine fields populated by discovery/backfill. The current schema has no structured
-# security-kind field, so a REIT/InvIT incorrectly stored as mainboard cannot be repaired
-# by SQL here; that row requires its canonical is_mainboard value to be corrected at ingest.
+# Single production selector owned beside official NSE discovery. It uses only fields
+# present on the canonical ipo spine; structured security-kind filtering happens before
+# ingestion in parse_discovery_item rather than against a nonexistent schema column.
 CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
                           "upper(COALESCE(i.status,'')) IN "
                           "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED')")
@@ -240,11 +239,27 @@ def parse_bid_details(payload):
     return rec
 
 
-def prime(cffi):
+def prime(cffi, *, timeout_for=None, record_timing=None, sleep=time.sleep, clock=time.monotonic):
+    """Create an NSE session using caller-supplied deadline and timing hooks."""
     s = cffi.Session(impersonate="chrome124")
-    s.get(NSE_BASE, headers=HEADERS, timeout=12); time.sleep(0.8)
-    s.get(NSE_BASE + "/market-data/all-upcoming-issues-ipo", headers=HEADERS, timeout=12)
-    time.sleep(0.8)
+    for url in (NSE_BASE, NSE_BASE + "/market-data/all-upcoming-issues-ipo"):
+        timeout = timeout_for(12) if timeout_for else 12
+        started = clock()
+        outcome = "found"
+        try:
+            response = s.get(url, headers=HEADERS, timeout=timeout)
+            if getattr(response, "status_code", 200) != 200:
+                outcome = "source_unavailable"
+        except (cffi.RequestsError, TimeoutError, ConnectionError):
+            outcome = "source_unavailable"
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            if record_timing:
+                record_timing("nse_prime", started, timeout, outcome)
+        sleep(timeout_for(0.8) if timeout_for else 0.8)
     return s
 
 
@@ -278,8 +293,10 @@ def parse_discovery_item(item):
     symbol = _first(item, "symbol", "ticker")
     isin = _first(item, "isin", "ISIN", "issueIsin")
     if not name: return None
-    category = (_first(item, "category", "issueType", "series", "board") or "").upper()
-    if "SME" in category: return None
+    classification = " ".join(str(item.get(key) or "").strip().upper()
+                              for key in ("category", "issueType", "series", "board"))
+    if re.search(r"\b(?:SME|EMERGE|REIT|INVIT)\b", classification):
+        return None
     price = _first(item, "priceBand", "priceRange", "issuePrice", "price") or ""
     prices = [_num(v) for v in re.findall(r"[\d,.]+", price)]
     prices = [v for v in prices if v is not None]
@@ -288,7 +305,7 @@ def parse_discovery_item(item):
     isin = isin.upper() if isin and re.fullmatch(r"IN[A-Z0-9]{9}[0-9]", isin.upper()) else None
     return {"name": name, "symbol": symbol.upper() if symbol else None,
             "isin": isin,
-            "is_mainboard": not any(marker in category for marker in ("SME", "EMERGE")),
+            "is_mainboard": True,
             "open_date": _discovery_date(_first(item, "issueStartDate", "openDate",
                 "bidOpenDate", "issueOpenDate", "startDate")),
             "close_date": _discovery_date(_first(item, "issueEndDate", "closeDate",

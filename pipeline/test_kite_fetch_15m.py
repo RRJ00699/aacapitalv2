@@ -40,6 +40,16 @@ def test_selector_is_progress_safe_without_issue_size_exclusion():
     assert lane.select_targets(Conn(), 2, [9, 3]) == []
 
 
+def test_cube_invit_is_excluded_but_mainboard_equity_control_remains_eligible():
+    from pipeline.nse_fetch import canonical_spine_eligible
+    cube = {"id": 11, "name": "Cube Highways Trust", "is_mainboard": False,
+            "status": "listed"}
+    equity = {"id": 12, "name": "Normal Mainboard Limited", "is_mainboard": True,
+              "status": "listed"}
+    assert not canonical_spine_eligible(cube["is_mainboard"], cube["status"])
+    assert canonical_spine_eligible(equity["is_mainboard"], equity["status"])
+
+
 def test_existing_timezone_aware_max_resumes_next_bar_and_inserts_only_new(monkeypatch):
     latest = dt.datetime(2026, 1, 2, 10, 30, tzinfo=dt.timezone.utc)
     class Cursor:
