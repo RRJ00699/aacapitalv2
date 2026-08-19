@@ -17,7 +17,7 @@ type DiagnosticStage =
   | "active_pointer_write"
   | "response_generation";
 
-const ALLOWED = /^(ipo-command:v6|ipo:index:v3|ipo-live-preopen:v2|journey:isin:[A-Z0-9]{12}:v1|ipo-details:isin:[A-Z0-9]{12}:v1)$/;
+const ALLOWED = /^(ipo-command:v6|ipo:index:v3|ipo-live-preopen:v2|pipeline-health:v1|market-india:v1|journey:isin:[A-Z0-9]{12}:v1|journey-15m:isin:[A-Z0-9]{12}:v1|listing-cumulative-volume:isin:[A-Z0-9]{12}:v1|listing-ticks:isin:[A-Z0-9]{12}:v1|ipo-details:isin:[A-Z0-9]{12}:v1)$/;
 const REDACTED = "[REDACTED]";
 
 function exceptionClass(error: unknown): string {

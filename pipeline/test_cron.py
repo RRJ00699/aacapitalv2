@@ -409,3 +409,14 @@ def test_runbook_path_and_commands_contract():
     assert "drive.py completeness alerts" in cron.ENVIRONMENT[-1][1]
     assert "ALLOW_LEGACY_KITE_DB_TOKEN_WRITE=1" in text
     assert "KITE_REFRESH_VALIDATE_ONLY=1" in text
+
+def test_completeness_denominator_expansion_reports_truthful_regression():
+    before=[{"ipo_id":1097,"required_present":6,"required_total":10,"completeness_pct":60.0,
+             "missing":["a"],"pending":["b"],"retry_lanes":[]}]
+    after=[{"ipo_id":1097,"required_present":6,"required_total":11,"completeness_pct":54.5,
+            "missing":["a","new_due"],"pending":["b","new_pending"],"retry_lanes":["x"]}]
+    report=cron.completeness_counts(before,after)["1097"]
+    assert report["before"]=={"required_present":6,"required_total":10,"completeness_pct":60.0}
+    assert report["after"]=={"required_present":6,"required_total":11,"completeness_pct":54.5}
+    assert report["newly_missing"]==["new_due"] and report["newly_pending"]==["new_pending"]
+    assert report["reason"]=="requirements became due during this run"

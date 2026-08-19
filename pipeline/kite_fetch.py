@@ -171,15 +171,21 @@ def derive_outcome(conn, ipo_id):
     rows = cur.fetchall()
     if not rows:
         return None, "no candles stored"
-    cur.execute("""SELECT COALESCE(issue_price, band_hi) FROM ipo_issue WHERE ipo_id=%s""",
+    cur.execute("""SELECT issue_price,band_lo,band_hi FROM ipo_issue WHERE ipo_id=%s""",
                 (ipo_id,))
     r = cur.fetchone()
-    issue_price = float(r[0]) if r and r[0] is not None else None
+    raw_issue = float(r[0]) if r and r[0] is not None else None
+    band_lo = float(r[1]) if r and r[1] is not None else None
+    band_hi = float(r[2]) if r and r[2] is not None else None
+    issue_price = raw_issue if raw_issue is not None else band_hi
+    issue_valid = bool(issue_price and issue_price > 0)
+    if issue_valid and band_lo is not None and issue_price < band_lo * .99: issue_valid = False
+    if issue_valid and band_hi is not None and issue_price > band_hi * 1.01: issue_valid = False
 
     d1 = rows[0]
     rec = {"listing_open": float(d1[1]) if d1[1] is not None else None,
            "d1_close": float(d1[4]) if d1[4] is not None else None}
-    if issue_price and rec["listing_open"]:
+    if issue_valid and rec["listing_open"]:
         gap = (rec["listing_open"] - issue_price) / issue_price * 100
         rec["gap_pct"] = round(gap, 4)
         # Pool doctrine (business case §3): Negative <0, Flat 0-15, Warm 15-50, Heavy >=50.
@@ -203,15 +209,32 @@ def derive_outcome(conn, ipo_id):
         rec["ceiling_20"] = max(highs[:30]) >= rec["listing_open"] * 1.20
     if rec.get("listing_open") and closes:
         rec["hold_positive_vs_open"] = closes[-1] > rec["listing_open"]
-        if issue_price:
+        if issue_valid:
             rec["winner_35"] = max(closes) >= issue_price * 1.35
-    return rec, None
+    note = None if issue_valid else "invalid or band-inconsistent issue price; gap/pool/winner_35 withheld"
+    return rec, note
+
+
+def persist_resolved_token(conn, ipo_id, token, exchange):
+    """Hand a resolved daily token to later lanes by exact selected IPO id."""
+    from fill_ipo import _log_fact
+    cur = conn.cursor()
+    cur.execute("""UPDATE ipo SET kite_token=COALESCE(kite_token,%s)
+                   WHERE id=%s AND kite_token IS NULL""", (token, ipo_id))
+    if cur.rowcount == 1:
+        _log_fact(cur, ipo_id, "kite_token_exchange", exchange, "kite")
+        persisted = token
+    else:
+        cur.execute("SELECT kite_token FROM ipo WHERE id=%s", (ipo_id,))
+        persisted = (cur.fetchone() or [None])[0]
+    conn.commit()
+    return persisted
 
 
 def process(kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_15m=True):
     """One IPO through the whole chain. Returns a step report."""
     from fill_v2 import upsert_candles, upsert_listing_outcome, upsert_candles_15m
-    from fill_ipo import upsert_ipo, _log_fact
+    from fill_ipo import _log_fact
     out = {"ipo_id": ipo_id, "token": None, "bars": 0, "bars_15m": 0,
            "outcome": None, "notes": []}
 
@@ -230,13 +253,7 @@ def process(kite, ipo_id, isin, symbol, name, listing_date, days, write, fetch_1
             return out
         if write:
             # COALESCE-empty-only, so this can only fill a null token
-            def store_token(conn):
-                upsert_ipo(conn, dict(isin=isin, name_display=name,
-                                      name_norm=None, kite_token=token), source="kite")
-                cur = conn.cursor()
-                _log_fact(cur, ipo_id, "kite_token_exchange", how, "kite")
-                conn.commit()
-            with_db(store_token)
+            token = with_db(persist_resolved_token, ipo_id, token, how)
     elif write:
         # Token already stored (possibly by the old NSE-only resolver, which never wrote
         # provenance). Backfill kite_token_exchange from the token itself — but only if NO

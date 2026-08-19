@@ -254,6 +254,18 @@ def test_builder_postgres_failure_names_stage_domain_and_redacts_database_url():
         assert "secret-password" not in output
 
 
+def test_every_configured_secret_is_redacted_from_stdout_payload_and_active_kv():
+    sentinel = "sentinel-never-publish-8391"
+    secret_env = {name: sentinel for name in ("ANTHROPIC_API_KEY", "R2_SECRET_ACCESS_KEY",
+        "KITE_API_SECRET", "KITE_TOTP_SECRET", "KITE_BROKER_PROXY_AUTH_SECRET")}
+    secret_env["SNAPSHOT_TEST_SECRET_ERROR"] = f"authorization={sentinel} cookie={sentinel}"
+    with ServerContext() as srv:
+        res = run_publisher(srv.url, extra_env=secret_env)
+        assert res.returncode == 0, res.stdout + res.stderr
+        assert sentinel not in res.stdout + res.stderr
+        assert sentinel not in json.dumps(SnapshotHandler.kv)
+
+
 def test_schema_smoke_requires_real_read_only_neon_but_not_publication_credentials():
     env = os.environ.copy()
     for name in ("DATABASE_URL", "NEON_DATABASE_URL", "NEON_READONLY_DATABASE_URL",

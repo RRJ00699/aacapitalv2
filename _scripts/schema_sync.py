@@ -164,6 +164,14 @@ DDL = [
         id SERIAL PRIMARY KEY, run_date DATE DEFAULT CURRENT_DATE,
         step TEXT, script TEXT, ok BOOLEAN,
         error TEXT, ran_at TIMESTAMPTZ DEFAULT NOW())""",
+    """CREATE TABLE IF NOT EXISTS pipeline_runs (
+        run_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL, finished_at TIMESTAMPTZ,
+        steps JSONB NOT NULL DEFAULT '[]'::jsonb,
+        expected JSONB NOT NULL DEFAULT '[]'::jsonb,
+        paid_calls JSONB, rhp_summary JSONB, completeness JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""",
+    "CREATE INDEX IF NOT EXISTS ix_pipeline_runs_started ON pipeline_runs(started_at DESC)",
     """CREATE TABLE IF NOT EXISTS sbi_haiku_run_log (
         id SERIAL PRIMARY KEY, run_date DATE DEFAULT CURRENT_DATE,
         company TEXT, spent_usd NUMERIC(8,4) NOT NULL DEFAULT 0,

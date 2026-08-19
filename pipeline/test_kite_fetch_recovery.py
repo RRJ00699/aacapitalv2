@@ -103,3 +103,44 @@ def test_dry_run_is_kite_network_free_and_write_free(monkeypatch):
                         lambda: pytest.fail("dry-run authenticated with Kite"))
     lane.main()
     assert target_conn.closed
+
+class TokenCursor:
+    def __init__(self, existing=None): self.existing=existing; self.rowcount=0; self.calls=[]
+    def execute(self, sql, params):
+        self.calls.append((" ".join(sql.split()),params))
+        if sql.lstrip().startswith("UPDATE"): self.rowcount=0 if self.existing is not None else 1
+    def fetchone(self): return (self.existing,)
+class TokenConn:
+    def __init__(self,existing=None): self.cur=TokenCursor(existing); self.commits=0
+    def cursor(self): return self.cur
+    def commit(self): self.commits+=1
+
+def test_isin_null_daily_resolution_persists_by_exact_id_for_next_15m_lane(monkeypatch):
+    from unittest.mock import Mock, patch
+    conn=TokenConn()
+    with patch("fill_ipo._log_fact") as fact:
+        assert lane.persist_resolved_token(conn,746,9988,"NSE") == 9988
+    assert conn.cur.calls[0][1] == (9988,746)
+    assert "WHERE id=%s AND kite_token IS NULL" in conn.cur.calls[0][0]
+    fact.assert_called_once()
+
+def test_existing_token_is_never_overwritten_and_gets_no_new_provenance():
+    from unittest.mock import patch
+    conn=TokenConn(existing=1234)
+    with patch("fill_ipo._log_fact") as fact:
+        assert lane.persist_resolved_token(conn,746,9988,"NSE") == 1234
+    fact.assert_not_called()
+
+class OutcomeCursor:
+    def __init__(self): self.index=0
+    def execute(self,*_): self.index+=1
+    def fetchall(self): return [("2026-08-19",165,181.5,160,181.5)]
+    def fetchone(self): return (.14,160,165)
+class OutcomeConn:
+    def cursor(self): return OutcomeCursor()
+
+def test_absurd_band_inconsistent_issue_price_withholds_gap_pool_and_winner():
+    rec,note=lane.derive_outcome(OutcomeConn(),1098)
+    assert rec["listing_open"]==165 and rec["d1_close"]==181.5
+    assert {"gap_pct","pool","winner_35"}.isdisjoint(rec)
+    assert "band-inconsistent" in note

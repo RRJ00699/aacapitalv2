@@ -93,12 +93,14 @@ function requireDatabaseUrl(schemaSmoke = false): string {
 
 function safeErrorMessage(error: unknown): string {
   let message = error instanceof Error ? error.message : String(error);
-  for (const secret of [
-    process.env.DATABASE_URL,
-    process.env.NEON_READONLY_DATABASE_URL,
-  ]) {
+  const sensitive = /(?:DATABASE|ANTHROPIC|R2|KITE|SNAPSHOT|PROXY|COOKIE|AUTHORIZATION|SECRET|TOKEN|PASSWORD|KEY)/i;
+  for (const [name, secret] of Object.entries(process.env)) {
+    if (!sensitive.test(name)) continue;
     if (secret) message = message.split(secret).join("[REDACTED]");
   }
+  message = message
+    .replace(/(?:postgres(?:ql)?:\/\/|https?:\/\/)[^\s"']+:[^\s"'@]+@[^\s"']+/gi, "[REDACTED_CONNECTION]")
+    .replace(/\b(authorization|cookie|api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
   return message;
 }
 
@@ -123,6 +125,15 @@ function readOnlySqlClient(sql: SqlClient): SqlClient {
     }
     return sql(strings, ...values);
   }) as SqlClient;
+}
+
+function instrumentSqlClient(sql: SqlClient) {
+  let observed = 0;
+  const client = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    observed += 1;
+    return sql(strings, ...values);
+  }) as SqlClient;
+  return { client, observed: () => observed };
 }
 
 async function buildSnapshots(
@@ -173,10 +184,7 @@ async function buildSnapshots(
     observations,
     levelObservations,
     detailRows,
-    healthSteps,
-    healthFailures,
-    rhpPending,
-    paidCalls,
+    currentRuns,
     marketRows,
     breadthRows,
   ] = await Promise.all([
@@ -205,26 +213,9 @@ async function buildSnapshots(
         sql`SELECT DISTINCT ON (o.ipo_id) o.ipo_id,o.payload,o.observed_at FROM listing_observations o WHERE o.obs_type='level' ORDER BY o.ipo_id,o.observed_at DESC`,
     ),
     atBuilderStage("ipo-details", () => fetchDetailsRows(sql, detailIds)),
-    atBuilderStage(
-      "pipeline-health-steps",
-      () =>
-        sql`SELECT step,ok,error,ran_at FROM pipeline_steps ORDER BY ran_at DESC LIMIT ${PRODUCER_CONTRACT.maxSteps}`,
-    ),
-    atBuilderStage(
-      "pipeline-health-failures",
-      () =>
-        sql`SELECT step,stderr_tail,failed_at FROM pipeline_failures ORDER BY failed_at DESC LIMIT ${PRODUCER_CONTRACT.maxFailures}`,
-    ),
-    atBuilderStage(
-      "pipeline-health-rhp",
-      () =>
-        sql`SELECT count(*)::int AS count FROM ipo_stage_state WHERE stage='rhp' AND status IN ('PENDING','FAILED') AND next_retry_at IS NOT NULL`,
-    ),
-    atBuilderStage(
-      "pipeline-health-paid",
-      () =>
-        sql`SELECT COALESCE(sum(spent_usd),0)::float AS used_usd FROM sbi_haiku_run_log WHERE run_date=current_date`,
-    ),
+    atBuilderStage("pipeline-health-current-run", () =>
+      sql`SELECT run_id,status,started_at,finished_at,steps,expected,paid_calls,rhp_summary,completeness
+          FROM pipeline_runs ORDER BY started_at DESC LIMIT 1`),
     atBuilderStage(
       "market-india",
       () =>
@@ -263,45 +254,34 @@ async function buildSnapshots(
       }),
     ),
   );
-  const healthStepRows = healthSteps.map((r: any) => ({
-    step: r.step,
-    status: r.ok ? "ok" : "failed",
-    ran_at: r.ran_at,
-    duration_ms: null,
-    config_required: null,
-    owner_reason: r.ok ? null : r.error,
-    error: r.ok ? null : safeErrorMessage(r.error),
+  const run: any = currentRuns[0] ?? null;
+  const rawSteps: any[] = Array.isArray(run?.steps) ? run.steps : [];
+  const expected: any[] = Array.isArray(run?.expected) ? run.expected : [];
+  const healthStepRows = rawSteps.slice(0, PRODUCER_CONTRACT.maxSteps).map((r: any) => ({
+    step: String(r.step), status: String(r.status), ran_at: r.ran_at ?? run?.started_at ?? null,
+    duration_ms: Number.isFinite(Number(r.duration_ms)) ? Number(r.duration_ms) : undefined,
+    config_required: r.config_required ? safeErrorMessage(String(r.config_required)) : undefined,
+    owner_reason: r.owner_reason ? safeErrorMessage(String(r.owner_reason)) : undefined,
+    error: r.error ? safeErrorMessage(String(r.error)) : undefined,
   }));
-  const lastRunAt = healthStepRows[0]?.ran_at ?? null;
+  const seen = new Set(healthStepRows.map((r: any) => r.step));
+  const missingExpected = expected.filter((r: any) => !r.weekly && !seen.has(r.step));
+  const failures = healthStepRows.filter((r: any) => r.status === "failed").slice(0, PRODUCER_CONTRACT.maxFailures);
+  const paid = run?.paid_calls && run.paid_calls.available === true ? run.paid_calls : {available:false,used_usd:null,cap_usd:null};
   const health = {
-    run_complete:
-      healthStepRows.length > 0 &&
-      healthStepRows.every((r: any) => r.status === "ok"),
-    last_run_at: lastRunAt,
+    run_complete: Boolean(run?.finished_at) && run?.status === "ok" && missingExpected.length === 0 && failures.length === 0,
+    last_run_at: run?.finished_at ?? run?.started_at ?? null,
     steps: healthStepRows,
-    expected: [
-      ...new Map(
-        healthStepRows.map((r: any) => [
-          r.step,
-          { step: r.step, weekly: false },
-        ]),
-      ).values(),
-    ],
-    failures: healthFailures.map((r: any) => ({
+    expected,
+    failures: failures.map((r: any) => ({
       step: r.step,
-      stderr_tail: safeErrorMessage(String(r.stderr_tail ?? "")).slice(-500),
-      failed_at: r.failed_at,
+      stderr_tail: safeErrorMessage(String(r.error ?? "")).slice(-500),
+      failed_at: r.ran_at,
     })),
-    owner_actions: healthFailures.length
-      ? ["Inspect the bounded failure tail and rerun the owning pipeline step."]
-      : [],
-    rhp_retry_pending_count: rhpPending[0]?.count ?? null,
-    paid_calls: {
-      used_usd: paidCalls[0]?.used_usd ?? null,
-      cap_usd: process.env.SBI_DAILY_CAP_USD
-        ? Number(process.env.SBI_DAILY_CAP_USD)
-        : null,
-    },
+    owner_actions: healthStepRows.map((r:any)=>r.owner_reason).filter(Boolean).slice(0,20),
+    rhp_retry_pending_count: run?.rhp_summary?.backlog_pending ?? null,
+    paid_calls: paid,
+    completeness: run?.completeness ?? null,
   };
   const market = marketRows[0] ?? {};
   let breadth: any = null;
@@ -449,6 +429,13 @@ async function publishBatch(
   return result.published;
 }
 
+export function publicationBatches<T>(items: T[], maximum = PIPELINE_LIMITS.SNAPSHOT_MAX_PUBLICATION_ITEMS): T[][] {
+  if (!Number.isInteger(maximum) || maximum < 1) throw new Error("publication batch maximum must be positive");
+  const batches: T[][] = [];
+  for (let offset = 0; offset < items.length; offset += maximum) batches.push(items.slice(offset, offset + maximum));
+  return batches;
+}
+
 function fixtureSqlClient(): SqlClient {
   let queryCount = 0;
   return (async (strings: TemplateStringsArray) => {
@@ -531,18 +518,17 @@ function fixtureSqlClient(): SqlClient {
           ],
         },
       ];
-    if (/FROM pipeline_steps/.test(query))
+    if (/FROM pipeline_runs/.test(query))
       return [
         {
-          step: "snapshot publication",
-          ok: true,
-          error: null,
-          ran_at: "2026-08-19T00:00:00Z",
+          run_id: "fixture-run", status: "ok", started_at: "2026-08-19T00:00:00Z",
+          finished_at: "2026-08-19T00:01:00Z",
+          steps: [{step:"snapshot publication",status:process.env.SNAPSHOT_TEST_SECRET_ERROR ? "failed" : "ok",ran_at:"2026-08-19T00:00:00Z",duration_ms:10,error:process.env.SNAPSHOT_TEST_SECRET_ERROR}],
+          expected: [{step:"snapshot publication",weekly:false}],
+          paid_calls: {available:true,used_usd:0,cap_usd:2},
+          rhp_summary: {backlog_pending:0}, completeness: null,
         },
       ];
-    if (/FROM pipeline_failures/.test(query)) return [];
-    if (/FROM ipo_stage_state/.test(query)) return [{ count: 0 }];
-    if (/FROM sbi_haiku_run_log/.test(query)) return [{ used_usd: 0 }];
     if (/FROM market_snapshot/.test(query))
       return [
         {
@@ -648,17 +634,23 @@ export async function main() {
   const realSql = fixture
     ? null
     : (neon(requireDatabaseUrl(schemaSmoke)) as unknown as SqlClient);
-  const sql = fixture
+  const baseSql = fixture
     ? fixtureSqlClient()
     : schemaSmoke
       ? readOnlySqlClient(realSql!)
       : realSql!;
+  const instrumented = instrumentSqlClient(baseSql);
+  const sql = instrumented.client;
   const { globals, details } = await buildSnapshots(
     sql,
     maxIpos,
     concurrency,
     schemaSmoke,
   );
+  const selectedCount = globals.filter((s) => s.name.startsWith("journey:isin:")).length;
+  const queryCeiling = PRODUCER_CONTRACT.fixedQueryCeiling + selectedCount * PRODUCER_CONTRACT.perIpoQueryCeiling;
+  if (instrumented.observed() > queryCeiling) throw new Error(`snapshot query ceiling exceeded: observed=${instrumented.observed()} ceiling=${queryCeiling}`);
+  console.log(JSON.stringify({snapshot_query_contract:{observed:instrumented.observed(),ceiling:queryCeiling}}));
   if (fixture)
     console.log(JSON.stringify({ snapshot_fixture_sql_verified: true }));
   if (schemaSmoke) {
@@ -695,7 +687,9 @@ export async function main() {
       publish_endpoint: publishEndpoint,
     }),
   );
-  await publishBatch(publishEndpoint!, key!, globals, "global/Journey");
+  for (const [index, batch] of publicationBatches(globals).entries()) {
+    await publishBatch(publishEndpoint!, key!, batch, `global/Journey batch ${index + 1}`);
+  }
   for (
     let offset = 0;
     offset < details.length;

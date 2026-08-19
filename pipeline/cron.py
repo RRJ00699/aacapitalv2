@@ -11,6 +11,8 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
+import datetime as dt
 
 import psycopg2
 
@@ -39,6 +41,56 @@ KITE_REFRESH_STATUS_TO_STEP = {
     "SKIPPED_NOT_ACTIVATED": "skipped", "FAILED_LOGIN": "failed",
     "FAILED_ROTATION": "failed", "FAILED_VERIFICATION": "failed",
 }
+
+EXPECTED_DAILY_STEPS = (
+    "SEBI RHP download", "SBI note download", "NSE discovery",
+    "NSE identity/ISIN/listing-date backfill", "Active IPO selector",
+    "Market IPO selector", "Pre-run V2 completeness plan", "SBI ingest",
+    "SBI extraction", "Spend cap measurement", "Spend before measurement",
+    "3. NSE per-IPO " + "lifecycle", "Anchor allocation parsing", "Kite token refresh",
+    "Daily candles/outcomes", "15-min candles", "TOP DISCOVERY",
+    "RHP paid extraction", "score/verdict/completeness",
+    "Post-run V2 completeness measurement", "Database-backed Listing rules layers",
+)
+
+def redact(value):
+    text = str(value or "")
+    sensitive = ("DATABASE", "ANTHROPIC", "R2", "KITE", "SNAPSHOT", "PROXY",
+                 "COOKIE", "AUTHORIZATION", "SECRET", "TOKEN", "PASSWORD", "KEY")
+    for name, secret in os.environ.items():
+        if secret and any(word in name.upper() for word in sensitive):
+            text = text.replace(secret, "[REDACTED]")
+    return text[:2000]
+
+def persist_current_run(conn, run_id, started_at, steps, paid_calls, completeness):
+    safe_steps = []
+    for item in steps:
+        safe_steps.append({"step": item["step"], "status": item["status"],
+            "ran_at": item.get("ran_at", started_at),
+            "duration_ms": round(float(item.get("duration", 0))*1000, 3),
+            "owner_reason": redact(item.get("reason")) if str(item.get("reason", "")).startswith("owner:") else None,
+            "error": redact(item.get("traceback_tail") or item.get("reason")) if item["status"] == "failed" else None})
+    seen = {item["step"] for item in safe_steps}
+    for name in EXPECTED_DAILY_STEPS:
+        if name not in seen:
+            safe_steps.append({"step": name, "status": "skipped", "ran_at": started_at,
+                               "duration_ms": 0, "owner_reason": "owner: lane not applicable to this bounded run", "error": None})
+    failed = any(item["status"] == "failed" for item in safe_steps)
+    partial = any(item["status"] in {"partial", "warning"} for item in safe_steps)
+    sebi = next((item for item in steps if item["step"] == "SEBI RHP download"), {})
+    counts = sebi.get("counts", {})
+    rhp_summary = {"backlog_pending": counts.get("backlog_pending"),
+                   "retry_scheduled": counts.get("backlog_retry_scheduled"),
+                   "this_run_succeeded": counts.get("this_run_succeeded"),
+                   "this_run_failed": counts.get("this_run_failed")}
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO pipeline_runs
+      (run_id,status,started_at,finished_at,steps,expected,paid_calls,rhp_summary,completeness)
+      VALUES (%s,%s,%s,now(),%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)
+      ON CONFLICT (run_id) DO NOTHING""", (run_id, "failed" if failed else ("partial" if partial else "ok"), started_at,
+      json.dumps(safe_steps), json.dumps([{"step": name, "weekly": False} for name in EXPECTED_DAILY_STEPS]),
+      json.dumps(paid_calls), json.dumps(rhp_summary), json.dumps(completeness)))
+    conn.commit()
 
 ENVIRONMENT = (
     ("DATABASE_URL", "all database selectors and writers", "required; pipeline stops"),
@@ -417,11 +469,21 @@ def completeness_plan(conn, ids):
 
 def completeness_counts(before, after=None):
     later = {row["ipo_id"]: row for row in (after or before)}
-    return {str(row["ipo_id"]):
-            f"before={row['completeness_pct']}% after={later[row['ipo_id']]['completeness_pct']}% "
-            f"missing={len(later[row['ipo_id']]['missing'])} pending={len(later[row['ipo_id']]['pending'])} "
-            f"retry={later[row['ipo_id']]['retry_lanes']}"
-            for row in before}
+    result = {}
+    for row in before:
+        current = later[row["ipo_id"]]
+        newly_missing = sorted(set(current["missing"]) - set(row["missing"]))
+        newly_pending = sorted(set(current["pending"]) - set(row["pending"]))
+        result[str(row["ipo_id"])] = {
+            "before": {"required_present": row["required_present"], "required_total": row["required_total"],
+                       "completeness_pct": row["completeness_pct"]},
+            "after": {"required_present": current["required_present"], "required_total": current["required_total"],
+                      "completeness_pct": current["completeness_pct"]},
+            "newly_missing": newly_missing, "newly_pending": newly_pending,
+            "reason": "requirements became due during this run" if newly_missing or newly_pending else None,
+            "retry_lanes": current["retry_lanes"],
+        }
+    return result
 
 
 def write_completeness_manifest(rows):
@@ -543,6 +605,8 @@ def main(argv=None):
     args = parse_args(argv)
     dry = args.dry_run
     started = time.monotonic()
+    run_started_at = dt.datetime.now(dt.UTC).isoformat()
+    run_id = str(uuid.uuid4())
     if not environment_preflight():
         return 2
     steps = []
@@ -712,6 +776,17 @@ def main(argv=None):
                           counts={"selected": 0}))
     else:
         steps.append(skip("active IPO processing", "no active IPOs selected", counts={"selected": 0}))
+
+    completeness_evidence = completeness_counts(pre_completeness, post_completeness) if 'post_completeness' in locals() and post_ok else None
+    paid_calls = {"available": bool(spend_available),
+                  "used_usd": before if spend_available else None,
+                  "cap_usd": cap if spend_available else None}
+    if not dry:
+        try:
+            with_db(persist_current_run, run_id, run_started_at, steps, paid_calls, completeness_evidence)
+        except Exception as exc:
+            steps.append({"step": "Canonical run persistence", "status": "failed", "duration": 0.0,
+                          "reason": redact(f"{type(exc).__name__}: {exc}")})
 
     snapshot_ready, snapshot_missing = configured(("SNAPSHOT_PUBLISH_URL", "SNAPSHOT_PUBLISH_KEY"))
     if dry:
