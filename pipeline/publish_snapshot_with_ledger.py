@@ -71,20 +71,42 @@ def missing_required_config():
     return missing
 
 
-def publication_versions(output):
-    published = {}
-    for line in output.splitlines():
+def structured_objects(output):
+    """Decode JSON objects embedded in a child's otherwise human-readable output.
+
+    Scans for objects wherever they appear rather than requiring one per line. The
+    line-based twin this replaces demanded that the publication record be ALONE on its
+    line and called .get() on whatever json.loads returned, so a shared line — a cmd.exe
+    banner, an npm notice, or a bare scalar — turned a SUCCESSFUL publication into "the
+    publication response omitted canonical ipo-command:v6", and a non-dict turned it into
+    an AttributeError. Same discipline as cron.structured_objects, which the orchestrator
+    already uses to read this very process's output; the two are pinned to agree by
+    pipeline/test_snapshot_publication.py.
+    """
+    decoder = json.JSONDecoder()
+    objects = []
+    for index, char in enumerate(output):
+        if char != "{":
+            continue
         try:
-            value = json.loads(line)
+            value, _ = decoder.raw_decode(output[index:])
         except json.JSONDecodeError:
             continue
+        if isinstance(value, dict):
+            objects.append(value)
+    return objects
+
+
+def publication_versions(output):
+    published = {}
+    for value in structured_objects(output or ""):
         if value.get("stage") == "publication":
-            published.update(value.get("published", {}))
+            published.update(value.get("published") or {})
     return published
 
 
-def prove_active_consumer(output):
-    versions = publication_versions(output)
+def prove_active_consumer(output, versions=None):
+    versions = publication_versions(output) if versions is None else versions
     expected = versions.get("ipo-command:v6")
     if not expected:
         raise RuntimeError("publication response omitted canonical ipo-command:v6 version")
@@ -117,6 +139,7 @@ def main(argv=()) -> int:
     record = {
         "step": FAILED_STEP,
         "status": "running",
+        "phase": "config",
         "started_at": dt.datetime.now(dt.UTC).isoformat(),
         "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
         "branch": os.environ.get("GITHUB_REF_NAME") or os.environ.get("GITHUB_REF"),
@@ -128,11 +151,23 @@ def main(argv=()) -> int:
         missing = missing_required_config()
         if missing:
             raise RuntimeError("missing required snapshot publication configuration: " + ", ".join(missing))
+        record["phase"] = "builder"
+        # errors="replace" and an explicit codec: the builder's stream is mixed on
+        # Windows (Node speaks UTF-8, the cmd.exe launcher speaks the console code page),
+        # and a step that has already published 16 keys must never be failed by a byte it
+        # could not decode. cron.run() decodes THIS process the same way.
         completed = subprocess.run([sys.executable, str(HERE / "warm_kv.py")], check=True, cwd=ROOT,
-                                   text=True, capture_output=True)
+                                   capture_output=True, encoding="utf-8", errors="replace")
         if completed.stdout: print(completed.stdout, end="")
         if completed.stderr: print(completed.stderr, end="", file=sys.stderr)
-        proof = prove_active_consumer(completed.stdout or "")
+        # Publication is done at this point; everything below only PROVES it. Record what
+        # actually went live before running the proof, so the ledger describes reality
+        # even when the proof itself fails.
+        record["phase"] = "publication-proof"
+        published = publication_versions(completed.stdout or "")
+        record["published_snapshots"] = len(published)
+        record["last_known_good_kv_remains_active"] = not published
+        proof = prove_active_consumer(completed.stdout or "", published)
         record.update({"status": "ok", "alert_status": "NOT_REQUIRED", "consumer_proof": proof})
         return 0
     except subprocess.CalledProcessError as exc:
