@@ -43,17 +43,68 @@ DISCOVERY_APIS = (
     ("upcoming", NSE_BASE + "/api/all-upcoming-issues?category=ipo"),
 )
 
-# Single production selector owned beside official NSE discovery. It uses only fields
-# present on the canonical ipo spine; structured security-kind filtering happens before
-# ingestion in parse_discovery_item rather than against a nonexistent schema column.
+# ---------------------------------------------------------- security kind (structured)
+# A REIT/InvIT is NOT an IPO cohort member. is_mainboard alone cannot express that: it is
+# a board flag, and id 11 (Cube Highways Trust, an InvIT) carries is_mainboard=TRUE in
+# production, which put it into every lane on the owner's 08-16 run — daily candles, 225
+# 15-minute bars and a TOP WATCH DISCOVERY observation.
+#
+# The kind is therefore carried as a STRUCTURED FACT, never inferred from a name. NSE
+# states it in the official `series` code of the security itself; that code is mapped
+# through SECURITY_KIND_BY_SERIES below and stored on source_facts under the reserved
+# field name SECURITY_KIND_FIELD. source_facts is the canonical V2 home for
+# provenance-bearing scalar facts (docs/IPO_INTELLIGENCE_V1.md) and — unlike the
+# ipo_issue.issue_type column the previous attempt selected on — it is written by
+# fill_ipo on every upsert, so the predicate below cannot fail on a missing column.
+#
+# Fuzzy name matching is deliberately absent. "Cube Highways Trust" is excluded because
+# NSE says its series is IV, not because its name contains "Trust".
+SECURITY_KIND_FIELD = "security_kind"
+EXCLUDED_SECURITY_KINDS = ("REIT", "INVIT")
+# Official NSE series codes -> canonical security kind. EQ/BE/BZ/BL are equity market
+# segments of the SAME security kind, so a small mainboard issue (Ardee) keeps its place.
+SECURITY_KIND_BY_SERIES = {
+    "EQ": "EQUITY", "BE": "EQUITY", "BZ": "EQUITY", "BL": "EQUITY",
+    "IV": "INVIT", "RR": "REIT",
+    "SM": "SME", "ST": "SME", "MF": "MF",
+}
+
+
+def security_kind_from_series(series):
+    """Official NSE series code -> canonical kind, or None when NSE said nothing.
+
+    None is returned for an unrecognised code ON PURPOSE: an unknown series is unknown,
+    not equity. Guessing 'EQUITY' here is exactly how a non-equity security would be
+    admitted, so the caller stores nothing and the row stays unclassified until NSE
+    answers with a code we actually recognise."""
+    return SECURITY_KIND_BY_SERIES.get(str(series or "").strip().upper())
+
+
+# Single production selector owned beside official NSE discovery. Imported by cron,
+# kite_fetch, kite_fetch_15m, topout_online and verdict_engine — ONE definition, five
+# consumers. The security-kind term is a NOT EXISTS against source_facts so that every
+# consumer gets it without joining anything, and so that a wrong is_mainboard flag cannot
+# readmit a REIT/InvIT.
 CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
                           "upper(COALESCE(i.status,'')) IN "
-                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED')")
+                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED') AND "
+                          "NOT EXISTS (SELECT 1 FROM source_facts canonical_kind "
+                          "WHERE canonical_kind.ipo_id=i.id AND "
+                          "canonical_kind.field='" + SECURITY_KIND_FIELD + "' AND "
+                          "upper(trim(COALESCE(canonical_kind.value,''))) "
+                          "IN ('REIT','INVIT'))")
 CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "LISTED"}
 
-def canonical_spine_eligible(is_mainboard, status):
-    """Python twin for explicit-ID outcome accounting."""
-    return is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
+def canonical_spine_eligible(is_mainboard, status, security_kind=None):
+    """Python twin of CANONICAL_UNIVERSE_SQL for explicit-ID outcome accounting.
+
+    security_kind is the stored structured fact. It defaults to None (= not yet
+    classified, which the SQL admits) so callers that do not read the fact keep the
+    previous behaviour; a caller holding the fact MUST pass it, or the twin silently
+    disagrees with the predicate it claims to mirror."""
+    kind = str(security_kind or "").strip().upper()
+    return (is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
+            and kind not in EXCLUDED_SECURITY_KINDS)
 HEADERS = {
     "user-agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),

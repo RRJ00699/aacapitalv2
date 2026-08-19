@@ -9,6 +9,7 @@ import pytest
 from nse_fetch import parse_discovery_item
 from nse_identity_backfill import (parse_equity_master, quote_record, refresh,
     select_isin_candidates, select_listing_date_candidates, main as backfill_main,
+    select_security_kind_candidates,
     count_legacy_unresolved, _fill_empty, DB_CONNECT_TIMEOUT)
 from nse_lifecycle import reconcile_discovery
 
@@ -19,8 +20,13 @@ class Cursor:
         normalized = " ".join(sql.split())
         self.executed.append((normalized, params)); self.params = params
         self.is_count = normalized.startswith("SELECT count(*)")
+        # The security-kind cohort is a separate selector with its own budget; the row
+        # script in these doubles feeds the identity cohorts only.
+        self.is_kind_selector = "sf.field=%s" in normalized
     def fetchone(self): return (0,) if getattr(self, "is_count", False) else next(self.rows, None)
-    def fetchall(self): return list(itertools.islice(self.rows, self.params[-1]))
+    def fetchall(self):
+        if getattr(self, "is_kind_selector", False): return []
+        return list(itertools.islice(self.rows, self.params[-1]))
 
 
 class Conn:
@@ -39,6 +45,7 @@ class RoutedCursor:
     def execute(self, sql, params=()):
         sql = " ".join(sql.split()); self.executed.append((sql, params))
         if sql.startswith("SELECT count(*)"): self.current = [(self.legacy_count,)]
+        elif "sf.field=%s" in sql: self.current = []
         elif "isin IS NULL AND symbol" in sql: self.current = self.isin_rows[:params[-1]]
         elif "listing_date IS NULL" in sql: self.current = self.listing_rows[:params[-1]]
         elif "WHERE isin=%s" in sql: self.current = [next(self.owners, None)]
@@ -181,16 +188,31 @@ def test_daily_15m_top_and_active_consumers_share_canonical_predicate():
     assert "i.is_mainboard=TRUE" in canonical
 
 
-def test_selectors_execute_against_canonical_schema_fixture():
+def canonical_schema_fixture():
+    """Real V2 row shapes for the canonical spine plus source_facts.
+
+    id 11 is the owner's 08-16 leak, reproduced faithfully: Cube Highways Trust is an
+    InvIT that carries **is_mainboard=TRUE** in production. The board flag is wrong and
+    the guard must not depend on it. id 14 is an Ardee-shaped small mainboard issue and
+    must stay in the cohort; id 15 is a REIT."""
     raw = sqlite3.connect(":memory:")
     raw.executescript("""CREATE TABLE ipo(
       id INTEGER PRIMARY KEY,name_display TEXT,symbol TEXT,isin TEXT,listing_date TEXT,
       status TEXT,is_mainboard BOOLEAN,created_at TEXT);
-      CREATE TABLE ipo_issue(ipo_id INTEGER,issue_price NUMERIC,band_lo NUMERIC,band_hi NUMERIC);
+      CREATE TABLE ipo_issue(ipo_id INTEGER,issue_price NUMERIC,band_lo NUMERIC,band_hi NUMERIC,
+      issue_size_cr NUMERIC);
+      CREATE TABLE source_facts(ipo_id INTEGER,field TEXT,value TEXT,source TEXT,fetched_at TEXT);
       INSERT INTO ipo VALUES
-        (11,'Cube Highways Trust','CUBEINVIT',NULL,'2026-08-01','listed',FALSE,'2026-01-01'),
+        (11,'Cube Highways Trust','CUBEINVIT','INE0MB023019','2026-08-01','listed',TRUE,'2026-01-01'),
         (12,'Equity Listed','EQUITY',NULL,'2026-08-01','listed',TRUE,'2026-01-01'),
-        (13,'Equity Upcoming','UPCOMING',NULL,NULL,'announced',TRUE,'2026-08-01');""")
+        (13,'Equity Upcoming','UPCOMING',NULL,NULL,'announced',TRUE,'2026-08-01'),
+        (14,'Ardee Industries Limited','ARDEE',NULL,'2026-08-01','listed',TRUE,'2026-01-01'),
+        (15,'Embassy Office Parks REIT','EMBASSY','INE041025011','2026-07-01','listed',TRUE,'2026-01-01');
+      INSERT INTO ipo_issue VALUES (14,101,100,110,42.5);
+      INSERT INTO source_facts VALUES
+        (11,'security_kind','  invit ','nse_equity_master','2026-08-16'),
+        (12,'security_kind','EQUITY','nse_equity_master','2026-08-16'),
+        (15,'security_kind','REIT','nse_equity_master','2026-08-16');""")
     class CursorAdapter:
         def __init__(self, cursor): self.cursor = cursor
         def execute(self, sql, params=()):
@@ -199,10 +221,60 @@ def test_selectors_execute_against_canonical_schema_fixture():
         def fetchall(self): return self.cursor.fetchall()
     class SchemaConn:
         def cursor(self): return CursorAdapter(raw.cursor())
+    return raw, SchemaConn()
+
+
+def test_selectors_execute_against_canonical_schema_fixture():
+    raw, conn = canonical_schema_fixture()
     today = dt.date(2026, 8, 17)
-    assert [row[0] for row in select_isin_candidates(SchemaConn(), today, 10)] == [12]
-    assert [row[0] for row in select_listing_date_candidates(SchemaConn(), 10)] == [13]
+    assert [row[0] for row in select_isin_candidates(conn, today, 10)] == [12, 14]
+    assert [row[0] for row in select_listing_date_candidates(conn, 10)] == [13]
     raw.close()
+
+
+def test_invit_with_wrong_mainboard_flag_is_excluded_from_every_canonical_lane():
+    """D1 regression: id 11 (CUBEINVIT) received daily candles, 225 15-minute bars and a
+    TOP WATCH DISCOVERY observation on the owner's 08-16 run because the only cohort
+    terms were is_mainboard and status. The exclusion is STRUCTURED — NSE's own security
+    kind — so a wrong is_mainboard=TRUE cannot readmit it, and no name is ever matched."""
+    from nse_fetch import CANONICAL_UNIVERSE_SQL
+    raw, conn = canonical_schema_fixture()
+    cur = conn.cursor()
+    cur.execute(f"SELECT i.id FROM ipo i WHERE {CANONICAL_UNIVERSE_SQL} ORDER BY i.id")
+    cohort = [row[0] for row in cur.fetchall()]
+    assert 11 not in cohort, "InvIT re-entered the canonical cohort"
+    assert 15 not in cohort, "REIT re-entered the canonical cohort"
+    # Mainboard coverage is unchanged, including a small issue (Ardee, 42.5cr).
+    assert cohort == [12, 13, 14]
+    # ...and the row really does carry the wrong board flag, so the guard is not
+    # passing for the wrong reason.
+    cur.execute("SELECT is_mainboard FROM ipo WHERE id=11")
+    assert cur.fetchall()[0][0] == 1
+    raw.close()
+
+
+def test_security_kind_candidates_are_bounded_and_self_terminating():
+    raw, conn = canonical_schema_fixture()
+    # Only rows with no stored kind are asked about; classified rows never come back.
+    # Newest listing first, so a fresh listing is classified before an old backlog row.
+    assert [row[0] for row in select_security_kind_candidates(conn, 10)] == [14, 13]
+    assert [row[0] for row in select_security_kind_candidates(conn, 1)] == [14]
+    raw.close()
+
+
+def test_python_twin_agrees_with_the_sql_predicate_on_the_leak_row():
+    from nse_fetch import canonical_spine_eligible, security_kind_from_series
+    assert not canonical_spine_eligible(True, "listed", "  invit ")
+    assert not canonical_spine_eligible(True, "listed", "REIT")
+    assert canonical_spine_eligible(True, "listed", "EQUITY")
+    assert canonical_spine_eligible(True, "listed", None)      # unclassified is admitted
+    # Kind comes from NSE's structured series code, never from a name.
+    assert security_kind_from_series("IV") == "INVIT"
+    assert security_kind_from_series(" rr ") == "REIT"
+    assert security_kind_from_series("EQ") == "EQUITY"
+    assert security_kind_from_series("BE") == "EQUITY"
+    assert security_kind_from_series("") is None
+    assert security_kind_from_series("ZZ") is None             # unknown is not equity
 
 
 CSV = "SYMBOL,NAME OF COMPANY,DATE OF LISTING,ISIN NUMBER\nEXACT,ARDEE INDUSTRIES LIMITED,11-Aug-2026,INE000000001\nMISMATCH,Other Limited,12-Aug-2026,INE000000002\n"
@@ -275,7 +347,8 @@ def test_fill_empty_is_coalesce_guarded_and_budget_prints_before_work(capsys):
     first = capsys.readouterr().out.splitlines()[0]
     assert first.startswith("OPERATIONS_BUDGET ")
     assert '"max_csv_calls": 1' in first and '"max_quote_calls": 2' in first
-    assert '"max_selected_rows": 4' in first and '"max_updates": 8' in first
+    assert '"max_selected_rows": 4' in first and '"max_updates": 18' in first
+    assert '"max_security_kind_candidates": 10' in first
     with patch("fill_v2.log_source_fact"):
         try: _fill_empty(conn, 1, "status", "bad", write=True)
         except AssertionError: pass

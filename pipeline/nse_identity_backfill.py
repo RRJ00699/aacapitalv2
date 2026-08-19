@@ -63,6 +63,25 @@ def select_listing_date_candidates(conn, limit):
     return cur.fetchall()
 
 
+def select_security_kind_candidates(conn, limit):
+    """Canonical rows that carry NO structured security kind yet.
+
+    This is what closes the id-11 hole for rows that already exist: identity backfill
+    only ever looked at rows missing an ISIN or a listing date, and Cube Highways Trust
+    has both, so nothing ever asked NSE what kind of security it is. Bounded by `limit`
+    like every other selector here, and self-terminating — once a row is classified it
+    carries the fact and is never selected again."""
+    from nse_fetch import CANONICAL_UNIVERSE_SQL, SECURITY_KIND_FIELD
+    cur = conn.cursor()
+    cur.execute("""SELECT id,name_display,symbol,isin,listing_date
+        FROM ipo i WHERE symbol IS NOT NULL AND """ + CANONICAL_UNIVERSE_SQL + """
+        AND NOT EXISTS (SELECT 1 FROM source_facts sf
+                        WHERE sf.ipo_id=i.id AND sf.field=%s)
+        ORDER BY listing_date DESC NULLS LAST,id LIMIT %s""",
+        (SECURITY_KIND_FIELD, limit))
+    return cur.fetchall()
+
+
 def count_legacy_unresolved(conn, today):
     """Count permanent historical misses excluded from the bounded active retry lane."""
     from nse_fetch import CANONICAL_UNIVERSE_SQL
@@ -88,6 +107,9 @@ def parse_equity_master(content):
         "name": ("NAME OF COMPANY", "COMPANY NAME"),
         "isin": ("ISIN NUMBER", "ISIN"),
         "listing_date": ("DATE OF LISTING", "LISTING DATE"),
+        # NSE's own security-kind column. Optional: an older header set without it simply
+        # yields series=None, which classifies nothing rather than guessing EQUITY.
+        "series": ("SERIES",),
     }
     keys = {kind: next((normalized[a] for a in names if a in normalized), None)
             for kind, names in aliases.items()}
@@ -107,7 +129,9 @@ def parse_equity_master(content):
                 pass
         rows[symbol] = {"symbol": symbol, "name": (row.get(keys["name"]) or "").strip(),
                         "isin": (row.get(keys["isin"]) or "").strip().upper() if keys["isin"] else None,
-                        "listing_date": listing_date}
+                        "listing_date": listing_date,
+                        "series": (row.get(keys["series"]) or "").strip().upper() or None
+                                  if keys["series"] else None}
     return headers, rows
 
 
@@ -122,8 +146,16 @@ def quote_record(payload, requested_symbol):
     try: listing_date = dt.date.fromisoformat(str(date_value)[:10]) if date_value else None
     except ValueError: listing_date = None
     isin = str(meta.get("isin") or "").strip().upper() or None
+    # NSE reports the series either as a scalar or as an activeSeries list. Both are
+    # official structured fields; neither is a name.
+    series = meta.get("series") or info.get("series")
+    if not series:
+        active = meta.get("activeSeries") or info.get("activeSeries") or []
+        if isinstance(active, (list, tuple)) and active:
+            series = active[0]
     return {"symbol": symbol, "name": name, "isin": isin,
-            "listing_date": listing_date}
+            "listing_date": listing_date,
+            "series": str(series).strip().upper() or None if series else None}
 
 
 def _name_matches(canonical_name, official_name):
@@ -149,8 +181,30 @@ def _fill_empty(conn, ipo_id, field, value, *, write):
     return changed
 
 
+def _record_security_kind(conn, ipo_id, series, *, write):
+    """Store NSE's structured verdict on what this security IS. Never derived from a name.
+
+    Returns the canonical kind when one was recorded, else None. Append-on-change is
+    source_facts' own contract, so a re-run that reads the same series writes nothing."""
+    from nse_fetch import SECURITY_KIND_FIELD, security_kind_from_series
+    kind = security_kind_from_series(series)
+    if kind is None:
+        return None
+    cur = conn.cursor()
+    cur.execute("""SELECT value FROM source_facts WHERE ipo_id=%s AND field=%s
+                   ORDER BY fetched_at DESC LIMIT 1""", (ipo_id, SECURITY_KIND_FIELD))
+    stored = cur.fetchone()
+    if stored and str(stored[0]).strip().upper() == kind:
+        return None                      # already classified — a re-run is a no-op
+    if not write:
+        return kind
+    from fill_v2 import log_source_fact
+    log_source_fact(conn, ipo_id, SECURITY_KIND_FIELD, kind, SOURCE, commit=False)
+    return kind
+
+
 def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
-            deadline=None, clock=time.monotonic, timings=None):
+            deadline=None, clock=time.monotonic, timings=None, kind_limit=10):
     timings = timings if timings is not None else []
     started_run = clock()
 
@@ -190,15 +244,24 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
     listing_quota = limit - isin_quota
     isin_rows = timed_db("selector_isin", lambda: select_isin_candidates(conn, today, isin_quota))
     listing_rows = timed_db("selector_listing_date", lambda: select_listing_date_candidates(conn, listing_quota))
-    selected = isin_rows + listing_rows
+    # Security-kind classification carries its own declared budget rather than eating the
+    # identity quotas: the two cohorts answer different questions and neither may starve
+    # the other. Rows already selected above are not re-selected — one outcome per id.
+    kind_rows = timed_db("selector_security_kind",
+                         lambda: select_security_kind_candidates(conn, kind_limit))
+    already = {row[0] for row in isin_rows + listing_rows}
+    kind_rows = [row for row in kind_rows if row[0] not in already]
+    selected = isin_rows + listing_rows + kind_rows
     legacy_unresolved = timed_db("legacy_unresolved_count", lambda: count_legacy_unresolved(conn, today))
 
     def unavailable(reason, outcome):
         exc = SourceUnavailable(reason)
         exc.result = {"status": "skipped", "reason": "source_unavailable", "headers": [],
                       "selected": len(selected),
-                      "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows)},
-                      "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
+                      "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows),
+                                          "security_kind": len(kind_rows)},
+                      "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota,
+                                          "security_kind": kind_limit},
                       "quote_calls": 0, "updates": 0,
                       "legacy_unresolved_not_retried": legacy_unresolved,
                       "rows": [{"ipo_id": row[0], "symbol": row[2].strip().upper(),
@@ -229,7 +292,7 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
         # failure: surface it as SourceUnavailable so main() can exit 0 cleanly.
         raise unavailable(f"EQUITY_L.csv returned HTTP {status}", "source_unavailable")
     headers, master = parse_equity_master(response.content)
-    report, quote_calls, updates = [], 0, 0
+    report, quote_calls, updates, classified = [], 0, 0, 0
     for ipo_id, name, symbol, old_isin, old_date in selected:
         row_started = clock()
         requested = symbol.strip().upper()
@@ -312,6 +375,15 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
                 continue
         changed = []
         prospective = []
+        # Structured security kind first: it decides whether this row belongs in the
+        # cohort at all, and it is the one fact every lane's selector reads.
+        kind = timed_db("update_security_kind",
+                        lambda: _record_security_kind(conn, ipo_id, official.get("series"), write=write),
+                        symbol=requested)
+        if kind is not None:
+            prospective.append("security_kind")
+            if write:
+                changed.append("security_kind"); classified += 1
         if old_isin is None and official_isin:
             prospective.append("isin")
             if timed_db("update_source_fact", lambda: _fill_empty(conn, ipo_id, "isin", official_isin, write=write),
@@ -331,10 +403,13 @@ def refresh(conn, session, *, limit=10, quote_limit=10, write=False, today=None,
             try: conn.rollback()
             finally: raise RuntimeError("final_commit_failed") from None
     return {"headers": headers, "selected": len(selected),
-            "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows)},
-            "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota},
+            "selected_by_need": {"isin": len(isin_rows), "listing_date": len(listing_rows),
+                                 "security_kind": len(kind_rows)},
+            "selector_quotas": {"isin": isin_quota, "listing_date": listing_quota,
+                                "security_kind": kind_limit},
             "quote_calls": quote_calls,
             "legacy_unresolved_not_retried": legacy_unresolved,
+            "security_kinds_classified": classified,
             "updates": updates, "rows": report, "timings": timings,
             "elapsed_ms": round((clock()-started_run)*1000, 3)}
 
@@ -343,16 +418,20 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true"); ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int, default=10); ap.add_argument("--quote-limit", type=int, default=10)
+    ap.add_argument("--kind-limit", type=int, default=10,
+                    help="max rows classified for structured security kind per run")
     ap.add_argument("--max-runtime-seconds", type=float, default=240)
     args = ap.parse_args(argv)
     if not (args.write ^ args.dry_run): raise SystemExit("choose exactly one of --write or --dry-run")
-    if args.limit < 0 or args.quote_limit < 0 or args.max_runtime_seconds < 1: raise SystemExit("runtime must be at least one second; row limits must be non-negative")
+    if args.limit < 0 or args.quote_limit < 0 or args.kind_limit < 0 or args.max_runtime_seconds < 1: raise SystemExit("runtime must be at least one second; row limits must be non-negative")
     isin_quota = (args.limit + 1) // 2 if args.limit > 1 else args.limit
     print("OPERATIONS_BUDGET " + json.dumps({"max_session_prime_calls": 2, "max_csv_calls": 1,
           "max_quote_calls": args.quote_limit, "max_selected_rows": args.limit,
           "max_isin_candidates": isin_quota,
           "max_listing_date_candidates": args.limit - isin_quota,
-          "max_updates": args.limit * 2, "max_runtime_seconds": args.max_runtime_seconds}, sort_keys=True))
+          "max_security_kind_candidates": args.kind_limit,
+          "max_updates": args.limit * 2 + args.kind_limit,
+          "max_runtime_seconds": args.max_runtime_seconds}, sort_keys=True))
     import psycopg2
     from curl_cffi import requests
     from nse_fetch import prime
@@ -391,6 +470,7 @@ def main(argv=None):
         except (requests.RequestsError, TimeoutError, ConnectionError):
             raise SourceUnavailable("nse_prime transport unavailable") from None
         result = refresh(conn, session, limit=args.limit, quote_limit=args.quote_limit,
+                         kind_limit=args.kind_limit,
                          write=args.write, deadline=deadline, clock=clock, timings=timings)
     except SourceUnavailable as exc:
         # CLEAN NO-OP -> EXIT 0. The primary source was unavailable this run; nothing was
