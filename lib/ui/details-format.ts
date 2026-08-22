@@ -194,22 +194,30 @@ export function buildMissingRegister(d: Record<string, unknown>): MissingRow[] {
     rows.push({ field, reason, producer });
   };
 
-  const scan = (obj: unknown, group: string) => {
+  // The register quotes the SAME sentence the row on screen shows, so the two
+  // can never disagree about why a field is absent.
+  const facts = lifecycleFacts(d);
+  const scan = (obj: unknown, branch: string, group: string) => {
     if (!isPlainObject(obj)) return;
     for (const [k, v] of Object.entries(obj)) {
       if (!isPlainObject(v)) continue;
       const state = (v as DetailField).state;
       if (state === "MISSING" || state === "PENDING") {
-        add(`${group}: ${humanizeKey(k)}`, String((v as DetailField).reason ?? "Not available."), String((v as DetailField).source ?? "—"));
+        const copy = absenceCopy(`${branch}.${k}`, v as DetailField, facts);
+        // "pending — …" in the register too: the row and the register must read
+        // the same. The "not available" lead is dropped — the column heading
+        // ("Why it's missing") already says it.
+        const reason = copy.lead === "pending" ? absenceLine(copy) : copy.reason ?? "Not available.";
+        add(`${group}: ${humanizeKey(k)}`, reason, copy.producer ?? "—");
       }
     }
   };
 
-  scan(d.issue, "Issue");
-  scan(d.governance_and_risk, "Governance");
-  scan(d.valuation, "Valuation");
-  scan(d.listing_outcome, "Listing outcome");
-  scan((d.identity as Record<string, unknown>) ?? {}, "Identity");
+  scan(d.issue, "issue", "Issue");
+  scan(d.governance_and_risk, "governance_and_risk", "Governance");
+  scan(d.valuation, "valuation", "Valuation");
+  scan(d.listing_outcome, "listing_outcome", "Listing outcome");
+  scan((d.identity as Record<string, unknown>) ?? {}, "identity", "Identity");
 
   // Always-absent from ipo-details-v1 regardless of IPO — the honest register
   // for the fields whole sections would want (see field-inventory audit).
@@ -231,4 +239,215 @@ export const isNonEmpty = (n: ValueNode): boolean => n.kind !== "empty";
 /** True when a value looks like the forbidden serialized-object leak. */
 export function looksSerialized(text: string): boolean {
   return text.includes("[object Object]") || /^\s*[[{].*[\]}]\s*$/.test(text);
+}
+
+
+// ── Pending vs missing: honest absence copy ─────────────────────────────────
+// The producer's `field()` helper stamps ONE default sentence on every absent
+// scalar it does not have a specific reason for:
+//
+//   "Issue price — not available — Data is not available from the current V2 source."
+//
+// For Molbio (ipo_id 1100) that read like a defect report on a screen where the
+// truth was mundane: the issue had not been priced yet. The sentence is a
+// producer DEFAULT — it means "no reason was written", not "this is broken" —
+// so the UI is free to substitute a specific one. What it must NOT do is
+// rewrite `DetailField.state`: the state belongs to the payload, and only the
+// human-readable sentence (and the lead word in front of it) is ours.
+//
+// Nothing here invents a lifecycle field. Everything below is derived from what
+// the payload already carries:
+//   listed — `listing_outcome` leaves are PENDING only while the IPO has not
+//            listed (the producer's own `outcomePending`), MISSING after.
+//   priced — `issue.issue_price` is AVAILABLE.
+//   filed  — which leaves ARE available, so a lifecycle excuse can be withdrawn
+//            when a sibling proves the record has already been filed this far.
+
+/** The producer's default absence sentence. Its presence means "no reason written". */
+export const GENERIC_ABSENCE_REASON = "Data is not available from the current V2 source.";
+
+/** True when the reason is the producer's default rather than a written one. */
+export function isGenericReason(reason: string | null | undefined): boolean {
+  return !reason || reason.trim() === GENERIC_ABSENCE_REASON;
+}
+
+/**
+ * What the payload itself says about where this IPO is in its life.
+ * `listed: null` means the record carries no listing-outcome branch at all, so
+ * nothing is claimed either way. `filed` holds the dotted paths of every leaf
+ * that actually has a value.
+ */
+export type LifecycleFacts = { listed: boolean | null; priced: boolean; filed: ReadonlySet<string> };
+export const LIFECYCLE_UNKNOWN: LifecycleFacts = { listed: null, priced: false, filed: new Set<string>() };
+
+const SCANNED_BRANCHES = ["identity", "issue", "valuation", "decision", "listing_outcome"] as const;
+
+export function lifecycleFacts(details: Record<string, unknown> | null | undefined): LifecycleFacts {
+  const filed = new Set<string>();
+  let outcomeLeaves = 0;
+  let outcomePending = 0;
+  for (const branch of SCANNED_BRANCHES) {
+    const node = isPlainObject(details?.[branch]) ? details![branch] as Record<string, unknown> : null;
+    if (!node) continue;
+    for (const [key, value] of Object.entries(node)) {
+      if (!isPlainObject(value) || typeof (value as DetailField).state !== "string") continue;
+      if (fieldDisplay(value as DetailField).hasValue) filed.add(`${branch}.${key}`);
+      if (branch === "listing_outcome") {
+        outcomeLeaves += 1;
+        if ((value as DetailField).state === "PENDING") outcomePending += 1;
+      }
+    }
+  }
+  return {
+    listed: outcomeLeaves === 0 ? null : outcomePending > 0 ? false : true,
+    priced: filed.has("issue.issue_price"),
+    filed,
+  };
+}
+
+/**
+ * Which lifecycle event has to happen before a field can exist.
+ * - "listing" — the issue terms; absent before the IPO lists is explainable.
+ * - "pricing" — the scoring engine cannot run without an issue price.
+ * - "decision" — mirrors the producer, which already marks the sibling
+ *   `decision.reasons` / `decision.evidence` PENDING whenever no decision row
+ *   has been written. `decision.verdict` is the one leaf it forgets.
+ */
+type AbsenceGate = "listing" | "pricing" | "decision";
+
+type ReasonEntry = {
+  gate: AbsenceGate;
+  /**
+   * The explanation ONLY. The lead word ("pending") is added by the renderer,
+   * so this must never start with it — otherwise the row reads
+   * "pending — pending — …".
+   */
+  pending: string;
+  /** When the lifecycle does not explain the gap. */
+  missing: string;
+  /**
+   * Leaves whose presence withdraws the lifecycle excuse: the record has
+   * demonstrably been filed this far and this one is still empty, so calling it
+   * "pending" would be the same kind of guess this whole pass exists to remove.
+   * A pure offer for sale, for instance, has no fresh-issue amount at all.
+   */
+  siblings?: readonly string[];
+  /** Said instead of `missing` when a sibling proves the record was filed. */
+  filed?: string;
+};
+
+/**
+ * Every field whose absence the lifecycle explains. A field NOT in this book
+ * keeps whatever the payload said — including the generic sentence, which is
+ * then the honest answer: nobody has written a reason for it.
+ */
+const REASON_BOOK: Record<string, ReasonEntry> = {
+  "identity.listing_date": {
+    gate: "listing",
+    pending: "set when the exchange confirms the listing date",
+    missing: "No listing date is recorded for this IPO.",
+  },
+  "issue.issue_price": {
+    gate: "listing",
+    pending: "set when the issue is priced",
+    missing: "No issue price is recorded for this IPO in the issue record.",
+  },
+  "issue.band_low": {
+    gate: "listing",
+    pending: "set when the price band is announced",
+    missing: "No low end of the price band is recorded in the issue record.",
+    siblings: ["issue.band_high", "issue.issue_price"],
+    filed: "No low end of the price band is recorded, though the issue record already carries this issue's other pricing — a fixed-price issue has no band.",
+  },
+  "issue.band_high": {
+    gate: "listing",
+    pending: "set when the price band is announced",
+    missing: "No high end of the price band is recorded in the issue record.",
+    siblings: ["issue.band_low", "issue.issue_price"],
+    filed: "No high end of the price band is recorded, though the issue record already carries this issue's other pricing — a fixed-price issue has no band.",
+  },
+  "issue.issue_size_cr": {
+    gate: "listing",
+    pending: "set when the issue size is filed with the offer document",
+    missing: "No issue size is recorded for this IPO in the issue record.",
+  },
+  "issue.fresh_issue_cr": {
+    gate: "listing",
+    pending: "the fresh-issue amount is set when the offer document is filed",
+    missing: "No fresh-issue amount is recorded for this IPO in the issue record.",
+    siblings: ["issue.ofs_cr"],
+    filed: "Not recorded in the issue record, which carries the offer-for-sale side of this issue — a pure offer for sale has no fresh-issue amount.",
+  },
+  "issue.ofs_cr": {
+    gate: "listing",
+    pending: "the offer-for-sale amount is set when the offer document is filed",
+    missing: "No offer-for-sale amount is recorded for this IPO in the issue record.",
+    siblings: ["issue.fresh_issue_cr"],
+    filed: "Not recorded in the issue record, which carries the fresh-issue side of this issue — an all-fresh issue has no offer-for-sale amount.",
+  },
+  "issue.lot_size": {
+    gate: "listing",
+    pending: "fixed with the price band",
+    missing: "No lot size is recorded for this IPO in the issue record.",
+    siblings: ["issue.issue_price", "issue.band_low", "issue.band_high"],
+  },
+  "issue.face_value": {
+    gate: "listing",
+    pending: "carried with the issue terms once they are filed",
+    missing: "No face value is recorded for this IPO in the issue record.",
+    siblings: ["issue.issue_size_cr", "issue.issue_price"],
+  },
+  "decision.verdict": {
+    gate: "decision",
+    pending: "a persisted decision is not yet available",
+    missing: "a persisted decision is not yet available",
+  },
+};
+
+// The valuation leaves all wait on the same thing: a v2-score row, which the
+// engine cannot compute without an issue price. One entry, applied to each.
+const VALUATION_ENTRY: ReasonEntry = {
+  gate: "pricing",
+  pending: "the v2 scoring engine runs on the issue price, which is not set yet",
+  missing: "No v2-score valuation row is stored for this IPO.",
+};
+for (const leaf of ["score", "band", "engine_version", "computed_at", "peer_median_pe",
+  "fair_value_low", "fair_value_high", "inputs_used", "missing_inputs", "pe_source", "pb_source"]) {
+  REASON_BOOK[`valuation.${leaf}`] = VALUATION_ENTRY;
+}
+
+/** The keys the book covers — exported so a test can pin the sweep. */
+export const HONEST_REASON_KEYS: readonly string[] = Object.keys(REASON_BOOK).sort();
+
+/**
+ * What the UI prints for a field with no value.
+ * `lead` is the word in front of the reason ("pending" / "not available"); it is
+ * UI copy, NOT the payload state, which keeps rendering on its own badge.
+ * `producer` names who would fill the gap, so a MISSING field never hides it.
+ */
+export type AbsenceCopy = { lead: "pending" | "not available"; reason: string | null; producer: string | null };
+
+/** The one place lead and reason are joined, so they can never be joined twice. */
+export function absenceLine(copy: AbsenceCopy): string {
+  return copy.reason ? `${copy.lead} — ${copy.reason}` : copy.lead;
+}
+
+export function absenceCopy(
+  key: string | undefined,
+  f: DetailField | null | undefined,
+  facts: LifecycleFacts = LIFECYCLE_UNKNOWN,
+): AbsenceCopy {
+  const state: FieldState = (f?.state as FieldState) ?? "MISSING";
+  const producer = f?.source ? String(f.source) : null;
+  const entry = key ? REASON_BOOK[key] : undefined;
+  // A reason the producer actually wrote is the producer's to keep.
+  if (!isGenericReason(f?.reason) || !entry)
+    return { lead: state === "PENDING" ? "pending" : "not available", reason: f?.reason ?? null, producer };
+  const filedAlready = entry.siblings?.some((sibling) => facts.filed.has(sibling)) ?? false;
+  const explainable = !filedAlready && (
+    entry.gate === "decision"
+    || (entry.gate === "listing" && facts.listed !== true)
+    || (entry.gate === "pricing" && !facts.priced));
+  if (explainable) return { lead: "pending", reason: entry.pending, producer };
+  return { lead: "not available", reason: filedAlready ? entry.filed ?? entry.missing : entry.missing, producer };
 }
