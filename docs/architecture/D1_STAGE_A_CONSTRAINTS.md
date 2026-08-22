@@ -1,5 +1,7 @@
 # Stage A Constraints — Explicit Acknowledgement
 
+Status: **CURRENT** — owner-imposed guardrails applied to PR #342. Superseded fields (25-table migration, kite_session in D1, timestamp-based source_facts idempotency) are addressed in `docs/architecture/D1_EVIDENCE_REPORT.md` and will land as a follow-up commit on this PR after review.
+
 Owner directives applied to Stage A (2026-06):
 
 1. **Do not modify, delete, or decommission Neon.** Neon remains the

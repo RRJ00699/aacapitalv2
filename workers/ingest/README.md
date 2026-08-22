@@ -1,5 +1,7 @@
 # AACapital — Ingest Worker (Stage A, STAGING-ONLY)
 
+Status: **CURRENT** — deploy-ready code, held for owner review on PR #342. The 5-table schema retarget documented in `docs/architecture/D1_EVIDENCE_REPORT.md` will replace the current 24-table shape in a follow-up commit before any staging deploy.
+
 Single write path for the **staging** D1 (`aacapital_core_staging`). The Python
 pipeline will POST to this Worker only after Stage D is owner-approved. In
 Stage A the Worker exists in staging so the schema, validators, and identity
