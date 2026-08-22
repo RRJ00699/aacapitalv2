@@ -1,0 +1,3 @@
+# Minimal deps for Stage B migration tooling. Nothing paid, nothing new;
+# psycopg2-binary is already used in `pipeline/`.
+psycopg2-binary>=2.9

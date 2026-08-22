@@ -1,0 +1,83 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // ────────────────────────────────────────────────────────────────
+  // STAGE A SAFETY DESIGN
+  // ────────────────────────────────────────────────────────────────
+  // Top-level fields are intentionally hostile to any accidental
+  // production deployment:
+  //   - `name` is `aacapital-ingest-safety-stub` (a fresh Worker name
+  //     that DOES NOT EXIST on your CF account today; a bare
+  //     `wrangler deploy` therefore creates a NEW Worker under that
+  //     name — it CANNOT overwrite any existing production Worker).
+  //   - `main` points at `_safety-stub.ts`, which serves HTTP 410 and
+  //     has zero bindings, so even if deployed it cannot read/write D1,
+  //     KV, R2, or Neon.
+  //   - `workers_dev` is `false` at the top level → no `*.workers.dev`
+  //     URL is provisioned for the stub.
+  //   - No `routes`, no `custom_domain`, no `d1_databases`,
+  //     no `kv_namespaces`, no `r2_buckets`, no `queues`, no
+  //     `triggers.crons`, no `services`. Nothing to bind to.
+  //
+  // The real ingest Worker is defined ONLY under `env.staging`. Its
+  // name (`aacapital-ingest-staging`), D1 binding, KV bindings, and
+  // secrets exist exclusively under `--env staging`.
+  //
+  // What actually happens for each command (verified with
+  // `wrangler deploy --dry-run` in the readiness report, §B):
+  //   wrangler deploy               → deploys `_safety-stub.ts` as a
+  //                                    brand-new Worker named
+  //                                    `aacapital-ingest-safety-stub`
+  //                                    with no bindings, no routes.
+  //                                    Cannot touch production. Safe
+  //                                    to delete afterwards.
+  //   wrangler deploy --env staging → deploys the ingest Worker to the
+  //                                    staging Worker name with the
+  //                                    staging D1 binding.
+  //   wrangler dev                  → runs the stub locally.
+  //   wrangler dev  --env staging   → runs the real ingest Worker
+  //                                    locally with Miniflare + local
+  //                                    D1.
+
+  "name": "aacapital-ingest-safety-stub",
+  "main": "src/_safety-stub.ts",
+  "compatibility_date": "2026-07-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": false },
+
+  "env": {
+    "staging": {
+      "name": "aacapital-ingest-staging",
+      "main": "src/index.ts",
+      "workers_dev": true,
+      "observability": { "enabled": false },
+
+      // Bound ONLY under --env staging. Filled in by the owner after
+      // running `wrangler d1 create aacapital_core_staging`.
+      "d1_databases": [
+        {
+          "binding": "DB_CORE",
+          "database_name": "aacapital_core_staging",
+          "database_id": "REPLACE_WITH_STAGING_D1_ID",
+          "migrations_dir": "../../d1/migrations"
+        }
+      ],
+
+      "vars": {
+        "MAX_ROWS_PER_REQUEST": "5000",
+        "AAC_ENV": "staging"
+      }
+
+      // Secrets (put with `--env staging`):
+      //   INGEST_KEY   — required. Shared secret used by the Python
+      //                  pipeline in Stage D once the owner approves.
+      //   NTFY_TOPIC   — optional. Pipeline-failure alert channel.
+      //
+      //   wrangler secret put INGEST_KEY --env staging --config workers/ingest/wrangler.jsonc
+      //   wrangler secret put NTFY_TOPIC --env staging --config workers/ingest/wrangler.jsonc
+    }
+    // NO `env.production` block. Any future production wiring requires
+    // a separate, owner-approved PR after Stage-B reconciliation passes.
+  }
+}
