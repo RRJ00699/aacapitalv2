@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    checkpoint_sql, map_ipomatrix_identity, resolve_identity, survey, transform_neon, validate_issue)
+    NEON_QUERIES, checkpoint_sql, derive_security_kind, map_ipomatrix_identity, resolve_identity, survey, transform_ipomatrix,
+    transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 from tools.d1_contract import canonical_spine_eligible, concept_state
 
@@ -89,6 +90,13 @@ def test_security_kind_lifecycle_symbol_and_locks_are_structural(db):
     assert not canonical_spine_eligible(True,"LISTED","REIT")
     assert not canonical_spine_eligible(True,"LISTED","INVIT")
 
+def test_neon_security_kind_uses_provenance_not_a_nonexistent_ipo_column():
+    assert "i.security_kind" not in NEON_QUERIES["ipo"]
+    assert "sf.field='security_kind'" in NEON_QUERIES["ipo"]
+    assert derive_security_kind("REIT")==("REIT",None)
+    assert derive_security_kind(None)==("EQUITY",None)
+    assert derive_security_kind("EQUITY,REIT")==("EQUITY","AMBIGUOUS_SECURITY_KIND")
+
 def test_not_due_is_not_missing_failed_or_zero(db):
     assert concept_state("ANNOUNCED","market")=="NOT_DUE"
     assert concept_state("LISTED","market")=="MISSING"
@@ -133,6 +141,35 @@ def test_neon_transforms_exact_decimals_and_category_snapshots(db):
     statements=transform_neon("subscription_snapshots",sub); assert len(statements)==3
     assert all("INSERT OR IGNORE" in x for x in statements)
 
+def test_reviewed_ipomatrix_map_populates_normalized_history_without_unit_guessing(db):
+    doc="d"*64;payload={"id":42,"issue":{"lo":"95.10","hi":"100","price":"100","face":"10","open":"2026-01-01"},
+      "profile":{"about":"Business","sector":"Power"},"ownership":[{"category":"promoter","pre":"80","post":"60"}],
+      "objects":[{"order":1,"purpose":"capex","amount":"50","sha":doc,"page":10}],
+      "financials":[{"period":"FY25","basis":"consolidated","income":"100000000","pat":"10000000"}],
+      "reservations":[{"category":"QIB","shares":1000,"pct":"50"}],
+      "subscriptions":[{"at":"2026-01-03T10:00:00Z","category":"QIB","x":"2.5","final":True}],
+      "anchor":{"amount":"20","count":2},"allocations":[{"row":1,"name":"Investor Raw","shares":100,"price":"100","amount":"0.01","sha":doc,"page":2}],
+      "peers":[{"name":"Peer","pe":"20","pb":"3","sha":doc}],"kpi":{"roe":"12.5"},
+      "documents":[{"sha":doc,"type":"RHP","url":"https://example.invalid/rhp.pdf"}]}
+    m={"matrix_id":"$.id","ipo_issue":{"open_date":{"path":"$.issue.open"},"band_lo_rs":{"path":"$.issue.lo","unit":"rs"},"band_hi_rs":{"path":"$.issue.hi","unit":"rs"},"issue_price_rs":{"path":"$.issue.price","unit":"rs"},"face_value_rs":{"path":"$.issue.face","unit":"rs"}},
+      "company_profile":{"business_description":{"path":"$.profile.about"},"sector":{"path":"$.profile.sector"}},
+      "ownership":{"rows":"$.ownership","fields":{"holder_category":{"path":"category"},"pre_pct":{"path":"pre","unit":"pct"},"post_pct":{"path":"post","unit":"pct"}}},
+      "objects_of_issue":{"rows":"$.objects","fields":{"row_order":{"path":"order"},"purpose_raw":{"path":"purpose"},"amount_cr":{"path":"amount","unit":"cr"},"document_sha256":{"path":"sha"},"page":{"path":"page"}}},
+      "financial_statements":{"rows":"$.financials","fields":{"period":{"path":"period"},"basis":{"path":"basis"},"total_income_cr":{"path":"income","unit":"rs","normalized_unit":"cr"},"pat_cr":{"path":"pat","unit":"rs","normalized_unit":"cr"}}},
+      "reservations":{"rows":"$.reservations","fields":{"category":{"path":"category"},"shares_reserved":{"path":"shares"},"reservation_pct":{"path":"pct","unit":"pct"}}},
+      "subscription_snapshots":{"rows":"$.subscriptions","fields":{"captured_at":{"path":"at"},"category":{"path":"category"},"subscription_x":{"path":"x","unit":"x"},"is_final":{"path":"final"}}},
+      "anchor_summary":{"amount_cr":{"path":"$.anchor.amount","unit":"cr"},"investor_count":{"path":"$.anchor.count"}},
+      "anchor_allocations":{"rows":"$.allocations","fields":{"allocation_row":{"path":"row"},"investor_name_raw":{"path":"name"},"shares":{"path":"shares"},"price_rs":{"path":"price","unit":"rs"},"amount_cr":{"path":"amount","unit":"cr"},"document_sha256":{"path":"sha"},"page":{"path":"page"}}},
+      "peer_comparisons":{"rows":"$.peers","fields":{"peer_name_raw":{"path":"name"},"pe_x":{"path":"pe","unit":"x"},"pb_x":{"path":"pb","unit":"x"},"document_sha256":{"path":"sha"}}},
+      "sourced_kpis":{"ROE":{"path":"$.kpi.roe","unit":"pct"}},
+      "documents":{"rows":"$.documents","fields":{"sha256":{"path":"sha"},"doc_type":{"path":"type"},"source_url":{"path":"url"}}}}
+    statements,counts=transform_ipomatrix(payload,"a"*64,m)
+    for table in ("ipo_issue","company_profile","ownership","objects_of_issue","financial_statements","reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","source_facts","documents"):
+        assert any(f"INTO {table}" in sql for sql in statements),table
+    assert "'10'" in next(x for x in statements if "INTO financial_statements" in x)  # ₹100m -> ₹10cr
+    with pytest.raises(ValueError,match="UNAPPROVED_UNIT"):
+        transform_ipomatrix(payload,"a"*64,{**m,"sourced_kpis":{"ROE":{"path":"$.kpi.roe","unit":"mystery","normalized_unit":"pct"}}})
+
 def test_raw_archive_rejects_update_and_delete(db):
     sha="a"*64; db.execute("insert into raw_objects values(?,?,?,?,?,?)",(sha,"ipomatrix","1",None,2,"{}"))
     with pytest.raises(sqlite3.IntegrityError): db.execute("update raw_objects set payload_json='[]'")
@@ -141,4 +178,5 @@ def test_raw_archive_rejects_update_and_delete(db):
 def test_resume_checkpoint_and_reconciliation(db):
     db.executescript(checkpoint_sql("ipo",10,10));db.executescript(checkpoint_sql("ipo",20,20))
     assert db.execute("select last_key,source_rows,written_rows from migration_checkpoints").fetchone()==("COMPLETE",20,20)
-    assert reconcile(db)["critical_checks"]=={"orphan_market_bars":0,"quarantined_rows":0,"duplicate_fingerprints":0}
+    report=reconcile(db);assert report["critical_checks"]=={"orphan_market_bars":0,"quarantined_rows":0,"duplicate_fingerprints":0}
+    assert report["local_d1_logical_size_bytes"]>0

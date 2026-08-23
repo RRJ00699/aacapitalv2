@@ -9,6 +9,7 @@ TABLES=("ipo","ipo_issue","financial_statements","subscription_snapshots","ancho
 
 def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
     out={table:{"destination_rows":conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]} for table in TABLES}
+    out["local_d1_logical_size_bytes"]=conn.execute("PRAGMA page_count").fetchone()[0]*conn.execute("PRAGMA page_size").fetchone()[0]
     out["ipo"].update({"unique_isins":conn.execute("SELECT count(DISTINCT isin) FROM ipo WHERE isin IS NOT NULL").fetchone()[0],
       "null_isin":conn.execute("SELECT count(*) FROM ipo WHERE isin IS NULL").fetchone()[0],
       "duplicate_name_norm":conn.execute("SELECT count(*) FROM (SELECT name_norm FROM ipo GROUP BY name_norm HAVING count(*)>1)").fetchone()[0]})
@@ -23,13 +24,13 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
         comparisons={
           "ipo":{"source":source.get("source_ipo",0),"destination_or_quarantine":out["ipo"]["destination_rows"]+source.get("quarantined_ipo_structural",0)},
           "ipo_issue":{"source":source.get("source_ipo_issue",0),"destination_or_quarantine":out["ipo_issue"]["destination_rows"]+source.get("quarantined_ipo_issue",0)},
-          "financial_statements":{"source":source.get("source_financial_statements",0),"destination":out["financial_statements"]["destination_rows"]},
-          "subscription_categories":{"source":source.get("mapped_subscription_snapshots",0),"destination":out["subscription_snapshots"]["destination_rows"]},
+          "financial_statements":{"source":source.get("source_financial_statements",0)+source.get("ipomatrix_rows_financial_statements",0),"destination":out["financial_statements"]["destination_rows"]},
+          "subscription_categories":{"source":source.get("mapped_subscription_snapshots",0)+source.get("ipomatrix_rows_subscription_snapshots",0),"destination":out["subscription_snapshots"]["destination_rows"]},
           "market_daily":{"source":source.get("source_market_daily",0),"destination":out["market_1d"]["destination_rows"]},
           "market_15m":{"source":source.get("source_market_15m",0),"destination":out["market_15m"]["destination_rows"]},
           "listing_observations":{"source":source.get("source_listing_observations",0),"destination":out["listing_observations"]["destination_rows"]},
-          "documents":{"source":source.get("source_documents",0),"destination":out["documents"]["destination_rows"]},
-          "source_facts":{"source":source.get("source_source_facts",0),"destination":out["source_facts"]["destination_rows"]},
+          "documents":{"source":source.get("source_documents",0)+source.get("ipomatrix_rows_documents",0),"destination":out["documents"]["destination_rows"]},
+          "source_facts":{"source":source.get("source_source_facts",0)+source.get("ipomatrix_fact_rows",0)+source.get("derived_source_fact_rows",0),"destination":out["source_facts"]["destination_rows"]},
           "ipomatrix_raw":{"source":source.get("source_ipomatrix",0),"destination":out["raw_objects"]["destination_rows"]},
         }
         for key,value in comparisons.items():

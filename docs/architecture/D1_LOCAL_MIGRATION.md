@@ -22,13 +22,17 @@ The survey emits only JSON path, occurrence count, primitive type frequencies, n
 
 ```json
 {
+  "reviewed": true,
   "matrix_id": "$.reviewed.path.to.id",
   "name": "$.reviewed.path.to.company_name",
-  "isin": "$.reviewed.path.to.isin"
+  "isin": "$.reviewed.path.to.isin",
+  "ipo_issue": {
+    "band_lo_rs": {"path": "$.reviewed.path.to.band_low", "unit": "rs"}
+  }
 }
 ```
 
-These example strings describe the map format, not the archive's real paths. The migration refuses normalized IPO Matrix identity loading when archive files are supplied without this reviewed map. Every valid or malformed raw object is nevertheless represented by SHA256 and immutable payload bytes; malformed or unmapped identities are quarantined.
+These example strings describe the map format, not the archive's real paths. Every mapped decimal field must declare its evidence-approved source unit and, only when conversion is approved, its normalized unit. The migration refuses an identity-only map: at least one reviewed normalized bootstrap section is required. It supports issue/profile, ownership, objects, period financials, reservation/subscription rows, anchor summary/rows, peers, sourced KPI facts, and documents. Every valid or malformed raw object is represented by SHA256 and immutable payload bytes; malformed, unmapped, unit-unapproved, and ambiguous records are quarantined or reported raw-only.
 
 ## 2. Migrate into Wrangler local D1
 
@@ -42,6 +46,8 @@ NEON_READONLY_DATABASE_URL='…read-only role…' python tools/d1_migration.py \
 ```
 
 The Neon connection is `READ ONLY`, `REPEATABLE READ`, and rolled back at close. Named server-side cursors stream deterministic ordered queries without `OFFSET`. Decimal values become canonical decimal strings without passing through binary floating point. Unit anomalies go to `migration_quarantine`; they do not enter canonical fact tables.
+
+Neon `ipo` is not assumed to contain `security_kind`. Migration derives it from the existing `source_facts(field='security_kind')` evidence. A single recognized value is retained, absent evidence defaults structurally to `EQUITY` with migration provenance, and conflicting/unknown evidence is quarantined.
 
 ## 3. Reconcile the Wrangler local database
 

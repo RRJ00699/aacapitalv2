@@ -27,11 +27,21 @@ def test_neon_shape_and_matrix_raw_reach_wrangler_local_without_loss(tmp_path,mo
     statements=[]
     for dataset,row in (("ipo",ipo),("ipo_issue",issue),("market_daily",daily)):
         statements.extend(migration.transform_neon(dataset,row))
-    raw='{"reviewed":{"id":42,"name":"Example Limited","isin":"INE123456789"}}';sha=hashlib.sha256(raw.encode()).hexdigest()
+    payload={"reviewed":{"id":42,"name":"Example Limited","isin":"INE123456789","about":"Profile from raw",
+      "financials":[{"period":"FY25","basis":"consolidated","income":"100000000","pat":"10000000"}]}}
+    raw=json.dumps(payload,separators=(",",":"));sha=hashlib.sha256(raw.encode()).hexdigest()
     statements.append(migration.insert_sql("raw_objects",("sha256","source_name","source_object_id","size_bytes","payload_json"),(sha,"ipomatrix","42",len(raw),raw)))
+    mapping={"matrix_id":"$.reviewed.id","name":"$.reviewed.name","isin":"$.reviewed.isin","reviewed":True,
+      "company_profile":{"business_description":{"path":"$.reviewed.about"}},
+      "financial_statements":{"rows":"$.reviewed.financials","fields":{"period":{"path":"period"},"basis":{"path":"basis"},
+        "total_income_cr":{"path":"income","unit":"rs","normalized_unit":"cr"},"pat_cr":{"path":"pat","unit":"rs","normalized_unit":"cr"}}}}
+    bootstrap,bootstrap_counts=migration.transform_ipomatrix(payload,sha,mapping);statements.extend(bootstrap)
     migration.apply_local(statements);migration.apply_local(statements)  # real idempotent rerun
     dump=tmp_path/"export.sql";reconciliation.export_local(dump);conn=sqlite3.connect(":memory:");conn.executescript(dump.read_text())
-    report=reconciliation.reconcile(conn,{"source_ipo":1,"source_ipo_issue":1,"source_market_daily":1,"source_ipomatrix":1})
+    source={"source_ipo":1,"source_ipo_issue":1,"source_market_daily":1,"source_ipomatrix":1,**bootstrap_counts}
+    report=reconciliation.reconcile(conn,source)
     assert report["zero_silent_loss"] is True
     assert report["ipo"]["destination_rows"]==1 and report["raw_objects"]["destination_rows"]==1
     assert report["market_1d"]["destination_rows"]==1 and report["critical_checks"]["quarantined_rows"]==0
+    assert conn.execute("select business_description from company_profile").fetchone()[0]=="Profile from raw"
+    assert conn.execute("select total_income_cr,pat_cr from financial_statements").fetchone()==("10","1")

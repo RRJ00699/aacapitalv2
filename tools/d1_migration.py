@@ -7,10 +7,11 @@ after ``--survey``; every JSON payload is archived even when identity is unmappe
 """
 from __future__ import annotations
 
-import argparse, datetime as dt, decimal, hashlib, json, os, sqlite3, subprocess, sys, tempfile
+import argparse, datetime as dt, decimal, hashlib, json, os, sqlite3, subprocess, sys, tempfile, time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
+from dataclasses import dataclass
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -21,8 +22,10 @@ DDL = ROOT / "d1" / "migrations" / "0001_functional_model.sql"
 DECIMAL = decimal.Decimal
 
 NEON_QUERIES = {
-    "ipo": """SELECT id,isin,name_display,name_norm,symbol,ipomatrix_id,security_kind,status,
-               created_at FROM ipo ORDER BY id""",
+    "ipo": """SELECT i.id,i.isin,i.name_display,i.name_norm,i.symbol,i.ipomatrix_id,i.status,
+               i.created_at,(SELECT string_agg(DISTINCT upper(trim(sf.value)),',' ORDER BY upper(trim(sf.value)))
+                 FROM source_facts sf WHERE sf.ipo_id=i.id AND sf.field='security_kind') AS security_kind_evidence
+               FROM ipo i ORDER BY i.id""",
     "ipo_issue": """SELECT ii.ipo_id,ii.open_date,ii.close_date,ii.allotment_date,i.listing_date,
                ii.band_lo,ii.band_hi,ii.issue_price,ii.face_value,ii.lot_size,ii.issue_size_cr,ii.fresh_cr,
                ii.ofs_cr,ii.registrar FROM ipo_issue ii JOIN ipo i ON i.id=ii.ipo_id ORDER BY ii.ipo_id""",
@@ -69,6 +72,11 @@ def validate_issue(row: dict[str, Any]) -> tuple[str, ...]:
         value=d(key)
         if value is not None and value<0: out.append("NEGATIVE_MONEY")
     return tuple(sorted(set(out)))
+
+def derive_security_kind(evidence_text: Any) -> tuple[str,str|None]:
+    evidence={x for x in str(evidence_text or "").split(",") if x};allowed={"EQUITY","REIT","INVIT","FPO"};recognized=evidence&allowed
+    if len(evidence)>1 or evidence-recognized:return "EQUITY","AMBIGUOUS_SECURITY_KIND"
+    return next(iter(recognized),"EQUITY"),None
 
 def discover_json(paths: Iterable[Path]) -> list[Path]:
     return sorted({f for p in paths for f in ([p] if p.is_file() else p.rglob("*.json"))})
@@ -125,14 +133,104 @@ def json_path(payload: Any, path: str|None) -> Any:
     return value
 
 def sql_value(value: Any) -> str:
+    if isinstance(value,SqlExpr):return value.sql
     if value is None:return "NULL"
     if isinstance(value,bool):return "1" if value else "0"
     if isinstance(value,int):return str(value)
     if isinstance(value,(dict,list)):value=json.dumps(value,ensure_ascii=False,separators=(",",":"),default=str)
     return "'"+str(value).replace("'","''")+"'"
 
+@dataclass(frozen=True)
+class SqlExpr:
+    sql: str
+
 def insert_sql(table: str, columns: tuple[str,...], values: tuple[Any,...]) -> str:
     return f"INSERT OR IGNORE INTO {table}({','.join(columns)}) VALUES({','.join(sql_value(v) for v in values)});"
+
+def _row_value(row: dict[str,Any], key: str|None):
+    return json_path(row,key) if key and key.startswith("$") else row.get(key) if key else None
+
+def approved_decimal(value: Any, source_unit: str, normalized_unit: str) -> str|None:
+    """Apply only a declared conversion; absence of a unit approval is an error."""
+    text=decimal_text(value)
+    if text is None:return None
+    if source_unit==normalized_unit:return text
+    if source_unit=="rs" and normalized_unit=="cr":return decimal_text(DECIMAL(text)/DECIMAL(10_000_000))
+    raise ValueError(f"UNAPPROVED_UNIT:{source_unit}->{normalized_unit}")
+
+def transform_ipomatrix(payload: dict[str,Any], raw_sha: str, mapping: dict[str,Any]) -> tuple[list[str],Counter]:
+    """Reviewed-map-driven bootstrap. No path or unit exists here by assumption."""
+    mid=json_path(payload,mapping["matrix_id"]); ipo_id=SqlExpr(f"(SELECT id FROM ipo WHERE ipo_matrix_id={sql_value(mid)})")
+    sql=[];counts=Counter()
+    def provenance(table,field,raw,normalized,unit,locator):
+        observed=mapping.get("observed_at") or "1970-01-01T00:00:00Z"
+        vals=(ipo_id,table,field,str(raw),str(normalized),unit,"ipomatrix",raw_sha,observed,"ipomatrix-bootstrap-v1")
+        sql.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","raw_object_sha256","observed_at","parser_version","observation_fingerprint"),vals+(fingerprint(*vals,locator),)));counts["ipomatrix_fact_rows"]+=1
+    def scalar_section(name,table,columns):
+        spec=mapping.get(name) or {};values=[];names=[];field_values={}
+        for target in columns:
+            rule=spec.get(target)
+            if not rule:continue
+            raw=json_path(payload,rule["path"]);value=raw
+            if "unit" in rule:value=approved_decimal(value,rule["unit"],rule.get("normalized_unit",rule["unit"]))
+            if value is not None:
+                names.append(target);values.append(value);field_values[target]=value;counts[f"ipomatrix_{table}.{target}"]+=1
+                provenance(table,target,raw,value,rule.get("normalized_unit",rule.get("unit")),rule["path"])
+        if table=="ipo_issue" and validate_issue(field_values):raise ValueError("UNIT_ANOMALY:"+",".join(validate_issue(field_values)))
+        if names:sql.append(insert_sql(table,("ipo_id",*names),(ipo_id,*values)));counts[f"ipomatrix_rows_{table}"]+=1
+    scalar_section("ipo_issue","ipo_issue",("open_date","close_date","allotment_date","listing_date","band_lo_rs","band_hi_rs","issue_price_rs","face_value_rs","lot_size_shares","issue_size_cr","fresh_cr","ofs_cr","market_cap_cr","registrar_name"))
+    scalar_section("company_profile","company_profile",("business_description","sector","industry","incorporated_date","registered_office","website","promoters_json"))
+    for section,table,fields,key_fields in (
+      ("ownership","ownership",("holder_category","pre_pct","post_pct","dilution_pct"),()),
+      ("objects_of_issue","objects_of_issue",("row_order","purpose_code","purpose_raw","amount_cr","document_sha256","page"),()),
+      ("financial_statements","financial_statements",("period","basis","revenue_cr","total_income_cr","ebitda_cr","pat_cr","net_worth_cr","reserves_cr","debt_cr","assets_cr","cash_cr","page"),()),
+      ("reservations","reservations",("category","shares_reserved","reservation_pct"),()),
+      ("subscription_snapshots","subscription_snapshots",("captured_at","category","shares_reserved","shares_bid","subscription_x","is_final"),()),
+      ("anchor_allocations","anchor_allocations",("allocation_row","investor_name_raw","shares","price_rs","amount_cr","allocation_pct","document_sha256","page"),()),
+      ("peer_comparisons","peer_comparisons",("peer_name_raw","eps_rs","pe_x","pb_x","roe_pct","ronw_pct","market_cap_cr","as_of_date","document_sha256","page"),()),
+      ("documents","documents",("sha256","doc_type","source_url","size_bytes","page_count","r2_key","fetched_at"),()),
+    ):
+        spec=mapping.get(section) or {};rows=json_path(payload,spec.get("rows")) or []
+        if not isinstance(rows,list):continue
+        for order,row in enumerate(rows,1):
+            if not isinstance(row,dict):continue
+            names=[];values=[]
+            for target in fields:
+                rule=(spec.get("fields") or {}).get(target)
+                if not rule:continue
+                value=order if rule.get("value")=="row_order" else _row_value(row,rule.get("path"));raw=value
+                if "unit" in rule:value=approved_decimal(value,rule["unit"],rule.get("normalized_unit",rule["unit"]))
+                if value is not None:
+                    names.append(target);values.append(value);counts[f"ipomatrix_{table}.{target}"]+=1
+                    provenance(table,target,raw,value,rule.get("normalized_unit",rule.get("unit")),f"{spec.get('rows')}[{order-1}].{rule.get('path')}")
+            if not names:continue
+            if table in ("objects_of_issue","anchor_allocations","peer_comparisons") and "document_sha256" not in names:
+                names.append("document_sha256");values.append(raw_sha)
+            if table=="subscription_snapshots":
+                fp=fingerprint("ipomatrix",mid,*values);names.append("observation_fingerprint");values.append(fp)
+            if table=="documents":
+                # Documents own their SHA key and IPO is the second column.
+                sql.append(insert_sql(table,(names[0],"ipo_id",*names[1:]),(values[0],ipo_id,*values[1:])));counts[f"ipomatrix_rows_{table}"]+=1;continue
+            sql.append(insert_sql(table,("ipo_id",*names),(ipo_id,*values)));counts[f"ipomatrix_rows_{table}"]+=1
+    scalar_section("anchor_summary","anchor_summary",("shares","amount_cr","investor_count","allocation_pct","document_sha256","observed_at"))
+    for metric,rule in (mapping.get("sourced_kpis") or {}).items():
+        value=json_path(payload,rule["path"])
+        if value is None:continue
+        normalized=approved_decimal(value,rule["unit"],rule.get("normalized_unit",rule["unit"]));observed=rule.get("observed_at") or "1970-01-01T00:00:00Z"
+        vals=(ipo_id,"source_facts",metric,str(value),normalized,rule.get("normalized_unit",rule["unit"]),"ipomatrix",raw_sha,observed,"ipomatrix-bootstrap-v1")
+        sql.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","raw_object_sha256","observed_at","parser_version","observation_fingerprint"),vals+(fingerprint(*vals),)));counts[f"ipomatrix_source_facts.{metric}"]+=1;counts["ipomatrix_fact_rows"]+=1
+    return sql,counts
+
+def reviewed_paths(mapping: dict[str,Any]) -> set[str]:
+    paths=set()
+    def walk(value):
+        if isinstance(value,dict):
+            for key,item in value.items():
+                if key in ("path","rows") and isinstance(item,str):paths.add(item)
+                else:walk(item)
+        elif isinstance(value,list):
+            for item in value:walk(item)
+    walk(mapping);return paths
 
 def resolve_identity(conn: sqlite3.Connection, *, isin: str|None, name: str, matrix_id: int|None=None) -> int:
     norm=name_norm(name); by_isin=conn.execute("SELECT id FROM ipo WHERE isin=?",(isin,)).fetchone() if isin else None
@@ -226,6 +324,7 @@ def checkpoint_sql(dataset: str, source_rows: int, written_rows: int) -> str:
       "written_rows=excluded.written_rows,updated_at=CURRENT_TIMESTAMP;")
 
 def main() -> int:
+    started=time.monotonic()
     ap=argparse.ArgumentParser(); ap.add_argument("--ipomatrix",action="append",type=Path,default=[]); ap.add_argument("--survey",type=Path)
     ap.add_argument("--ipomatrix-map",type=Path); ap.add_argument("--apply-local",action="store_true"); ap.add_argument("--batch-size",type=int,default=1000)
     ap.add_argument("--report",type=Path,default=ROOT/"artifacts/d1-migration.json"); args=ap.parse_args()
@@ -236,15 +335,21 @@ def main() -> int:
     url=os.environ.get("NEON_READONLY_DATABASE_URL")
     if not url:ap.error("--apply-local requires NEON_READONLY_DATABASE_URL (DATABASE_URL is never accepted)")
     if rows and not args.ipomatrix_map:ap.error("IPO Matrix normalization requires --ipomatrix-map from the reviewed survey")
+    mapping=json.loads(args.ipomatrix_map.read_text()) if args.ipomatrix_map else {}
+    normalization_sections={"ipo_issue","company_profile","ownership","objects_of_issue","financial_statements","reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","sourced_kpis","documents"}
+    if rows and (mapping.get("reviewed") is not True or not normalization_sections.intersection(mapping)):
+        ap.error("--ipomatrix-map must be owner-reviewed and include normalized bootstrap sections")
     wrangler(["migrations","apply","DB"]); statements=[]; counts=Counter(); quarantined=0
     by_isin={};by_name={};by_matrix={};by_symbol={}
     for dataset,row in extract_neon(url,args.batch_size):
-        structural_reason=None
+        structural_reason=None;evidence=set()
         if dataset=="ipo":
+            evidence={x for x in str(row.get("security_kind_evidence") or "").split(",") if x}
+            row["security_kind"],structural_reason=derive_security_kind(row.get("security_kind_evidence"))
             if row.get("isin"):by_isin[str(row["isin"]).strip().upper()]=row["id"]
             by_name[row.get("name_norm") or name_norm(row.get("name_display"))]=row["id"]
             if row.get("ipomatrix_id") is not None:by_matrix[row["ipomatrix_id"]]=row["id"]
-            kind=str(row.get("security_kind") or "EQUITY").strip().upper();status=str(row.get("status") or "ANNOUNCED").strip().upper()
+            kind=str(row["security_kind"]).strip().upper();status=str(row.get("status") or "ANNOUNCED").strip().upper()
             if kind not in {"EQUITY","REIT","INVIT","FPO"}:structural_reason="INVALID_SECURITY_KIND"
             elif status not in {"ANNOUNCED","UPCOMING","OPEN","CLOSED","ALLOTTED","LISTED","WITHDRAWN"}:structural_reason="INVALID_LIFECYCLE_STATUS"
             if structural_reason:
@@ -261,11 +366,14 @@ def main() -> int:
         for key,value in row.items():
             if value is not None:counts[f"source_nonnull_{dataset}.{key}"]+=1
         mapped=[] if structural_reason else transform_neon(dataset,row)
+        if dataset=="ipo" and not evidence and not structural_reason:
+            values=(row["id"],"ipo","security_kind",None,"EQUITY",None,"migration_default","security-classification",row["created_at"],"d1-migration-v1")
+            mapped.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","document_sha256","observed_at","parser_version","observation_fingerprint"),values+(fingerprint(*values),)))
+            counts["derived_source_fact_rows"]+=1
         if dataset=="ipo_issue" and not mapped:
             anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True})
             fp=fingerprint("neon",dataset,row["ipo_id"],anomalies); statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["ipo_id"],dataset,"UNIT_ANOMALY",{"codes":anomalies},fp)));quarantined+=1;counts["quarantined_ipo_issue"]+=1
         statements.extend(mapped);counts[f"mapped_{dataset}"]+=len(mapped)
-    mapping=json.loads(args.ipomatrix_map.read_text()) if args.ipomatrix_map else {}
     for item in rows:
         sha=item["sha256"]; statements.append(insert_sql("raw_objects",("sha256","source_name","source_object_id","size_bytes","payload_json"),(sha,"ipomatrix",str(json_path(item.get("payload"),mapping.get("matrix_id")) or item["path"]),item["size_bytes"],item["raw"])));counts["source_ipomatrix"]+=1
         if not item.get("valid"):reason="MALFORMED_SOURCE"
@@ -275,13 +383,23 @@ def main() -> int:
             if name:
                 identity_sql,reason=map_ipomatrix_identity(isin=isin,name=name,matrix_id=mid,by_isin=by_isin,by_name=by_name,by_matrix=by_matrix)
                 statements.extend(identity_sql)
-                if reason is None:counts["mapped_ipomatrix_identity"]+=1
+                if reason is None:
+                    counts["mapped_ipomatrix_identity"]+=1
+                    try:
+                        bootstrap_sql,bootstrap_counts=transform_ipomatrix(item["payload"],sha,mapping)
+                        statements.extend(bootstrap_sql);counts.update(bootstrap_counts)
+                    except (KeyError,ValueError) as exc:
+                        reason=str(exc).split(":",1)[0];counts["quarantined_ipomatrix_bootstrap"]+=1
         if reason:
             statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","raw_sha256","fingerprint"),("ipomatrix",item["path"],"raw_objects",reason,{"path":item["path"]},sha,fingerprint("ipomatrix",sha,reason))));quarantined+=1;counts["quarantined_ipomatrix"]+=1
     for dataset in NEON_QUERIES:
         statements.append(checkpoint_sql(dataset,counts[f"source_{dataset}"],counts[f"mapped_{dataset}"]))
     statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
     apply_local(statements)
-    report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),"status":"migrated_to_wrangler_local"};args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(report,sort_keys=True));return 0
+    observed_paths={entry["json_path"] for entry in survey(rows)["paths"]};approved=reviewed_paths(mapping)
+    report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),
+      "ipomatrix_raw_only_paths":sorted(observed_paths-approved),"runtime_seconds":round(time.monotonic()-started,6),
+      "status":"migrated_to_wrangler_local"}
+    args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(report,sort_keys=True));return 0
 
 if __name__=="__main__":raise SystemExit(main())
