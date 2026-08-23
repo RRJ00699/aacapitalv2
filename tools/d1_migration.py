@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Neon READ ONLY + immutable IPO Matrix -> Wrangler local D1.
+"""Neon READ ONLY + immutable IPO Matrix -> Wrangler local or explicit staging D1.
 
-There is intentionally no remote mode and no DATABASE_URL fallback.  Normalized IPO
-Matrix identity fields are accepted only through an owner-reviewed path map produced
-after ``--survey``; every JSON payload is archived even when identity is unmapped.
+There is no production-target mode and no DATABASE_URL fallback. Normalized IPO
+Matrix fields are accepted only through an owner-reviewed map produced after
+``--survey``; every JSON payload is archived even when identity is unmapped.
 """
 from __future__ import annotations
 
-import argparse, datetime as dt, decimal, hashlib, json, os, sqlite3, subprocess, sys, tempfile, time
+import argparse, datetime as dt, decimal, hashlib, json, os, platform, re, sqlite3, subprocess, sys, tempfile, time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,11 +18,13 @@ sys.path.insert(0, str(ROOT))
 from _scripts.lib.canon import canon as name_norm
 
 WRANGLER = ROOT / "d1" / "wrangler.jsonc"
+WRANGLER_BINDING = "DB"
+WRANGLER_REMOTE = False
 DDL = ROOT / "d1" / "migrations" / "0001_functional_model.sql"
 DECIMAL = decimal.Decimal
 
 NEON_QUERIES = {
-    "ipo": """SELECT i.id,i.isin,i.name_display,i.name_norm,i.symbol,i.ipomatrix_id,i.status,
+    "ipo": """SELECT i.id,i.isin,i.name_display,i.name_norm,i.symbol,i.ipomatrix_id,i.status,i.listing_date,
                i.created_at,(SELECT string_agg(DISTINCT upper(trim(sf.value)),',' ORDER BY upper(trim(sf.value)))
                  FROM source_facts sf WHERE sf.ipo_id=i.id AND sf.field='security_kind') AS security_kind_evidence
                FROM ipo i ORDER BY i.id""",
@@ -77,6 +79,12 @@ def derive_security_kind(evidence_text: Any) -> tuple[str,str|None]:
     evidence={x for x in str(evidence_text or "").split(",") if x};allowed={"EQUITY","REIT","INVIT","FPO"};recognized=evidence&allowed
     if len(evidence)>1 or evidence-recognized:return "EQUITY","AMBIGUOUS_SECURITY_KIND"
     return next(iter(recognized),"EQUITY"),None
+
+def normalize_legacy_status(value: Any, listing_date: Any) -> tuple[str,str|None]:
+    raw=str(value or "ANNOUNCED").strip().upper()
+    allowed={"ANNOUNCED","UPCOMING","OPEN","CLOSED","ALLOTTED","LISTED","WITHDRAWN"}
+    if raw in allowed:return raw,None
+    return ("LISTED" if listing_date else "ANNOUNCED"),raw
 
 def discover_json(paths: Iterable[Path]) -> list[Path]:
     return sorted({f for p in paths for f in ([p] if p.is_file() else p.rglob("*.json"))})
@@ -145,7 +153,7 @@ class SqlExpr:
     sql: str
 
 def insert_sql(table: str, columns: tuple[str,...], values: tuple[Any,...]) -> str:
-    """Insert with an explicit, reviewed idempotency key; never globally ignore."""
+    """Insert with a reviewed key; identical conflicts no-op, differing ones fail."""
     keys={
       "ipo":("id",) if "id" in columns else (), "ipo_issue":("ipo_id",),
       "company_profile":("ipo_id",),"ownership":("ipo_id","holder_category"),
@@ -162,14 +170,13 @@ def insert_sql(table: str, columns: tuple[str,...], values: tuple[Any,...]) -> s
     }.get(table,())
     base=f"INSERT INTO {table}({','.join(columns)}) VALUES({','.join(sql_value(v) for v in values)})"
     if keys and all(key in columns for key in keys):
-        pairs=dict(zip(columns,values));match=" AND ".join(f"{key} IS {sql_value(pairs[key])}" for key in keys)
-        identical=" AND ".join(f"{column} IS {sql_value(value)}" for column,value in zip(columns,values))
-        # SQLite RAISE() is trigger-only. abs(min-int) deterministically raises integer
-        # overflow when the idempotency key exists with non-identical contents.
-        guard=(f"SELECT CASE WHEN EXISTS(SELECT 1 FROM {table} WHERE {match} AND NOT ({identical})) "
-               "THEN abs(-9223372036854775808) ELSE 0 END;")
-        base+=f" ON CONFLICT({','.join(keys)}) DO NOTHING"
-        return guard+"\n"+base+";"
+        # A bare DO NOTHING cannot distinguish an identical rerun from a collision.
+        # Compare inside the conflict handler (not with a per-row SELECT). The same
+        # value assignment is a no-op; abs(min-int) aborts a differing collision.
+        identical=" AND ".join(f"{table}.{column} IS excluded.{column}" for column in columns)
+        key=keys[0]
+        base+=(f" ON CONFLICT({','.join(keys)}) DO UPDATE SET {key}=CASE WHEN {identical} "
+               f"THEN {table}.{key} ELSE abs(-9223372036854775808) END")
     return base+";"
 
 def _row_value(row: dict[str,Any], key: str|None):
@@ -331,15 +338,43 @@ def extract_neon(url: str, batch_size=1000):
     finally:conn.rollback();conn.close()
 
 def wrangler(args: list[str]):
-    return subprocess.run(["npx","wrangler","d1",*args,"--local","--config",str(WRANGLER)],cwd=ROOT,text=True,capture_output=True,check=True)
+    npx="npx.cmd" if platform.system()=="Windows" else "npx"
+    target="--remote" if WRANGLER_REMOTE else "--local"
+    return subprocess.run([npx,"wrangler","d1",*args,target,"--config",str(WRANGLER)],cwd=ROOT,
+      text=True,encoding="utf-8",errors="replace",capture_output=True,check=True)
 
-def apply_local(sql_lines: list[str]):
-    with tempfile.NamedTemporaryFile("w",suffix=".sql",delete=False,encoding="utf-8") as f:
-        # Wrangler executes --file atomically. Explicit BEGIN/COMMIT is rejected by D1's
-        # execution wrapper, so transaction ownership deliberately remains with Wrangler.
-        f.write("PRAGMA foreign_keys=ON;\n"+"\n".join(sql_lines)+"\n"); path=f.name
-    try:wrangler(["execute","DB","--file",path])
-    finally:Path(path).unlink(missing_ok=True)
+def staging_database_info() -> dict[str,Any]:
+    """Resolve and structurally reject a non-staging remote target before writes."""
+    payload=json.loads(wrangler(["info",WRANGLER_BINDING,"--json"]).stdout)
+    if isinstance(payload,list):payload=payload[0] if payload else {}
+    name=str(payload.get("name") or payload.get("database_name") or "")
+    if "staging" not in name.lower():
+        raise RuntimeError(f"refusing non-staging D1 target: {name or 'UNKNOWN'}")
+    return {"name":name,"uuid":payload.get("uuid") or payload.get("id")}
+
+LOAD_ORDER=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
+  "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons",
+  "documents","research_findings","source_facts","market_bars","listing_observations","valuation_runs",
+  "decision_history","raw_objects","migration_quarantine","migration_checkpoints")
+
+def _target_table(sql: str) -> str:
+    match=re.search(r"(?:INSERT\s+INTO|UPDATE)\s+([a-zA-Z0-9_]+)",sql,re.I)
+    return match.group(1).lower() if match else "migration_checkpoints"
+
+def apply_sql(sql_lines: list[str], max_statements=500):
+    """FK-order, bounded files, concise output; constraint errors fail immediately."""
+    buckets={table:[] for table in LOAD_ORDER}
+    for sql in sql_lines:buckets.setdefault(_target_table(sql),[]).append(sql)
+    ordered=[sql for table in LOAD_ORDER for sql in buckets.get(table,[])]
+    for offset in range(0,len(ordered),max_statements):
+        chunk=ordered[offset:offset+max_statements]
+        with tempfile.NamedTemporaryFile("w",suffix=".sql",delete=False,encoding="utf-8",newline="\n") as f:
+            f.write("PRAGMA foreign_keys=ON;\n"+"\n".join(chunk)+"\n");path=f.name
+        try:wrangler(["execute",WRANGLER_BINDING,"--file",path])
+        finally:Path(path).unlink(missing_ok=True)
+        print(f"loaded statements {offset+1}-{offset+len(chunk)} of {len(ordered)}")
+
+apply_local=apply_sql  # compatibility for the repository rehearsal
 
 def checkpoint_sql(dataset: str, source_rows: int, written_rows: int) -> str:
     """Commit a stable dataset boundary; idempotent reruns resume from this boundary."""
@@ -349,22 +384,31 @@ def checkpoint_sql(dataset: str, source_rows: int, written_rows: int) -> str:
       "written_rows=excluded.written_rows,updated_at=CURRENT_TIMESTAMP;")
 
 def main() -> int:
+    global WRANGLER,WRANGLER_BINDING,WRANGLER_REMOTE
     started=time.monotonic()
     ap=argparse.ArgumentParser(); ap.add_argument("--ipomatrix",action="append",type=Path,default=[]); ap.add_argument("--survey",type=Path)
-    ap.add_argument("--ipomatrix-map",type=Path); ap.add_argument("--apply-local",action="store_true"); ap.add_argument("--batch-size",type=int,default=1000)
+    ap.add_argument("--ipomatrix-map",type=Path);ap.add_argument("--apply-local",action="store_true");ap.add_argument("--apply-staging",action="store_true")
+    ap.add_argument("--wrangler-config",type=Path);ap.add_argument("--binding",default="DB");ap.add_argument("--max-statements",type=int,default=500)
+    ap.add_argument("--batch-size",type=int,default=1000)
     ap.add_argument("--report",type=Path,default=ROOT/"artifacts/d1-migration.json"); args=ap.parse_args()
     rows=inventory(args.ipomatrix)
     if args.survey:args.survey.parent.mkdir(parents=True,exist_ok=True);args.survey.write_text(json.dumps(survey(rows),indent=2,ensure_ascii=False)+"\n")
-    if not args.apply_local:
+    if args.apply_local and args.apply_staging:ap.error("choose only one target")
+    if not (args.apply_local or args.apply_staging):
         print(json.dumps({"files":len(rows),"valid_json":sum(bool(x.get("valid")) for x in rows),"status":"survey_only"},sort_keys=True));return 0
+    if args.apply_staging:
+        if not args.wrangler_config:ap.error("--apply-staging requires owner-controlled --wrangler-config")
+        if os.environ.get("AACAPITAL_D1_STAGING_CONFIRM")!="YES":ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES for staging")
+        WRANGLER=args.wrangler_config.resolve();WRANGLER_BINDING=args.binding;WRANGLER_REMOTE=True
     url=os.environ.get("NEON_READONLY_DATABASE_URL")
     if not url:ap.error("--apply-local requires NEON_READONLY_DATABASE_URL (DATABASE_URL is never accepted)")
     if rows and not args.ipomatrix_map:ap.error("IPO Matrix normalization requires --ipomatrix-map from the reviewed survey")
-    mapping=json.loads(args.ipomatrix_map.read_text()) if args.ipomatrix_map else {}
+    mapping=json.loads(args.ipomatrix_map.read_text(encoding="utf-8")) if args.ipomatrix_map else {}
     normalization_sections={"ipo_issue","company_profile","ownership","objects_of_issue","financial_statements","reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","sourced_kpis","documents"}
     if rows and (mapping.get("reviewed") is not True or not normalization_sections.intersection(mapping)):
         ap.error("--ipomatrix-map must be owner-reviewed and include normalized bootstrap sections")
-    wrangler(["migrations","apply","DB"]); statements=[]; counts=Counter(); quarantined=0
+    staging_info=staging_database_info() if WRANGLER_REMOTE else None
+    wrangler(["migrations","apply",WRANGLER_BINDING]); statements=[]; counts=Counter(); quarantined=0
     by_isin={};by_name={};by_matrix={};by_symbol={}
     for dataset,row in extract_neon(url,args.batch_size):
         structural_reason=None;evidence=set()
@@ -374,12 +418,14 @@ def main() -> int:
             if row.get("isin"):by_isin[str(row["isin"]).strip().upper()]=row["id"]
             by_name[row.get("name_norm") or name_norm(row.get("name_display"))]=row["id"]
             if row.get("ipomatrix_id") is not None:by_matrix[row["ipomatrix_id"]]=row["id"]
-            kind=str(row["security_kind"]).strip().upper();status=str(row.get("status") or "ANNOUNCED").strip().upper()
+            kind=str(row["security_kind"]).strip().upper();status,legacy_status=normalize_legacy_status(row.get("status"),row.get("listing_date"))
+            legacy_status=legacy_status or status
+            row["status"]=status
             if kind not in {"EQUITY","REIT","INVIT","FPO"}:structural_reason="INVALID_SECURITY_KIND"
-            elif status not in {"ANNOUNCED","UPCOMING","OPEN","CLOSED","ALLOTTED","LISTED","WITHDRAWN"}:structural_reason="INVALID_LIFECYCLE_STATUS"
+            if legacy_status!=status and structural_reason is None:structural_reason="LEGACY_STATUS_NORMALIZED"
             if structural_reason:
                 fp=fingerprint("neon","ipo",row["id"],structural_reason)
-                statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["id"],"ipo",structural_reason,{"security_kind":kind,"status":status},fp)))
+                statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["id"],"ipo",structural_reason,{"security_kind":kind,"raw_status":legacy_status,"normalized_status":row["status"]},fp)))
                 counts["quarantined_ipo_structural"]+=1;quarantined+=1
             symbol=str(row.get("symbol") or "").strip().upper()
             if symbol and symbol in by_symbol and by_symbol[symbol]!=row["id"]:
@@ -390,8 +436,13 @@ def main() -> int:
         counts[f"source_{dataset}"]+=1
         for key,value in row.items():
             if value is not None:counts[f"source_nonnull_{dataset}.{key}"]+=1
-        mapped=[] if structural_reason else transform_neon(dataset,row)
-        if dataset=="ipo" and not evidence and not structural_reason:
+        # A bad legacy field is quarantined, but never suppresses the parent IPO row.
+        mapped=transform_neon(dataset,row)
+        if dataset=="ipo" and legacy_status!=row["status"]:
+            values=(row["id"],"ipo","status",legacy_status,row["status"],None,"neon_legacy_normalization","lifecycle-status",row["created_at"],"d1-migration-v1")
+            mapped.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","document_sha256","observed_at","parser_version","observation_fingerprint"),values+(fingerprint(*values),)))
+            counts["normalized_legacy_status"]+=1;counts["derived_source_fact_rows"]+=1
+        if dataset=="ipo" and not evidence:
             values=(row["id"],"ipo","security_kind",None,"EQUITY",None,"migration_default","security-classification",row["created_at"],"d1-migration-v1")
             mapped.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","document_sha256","observed_at","parser_version","observation_fingerprint"),values+(fingerprint(*values),)))
             counts["derived_source_fact_rows"]+=1
@@ -420,11 +471,13 @@ def main() -> int:
     for dataset in NEON_QUERIES:
         statements.append(checkpoint_sql(dataset,counts[f"source_{dataset}"],counts[f"mapped_{dataset}"]))
     statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
-    apply_local(statements)
+    apply_sql(statements,args.max_statements)
     observed_paths={entry["json_path"] for entry in survey(rows)["paths"]};approved=reviewed_paths(mapping)
     report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),
       "ipomatrix_raw_only_paths":sorted(observed_paths-approved),"runtime_seconds":round(time.monotonic()-started,6),
       "status":"migrated_to_wrangler_local"}
-    args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(report,sort_keys=True));return 0
+    report["target"]="remote-staging" if WRANGLER_REMOTE else "local"
+    if WRANGLER_REMOTE:report["staging_database"]=staging_info
+    args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8");print(json.dumps(report,sort_keys=True));return 0
 
 if __name__=="__main__":raise SystemExit(main())

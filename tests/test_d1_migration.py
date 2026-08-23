@@ -2,9 +2,10 @@ import hashlib, json, sqlite3
 from decimal import Decimal
 from pathlib import Path
 import pytest
+import tools.d1_migration as d1m
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    NEON_QUERIES, checkpoint_sql, derive_security_kind, insert_sql, map_ipomatrix_identity, resolve_identity, survey, transform_ipomatrix,
+    NEON_QUERIES, checkpoint_sql, derive_security_kind, insert_sql, map_ipomatrix_identity, normalize_legacy_status, resolve_identity, survey, transform_ipomatrix,
     transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 from tools.d1_contract import canonical_spine_eligible, concept_state
@@ -28,6 +29,7 @@ def test_insert_strategy_never_globally_ignores_constraints(db):
     db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"One","one")))
     db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"One","one")))
     assert db.execute("select count(*) from ipo").fetchone()[0]==1
+    assert "SELECT CASE WHEN EXISTS" not in insert_sql("ipo",("id","name","name_norm"),(1,"One","one"))
     with pytest.raises(sqlite3.OperationalError,match="overflow"):
         db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"Different","different")))
     with pytest.raises(sqlite3.IntegrityError):
@@ -37,6 +39,25 @@ def test_insert_strategy_never_globally_ignores_constraints(db):
     db.executescript(insert_sql("ipo",("name","name_norm","nse_symbol"),("Two","two","SAME")))
     with pytest.raises(sqlite3.IntegrityError):
         db.executescript(insert_sql("ipo",("name","name_norm","nse_symbol"),("Three","three","SAME")))
+
+def test_bulk_writer_is_fk_ordered_bounded_and_has_no_row_selects(monkeypatch):
+    seen=[]
+    def fake(args):
+        text=Path(args[args.index("--file")+1]).read_text(encoding="utf-8");seen.append(text)
+    monkeypatch.setattr(d1m,"wrangler",fake)
+    lines=[insert_sql("raw_objects",("sha256","source_name","size_bytes","payload_json"),("a"*64,"ipomatrix",2,"{}")),
+      insert_sql("company_profile",("ipo_id","business_description"),(1,"x")),
+      insert_sql("ipo",("id","name","name_norm"),(1,"One","one"))]
+    d1m.apply_sql(lines,max_statements=10)
+    assert seen[0].index("INSERT INTO ipo(") < seen[0].index("company_profile") < seen[0].index("raw_objects")
+    assert all("SELECT CASE WHEN EXISTS" not in sql for sql in seen)
+
+def test_wrangler_uses_windows_npx_cmd_and_utf8(monkeypatch):
+    captured={}
+    monkeypatch.setattr(d1m.platform,"system",lambda:"Windows")
+    monkeypatch.setattr(d1m.subprocess,"run",lambda cmd,**kwargs:captured.update(cmd=cmd,kwargs=kwargs))
+    d1m.wrangler(["execute","DB","--file","x.sql"])
+    assert captured["cmd"][0]=="npx.cmd" and captured["kwargs"]["encoding"]=="utf-8"
 
 def test_canonical_decimal_columns_never_use_real():
     assert " REAL" not in DDL.upper()
@@ -111,6 +132,8 @@ def test_neon_security_kind_uses_provenance_not_a_nonexistent_ipo_column():
     assert derive_security_kind("REIT")==("REIT",None)
     assert derive_security_kind(None)==("EQUITY",None)
     assert derive_security_kind("EQUITY,REIT")==("EQUITY","AMBIGUOUS_SECURITY_KIND")
+    assert normalize_legacy_status("ARCHIVED","2020-01-01")==("LISTED","ARCHIVED")
+    assert normalize_legacy_status("ARCHIVED",None)==("ANNOUNCED","ARCHIVED")
 
 def test_not_due_is_not_missing_failed_or_zero(db):
     assert concept_state("ANNOUNCED","market")=="NOT_DUE"
@@ -154,7 +177,7 @@ def test_neon_transforms_exact_decimals_and_category_snapshots(db):
     sub={"ipo_id":1,"captured_at":"2026-01-01T00:00:00Z","is_final":True,
       "qib_x":Decimal("2.50"),"nii_x":None,"bnii_x":None,"snii_x":None,"retail_x":Decimal("1.1"),"total_x":Decimal("1.9")}
     statements=transform_neon("subscription_snapshots",sub); assert len(statements)==3
-    assert all("INSERT OR IGNORE" not in x and "ON CONFLICT(observation_fingerprint) DO NOTHING" in x for x in statements)
+    assert all("INSERT OR IGNORE" not in x and "ON CONFLICT(observation_fingerprint) DO UPDATE" in x for x in statements)
 
 def test_reviewed_ipomatrix_map_populates_normalized_history_without_unit_guessing(db):
     doc="d"*64;payload={"id":42,"issue":{"lo":"95.10","hi":"100","price":"100","face":"10","open":"2026-01-01"},

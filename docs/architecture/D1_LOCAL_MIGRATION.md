@@ -59,7 +59,36 @@ python tools/d1_reconcile.py --wrangler-local \
 
 Acceptance requires `zero_silent_loss=true`, exact daily/15-minute/pre-open source comparisons, raw-object equality, zero identity/fingerprint duplicates, explicit null counts/ranges, and owner disposition of every quarantine row. Run the migration a second time and reconcile again to prove idempotency.
 
-Idempotency never uses global SQLite `OR IGNORE`. Each expected rerun uses its declared conflict key, first guards that the stored and incoming values are identical, then performs `ON CONFLICT(<key>) DO NOTHING`. A differing duplicate or unexpected CHECK/NOT NULL/UNIQUE violation fails the Wrangler batch and cannot be counted as written.
+Idempotency never uses global SQLite `OR IGNORE` and the bulk path emits no per-row `SELECT` guard. Expected reruns use only declared deterministic conflict keys: the conflict handler no-ops when every supplied value is identical and deliberately aborts the batch if contents differ. Rows without an approved rerun key use plain `INSERT`, so unexpected CHECK/NOT NULL/UNIQUE violations also fail the bounded Wrangler batch.
+
+## Owner staging execution (Windows-safe)
+
+The Python runner selects `npx.cmd` on Windows and `npx` elsewhere. The owner-controlled
+Wrangler config must bind only the already-created staging database. Remote mode requires
+an explicit confirmation variable and never accepts the production app config implicitly.
+
+```powershell
+$env:AACAPITAL_D1_STAGING_CONFIRM = "YES"
+python tools/d1_migration.py `
+  --ipomatrix C:\aacapital-input\ipomatrix `
+  --ipomatrix-map C:\aacapital-input\ipomatrix-reviewed-map.json `
+  --apply-staging `
+  --wrangler-config C:\aacapital-input\wrangler.d1-staging.jsonc `
+  --binding DB `
+  --max-statements 500 `
+  --report artifacts\d1-migration-staging.json
+
+python tools/d1_reconcile.py `
+  --wrangler-staging `
+  --wrangler-config C:\aacapital-input\wrangler.d1-staging.jsonc `
+  --binding DB `
+  --source-report artifacts\d1-migration-staging.json `
+  --output artifacts\d1-reconciliation-staging.json
+```
+
+Repeat the identical two commands to prove deterministic rerun behavior. SQL files are
+UTF-8/LF, bounded by `--max-statements`, emitted in the approved FK order, and deleted
+after each Wrangler batch. Migration output reports only concise batch progress.
 
 ## 4. Measure storage
 

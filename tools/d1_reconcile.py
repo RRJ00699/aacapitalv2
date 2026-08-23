@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic source-report -> Wrangler local D1 reconciliation."""
-import argparse, json, sqlite3, subprocess, tempfile
+import argparse, json, os, platform, sqlite3, subprocess, tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]; CONFIG=ROOT/"d1/wrangler.jsonc"
+BINDING="DB";REMOTE=False
 TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
         "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons",
         "documents","research_findings","gmp_observations","market_bars","listing_observations",
@@ -83,18 +84,25 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
     return out
 
 def export_local(path: Path):
-    subprocess.run(["npx","wrangler","d1","export","DB","--local","--config",str(CONFIG),"--output",str(path)],cwd=ROOT,check=True,text=True,capture_output=True)
+    npx="npx.cmd" if platform.system()=="Windows" else "npx";target="--remote" if REMOTE else "--local"
+    subprocess.run([npx,"wrangler","d1","export",BINDING,target,"--config",str(CONFIG),"--output",str(path)],cwd=ROOT,check=True,text=True,encoding="utf-8",errors="replace",capture_output=True)
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument("db",type=Path,nargs="?");ap.add_argument("--wrangler-local",action="store_true");ap.add_argument("--source-report",type=Path);ap.add_argument("--output",type=Path);a=ap.parse_args()
-    if bool(a.db)==a.wrangler_local:ap.error("provide exactly one of db or --wrangler-local")
-    source=json.loads(a.source_report.read_text()) if a.source_report else None
-    if a.wrangler_local:
+    global CONFIG,BINDING,REMOTE
+    ap=argparse.ArgumentParser();ap.add_argument("db",type=Path,nargs="?");ap.add_argument("--wrangler-local",action="store_true");ap.add_argument("--wrangler-staging",action="store_true")
+    ap.add_argument("--wrangler-config",type=Path);ap.add_argument("--binding",default="DB");ap.add_argument("--source-report",type=Path);ap.add_argument("--output",type=Path);a=ap.parse_args()
+    if sum((bool(a.db),a.wrangler_local,a.wrangler_staging))!=1:ap.error("provide exactly one D1 source")
+    if a.wrangler_staging:
+        if not a.wrangler_config:ap.error("--wrangler-staging requires --wrangler-config")
+        if os.environ.get("AACAPITAL_D1_STAGING_CONFIRM")!="YES":ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES")
+        CONFIG=a.wrangler_config.resolve();BINDING=a.binding;REMOTE=True
+    source=json.loads(a.source_report.read_text(encoding="utf-8")) if a.source_report else None
+    if a.wrangler_local or a.wrangler_staging:
         with tempfile.TemporaryDirectory() as td:
             dump=Path(td)/"dump.sql";export_local(dump);conn=sqlite3.connect(":memory:");conn.executescript(dump.read_text());result=reconcile(conn,source);conn.close()
     else:
         with sqlite3.connect(a.db) as conn:result=reconcile(conn,source)
     text=json.dumps(result,indent=2,sort_keys=True)+"\n"
-    if a.output:a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(text)
+    if a.output:a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(text,encoding="utf-8")
     print(text,end="")
 if __name__=="__main__":main()
