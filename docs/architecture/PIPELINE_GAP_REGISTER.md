@@ -1,5 +1,7 @@
 # Forward pipeline gap register
 
+Status: PROPOSED — PR #343 owner review
+
 This register describes missing work; it does **not** implement the forward pipeline. `SOURCE_GAP` means the exact official source/shape is unproven. `PIPELINE_GAP` means the source is identified but no complete normalized producer was found.
 
 | Information contract | Current producer/evidence | Missing producer | Forward source | Lifecycle DUE |

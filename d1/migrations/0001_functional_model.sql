@@ -8,59 +8,61 @@ CREATE TABLE ipo (
 );
 CREATE TABLE ipo_issue (
   ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), open_date TEXT, close_date TEXT, allotment_date TEXT,
-  listing_date TEXT, band_lo_rs REAL, band_hi_rs REAL, issue_price_rs REAL, face_value_rs REAL,
-  lot_size_shares INTEGER, issue_size_cr REAL, fresh_cr REAL, ofs_cr REAL, market_cap_cr REAL,
+  listing_date TEXT, band_lo_rs TEXT, band_hi_rs TEXT, issue_price_rs TEXT, face_value_rs TEXT,
+  lot_size_shares INTEGER, issue_size_cr TEXT, fresh_cr TEXT, ofs_cr TEXT, market_cap_cr TEXT,
   registrar_name TEXT, brlm_json TEXT, source_name TEXT, source_observed_at TEXT,
-  CHECK (band_lo_rs IS NULL OR band_lo_rs>=0), CHECK (band_hi_rs IS NULL OR band_hi_rs>=0),
-  CHECK (band_lo_rs IS NULL OR band_hi_rs IS NULL OR band_lo_rs<=band_hi_rs)
+  CHECK (band_lo_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)>=0),
+  CHECK (band_hi_rs IS NULL OR CAST(band_hi_rs AS NUMERIC)>=0),
+  CHECK (band_lo_rs IS NULL OR band_hi_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)<=CAST(band_hi_rs AS NUMERIC))
 );
 CREATE TABLE company_profile (
   ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), business_description TEXT, sector TEXT, industry TEXT,
   incorporated_date TEXT, registered_office TEXT, website TEXT, promoters_json TEXT
 );
 CREATE TABLE ownership (
-  ipo_id INTEGER NOT NULL REFERENCES ipo(id), holder_category TEXT NOT NULL, pre_pct REAL, post_pct REAL,
-  dilution_pct REAL, source_fact_id INTEGER, PRIMARY KEY(ipo_id,holder_category),
-  CHECK(pre_pct IS NULL OR pre_pct BETWEEN 0 AND 100), CHECK(post_pct IS NULL OR post_pct BETWEEN 0 AND 100)
+  ipo_id INTEGER NOT NULL REFERENCES ipo(id), holder_category TEXT NOT NULL, pre_pct TEXT, post_pct TEXT,
+  dilution_pct TEXT, source_fact_id INTEGER, PRIMARY KEY(ipo_id,holder_category),
+  CHECK(pre_pct IS NULL OR CAST(pre_pct AS NUMERIC) BETWEEN 0 AND 100),
+  CHECK(post_pct IS NULL OR CAST(post_pct AS NUMERIC) BETWEEN 0 AND 100)
 );
 CREATE TABLE objects_of_issue (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), row_order INTEGER NOT NULL,
-  purpose_code TEXT, purpose_raw TEXT NOT NULL, amount_cr REAL, document_sha256 TEXT, page INTEGER,
+  purpose_code TEXT, purpose_raw TEXT NOT NULL, amount_cr TEXT, document_sha256 TEXT, page INTEGER,
   UNIQUE(ipo_id,row_order,document_sha256)
 );
 CREATE TABLE financial_statements (
   ipo_id INTEGER NOT NULL REFERENCES ipo(id), period TEXT NOT NULL, basis TEXT NOT NULL,
-  revenue_cr REAL, total_income_cr REAL, ebitda_cr REAL, pat_cr REAL, net_worth_cr REAL,
-  reserves_cr REAL, debt_cr REAL, assets_cr REAL, cash_cr REAL, document_sha256 TEXT, page INTEGER,
+  revenue_cr TEXT, total_income_cr TEXT, ebitda_cr TEXT, pat_cr TEXT, net_worth_cr TEXT,
+  reserves_cr TEXT, debt_cr TEXT, assets_cr TEXT, cash_cr TEXT, document_sha256 TEXT, page INTEGER,
   PRIMARY KEY(ipo_id,period,basis)
 );
 CREATE TABLE fundamental_metrics (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), period TEXT, metric_code TEXT NOT NULL,
-  value REAL NOT NULL, unit TEXT NOT NULL, method TEXT NOT NULL, calculation_version TEXT,
+  value TEXT NOT NULL, unit TEXT NOT NULL, method TEXT NOT NULL, calculation_version TEXT,
   document_sha256 TEXT, observed_at TEXT, UNIQUE(ipo_id,period,metric_code,method,observed_at)
 );
 CREATE TABLE reservations (
   ipo_id INTEGER NOT NULL REFERENCES ipo(id), category TEXT NOT NULL, shares_reserved INTEGER,
-  reservation_pct REAL, source_observed_at TEXT, PRIMARY KEY(ipo_id,category)
+  reservation_pct TEXT, source_observed_at TEXT, PRIMARY KEY(ipo_id,category)
 );
 CREATE TABLE subscription_snapshots (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), captured_at TEXT NOT NULL,
-  category TEXT NOT NULL, shares_reserved INTEGER, shares_bid INTEGER, subscription_x REAL, is_final INTEGER NOT NULL DEFAULT 0,
+  category TEXT NOT NULL, shares_reserved INTEGER, shares_bid INTEGER, subscription_x TEXT, is_final INTEGER NOT NULL DEFAULT 0,
   observation_fingerprint TEXT NOT NULL UNIQUE, CHECK(is_final IN (0,1))
 );
 CREATE TABLE anchor_summary (
-  ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), shares INTEGER, amount_cr REAL, investor_count INTEGER,
-  allocation_pct REAL, document_sha256 TEXT, observed_at TEXT
+  ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), shares INTEGER, amount_cr TEXT, investor_count INTEGER,
+  allocation_pct TEXT, document_sha256 TEXT, observed_at TEXT
 );
 CREATE TABLE anchor_allocations (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), allocation_row INTEGER NOT NULL,
-  investor_name_raw TEXT NOT NULL, shares INTEGER, price_rs REAL, amount_cr REAL, allocation_pct REAL,
+  investor_name_raw TEXT NOT NULL, shares INTEGER, price_rs TEXT, amount_cr TEXT, allocation_pct TEXT,
   document_sha256 TEXT NOT NULL, page INTEGER, derived_class TEXT,
   UNIQUE(document_sha256,allocation_row)
 );
 CREATE TABLE peer_comparisons (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), peer_name_raw TEXT NOT NULL,
-  eps_rs REAL, pe_x REAL, pb_x REAL, roe_pct REAL, ronw_pct REAL, market_cap_cr REAL,
+  eps_rs TEXT, pe_x TEXT, pb_x TEXT, roe_pct TEXT, ronw_pct TEXT, market_cap_cr TEXT,
   as_of_date TEXT, document_sha256 TEXT, page INTEGER, UNIQUE(ipo_id,peer_name_raw,as_of_date,document_sha256)
 );
 CREATE TABLE documents (
@@ -70,28 +72,28 @@ CREATE TABLE documents (
 CREATE TABLE research_findings (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), category TEXT NOT NULL, finding_text TEXT NOT NULL,
   direction TEXT, document_sha256 TEXT NOT NULL REFERENCES documents(sha256), page INTEGER,
-  evidence_excerpt TEXT NOT NULL, model TEXT, prompt_version TEXT, confidence REAL,
+  evidence_excerpt TEXT NOT NULL, model TEXT, prompt_version TEXT, confidence TEXT,
   content_fingerprint TEXT NOT NULL UNIQUE
 );
 CREATE TABLE gmp_observations (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), observed_at TEXT NOT NULL,
-  gmp_rs REAL, gmp_pct REAL, source_name TEXT NOT NULL, is_official INTEGER NOT NULL DEFAULT 0,
+  gmp_rs TEXT, gmp_pct TEXT, source_name TEXT NOT NULL, is_official INTEGER NOT NULL DEFAULT 0,
   observation_fingerprint TEXT NOT NULL UNIQUE, CHECK(is_official=0)
 );
 CREATE TABLE market_bars (
   ipo_id INTEGER NOT NULL REFERENCES ipo(id), interval TEXT NOT NULL CHECK(interval IN ('1d','15m','5m')),
-  ts TEXT NOT NULL, open_rs REAL, high_rs REAL, low_rs REAL, close_rs REAL, volume_shares INTEGER,
+  ts TEXT NOT NULL, open_rs TEXT, high_rs TEXT, low_rs TEXT, close_rs TEXT, volume_shares INTEGER,
   source_name TEXT NOT NULL, content_fingerprint TEXT NOT NULL UNIQUE, PRIMARY KEY(ipo_id,interval,ts)
 );
 CREATE TABLE listing_observations (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), observation_type TEXT NOT NULL,
-  observed_at TEXT NOT NULL, price_rs REAL, buy_qty_shares INTEGER, sell_qty_shares INTEGER,
+  observed_at TEXT NOT NULL, price_rs TEXT, buy_qty_shares INTEGER, sell_qty_shares INTEGER,
   ieq_shares INTEGER, payload_json TEXT, source_name TEXT NOT NULL, content_fingerprint TEXT NOT NULL UNIQUE
 );
 CREATE TABLE valuation_runs (
   id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), calculated_at TEXT NOT NULL,
-  engine_version TEXT NOT NULL, inputs_json TEXT NOT NULL, ratios_json TEXT, peer_median_pe_x REAL,
-  fair_value_lo_rs REAL, fair_value_hi_rs REAL, margin_of_safety_pct REAL, missing_inputs_json TEXT,
+  engine_version TEXT NOT NULL, inputs_json TEXT NOT NULL, ratios_json TEXT, peer_median_pe_x TEXT,
+  fair_value_lo_rs TEXT, fair_value_hi_rs TEXT, margin_of_safety_pct TEXT, missing_inputs_json TEXT,
   run_fingerprint TEXT NOT NULL UNIQUE
 );
 CREATE TABLE decision_history (
@@ -103,7 +105,7 @@ CREATE TABLE decision_history (
 CREATE TABLE source_facts (
   id INTEGER PRIMARY KEY, ipo_id INTEGER REFERENCES ipo(id), target_table TEXT NOT NULL, target_field TEXT NOT NULL,
   raw_value TEXT, normalized_value TEXT, unit TEXT, source_name TEXT NOT NULL, document_sha256 TEXT,
-  raw_object_sha256 TEXT, observed_at TEXT NOT NULL, parser_version TEXT NOT NULL, confidence REAL,
+  raw_object_sha256 TEXT, observed_at TEXT NOT NULL, parser_version TEXT NOT NULL, confidence TEXT,
   observation_fingerprint TEXT NOT NULL UNIQUE
 );
 CREATE TABLE raw_objects (

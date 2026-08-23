@@ -1,6 +1,8 @@
 # D1 recovery and physical-model contract
 
-The model is functional rather than a Neon mirror. Identity is ISIN, then exact `name_norm`; symbols are nullable routing metadata. Long narratives are outside `ipo`. Numeric facts retain units, time-series retain time, and interpretive AI output cannot overwrite authoritative facts. Serving/KV publication is intentionally outside this migration.
+Status: PROPOSED — PR #343 owner review
+
+The model is functional rather than a Neon mirror. Identity is ISIN, then the repository canonical `name_norm`; symbols are nullable routing metadata. Long narratives are outside `ipo`. Canonical decimal facts use exact decimal-string `TEXT`, counts/shares use `INTEGER`, time-series retain time, and interpretive AI output cannot overwrite authoritative facts. Serving/KV publication is intentionally outside this migration.
 
 Lifecycle: **discovery** → **document** → **issue** → **subscription** → **anchor** → **listing/pre-open** → **post-listing** → **calculation/publication**.
 

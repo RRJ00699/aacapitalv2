@@ -1,8 +1,10 @@
 import hashlib, json, sqlite3
+from decimal import Decimal
 from pathlib import Path
 import pytest
 
-from tools.d1_migration import fingerprint, inventory, resolve_identity, validate_issue
+from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
+    map_ipomatrix_identity, resolve_identity, survey, transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 
 DDL=Path("d1/migrations/0001_functional_model.sql").read_text()
@@ -19,12 +21,38 @@ def test_schema_is_idempotent_for_content_writes(db):
     db.execute(sql,args); db.execute(sql,args)
     assert db.execute("select count(*) from market_bars").fetchone()[0]==1
 
+def test_canonical_decimal_columns_never_use_real():
+    assert " REAL" not in DDL.upper()
+    for column in ("band_lo_rs TEXT","issue_size_cr TEXT","open_rs TEXT","pe_x TEXT","confidence TEXT"):
+        assert column in DDL
+
+def test_decimal_text_never_roundtrips_through_float():
+    assert decimal_text(Decimal("11961618350.2900"))=="11961618350.29"
+    assert decimal_text("0.10000000000000000001")=="0.10000000000000000001"
+
 def test_identity_precedence_and_collision(db):
     one=resolve_identity(db,isin="INE123456789",name="Example Limited")
     assert resolve_identity(db,isin="INE123456789",name="Example Ltd")==one
     resolve_identity(db,isin="INE987654321",name="Other Limited")
     with pytest.raises(ValueError,match="IDENTITY_COLLISION"):
         resolve_identity(db,isin="INE123456789",name="Other Limited")
+
+def test_identity_reuses_repository_canonicalizer_and_does_not_strip_inside_words(db):
+    assert name_norm("Chipotle Brands Ltd") == "chipotlebrands"
+    assert name_norm("M & B Switchgears Limited") == name_norm("M And B Switchgears Ltd. IPO")
+    one=resolve_identity(db,isin=None,name="M & B Switchgears Limited")
+    assert resolve_identity(db,isin=None,name="M And B Switchgears Ltd. IPO")==one
+    db.execute("insert into ipo(isin,name,name_norm) values(?,?,?)",("INE999999999","Chipotle Other",name_norm("Chipotle Other")))
+    with pytest.raises(ValueError,match="IDENTITY_COLLISION"):
+        resolve_identity(db,isin="INE999999999",name="M & B Switchgears Ltd")
+
+def test_ipomatrix_identity_collision_is_quarantinable_not_ignored():
+    sql,reason=map_ipomatrix_identity(isin="INE000000001",name="Other Limited",matrix_id=42,
+      by_isin={"INE000000001":1},by_name={name_norm("Other Limited"):2},by_matrix={})
+    assert sql==[] and reason=="IDENTITY_COLLISION"
+    sql,reason=map_ipomatrix_identity(isin="INE000000001",name="First Ltd",matrix_id=42,
+      by_isin={"INE000000001":1},by_name={name_norm("First Ltd"):1},by_matrix={})
+    assert reason is None and sql[0].startswith("UPDATE ipo SET ipo_matrix_id=COALESCE")
 
 def test_unit_anomalies_are_not_repaired():
     row={"band_lo_rs":1,"band_hi_rs":120,"issue_price_rs":130,"face_value_rs":10,
@@ -37,8 +65,28 @@ def test_inventory_preserves_bytes_and_flags_malformed(tmp_path):
     (tmp_path/"bad.json").write_text("{")
     rows=inventory([tmp_path]); assert len(rows)==2
     g=next(x for x in rows if x["valid"])
-    assert g["sha256"]==hashlib.sha256(raw).hexdigest() and g["matrix_id"]==42
+    assert g["sha256"]==hashlib.sha256(raw).hexdigest()
     assert sum(not x["valid"] for x in rows)==1
+
+def test_field_survey_reports_paths_counts_samples_types_but_no_units(tmp_path):
+    (tmp_path/"one.json").write_text(json.dumps({"data":{"id":1,"money":"10.00","rows":[{"name":"A"},{"name":"B"}]}}))
+    (tmp_path/"two.json").write_text(json.dumps({"data":{"id":2,"money":12,"rows":[]}}))
+    report=survey(inventory([tmp_path])); paths={x["json_path"]:x for x in report["paths"]}
+    assert paths["$.data.id"]["occurrence_count"]==2
+    assert paths["$.data.money"]["inferred_types"]=={"integer":1,"string":1}
+    assert paths["$.data.rows[].name"]["occurrence_count"]==1
+    assert "unit" not in json.dumps(report).lower()
+
+def test_neon_transforms_exact_decimals_and_category_snapshots(db):
+    issue={"ipo_id":1,"open_date":None,"close_date":None,"allotment_date":None,"listing_date":None,
+      "band_lo":Decimal("95.10"),"band_hi":Decimal("100.20"),"issue_price":Decimal("100.20"),
+      "face_value":Decimal("10"),"lot_size":100,"issue_size_cr":Decimal("500.30"),
+      "fresh_cr":Decimal("300.10"),"ofs_cr":Decimal("200.20"),"registrar":"R"}
+    sql=transform_neon("ipo_issue",issue); assert "'95.1'" in sql[0] and "'500.3'" in sql[0]
+    sub={"ipo_id":1,"captured_at":"2026-01-01T00:00:00Z","is_final":True,
+      "qib_x":Decimal("2.50"),"nii_x":None,"bnii_x":None,"snii_x":None,"retail_x":Decimal("1.1"),"total_x":Decimal("1.9")}
+    statements=transform_neon("subscription_snapshots",sub); assert len(statements)==3
+    assert all("INSERT OR IGNORE" in x for x in statements)
 
 def test_raw_archive_rejects_update_and_delete(db):
     sha="a"*64; db.execute("insert into raw_objects values(?,?,?,?,?,?)",(sha,"ipomatrix","1",None,2,"{}"))
@@ -49,4 +97,4 @@ def test_resume_checkpoint_and_reconciliation(db):
     db.execute("insert into migration_checkpoints(dataset,last_key,source_rows,written_rows) values('ipo','10',10,10)")
     db.execute("update migration_checkpoints set last_key='20',source_rows=20,written_rows=20 where dataset='ipo'")
     assert db.execute("select last_key from migration_checkpoints").fetchone()[0]=="20"
-    assert reconcile(db)["critical_checks"]=={"orphan_market_bars":0,"quarantined_rows":0}
+    assert reconcile(db)["critical_checks"]=={"orphan_market_bars":0,"quarantined_rows":0,"duplicate_fingerprints":0}

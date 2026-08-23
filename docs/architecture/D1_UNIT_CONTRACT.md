@@ -1,6 +1,8 @@
 # D1 source-to-normalized unit contract
 
-**Blocking rule:** a row with an anomaly is reported to `migration_quarantine`; migration never guesses, rescales, or turns missing values into zero. Values in D1 have units in their column names or an explicit `unit` column. IPO Matrix `*_amt_cr` is known in current code to sometimes contain raw rupees, so its historical magnitude heuristic is not accepted as proof for bulk migration.
+Status: PROPOSED — PR #343 owner review
+
+**Blocking rule:** a row with an anomaly is reported to `migration_quarantine`; migration never guesses, rescales, or turns missing values into zero. Canonical decimal money/ratio values are decimal-string `TEXT` in D1; counts/shares remain exact `INTEGER`. Values have units in their column names or an explicit `unit` column. IPO Matrix `*_amt_cr` is known in current code to sometimes contain raw rupees, so its historical magnitude heuristic is not accepted as proof for bulk migration.
 
 | Source | Source field | Raw example | Meaning | Raw unit | Normalized unit | Validation |
 |---|---|---:|---|---|---|---|

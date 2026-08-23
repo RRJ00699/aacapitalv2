@@ -34,4 +34,4 @@ Legend: `PIPELINE_GAP` means no current forward producer was found; `SOURCE_GAP`
 
 ## Blocking survey output
 
-Run `python tools/d1_migration.py --ipomatrix PATH --report artifacts/d1-inventory.json` before loading. `files=0` is not acceptance: it is an explicit archive blocker. No key absent from the proven code paths above may be mapped until the field survey records its real path and examples.
+Run `python tools/d1_migration.py --ipomatrix PATH --survey artifacts/ipomatrix-field-survey.json` before loading. The survey contains JSON path, occurrence count, bounded samples, and inferred JSON type only—never an inferred unit. `files=0` is not acceptance: it is an explicit archive blocker. No key absent from the proven code paths above may be mapped until the field survey records its real path and examples and an owner-reviewed identity path map is supplied.
