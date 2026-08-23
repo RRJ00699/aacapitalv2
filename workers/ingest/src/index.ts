@@ -1,9 +1,9 @@
-// workers/ingest/src/index.ts — the ingest Worker.
+// workers/ingest/src/index.ts — the ingest Worker for the 5-table D1 schema.
 // Public app never binds this. Only pipeline/cron.py (Stage D) calls it.
 
 import { VALIDATORS, PK_COLUMNS, ALLOWED_MODES, type IngestMode } from "./schemas";
 import { resolveIpoIdentity, IdentityConflictError } from "./identity";
-import { coalesceEmptyPatch, upsertRow, type D1, type RowChange } from "./db";
+import { coalesceEmptyPatch, upsertRow, appendRow, type D1, type RowChange } from "./db";
 import { factStatements } from "./source-facts";
 
 export interface Env {
@@ -37,7 +37,6 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
-      // No schema_state read; d1_migrations tells us the migration state.
       const meta = await env.DB_CORE.prepare(
         "SELECT count(*) AS n, max(applied_at) AS latest FROM d1_migrations",
       ).first<{ n: number; latest: string }>();
@@ -45,6 +44,7 @@ export default {
         ok: true,
         service: "aacapital-ingest",
         env: env.AAC_ENV ?? "unknown",
+        schema_target: "d1-5table",
         migrations_applied: meta?.n ?? 0,
         latest_migration_at: meta?.latest ?? null,
       });
@@ -53,6 +53,7 @@ export default {
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, { status: 405 });
     if (!url.pathname.startsWith("/ingest/")) return json({ error: "not_found" }, { status: 404 });
 
+    // Constant-time auth check.
     const provided = request.headers.get("x-aac-ingest-key") ?? "";
     if (!env.INGEST_KEY || provided.length !== env.INGEST_KEY.length) {
       return json({ error: "unauthorized" }, { status: 401 });
@@ -72,6 +73,7 @@ export default {
 
     const mode: IngestMode = body?.mode;
     const source = String(body?.source ?? "").trim();
+    const pipelineVersion = body?.pipeline_version == null ? null : String(body.pipeline_version).trim();
     const observedAt = String(body?.observed_at ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z")).trim();
     const rows: any[] = Array.isArray(body?.rows) ? body.rows : [];
     const maxRows = Number(env.MAX_ROWS_PER_REQUEST ?? "5000");
@@ -92,7 +94,10 @@ export default {
 
       let ipoId: number;
       try {
-        const resolution = await resolveIpoIdentity(env.DB_CORE, validated.identity ?? { name_display: String(raw.name_display ?? raw.company_name) });
+        const resolution = await resolveIpoIdentity(
+          env.DB_CORE,
+          validated.identity ?? { name_display: String(raw.name_display ?? raw.company_name) },
+        );
         ipoId = resolution.ipo_id;
         if (resolution.created) inserted++;
       } catch (e) {
@@ -103,8 +108,12 @@ export default {
         throw e;
       }
 
+      // `ipo` table has NO per-row payload beyond identity itself; nothing else to write.
+      if (table === "ipo") continue;
+
       const rowWithId: Record<string, unknown> = { ...validated.row, ipo_id: ipoId };
       let changes: RowChange[] = [];
+
       if (mode === "coalesce_empty") {
         const pk: Record<string, string | number> = {};
         for (const k of pkCols) pk[k] = rowWithId[k] as string | number;
@@ -114,10 +123,10 @@ export default {
         changes = res.changes;
         statements.push(...res.statements);
         if (res.statements.length === 0) unchanged++;
-        else if (res.changes.some((c) => c.prev !== null)) updated++;
         else updated++;
-      } else {
-        // For AUTOINCREMENT PK tables, we cannot upsert on `id`; simply INSERT.
+      } else if (mode === "append") {
+        // For AUTOINCREMENT PK tables the composite PK is not present in the row;
+        // fall back to plain INSERT.
         if (pkCols.length === 1 && pkCols[0] === "id") {
           const cols = Object.keys(rowWithId).filter((k) => k !== "id");
           statements.push(
@@ -125,19 +134,51 @@ export default {
               .prepare(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`)
               .bind(...cols.map((c) => rowWithId[c])),
           );
-          changes = cols.map((c) => ({ field: `${table}.${c}`, prev: null, next: rowWithId[c] === null || rowWithId[c] === undefined ? null : String(rowWithId[c]) }));
-          updated++;
+          changes = cols.map((c) => ({
+            field: `${table}.${c}`,
+            prev: null,
+            next: rowWithId[c] === null || rowWithId[c] === undefined ? null : String(rowWithId[c]),
+          }));
+        } else {
+          const res = appendRow(env.DB_CORE, table, pkCols, rowWithId);
+          changes = res.changes;
+          statements.push(...res.statements);
+        }
+        updated++;
+      } else {
+        // upsert
+        if (pkCols.length === 1 && pkCols[0] === "id") {
+          const cols = Object.keys(rowWithId).filter((k) => k !== "id");
+          statements.push(
+            env.DB_CORE
+              .prepare(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`)
+              .bind(...cols.map((c) => rowWithId[c])),
+          );
+          changes = cols.map((c) => ({
+            field: `${table}.${c}`,
+            prev: null,
+            next: rowWithId[c] === null || rowWithId[c] === undefined ? null : String(rowWithId[c]),
+          }));
         } else {
           const res = upsertRow(env.DB_CORE, table, pkCols, rowWithId);
           changes = res.changes;
           statements.push(...res.statements);
-          updated++;
         }
+        updated++;
       }
 
-      const fs = factStatements(env.DB_CORE,
-        { ipo_id: ipoId, source, doc_id: raw.doc_id ?? null, confidence: raw.confidence ?? null, fetched_at: observedAt },
-        changes);
+      const fs = await factStatements(
+        env.DB_CORE,
+        {
+          ipo_id: ipoId,
+          source,
+          document_sha: raw.document_sha ?? raw.doc_id ?? null,
+          confidence: raw.confidence ?? null,
+          pipeline_version: pipelineVersion,
+          fetched_at: observedAt,
+        },
+        changes,
+      );
       statements.push(...fs);
       factsAppended += fs.length;
     }

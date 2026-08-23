@@ -39,7 +39,6 @@ export async function coalesceEmptyPatch(
   const changes: RowChange[] = [];
 
   if (!existing) {
-    // INSERT full patch (nulls allowed) plus PK.
     const cols = [...pkKeys, ...patchKeys];
     const vals: unknown[] = [...pkValues, ...patchKeys.map((k) => nullify(patch[k]))];
     statements.push(
@@ -89,6 +88,30 @@ export function upsertRow(
   const sql =
     `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ` +
     `ON CONFLICT (${pkColumns.join(", ")}) DO UPDATE SET ${excluded}`;
+  const changes: RowChange[] = cols.map((c) => ({
+    field: `${table}.${c}`,
+    prev: null,
+    next: row[c] === null || row[c] === undefined ? null : String(row[c]),
+  }));
+  return { changes, statements: [db.prepare(sql).bind(...vals)] };
+}
+
+/**
+ * APPEND-only writer. Used for `market_observations` and `research_findings`
+ * (append flavour). Insert with ON CONFLICT DO NOTHING keyed by the table PK.
+ */
+export function appendRow(
+  db: D1,
+  table: string,
+  pkColumns: string[],
+  row: Record<string, unknown>,
+): { changes: RowChange[]; statements: D1PreparedStatement[] } {
+  const cols = Object.keys(row);
+  const vals = cols.map((c) => nullify(row[c]));
+  const conflict = pkColumns.join(", ");
+  const sql =
+    `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ` +
+    `ON CONFLICT (${conflict}) DO NOTHING`;
   const changes: RowChange[] = cols.map((c) => ({
     field: `${table}.${c}`,
     prev: null,
