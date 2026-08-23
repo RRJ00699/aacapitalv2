@@ -55,6 +55,14 @@ def neon_conn():
 
 
 def d1_query(sql: str, *, sink: str) -> list[dict]:
+    if sink.startswith("sqlite:"):
+        import sqlite3
+        conn = sqlite3.connect(sink[len("sqlite:"):])
+        cur = conn.execute(sql)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        conn.close()
+        return rows
     cmd = ["wrangler", "d1", "execute", "DB_CORE", "--config", _WRANGLER, "--json"]
     if sink == "wrangler-local":
         cmd += ["--local", "--env", "staging"]
@@ -214,9 +222,12 @@ def check_source_facts(neon, sink: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sink", choices=["wrangler-local", "wrangler-remote-staging"],
-                    default="wrangler-local")
+    ap.add_argument("--sink", default="wrangler-local",
+                    help="D1 read target: wrangler-local | wrangler-remote-staging | sqlite:PATH")
     args = ap.parse_args()
+    if args.sink not in ("wrangler-local", "wrangler-remote-staging") \
+       and not args.sink.startswith("sqlite:"):
+        raise SystemExit(f"invalid --sink: {args.sink}")
 
     neon = neon_conn()
     report: dict = {"started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

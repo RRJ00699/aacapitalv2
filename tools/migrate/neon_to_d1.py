@@ -89,9 +89,43 @@ def neon_conn():
     return conn
 
 
-# ------------------------------------------------------------------ D1 write via wrangler
+# ------------------------------------------------------------------ D1 write sink (pluggable)
+#
+# Three sinks:
+#   * ``wrangler-local``           - wrangler --local (miniflare sqlite; requires wrangler)
+#   * ``wrangler-remote-staging``  - wrangler --env staging (owner-only, real CF traffic)
+#   * ``sqlite:PATH``              - direct sqlite3 write (no wrangler, no CF). Owner uses
+#                                    this for offline rehearsals; CI uses it to exercise
+#                                    the writer path deterministically.
+#
+# All three land in the SAME SQL string, so idempotency, ordering, and
+# ON CONFLICT semantics behave identically. sqlite is chosen for the offline
+# sink because D1 is sqlite; the CHECK constraints, PK rules, and index shape
+# in ``d1/migrations/*.sql`` all apply verbatim.
+
+_SQLITE_CONNS: dict[str, "object"] = {}
+
+
+def _sqlite_conn(path: str):
+    import sqlite3
+    if path in _SQLITE_CONNS: return _SQLITE_CONNS[path]
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.isolation_level = None
+    # Apply the 5-table migrations idempotently. Every DDL in d1/migrations/
+    # uses CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS, so
+    # re-running against a warm rehearsal file is a no-op.
+    mig_dir = _REPO / "d1" / "migrations"
+    for p in sorted(mig_dir.glob("*.sql")):
+        conn.executescript(p.read_text())
+    _SQLITE_CONNS[path] = conn
+    return conn
+
 
 def d1_execute(sql: str, *, sink: str) -> None:
+    if sink.startswith("sqlite:"):
+        _sqlite_conn(sink[len("sqlite:"):]).executescript(sql)
+        return
     cmd = ["wrangler", "d1", "execute", "DB_CORE", "--config", _WRANGLER]
     if sink == "wrangler-local":
         cmd += ["--local", "--env", "staging"]
@@ -103,6 +137,29 @@ def d1_execute(sql: str, *, sink: str) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         raise RuntimeError(f"wrangler d1 execute failed: {r.stderr[-500:]}")
+
+
+def d1_query(sql: str, *, sink: str) -> list[dict]:
+    """Read helper used by ``--sizing`` and the reconciliation harness."""
+    if sink.startswith("sqlite:"):
+        conn = _sqlite_conn(sink[len("sqlite:"):])
+        cur = conn.execute(sql)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    cmd = ["wrangler", "d1", "execute", "DB_CORE", "--config", _WRANGLER, "--json"]
+    if sink == "wrangler-local":
+        cmd += ["--local", "--env", "staging"]
+    elif sink == "wrangler-remote-staging":
+        cmd += ["--env", "staging"]
+    else:
+        raise SystemExit(f"unknown sink: {sink}")
+    cmd += ["--command", sql]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if r.returncode != 0: raise RuntimeError(r.stderr[-500:])
+    data = json.loads(r.stdout)
+    if isinstance(data, list) and data and "results" in data[0]:
+        return data[0]["results"]
+    return []
 
 
 # ------------------------------------------------------------------ Value normalisation
@@ -770,6 +827,206 @@ def target_source_facts(neon, sink: str, dry_run: bool, tstate: dict) -> dict:
             "elapsed_s": round(time.time() - started, 1)}
 
 
+# ------------------------------------------------------------------ Sizing report (read-only)
+#
+# Owner-triggered pre-migration sizing. Zero D1 writes; zero Neon writes. Only
+# COUNT / DISTINCT / MIN / MAX + a bounded row-sample for average-serialised-
+# size. Report lands at ``_migrate/sizing_report.{md,json}``.
+
+_SIZING_MD = _STATE_DIR / "sizing_report.md"
+_SIZING_JSON = _STATE_DIR / "sizing_report.json"
+
+
+def _pg_count(cur, sql: str, args: tuple = ()) -> int:
+    cur.execute(sql, args); r = cur.fetchone()
+    return int(r[0]) if r and r[0] is not None else 0
+
+
+def _pg_minmax(cur, sql: str, args: tuple = ()) -> tuple:
+    cur.execute(sql, args); r = cur.fetchone() or (None, None)
+    return (r[0], r[1])
+
+
+def _avg_row_size(cur, table: str, sample: int = 200) -> int:
+    """Sample up to ``sample`` rows from ``table`` and compute the mean
+    serialised byte size. Uses pg_column_size(row) — real bytes on disk,
+    not a schema estimate. Returns 0 for empty tables.
+    """
+    try:
+        cur.execute(f"SELECT AVG(pg_column_size(t))::int FROM (SELECT * FROM {table} LIMIT %s) t", (sample,))
+        r = cur.fetchone()
+        return int(r[0]) if r and r[0] is not None else 0
+    except Exception:      # noqa: BLE001 - table absent / column-size fn unavailable
+        return 0
+
+
+def _size_ipo(cur) -> dict:
+    total = _pg_count(cur, "SELECT count(*) FROM ipo")
+    uniq  = _pg_count(cur, "SELECT count(DISTINCT id) FROM ipo")
+    minld, maxld = _pg_minmax(cur, "SELECT min(listing_date), max(listing_date) FROM ipo")
+    return {"target": "ipo", "row_count": total, "unique_ids": uniq,
+            "earliest_listing_date": str(minld) if minld else None,
+            "latest_listing_date":   str(maxld) if maxld else None,
+            "avg_bytes_per_row": _avg_row_size(cur, "ipo")}
+
+
+def _size_fundamentals(cur) -> dict:
+    total_ipo = _pg_count(cur, "SELECT count(*) FROM ipo")
+    ipo_issue_cov = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM ipo_issue")
+    fin_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM financial_statements")
+    sub_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM subscription_snapshots")
+    val_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM valuation")
+    dec_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM decisions")
+    outc_cov      = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM listing_outcomes")
+    fin_history_rows = _pg_count(cur, "SELECT count(*) FROM financial_statements")
+    return {
+        "target": "fundamentals",
+        "ipo_total": total_ipo,
+        "ipo_issue_coverage":        ipo_issue_cov,
+        "financials_ipo_coverage":   fin_cov,
+        "financials_history_rows":   fin_history_rows,
+        "subscription_ipo_coverage": sub_cov,
+        "valuation_ipo_coverage":    val_cov,
+        "decisions_ipo_coverage":    dec_cov,
+        "listing_outcomes_ipo_coverage": outc_cov,
+        "avg_bytes_per_row_ipo_issue": _avg_row_size(cur, "ipo_issue"),
+        "avg_bytes_per_row_valuation": _avg_row_size(cur, "valuation"),
+    }
+
+
+def _size_market(cur) -> dict:
+    def _bucket(table: str, time_col: str) -> dict:
+        total = _pg_count(cur, f"SELECT count(*) FROM {table}")
+        uniq  = _pg_count(cur, f"SELECT count(DISTINCT ipo_id) FROM {table}")
+        mn, mx = _pg_minmax(cur, f"SELECT min({time_col}), max({time_col}) FROM {table}")
+        return {"row_count": total, "unique_ipos": uniq,
+                "earliest": str(mn) if mn else None,
+                "latest":   str(mx) if mx else None,
+                "avg_bytes_per_row": _avg_row_size(cur, table)}
+    daily = _bucket("market_candles", "d")
+    q15m  = _bucket("market_candles_15m", "ts")
+    # listing_observations covers preopen / open / tick / close_d1 rows.
+    def _lo_bucket(obs: str) -> dict:
+        total = _pg_count(cur,
+            "SELECT count(*) FROM listing_observations WHERE obs_type=%s", (obs,))
+        uniq  = _pg_count(cur,
+            "SELECT count(DISTINCT ipo_id) FROM listing_observations WHERE obs_type=%s", (obs,))
+        mn, mx = _pg_minmax(cur,
+            "SELECT min(observed_at), max(observed_at) FROM listing_observations WHERE obs_type=%s", (obs,))
+        return {"row_count": total, "unique_ipos": uniq,
+                "earliest": str(mn) if mn else None, "latest": str(mx) if mx else None}
+    tick_total = _pg_count(cur, "SELECT count(*) FROM ipo_tick_feed") \
+        if _pg_count(cur, "SELECT count(*) FROM pg_class WHERE relname='ipo_tick_feed'") else 0
+    return {"target": "market_observations",
+            "daily":            daily,           # \u2192 D1 interval=1d
+            "fifteen_minute":   q15m,            # \u2192 D1 interval=15m
+            "preopen":         _lo_bucket("preopen"),
+            "listing_open":    _lo_bucket("open"),
+            "listing_tick":    _lo_bucket("tick"),
+            "listing_close_d1":_lo_bucket("close_d1"),
+            "ipo_tick_feed_rows_if_retained": tick_total,
+            # NOTE: 5-minute data is NOT invented; the D1 schema whitelists
+            # '5m' but no Neon source exists yet, so a genuine 5-minute
+            # ingest is required before any 5m rows appear.
+            "note": "5-minute interval is reserved in the D1 schema; no rows are counted here because Neon has no 5m source."}
+
+
+def _size_research(cur) -> dict:
+    rhp     = _pg_count(cur, "SELECT count(*) FROM rhp_findings")
+    insight = _pg_count(cur, "SELECT count(*) FROM insights")
+    rhp_int = _pg_count(cur, "SELECT count(*) FROM ipo_rhp_intel")
+    notes_s = _pg_count(cur, "SELECT count(*) FROM ipo_research_notes WHERE source ILIKE 'sbi%'")
+    notes_b = _pg_count(cur, "SELECT count(*) FROM ipo_research_notes WHERE source NOT ILIKE 'sbi%' OR source IS NULL")
+    anchor  = _pg_count(cur, "SELECT count(*) FROM anchor_investors") \
+        if _pg_count(cur, "SELECT count(*) FROM pg_class WHERE relname='anchor_investors'") else 0
+    return {"target": "research_findings",
+            "rhp_findings":            rhp,      # \u2192 finding_type='rhp'
+            "ipo_rhp_intel_rows":      rhp_int,  # \u2192 finding_type='rhp_summary'
+            "sbi_notes":               notes_s,  # \u2192 finding_type='sbi_note'
+            "broker_notes":            notes_b,  # \u2192 finding_type='broker_note'
+            "insights":                insight,  # \u2192 finding_type='insight'
+            "anchor_rows_if_retained": anchor,
+            "total_projected_rows":    rhp + rhp_int + notes_s + notes_b + insight + anchor,
+            "avg_bytes_per_row_rhp":   _avg_row_size(cur, "rhp_findings"),
+            "avg_bytes_per_row_insights": _avg_row_size(cur, "insights")}
+
+
+def _size_source_facts(cur) -> dict:
+    total = _pg_count(cur, "SELECT count(*) FROM source_facts")
+    # Estimate the retained count under the new observation_hash idempotency.
+    # A duplicate under the OLD (timestamp-in-PK) model is any row whose
+    # (ipo_id, field, source, doc_id, value) tuple appears twice with only
+    # fetched_at differing. Distinct-tuple count \u2248 retained row count.
+    retained = _pg_count(cur,
+        "SELECT count(*) FROM ("
+        "  SELECT DISTINCT ipo_id, field, value, source, doc_id"
+        "  FROM source_facts"
+        ") sub")
+    return {"target": "source_facts",
+            "neon_row_count": total,
+            "estimated_retained_after_new_idempotency": retained,
+            "estimated_duplicate_collapse_ratio":
+                (round(1.0 - retained / total, 4) if total else 0.0),
+            "avg_bytes_per_row": _avg_row_size(cur, "source_facts")}
+
+
+def _size_storage_estimate(sizings: list[dict]) -> dict:
+    """Storage estimate = sum(rows * avg_bytes_per_row) over every target
+    that shipped a measurement. Purely measured; nothing inferred from the
+    schema alone. Adds a 25% D1 overhead buffer for indexes.
+    """
+    total_bytes = 0
+    breakdown = {}
+    def _add(label: str, rows: int, avg: int):
+        nonlocal total_bytes
+        b = int(rows) * int(avg)
+        breakdown[label] = {"rows": rows, "avg_bytes_per_row": avg, "bytes": b}
+        total_bytes += b
+    for s in sizings:
+        if s["target"] == "ipo":
+            _add("ipo", s["row_count"], s["avg_bytes_per_row"])
+        elif s["target"] == "fundamentals":
+            _add("fundamentals (ipo_issue)", s["ipo_issue_coverage"], s["avg_bytes_per_row_ipo_issue"])
+            _add("fundamentals (valuation)", s["valuation_ipo_coverage"], s["avg_bytes_per_row_valuation"])
+        elif s["target"] == "market_observations":
+            for k in ("daily", "fifteen_minute"):
+                _add(f"market_observations.{k}", s[k]["row_count"], s[k]["avg_bytes_per_row"])
+        elif s["target"] == "research_findings":
+            _add("research_findings (rhp)", s["rhp_findings"], s["avg_bytes_per_row_rhp"])
+            _add("research_findings (insights)", s["insights"], s["avg_bytes_per_row_insights"])
+        elif s["target"] == "source_facts":
+            _add("source_facts", s["estimated_retained_after_new_idempotency"], s["avg_bytes_per_row"])
+    return {"total_bytes_measured": total_bytes,
+            "total_bytes_with_25pct_index_buffer": int(total_bytes * 1.25),
+            "total_mb_with_index_buffer": round(total_bytes * 1.25 / (1024*1024), 2),
+            "breakdown": breakdown}
+
+
+def do_sizing(neon) -> dict:
+    with neon.cursor() as cur:
+        sizings = [_size_ipo(cur), _size_fundamentals(cur), _size_market(cur),
+                   _size_research(cur), _size_source_facts(cur)]
+    storage = _size_storage_estimate(sizings)
+    report = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "sizings": sizings, "storage_estimate": storage}
+    _SIZING_JSON.write_text(json.dumps(report, indent=2, default=str))
+    with _SIZING_MD.open("w") as h:
+        h.write(f"# Neon \u2192 D1 sizing report (read-only)\n\n")
+        h.write(f"Generated at `{report['generated_at']}`. No writes performed.\n\n")
+        h.write("## Per-target sizing\n\n")
+        for s in sizings:
+            h.write(f"### {s['target']}\n\n```json\n{json.dumps(s, indent=2, default=str)}\n```\n\n")
+        h.write("## Measured storage estimate\n\n")
+        h.write(f"* **Total measured bytes**: {storage['total_bytes_measured']:,}\n")
+        h.write(f"* **With 25% index buffer**: {storage['total_bytes_with_25pct_index_buffer']:,} "
+                f"({storage['total_mb_with_index_buffer']} MB)\n\n")
+        h.write("| Component | Rows | Avg bytes/row | Bytes |\n|---|---:|---:|---:|\n")
+        for k, v in sorted(storage["breakdown"].items(), key=lambda kv: -kv[1]["bytes"]):
+            h.write(f"| {k} | {v['rows']:,} | {v['avg_bytes_per_row']:,} | {v['bytes']:,} |\n")
+    print(f"sizing report: {_SIZING_MD}")
+    return report
+
+
 # ------------------------------------------------------------------ State
 
 _STATE_CACHE: dict = {}
@@ -805,17 +1062,39 @@ EXCLUDED_NEON_TABLES = [
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sink", choices=["wrangler-local", "wrangler-remote-staging"],
-                    default="wrangler-local")
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--sink",
+        default="wrangler-local",
+        help=(
+            "D1 write target. One of: wrangler-local | wrangler-remote-staging | "
+            "sqlite:PATH (direct sqlite3 write; owner rehearsals + CI use this)."
+        ),
+    )
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Only report per-target Neon row counts; no writes.")
+    ap.add_argument("--sizing", action="store_true",
+                    help="Produce a READ-ONLY sizing report against Neon and exit. "
+                         "No D1 writes. No sink required.")
     ap.add_argument("--fresh", action="store_true",
                     help="Delete _migrate/state.json and start over. Does NOT touch Neon.")
     ap.add_argument("--targets", nargs="+", choices=[t[0] for t in TARGETS],
                     help="Optional subset of D1 target tables.")
     args = ap.parse_args()
 
+    if args.sink not in ("wrangler-local", "wrangler-remote-staging") \
+       and not args.sink.startswith("sqlite:"):
+        raise SystemExit(f"invalid --sink: {args.sink}")
+
     if args.fresh:
         for p in (_STATE, _ANOMALIES): p.unlink(missing_ok=True)
+
+    if args.sizing:
+        neon = neon_conn()
+        try:
+            do_sizing(neon)
+        finally:
+            neon.close()
+        return 0
 
     state = load_state()
     state.setdefault("targets", {})
