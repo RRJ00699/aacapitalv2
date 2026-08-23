@@ -16,6 +16,7 @@ PR #342 is superseded by PR #343. Only its useful rehearsal/evidence idea was re
 | Immutability | Raw objects reject update/delete; decision history rejects update/delete. |
 | Local path | Rehearsal executes transformed Neon-shaped rows and immutable Matrix raw through Wrangler local D1 twice, exports D1, and reconciles counts. |
 | IPO Matrix bootstrap | Owner-reviewed paths and explicit units populate normalized issue/profile/ownership/objects/financial/reservation/subscription/anchor/peer/KPI/document homes; every mapped field also writes provenance. Unapproved paths remain raw-only. |
+| Constraint honesty | No global `INSERT OR IGNORE` exists. Known rerun keys use explicit `ON CONFLICT(key) DO NOTHING` only after a guard proves existing contents identical; differing content or any unexpected CHECK/NOT NULL/UNIQUE violation fails the batch. |
 
 ## Owner-data evidence still required
 

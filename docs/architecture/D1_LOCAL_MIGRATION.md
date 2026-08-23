@@ -59,6 +59,8 @@ python tools/d1_reconcile.py --wrangler-local \
 
 Acceptance requires `zero_silent_loss=true`, exact daily/15-minute/pre-open source comparisons, raw-object equality, zero identity/fingerprint duplicates, explicit null counts/ranges, and owner disposition of every quarantine row. Run the migration a second time and reconcile again to prove idempotency.
 
+Idempotency never uses global SQLite `OR IGNORE`. Each expected rerun uses its declared conflict key, first guards that the stored and incoming values are identical, then performs `ON CONFLICT(<key>) DO NOTHING`. A differing duplicate or unexpected CHECK/NOT NULL/UNIQUE violation fails the Wrangler batch and cannot be counted as written.
+
 ## 4. Measure storage
 
 Export or checkpoint the local Wrangler D1 and record its exact byte size. Project only from the real migrated unique-IPO count; do not divide by zero or treat an absent archive as a zero-byte archive. No R2 decision is authorized until this measurement exists.

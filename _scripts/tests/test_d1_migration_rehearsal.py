@@ -41,6 +41,7 @@ def test_neon_shape_and_matrix_raw_reach_wrangler_local_without_loss(tmp_path,mo
     source={"source_ipo":1,"source_ipo_issue":1,"source_market_daily":1,"source_ipomatrix":1,**bootstrap_counts}
     report=reconciliation.reconcile(conn,source)
     assert report["zero_silent_loss"] is True
+    assert {f"ipomatrix_{name}" for name in ("company_profile","ownership","objects_of_issue","reservations","anchor_summary","anchor_allocations","peer_comparisons")} <= report["source_comparisons"].keys()
     assert report["ipo"]["destination_rows"]==1 and report["raw_objects"]["destination_rows"]==1
     assert report["market_1d"]["destination_rows"]==1 and report["critical_checks"]["quarantined_rows"]==0
     assert conn.execute("select business_description from company_profile").fetchone()[0]=="Profile from raw"

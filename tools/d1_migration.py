@@ -145,7 +145,32 @@ class SqlExpr:
     sql: str
 
 def insert_sql(table: str, columns: tuple[str,...], values: tuple[Any,...]) -> str:
-    return f"INSERT OR IGNORE INTO {table}({','.join(columns)}) VALUES({','.join(sql_value(v) for v in values)});"
+    """Insert with an explicit, reviewed idempotency key; never globally ignore."""
+    keys={
+      "ipo":("id",) if "id" in columns else (), "ipo_issue":("ipo_id",),
+      "company_profile":("ipo_id",),"ownership":("ipo_id","holder_category"),
+      "objects_of_issue":("ipo_id","row_order","document_sha256"),
+      "financial_statements":("ipo_id","period","basis"),"reservations":("ipo_id","category"),
+      "subscription_snapshots":("observation_fingerprint",),"anchor_summary":("ipo_id",),
+      "anchor_allocations":("document_sha256","allocation_row"),
+      "peer_comparisons":("ipo_id","peer_name_raw","as_of_date","document_sha256"),
+      "documents":("sha256",),"research_findings":("content_fingerprint",),
+      "gmp_observations":("observation_fingerprint",),"market_bars":("content_fingerprint",),
+      "listing_observations":("content_fingerprint",),"valuation_runs":("run_fingerprint",),
+      "decision_history":("run_fingerprint",),"source_facts":("observation_fingerprint",),
+      "raw_objects":("sha256",),"migration_quarantine":("fingerprint",),
+    }.get(table,())
+    base=f"INSERT INTO {table}({','.join(columns)}) VALUES({','.join(sql_value(v) for v in values)})"
+    if keys and all(key in columns for key in keys):
+        pairs=dict(zip(columns,values));match=" AND ".join(f"{key} IS {sql_value(pairs[key])}" for key in keys)
+        identical=" AND ".join(f"{column} IS {sql_value(value)}" for column,value in zip(columns,values))
+        # SQLite RAISE() is trigger-only. abs(min-int) deterministically raises integer
+        # overflow when the idempotency key exists with non-identical contents.
+        guard=(f"SELECT CASE WHEN EXISTS(SELECT 1 FROM {table} WHERE {match} AND NOT ({identical})) "
+               "THEN abs(-9223372036854775808) ELSE 0 END;")
+        base+=f" ON CONFLICT({','.join(keys)}) DO NOTHING"
+        return guard+"\n"+base+";"
+    return base+";"
 
 def _row_value(row: dict[str,Any], key: str|None):
     return json_path(row,key) if key and key.startswith("$") else row.get(key) if key else None

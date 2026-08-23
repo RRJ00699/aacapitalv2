@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    NEON_QUERIES, checkpoint_sql, derive_security_kind, map_ipomatrix_identity, resolve_identity, survey, transform_ipomatrix,
+    NEON_QUERIES, checkpoint_sql, derive_security_kind, insert_sql, map_ipomatrix_identity, resolve_identity, survey, transform_ipomatrix,
     transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 from tools.d1_contract import canonical_spine_eligible, concept_state
@@ -18,10 +18,25 @@ def db():
 def test_schema_is_idempotent_for_content_writes(db):
     ipo=resolve_identity(db,isin="INE123456789",name="Example Limited")
     fp=fingerprint(ipo,"1d","2026-01-01",10,11,9,10.5,100)
-    sql="INSERT OR IGNORE INTO market_bars VALUES(?,?,?,?,?,?,?,?,?,?)"
+    sql="INSERT INTO market_bars VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(content_fingerprint) DO NOTHING"
     args=(ipo,"1d","2026-01-01",10,11,9,10.5,100,"kite",fp)
     db.execute(sql,args); db.execute(sql,args)
     assert db.execute("select count(*) from market_bars").fetchone()[0]==1
+
+def test_insert_strategy_never_globally_ignores_constraints(db):
+    assert "OR IGNORE" not in Path("tools/d1_migration.py").read_text()
+    db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"One","one")))
+    db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"One","one")))
+    assert db.execute("select count(*) from ipo").fetchone()[0]==1
+    with pytest.raises(sqlite3.OperationalError,match="overflow"):
+        db.executescript(insert_sql("ipo",("id","name","name_norm"),(1,"Different","different")))
+    with pytest.raises(sqlite3.IntegrityError):
+        db.executescript(insert_sql("ipo_issue",("ipo_id","band_lo_rs","band_hi_rs"),(1,"120","100")))
+    with pytest.raises(sqlite3.IntegrityError):
+        db.executescript(insert_sql("objects_of_issue",("ipo_id","row_order","document_sha256"),(1,1,"a"*64)))
+    db.executescript(insert_sql("ipo",("name","name_norm","nse_symbol"),("Two","two","SAME")))
+    with pytest.raises(sqlite3.IntegrityError):
+        db.executescript(insert_sql("ipo",("name","name_norm","nse_symbol"),("Three","three","SAME")))
 
 def test_canonical_decimal_columns_never_use_real():
     assert " REAL" not in DDL.upper()
@@ -139,7 +154,7 @@ def test_neon_transforms_exact_decimals_and_category_snapshots(db):
     sub={"ipo_id":1,"captured_at":"2026-01-01T00:00:00Z","is_final":True,
       "qib_x":Decimal("2.50"),"nii_x":None,"bnii_x":None,"snii_x":None,"retail_x":Decimal("1.1"),"total_x":Decimal("1.9")}
     statements=transform_neon("subscription_snapshots",sub); assert len(statements)==3
-    assert all("INSERT OR IGNORE" in x for x in statements)
+    assert all("INSERT OR IGNORE" not in x and "ON CONFLICT(observation_fingerprint) DO NOTHING" in x for x in statements)
 
 def test_reviewed_ipomatrix_map_populates_normalized_history_without_unit_guessing(db):
     doc="d"*64;payload={"id":42,"issue":{"lo":"95.10","hi":"100","price":"100","face":"10","open":"2026-01-01"},

@@ -4,8 +4,10 @@ import argparse, json, sqlite3, subprocess, tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]; CONFIG=ROOT/"d1/wrangler.jsonc"
-TABLES=("ipo","ipo_issue","financial_statements","subscription_snapshots","anchor_allocations",
-        "market_bars","listing_observations","documents","source_facts","raw_objects","migration_quarantine")
+TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
+        "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons",
+        "documents","research_findings","gmp_observations","market_bars","listing_observations",
+        "valuation_runs","decision_history","source_facts","raw_objects","migration_quarantine","migration_checkpoints")
 
 def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
     out={table:{"destination_rows":conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]} for table in TABLES}
@@ -20,6 +22,8 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
     out["preopen"]={"destination_rows":row[0],"min_timestamp":row[1],"max_timestamp":row[2],"null_price":row[3] or 0}
     out["critical_checks"]={"orphan_market_bars":conn.execute("SELECT count(*) FROM market_bars b LEFT JOIN ipo i ON i.id=b.ipo_id WHERE i.id IS NULL").fetchone()[0],
       "quarantined_rows":out["migration_quarantine"]["destination_rows"],"duplicate_fingerprints":conn.execute("SELECT count(*) FROM (SELECT content_fingerprint FROM market_bars GROUP BY content_fingerprint HAVING count(*)>1)").fetchone()[0]}
+    out["quarantine_by_reason"]={row[0]:row[1] for row in conn.execute("SELECT reason_code,count(*) FROM migration_quarantine GROUP BY reason_code ORDER BY reason_code")}
+    out["quarantine_by_dataset"]={row[0]:row[1] for row in conn.execute("SELECT dataset,count(*) FROM migration_quarantine GROUP BY dataset ORDER BY dataset")}
     if source:
         comparisons={
           "ipo":{"source":source.get("source_ipo",0),"destination_or_quarantine":out["ipo"]["destination_rows"]+source.get("quarantined_ipo_structural",0)},
@@ -37,6 +41,13 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
             actual=value.get("destination",value.get("destination_or_quarantine"))
             value["equal"]=(actual>=value["source"]) if key=="ipo" else (actual==value["source"])
         out["source_comparisons"]=comparisons;out["zero_silent_loss"]=all(x["equal"] for x in comparisons.values())
+        for table in ("company_profile","ownership","objects_of_issue","reservations","anchor_summary","anchor_allocations","peer_comparisons"):
+            expected=source.get(f"ipomatrix_rows_{table}",0);destination=out[table]["destination_rows"]
+            quarantined=out["quarantine_by_dataset"].get(table,0)
+            comparisons[f"ipomatrix_{table}"]={"source_mapped_rows":expected,"destination_rows":destination,
+              "quarantined_rows":quarantined,"equal":destination+quarantined==expected}
+        # Re-evaluate only after every normalized Matrix home has been registered.
+        out["zero_silent_loss"]=all(x["equal"] for x in comparisons.values())
         column_map={
           "ipo.isin":("ipo","isin"),"ipo.name_display":("ipo","name"),
           "ipo_issue.band_lo":("ipo_issue","band_lo_rs"),"ipo_issue.band_hi":("ipo_issue","band_hi_rs"),
@@ -54,6 +65,20 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
             destination=conn.execute(f"SELECT count(*) FROM {table} WHERE {column} IS NOT NULL{clause}").fetchone()[0]
             expected=source[report_key];nonnull[source_key]={"source_non_null":expected,"destination_non_null":destination,"equal":expected==destination}
         out["per_column_non_null"]=nonnull
+        matrix_critical={
+          "company_profile":("business_description",),"ownership":("holder_category",),
+          "objects_of_issue":("row_order","purpose_raw"),"financial_statements":("period","basis"),
+          "reservations":("category",),"subscription_snapshots":("captured_at","category"),
+          "anchor_summary":("ipo_id",),"anchor_allocations":("allocation_row","investor_name_raw","document_sha256"),
+          "peer_comparisons":("peer_name_raw","document_sha256"),"documents":("sha256","doc_type"),
+          "source_facts":("target_field","source_name","observation_fingerprint"),"raw_objects":("sha256","payload_json"),
+        }
+        for table,columns in matrix_critical.items():
+            for column in columns:
+                destination=conn.execute(f"SELECT count(*) FROM {table} WHERE {column} IS NOT NULL").fetchone()[0]
+                key=f"ipomatrix_{table}.{column}";expected=source.get(key)
+                nonnull[key]={"source_non_null":expected,"destination_non_null":destination,
+                  "equal":True if expected is None else destination>=expected}
         out["zero_silent_loss"] = out["zero_silent_loss"] and all(x["equal"] for x in nonnull.values())
     return out
 
