@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS market_observations (
   PRIMARY KEY (ipo_id, interval, observation_type, observed_at),
 
   -- Interval / observation_type whitelist so a stray writer can't invent junk.
-  CHECK (interval IN ('1d','15m','5m','preopen','tick')),
-  CHECK (observation_type IN ('candle','preopen','open','tick','close_d1','orderbook')),
+  CHECK (interval IN ('1d','15m','5m','1m','preopen','tick')),
+  CHECK (observation_type IN ('candle','preopen','open','tick','close_d1','orderbook','level')),
   -- Numeric guardrails via CAST-to-REAL (transient, per CONVENTIONS §1).
   CHECK ( o IS NULL OR CAST(o AS REAL) >= 0 ),
   CHECK ( h IS NULL OR CAST(h AS REAL) >= 0 ),

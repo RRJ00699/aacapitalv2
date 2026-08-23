@@ -233,9 +233,9 @@ export const validateFundamentals: Validator<Record<string, unknown>> = (raw, i,
 };
 
 // ---------------------------------------------------------------- market_observations
-const ALLOWED_INTERVALS = new Set(["1d", "15m", "5m", "preopen", "tick"]);
+const ALLOWED_INTERVALS = new Set(["1d", "15m", "5m", "1m", "preopen", "tick"]);
 const ALLOWED_OBS_TYPES = new Set([
-  "candle", "preopen", "open", "tick", "close_d1", "orderbook",
+  "candle", "preopen", "open", "tick", "close_d1", "orderbook", "level",
 ]);
 
 export const validateMarketObservation: Validator<Record<string, unknown>> = (raw, i, errs) => {

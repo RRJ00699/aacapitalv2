@@ -65,6 +65,7 @@ _ANOMALIES = _STATE_DIR / "anomalies.jsonl"
 _WRANGLER = os.environ.get("WRANGLER_CONFIG", "workers/ingest/wrangler.jsonc")
 _BATCH = int(os.environ.get("NEON_TO_D1_BATCH", "500"))
 _PIPELINE_VERSION = os.environ.get("PIPELINE_VERSION", "stage-b-" + time.strftime("%Y%m%d"))
+_WRANGLER_BIN = os.environ.get("WRANGLER_BIN", "wrangler")
 
 # ------------------------------------------------------------------ Neon
 
@@ -126,15 +127,31 @@ def d1_execute(sql: str, *, sink: str) -> None:
     if sink.startswith("sqlite:"):
         _sqlite_conn(sink[len("sqlite:"):]).executescript(sql)
         return
-    cmd = ["wrangler", "d1", "execute", "DB_CORE", "--config", _WRANGLER]
+    cmd = [_WRANGLER_BIN, "d1", "execute", "DB_CORE", "--config", _WRANGLER]
     if sink == "wrangler-local":
         cmd += ["--local", "--env", "staging"]
     elif sink == "wrangler-remote-staging":
         cmd += ["--env", "staging"]                     # explicit staging only
     else:
         raise SystemExit(f"unknown sink: {sink}")
-    cmd += ["--command", sql]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    # OS argv is limited (typ. ~128 KB). Large batches are staged via
+    # ``wrangler d1 execute --file`` to bypass ARG_MAX entirely.
+    import tempfile
+    if len(sql.encode("utf-8")) > 60_000:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".sql", dir=str(_STATE_DIR), delete=False, encoding="utf-8"
+        ) as fh:
+            fh.write(sql)
+            tmp_path = fh.name
+        try:
+            r = subprocess.run(cmd + ["--file", tmp_path],
+                                capture_output=True, text=True, timeout=300)
+        finally:
+            try: os.unlink(tmp_path)
+            except OSError: pass
+    else:
+        r = subprocess.run(cmd + ["--command", sql],
+                            capture_output=True, text=True, timeout=300)
     if r.returncode != 0:
         raise RuntimeError(f"wrangler d1 execute failed: {r.stderr[-500:]}")
 
@@ -146,7 +163,7 @@ def d1_query(sql: str, *, sink: str) -> list[dict]:
         cur = conn.execute(sql)
         cols = [d[0] for d in cur.description] if cur.description else []
         return [dict(zip(cols, row)) for row in cur.fetchall()]
-    cmd = ["wrangler", "d1", "execute", "DB_CORE", "--config", _WRANGLER, "--json"]
+    cmd = [_WRANGLER_BIN, "d1", "execute", "DB_CORE", "--config", _WRANGLER, "--json"]
     if sink == "wrangler-local":
         cmd += ["--local", "--env", "staging"]
     elif sink == "wrangler-remote-staging":
@@ -200,9 +217,10 @@ def sql_literal(v: Any) -> str:
 
 
 def observation_hash(field: str, value: Any, source: str,
-                     document_sha: str | None, pipeline_version: str | None) -> str:
-    parts = [field, "" if value is None else str(value), source,
-             document_sha or "", pipeline_version or ""]
+                     document_sha: Any, pipeline_version: str | None) -> str:
+    def _s(x: Any) -> str:
+        return "" if x is None else str(x)
+    parts = [_s(field), _s(value), _s(source), _s(document_sha), _s(pipeline_version)]
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -219,10 +237,18 @@ def _insert_rows(target: str, cols: list[str], values: list[list[Any]],
                  pk_cols: list[str], sink: str) -> int:
     if not values: return 0
     cols_csv = ", ".join(cols)
-    conflict = ", ".join(pk_cols) if pk_cols else ""
-    on_conflict = f" ON CONFLICT ({conflict}) DO NOTHING" if conflict else ""
+    # For tables with a PK we know, use ON CONFLICT (pk) DO NOTHING to be
+    # explicit. For tables where partial UNIQUEs may also fire (e.g.
+    # research_findings' `(document_sha, model, prompt_version)` partial
+    # index), fall back to `INSERT OR IGNORE` so the write is idempotent
+    # across every unique-ish constraint on the table.
     literal_rows = ["(" + ", ".join(sql_literal(norm(v)) for v in row) + ")" for row in values]
-    sql = f"INSERT INTO {target} ({cols_csv}) VALUES {', '.join(literal_rows)}{on_conflict}"
+    if pk_cols:
+        conflict = ", ".join(pk_cols)
+        sql = (f"INSERT INTO {target} ({cols_csv}) VALUES {', '.join(literal_rows)} "
+               f"ON CONFLICT ({conflict}) DO NOTHING")
+    else:
+        sql = f"INSERT OR IGNORE INTO {target} ({cols_csv}) VALUES {', '.join(literal_rows)}"
     try:
         d1_execute(sql, sink=sink)
         return len(values)
@@ -371,7 +397,7 @@ def target_fundamentals(neon, sink: str, dry_run: bool, tstate: dict) -> dict:
             WHERE ipo_id IN (SELECT id FROM ids)
             ORDER BY ipo_id, decided_at DESC NULLS LAST
         )
-        SELECT ids.id AS ipo_id,
+        SELECT ids.id, ids.id AS ipo_id,
                ii.open_date, ii.close_date, ii.allotment_date,
                ii.band_lo, ii.band_hi, ii.issue_price, ii.face_value, ii.lot_size,
                ii.issue_size_cr, ii.fresh_cr, ii.ofs_cr,
@@ -385,7 +411,8 @@ def target_fundamentals(neon, sink: str, dry_run: bool, tstate: dict) -> dict:
                ls.anchor_amount_cr, ls.anchor_count,
                lo.listing_open, lo.d1_close, lo.gap_pct,
                ld.fundamental_verdict, ld.listing_action,
-               lv.engine_version, lv.computed_at,
+               lv.engine_version,
+               COALESCE(lv.computed_at, NOW()) AS computed_at,
                COALESCE(ii.updated_at, lv.computed_at, NOW()) AS updated_at
         FROM ids
         LEFT JOIN ipo_issue ii         ON ii.ipo_id = ids.id
@@ -401,7 +428,9 @@ def target_fundamentals(neon, sink: str, dry_run: bool, tstate: dict) -> dict:
     copied = 0
     started = time.time()
     with neon.cursor() as cur:
-        for page in _keyset_scan(cur, query, "ipo_id", _BATCH, tstate.get("cursor")):
+        # Keyset filter uses the outer `id` column (the CTE's inner SELECT is
+        # `SELECT id FROM ipo`); the returned rows expose it as `ipo_id`.
+        for page in _keyset_scan(cur, query, "id", _BATCH, tstate.get("cursor")):
             vals = []
             for row in page:
                 # Guardrail: if any of band_lo > band_hi > issue_price rules break,
@@ -547,14 +576,38 @@ def target_market_observations(neon, sink: str, dry_run: bool, tstate: dict) -> 
             vals = []
             for r in rows:
                 d = dict(zip(cols, r))
-                obs_type = d["obs_type"]
-                interval = "preopen" if obs_type == "preopen" else "tick"
-                # Normalise close_d1 to a distinct observation_type; interval maps to 'tick'
-                # (single instant) unless we upgrade to daily.
-                if obs_type == "close_d1":
-                    interval = "1d"
+                raw_obs = d["obs_type"]
+                # Real Neon obs_type inventory: preopen, level, candle_1m,
+                # candle_5m, nifty_1m/5m, vix_1m/5m. Map into the 5-table
+                # (interval, observation_type) whitelist. Rows that cannot
+                # be attributed to a specific IPO are recorded as anomalies.
+                interval: str
+                observation_type: str
+                if raw_obs == "preopen":
+                    interval, observation_type = "preopen", "preopen"
+                elif raw_obs == "close_d1":
+                    interval, observation_type = "1d", "close_d1"
+                elif raw_obs == "level":
+                    interval, observation_type = "tick", "level"
+                elif raw_obs == "candle_5m":
+                    interval, observation_type = "5m", "candle"
+                elif raw_obs == "candle_1m":
+                    interval, observation_type = "1m", "candle"
+                elif raw_obs in ("nifty_5m", "nifty_1m", "vix_5m", "vix_1m"):
+                    # Market-context, not per-IPO price. Skipped and recorded.
+                    _record_anomaly("market_observations", {"ipo_id": d["ipo_id"],
+                                                              "obs_type": raw_obs,
+                                                              "observed_at": str(d["observed_at"])},
+                                    "market-context obs_type (nifty/vix) skipped \u2014 not per-IPO price")
+                    continue
+                else:
+                    _record_anomaly("market_observations", {"ipo_id": d["ipo_id"],
+                                                              "obs_type": raw_obs,
+                                                              "observed_at": str(d["observed_at"])},
+                                    f"unrecognised listing_observations.obs_type: {raw_obs!r}")
+                    continue
                 vals.append([
-                    d["ipo_id"], d["observed_at"], interval, obs_type,
+                    d["ipo_id"], d["observed_at"], interval, observation_type,
                     None, None, None, None, None,
                     d["ltp"], d["buy_qty"], d["sell_qty"], None, d["qty"], None,
                     "nse", d["payload"],
@@ -591,19 +644,21 @@ def target_research_findings(neon, sink: str, dry_run: bool, tstate: dict) -> di
     })
     with neon.cursor() as cur:
         cur.execute(
-            "SELECT (SELECT count(*) FROM rhp_findings) + "
-            "(SELECT count(*) FROM insights) + "
-            "(SELECT count(*) FROM ipo_rhp_intel) + "
-            "(SELECT count(*) FROM ipo_research_notes)"
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' "
+            "AND tablename IN ('rhp_findings','insights','ipo_rhp_intel','ipo_research_notes')"
         )
-        total_neon = cur.fetchone()[0]
+        present = {r[0] for r in cur.fetchall()}
+        total_neon = 0
+        for t in present:
+            cur.execute(f"SELECT count(*) FROM {t}")
+            total_neon += cur.fetchone()[0]
     if dry_run:
         return {"target": "research_findings", "neon_rows": total_neon, "copied": 0, "dry_run": True}
 
     copied = 0; started = time.time()
 
     # rhp_findings → finding_type='rhp'
-    if not passes["rhp_findings"]["done"]:
+    if "rhp_findings" in present and not passes["rhp_findings"]["done"]:
         q = ("SELECT id, ipo_id, doc_id, model, prompt_version, findings::text, red_flag_count, "
               "confidence, cost_usd, analyzed_at "
               "FROM rhp_findings WHERE 1=1 {cursor} ORDER BY id LIMIT {limit}")
@@ -618,23 +673,39 @@ def target_research_findings(neon, sink: str, dry_run: bool, tstate: dict) -> di
             vals = []
             for r in rows:
                 d = dict(zip(cols, r))
+                # `red_flag_count` is a Neon integer that ranges arbitrarily;
+                # `research_findings.severity` is CHECK'd to [0, 5]. Cap severity
+                # at 5 (clamp; original count preserved in the JSON body) and
+                # append `red_flag_count_raw` inside the finding body so no
+                # information is lost.
+                raw = d["findings"] or "{}"
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = {"raw_text": raw}
+                if isinstance(payload, dict):
+                    payload["red_flag_count_raw"] = d.get("red_flag_count")
+                enriched = json.dumps(payload, default=str)
+                rfc = d.get("red_flag_count")
+                severity = None if rfc is None else max(0, min(int(rfc), 5))
                 vals.append([
                     d["ipo_id"], "rhp", "sebi_rhp", d["doc_id"],
-                    d["findings"], None, None,
-                    d["red_flag_count"], d["confidence"], None,
+                    enriched, None, None,
+                    severity, d["confidence"], None,
                     None, None,
                     d["model"], None, d["prompt_version"],
                     d["cost_usd"], 1, d["analyzed_at"],
                 ])
             copied += _insert_rows("research_findings", _RF_COLS, vals, [], sink)
-            passes["rhp_findings"]["cursor"] = rows[-1][cols.index("id")]
+            cursor = rows[-1][cols.index("id")]
+            passes["rhp_findings"]["cursor"] = cursor
             _save_state()
         passes["rhp_findings"]["done"] = True; _save_state()
 
     # insights → finding_type='insight'
-    if not passes["insights"]["done"]:
+    if "insights" in present and not passes["insights"]["done"]:
         q = ("SELECT id, ipo_id, excerpt, page_number, doc_id, category, direction, "
-              "source_type, is_current "
+              "source_type, is_current, created_at "
               "FROM insights WHERE 1=1 {cursor} ORDER BY id LIMIT {limit}")
         cursor = passes["insights"]["cursor"]
         while True:
@@ -655,15 +726,16 @@ def target_research_findings(neon, sink: str, dry_run: bool, tstate: dict) -> di
                     None, None, None,
                     d["category"], d["direction"],
                     None, None, None,
-                    None, d["is_current"], None,
+                    None, d["is_current"], d.get("created_at"),
                 ])
             copied += _insert_rows("research_findings", _RF_COLS, vals, [], sink)
-            passes["insights"]["cursor"] = rows[-1][cols.index("id")]
+            cursor = rows[-1][cols.index("id")]
+            passes["insights"]["cursor"] = cursor
             _save_state()
         passes["insights"]["done"] = True; _save_state()
 
     # ipo_rhp_intel → finding_type='rhp_summary'. Requires name resolution.
-    if not passes["ipo_rhp_intel"]["done"]:
+    if "ipo_rhp_intel" in present and not passes["ipo_rhp_intel"]["done"]:
         q = ("SELECT company_name, verdict, one_line, quality_gate, margin_of_safety, "
               "full_json::text, confidence, rhp_url, pdf_sha256 "
               "FROM ipo_rhp_intel WHERE 1=1 {cursor} ORDER BY company_name LIMIT {limit}")
@@ -701,12 +773,13 @@ def target_research_findings(neon, sink: str, dry_run: bool, tstate: dict) -> di
                     1, None,
                 ])
             copied += _insert_rows("research_findings", _RF_COLS, vals, [], sink)
-            passes["ipo_rhp_intel"]["cursor"] = rows[-1][cols.index("company_name")]
+            cursor = rows[-1][cols.index("company_name")]
+            passes["ipo_rhp_intel"]["cursor"] = cursor
             _save_state()
         passes["ipo_rhp_intel"]["done"] = True; _save_state()
 
     # ipo_research_notes → finding_type='sbi_note' | 'broker_note'
-    if not passes["ipo_research_notes"]["done"]:
+    if "ipo_research_notes" in present and not passes["ipo_research_notes"]["done"]:
         q = ("SELECT source, company, nse_symbol, rating, full_json::text, one_line, peer_name, "
               "pdf_path, peer_ps, note_ps, parsed_at, price_low, price_high, fresh_cr, ofs_cr, "
               "issue_size_cr, qib_pct, nii_pct, retail_pct, brlms, registrar, loss_making "
@@ -758,10 +831,11 @@ def target_research_findings(neon, sink: str, dry_run: bool, tstate: dict) -> di
                 ])
             copied += _insert_rows("research_findings", _RF_COLS, vals, [], sink)
             last = rows[-1]
-            passes["ipo_research_notes"]["cursor"] = [
+            cursor = [
                 last[cols.index("source")], last[cols.index("company")],
                 last[cols.index("nse_symbol")] or "",
             ]
+            passes["ipo_research_notes"]["cursor"] = cursor
             _save_state()
         passes["ipo_research_notes"]["done"] = True; _save_state()
 
@@ -842,6 +916,32 @@ def _pg_count(cur, sql: str, args: tuple = ()) -> int:
     return int(r[0]) if r and r[0] is not None else 0
 
 
+def _pg_table_exists(cur, table: str) -> bool:
+    cur.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename=%s", (table,))
+    return cur.fetchone() is not None
+
+
+def _pg_col_exists(cur, table: str, column: str) -> bool:
+    cur.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=%s AND column_name=%s",
+        (table, column),
+    )
+    return cur.fetchone() is not None
+
+
+def _pg_count_if(cur, table: str, where: str = "", args: tuple = ()) -> int:
+    if not _pg_table_exists(cur, table): return 0
+    sql = f"SELECT count(*) FROM {table}" + (f" WHERE {where}" if where else "")
+    return _pg_count(cur, sql, args)
+
+
+def _pg_distinct_if(cur, table: str, col: str = "ipo_id") -> int:
+    if not _pg_table_exists(cur, table): return 0
+    if not _pg_col_exists(cur, table, col): return 0
+    return _pg_count(cur, f"SELECT count(DISTINCT {col}) FROM {table}")
+
+
 def _pg_minmax(cur, sql: str, args: tuple = ()) -> tuple:
     cur.execute(sql, args); r = cur.fetchone() or (None, None)
     return (r[0], r[1])
@@ -872,30 +972,26 @@ def _size_ipo(cur) -> dict:
 
 def _size_fundamentals(cur) -> dict:
     total_ipo = _pg_count(cur, "SELECT count(*) FROM ipo")
-    ipo_issue_cov = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM ipo_issue")
-    fin_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM financial_statements")
-    sub_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM subscription_snapshots")
-    val_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM valuation")
-    dec_cov       = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM decisions")
-    outc_cov      = _pg_count(cur, "SELECT count(DISTINCT ipo_id) FROM listing_outcomes")
-    fin_history_rows = _pg_count(cur, "SELECT count(*) FROM financial_statements")
     return {
         "target": "fundamentals",
         "ipo_total": total_ipo,
-        "ipo_issue_coverage":        ipo_issue_cov,
-        "financials_ipo_coverage":   fin_cov,
-        "financials_history_rows":   fin_history_rows,
-        "subscription_ipo_coverage": sub_cov,
-        "valuation_ipo_coverage":    val_cov,
-        "decisions_ipo_coverage":    dec_cov,
-        "listing_outcomes_ipo_coverage": outc_cov,
-        "avg_bytes_per_row_ipo_issue": _avg_row_size(cur, "ipo_issue"),
-        "avg_bytes_per_row_valuation": _avg_row_size(cur, "valuation"),
+        "ipo_issue_coverage":            _pg_distinct_if(cur, "ipo_issue"),
+        "financials_ipo_coverage":       _pg_distinct_if(cur, "financial_statements"),
+        "financials_history_rows":       _pg_count_if(cur, "financial_statements"),
+        "subscription_ipo_coverage":     _pg_distinct_if(cur, "subscription_snapshots"),
+        "valuation_ipo_coverage":        _pg_distinct_if(cur, "valuation"),
+        "decisions_ipo_coverage":        _pg_distinct_if(cur, "decisions"),
+        "listing_outcomes_ipo_coverage": _pg_distinct_if(cur, "listing_outcomes"),
+        "avg_bytes_per_row_ipo_issue":   _avg_row_size(cur, "ipo_issue") if _pg_table_exists(cur, "ipo_issue") else 0,
+        "avg_bytes_per_row_valuation":   _avg_row_size(cur, "valuation") if _pg_table_exists(cur, "valuation") else 0,
     }
 
 
 def _size_market(cur) -> dict:
     def _bucket(table: str, time_col: str) -> dict:
+        if not _pg_table_exists(cur, table):
+            return {"row_count": 0, "unique_ipos": 0, "earliest": None, "latest": None,
+                    "avg_bytes_per_row": 0, "note": f"table '{table}' does not exist in Neon"}
         total = _pg_count(cur, f"SELECT count(*) FROM {table}")
         uniq  = _pg_count(cur, f"SELECT count(DISTINCT ipo_id) FROM {table}")
         mn, mx = _pg_minmax(cur, f"SELECT min({time_col}), max({time_col}) FROM {table}")
@@ -905,8 +1001,10 @@ def _size_market(cur) -> dict:
                 "avg_bytes_per_row": _avg_row_size(cur, table)}
     daily = _bucket("market_candles", "d")
     q15m  = _bucket("market_candles_15m", "ts")
-    # listing_observations covers preopen / open / tick / close_d1 rows.
     def _lo_bucket(obs: str) -> dict:
+        if not _pg_table_exists(cur, "listing_observations"):
+            return {"row_count": 0, "unique_ipos": 0, "earliest": None, "latest": None,
+                    "note": "table 'listing_observations' does not exist in Neon"}
         total = _pg_count(cur,
             "SELECT count(*) FROM listing_observations WHERE obs_type=%s", (obs,))
         uniq  = _pg_count(cur,
@@ -915,8 +1013,7 @@ def _size_market(cur) -> dict:
             "SELECT min(observed_at), max(observed_at) FROM listing_observations WHERE obs_type=%s", (obs,))
         return {"row_count": total, "unique_ipos": uniq,
                 "earliest": str(mn) if mn else None, "latest": str(mx) if mx else None}
-    tick_total = _pg_count(cur, "SELECT count(*) FROM ipo_tick_feed") \
-        if _pg_count(cur, "SELECT count(*) FROM pg_class WHERE relname='ipo_tick_feed'") else 0
+    tick_total = _pg_count_if(cur, "ipo_tick_feed")
     return {"target": "market_observations",
             "daily":            daily,           # \u2192 D1 interval=1d
             "fifteen_minute":   q15m,            # \u2192 D1 interval=15m
@@ -925,30 +1022,31 @@ def _size_market(cur) -> dict:
             "listing_tick":    _lo_bucket("tick"),
             "listing_close_d1":_lo_bucket("close_d1"),
             "ipo_tick_feed_rows_if_retained": tick_total,
-            # NOTE: 5-minute data is NOT invented; the D1 schema whitelists
-            # '5m' but no Neon source exists yet, so a genuine 5-minute
-            # ingest is required before any 5m rows appear.
             "note": "5-minute interval is reserved in the D1 schema; no rows are counted here because Neon has no 5m source."}
 
 
 def _size_research(cur) -> dict:
-    rhp     = _pg_count(cur, "SELECT count(*) FROM rhp_findings")
-    insight = _pg_count(cur, "SELECT count(*) FROM insights")
-    rhp_int = _pg_count(cur, "SELECT count(*) FROM ipo_rhp_intel")
-    notes_s = _pg_count(cur, "SELECT count(*) FROM ipo_research_notes WHERE source ILIKE 'sbi%'")
-    notes_b = _pg_count(cur, "SELECT count(*) FROM ipo_research_notes WHERE source NOT ILIKE 'sbi%' OR source IS NULL")
-    anchor  = _pg_count(cur, "SELECT count(*) FROM anchor_investors") \
-        if _pg_count(cur, "SELECT count(*) FROM pg_class WHERE relname='anchor_investors'") else 0
+    rhp     = _pg_count_if(cur, "rhp_findings")
+    insight = _pg_count_if(cur, "insights")
+    rhp_int = _pg_count_if(cur, "ipo_rhp_intel")
+    notes_s = _pg_count_if(cur, "ipo_research_notes", "source ILIKE 'sbi%%'")
+    notes_b = _pg_count_if(cur, "ipo_research_notes", "source NOT ILIKE 'sbi%%' OR source IS NULL")
+    anchor  = _pg_count_if(cur, "anchor_investors")
+    notes = {}
+    for candidate in ("ipo_rhp_intel", "ipo_research_notes", "anchor_investors", "ipo_tick_feed"):
+        if not _pg_table_exists(cur, candidate):
+            notes[candidate] = "absent from Neon (retired or never created)"
     return {"target": "research_findings",
-            "rhp_findings":            rhp,      # \u2192 finding_type='rhp'
-            "ipo_rhp_intel_rows":      rhp_int,  # \u2192 finding_type='rhp_summary'
-            "sbi_notes":               notes_s,  # \u2192 finding_type='sbi_note'
-            "broker_notes":            notes_b,  # \u2192 finding_type='broker_note'
-            "insights":                insight,  # \u2192 finding_type='insight'
+            "rhp_findings":            rhp,
+            "ipo_rhp_intel_rows":      rhp_int,
+            "sbi_notes":               notes_s,
+            "broker_notes":            notes_b,
+            "insights":                insight,
             "anchor_rows_if_retained": anchor,
             "total_projected_rows":    rhp + rhp_int + notes_s + notes_b + insight + anchor,
-            "avg_bytes_per_row_rhp":   _avg_row_size(cur, "rhp_findings"),
-            "avg_bytes_per_row_insights": _avg_row_size(cur, "insights")}
+            "avg_bytes_per_row_rhp":   _avg_row_size(cur, "rhp_findings") if _pg_table_exists(cur, "rhp_findings") else 0,
+            "avg_bytes_per_row_insights": _avg_row_size(cur, "insights") if _pg_table_exists(cur, "insights") else 0,
+            "absent_source_tables": notes}
 
 
 def _size_source_facts(cur) -> dict:
@@ -968,6 +1066,93 @@ def _size_source_facts(cur) -> dict:
             "estimated_duplicate_collapse_ratio":
                 (round(1.0 - retained / total, 4) if total else 0.0),
             "avg_bytes_per_row": _avg_row_size(cur, "source_facts")}
+
+
+def _detect_anomalies(cur) -> list[dict]:
+    """Surface (do NOT silently fix) suspicious source-data values that
+    should be repaired in Neon before Stage-B remote copy.
+    """
+    anomalies: list[dict] = []
+    if _pg_table_exists(cur, "ipo_issue"):
+        # band_lo > band_hi
+        cur.execute(
+            "SELECT ipo_id, band_lo, band_hi FROM ipo_issue "
+            "WHERE band_lo IS NOT NULL AND band_hi IS NOT NULL AND band_lo > band_hi "
+            "LIMIT 200"
+        )
+        for r in cur.fetchall():
+            anomalies.append({"target": "fundamentals", "table": "ipo_issue",
+                              "ipo_id": r[0], "reason": "band_lo > band_hi",
+                              "band_lo": str(r[1]), "band_hi": str(r[2])})
+        # issue_price outside band
+        cur.execute(
+            "SELECT ipo_id, band_lo, band_hi, issue_price FROM ipo_issue "
+            "WHERE issue_price IS NOT NULL AND ("
+            "  (band_lo IS NOT NULL AND issue_price < band_lo) OR "
+            "  (band_hi IS NOT NULL AND issue_price > band_hi)"
+            ") LIMIT 200"
+        )
+        for r in cur.fetchall():
+            anomalies.append({"target": "fundamentals", "table": "ipo_issue",
+                              "ipo_id": r[0], "reason": "issue_price outside [band_lo, band_hi]",
+                              "band_lo": str(r[1]), "band_hi": str(r[2]),
+                              "issue_price": str(r[3])})
+        # fresh_cr + ofs_cr sum-mismatch vs issue_size_cr (a >5% delta is suspicious;
+        # Shreeji Shipping precedent).
+        if all(_pg_col_exists(cur, "ipo_issue", c) for c in ("fresh_cr", "ofs_cr", "issue_size_cr")):
+            cur.execute(
+                "SELECT ipo_id, fresh_cr, ofs_cr, issue_size_cr, "
+                "       COALESCE(fresh_cr,0) + COALESCE(ofs_cr,0) AS sum_frac "
+                "FROM ipo_issue "
+                "WHERE issue_size_cr IS NOT NULL AND ("
+                "  ABS(COALESCE(fresh_cr,0) + COALESCE(ofs_cr,0) - issue_size_cr) > "
+                "  0.05 * issue_size_cr"
+                ") LIMIT 200"
+            )
+            for r in cur.fetchall():
+                anomalies.append({"target": "fundamentals", "table": "ipo_issue",
+                                  "ipo_id": r[0],
+                                  "reason": "fresh_cr + ofs_cr disagrees with issue_size_cr by >5%",
+                                  "fresh_cr": str(r[1]), "ofs_cr": str(r[2]),
+                                  "issue_size_cr": str(r[3])})
+        # Percentage columns above 100 (ofs_pct precedent). Only check columns
+        # that exist \u2014 keep the query defensive.
+        for pct_col in ("qib_pct", "nii_pct", "retail_pct", "ofs_pct",
+                         "promoter_holding_pre", "promoter_holding_post",
+                         "allocation_qib_pct", "allocation_nii_pct", "allocation_retail_pct"):
+            if _pg_col_exists(cur, "ipo_issue", pct_col):
+                cur.execute(
+                    f"SELECT ipo_id, {pct_col} FROM ipo_issue "
+                    f"WHERE {pct_col} IS NOT NULL AND {pct_col} > 100 LIMIT 50"
+                )
+                for r in cur.fetchall():
+                    anomalies.append({"target": "fundamentals", "table": "ipo_issue",
+                                      "ipo_id": r[0], "column": pct_col,
+                                      "reason": f"{pct_col} > 100 (percentage out of range)",
+                                      "value": str(r[1])})
+    if _pg_table_exists(cur, "subscription_snapshots"):
+        # subscription multiples that look like percentages (< 0.01x for closed IPOs, or
+        # > 5000x - both suspicious). Just surface, don't touch.
+        cur.execute(
+            "SELECT ipo_id, total_x FROM subscription_snapshots "
+            "WHERE total_x IS NOT NULL AND (total_x > 5000 OR (total_x > 0 AND total_x < 0.01)) "
+            "LIMIT 50"
+        )
+        for r in cur.fetchall():
+            anomalies.append({"target": "fundamentals", "table": "subscription_snapshots",
+                              "ipo_id": r[0], "reason": "total_x outside plausible [0.01, 5000] range",
+                              "total_x": str(r[1])})
+    if _pg_table_exists(cur, "listing_observations"):
+        cur.execute(
+            "SELECT obs_type, count(*) FROM listing_observations "
+            "WHERE obs_type NOT IN ('preopen','open','tick','close_d1') "
+            "GROUP BY obs_type LIMIT 20"
+        )
+        for r in cur.fetchall():
+            anomalies.append({"target": "market_observations", "table": "listing_observations",
+                              "reason": f"unrecognised obs_type '{r[0]}' ({r[1]} rows) - "
+                                        "will not map into whitelisted D1 observation_type"})
+    return anomalies
 
 
 def _size_storage_estimate(sizings: list[dict]) -> dict:
@@ -1006,13 +1191,17 @@ def do_sizing(neon) -> dict:
     with neon.cursor() as cur:
         sizings = [_size_ipo(cur), _size_fundamentals(cur), _size_market(cur),
                    _size_research(cur), _size_source_facts(cur)]
+        anomalies = _detect_anomalies(cur)
     storage = _size_storage_estimate(sizings)
+    excluded = list(EXCLUDED_NEON_TABLES)
     report = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-              "sizings": sizings, "storage_estimate": storage}
+              "sizings": sizings, "storage_estimate": storage,
+              "anomalies": anomalies, "excluded_by_design": excluded}
     _SIZING_JSON.write_text(json.dumps(report, indent=2, default=str))
     with _SIZING_MD.open("w") as h:
         h.write(f"# Neon \u2192 D1 sizing report (read-only)\n\n")
-        h.write(f"Generated at `{report['generated_at']}`. No writes performed.\n\n")
+        h.write(f"Generated at `{report['generated_at']}`. No writes performed. "
+                f"Neon session: `SET default_transaction_read_only = on`.\n\n")
         h.write("## Per-target sizing\n\n")
         for s in sizings:
             h.write(f"### {s['target']}\n\n```json\n{json.dumps(s, indent=2, default=str)}\n```\n\n")
@@ -1023,6 +1212,25 @@ def do_sizing(neon) -> dict:
         h.write("| Component | Rows | Avg bytes/row | Bytes |\n|---|---:|---:|---:|\n")
         for k, v in sorted(storage["breakdown"].items(), key=lambda kv: -kv[1]["bytes"]):
             h.write(f"| {k} | {v['rows']:,} | {v['avg_bytes_per_row']:,} | {v['bytes']:,} |\n")
+        h.write("\n## Anomalies detected (surfaced, NOT auto-fixed)\n\n")
+        if not anomalies:
+            h.write("_No anomalies found under current checks._\n\n")
+        else:
+            h.write(f"**{len(anomalies)}** anomaly rows written to `_migrate/sizing_anomalies.jsonl` "
+                    f"(preview below). These must be repaired in Neon before Stage-B remote copy; "
+                    f"the migration script will otherwise skip them and record them in "
+                    f"`_migrate/anomalies.jsonl`.\n\n")
+            for a in anomalies[:30]:
+                h.write(f"* `{a['target']}::{a.get('table','?')}` \u2014 {a['reason']} "
+                        f"\u2014 `{json.dumps({k:v for k,v in a.items() if k not in ('target','reason')}, default=str)}`\n")
+            if len(anomalies) > 30:
+                h.write(f"\n_... {len(anomalies) - 30} more anomaly rows in the JSONL file._\n")
+        h.write("\n## Excluded Neon tables (kept OUT of D1 by design)\n\n")
+        h.write(", ".join(f"`{t}`" for t in excluded) + "\n")
+    # Persist anomalies to their own JSONL so the operator can grep/pipe.
+    (_STATE_DIR / "sizing_anomalies.jsonl").write_text(
+        "\n".join(json.dumps(a, default=str) for a in anomalies)
+    )
     print(f"sizing report: {_SIZING_MD}")
     return report
 

@@ -25,11 +25,14 @@ the same UAT fixture (`uat/fixtures/snapshots.json`), and the same
 | Head | Commit | UAT run | Conclusion | Failing assertion |
 |---|---|---|---|---|
 | `main`   | `2d3fcad` | 32540943053 | ❌ failure | `expect(page.getByText('UAT Listing Ltd').first()).toBeVisible()` — `Error: fixture-Live must serve the IST-today listing` |
-| PR #342 | `390b584` | 32614522606 | ❌ failure | **identical** locator, **identical** error string |
+| PR #342 | `05d67ac` (pre-rehearsal) | 32614522606 | ❌ failure | **identical** locator, **identical** error string |
 
 Both runs enter the same failing branch inside `journeys.spec.ts:69`
 (the block that immediately follows the `book_live` → `snapshots-Live`
 API assertions, all of which pass on both heads).
+
+
+**Re-verification on 2026-08-23** against current `main` head confirmed identical failure text with no PR #342 code applied — this is a `main`-side defect, not a PR #342 regression.
 
 ## Classification
 
