@@ -9,12 +9,11 @@ Lifecycle: **discovery** → **document** → **issue** → **subscription** →
 | Table | Why / principal columns | Primary producer | Consumer | DUE | Recovery source | Tier |
 |---|---|---|---|---|---|---|
 | `ipo` | permanent identity: ISIN, normalized name, symbols, Matrix ID | NSE discovery; migration identity mapper | every downstream relation | discovery | NSE + raw Matrix; manual collision review | B |
-| `ipo_issue` | one current authoritative issue: schedule, ₹/share, shares, ₹ crore, registrar/BRLM | NSE issue lane; validated bootstrap | research/calculation/KV builder | issue | NSE/RHP/raw Matrix | B |
+| `ipo_issue` | one current authoritative issue: schedule, generated lock30/lock90 dates, ₹/share, shares, ₹ crore, registrar/BRLM | NSE issue lane; validated bootstrap | research/calculation/KV builder | issue | NSE/RHP/raw Matrix | B |
 | `company_profile` | long description and structured company profile | RHP extractor | company-quality/KV builder | document | RHP/DRHP | B |
 | `ownership` | one row/category for pre/post holdings and dilution | RHP extractor | company-quality/valuation | document | RHP/DRHP | B |
 | `objects_of_issue` | one source row/use of proceeds | RHP extractor | company-quality/KV builder | document | RHP/DRHP | B |
 | `financial_statements` | period+basis accounts in ₹ crore | RHP extractor; validated Matrix bootstrap | KPI/valuation/quality | document | RHP/DRHP/raw Matrix | B |
-| `fundamental_metrics` | sourced or version-calculated KPI rows with explicit unit | RHP extractor/calculation engine | valuation/quality/KV | calculation | facts recomputed or PDF | C if calculated; B if sourced |
 | `reservations` | row/category allocation structure | NSE issue lane | subscription context/KV | issue opens | NSE raw response | B |
 | `subscription_snapshots` | category time-series; shares, x, final flag, stable fingerprint | NSE subscription lane | demand/trade setup | subscription | NSE/raw observations | B |
 | `anchor_summary` | issue-level anchor totals | future official anchor parser | quality/KV | anchor report | report PDF | B |
@@ -31,6 +30,12 @@ Lifecycle: **discovery** → **document** → **issue** → **subscription** →
 | `raw_objects` | immutable JSON by SHA; triggers reject update/delete | archive inventory/ingest | recovery/migration audit | capture | owner archive/backups | **A** |
 | `migration_quarantine` | anomalies/unmapped/ambiguous records, never silent loss | migration mapper | reconciliation/owner review | migration | rerun after explicit resolution | A audit record |
 | `migration_checkpoints` | deterministic resume key and counts | migration mapper | migration operator | migration | rerun from prior stable key | C |
+
+`fundamental_metrics` was removed: sourced metrics have one provenance home in `source_facts`; AACapital-computed metrics have one versioned home in `valuation_runs`.
+
+## Lifecycle DUE contract
+
+`ANNOUNCED`: identity and initial issue record. `UPCOMING`: documents/profile/financial extraction. `OPEN`: live issue/reservation facts. `CLOSED`: final subscription. `ALLOTTED`: issue price/ISIN/allotment facts. `LISTED`: pre-open/listing observations and market bars. `WITHDRAWN`: no later facts become due. `ipo_lifecycle_due` derives these flags; 0 is `NOT_DUE`, not missing, failed, or numeric zero.
 
 ## Raw storage decision and sizing gate
 

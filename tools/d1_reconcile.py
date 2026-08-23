@@ -21,7 +21,7 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
       "quarantined_rows":out["migration_quarantine"]["destination_rows"],"duplicate_fingerprints":conn.execute("SELECT count(*) FROM (SELECT content_fingerprint FROM market_bars GROUP BY content_fingerprint HAVING count(*)>1)").fetchone()[0]}
     if source:
         comparisons={
-          "ipo":{"source":source.get("source_ipo",0),"destination":out["ipo"]["destination_rows"]},
+          "ipo":{"source":source.get("source_ipo",0),"destination_or_quarantine":out["ipo"]["destination_rows"]+source.get("quarantined_ipo_structural",0)},
           "ipo_issue":{"source":source.get("source_ipo_issue",0),"destination_or_quarantine":out["ipo_issue"]["destination_rows"]+source.get("quarantined_ipo_issue",0)},
           "financial_statements":{"source":source.get("source_financial_statements",0),"destination":out["financial_statements"]["destination_rows"]},
           "subscription_categories":{"source":source.get("mapped_subscription_snapshots",0),"destination":out["subscription_snapshots"]["destination_rows"]},
@@ -36,6 +36,24 @@ def reconcile(conn: sqlite3.Connection, source: dict|None=None) -> dict:
             actual=value.get("destination",value.get("destination_or_quarantine"))
             value["equal"]=(actual>=value["source"]) if key=="ipo" else (actual==value["source"])
         out["source_comparisons"]=comparisons;out["zero_silent_loss"]=all(x["equal"] for x in comparisons.values())
+        column_map={
+          "ipo.isin":("ipo","isin"),"ipo.name_display":("ipo","name"),
+          "ipo_issue.band_lo":("ipo_issue","band_lo_rs"),"ipo_issue.band_hi":("ipo_issue","band_hi_rs"),
+          "ipo_issue.issue_price":("ipo_issue","issue_price_rs"),"ipo_issue.face_value":("ipo_issue","face_value_rs"),
+          "financial_statements.revenue":("financial_statements","revenue_cr"),
+          "financial_statements.pat":("financial_statements","pat_cr"),
+          "market_daily.o":("market_bars","open_rs","interval='1d'"),"market_daily.c":("market_bars","close_rs","interval='1d'"),
+          "market_15m.o":("market_bars","open_rs","interval='15m'"),"market_15m.c":("market_bars","close_rs","interval='15m'"),
+          "listing_observations.ltp":("listing_observations","price_rs"),
+        };nonnull={}
+        for source_key,target in column_map.items():
+            report_key=f"source_nonnull_{source_key}"
+            if report_key not in source:continue
+            table,column,*where=target;clause=f" AND {where[0]}" if where else ""
+            destination=conn.execute(f"SELECT count(*) FROM {table} WHERE {column} IS NOT NULL{clause}").fetchone()[0]
+            expected=source[report_key];nonnull[source_key]={"source_non_null":expected,"destination_non_null":destination,"equal":expected==destination}
+        out["per_column_non_null"]=nonnull
+        out["zero_silent_loss"] = out["zero_silent_loss"] and all(x["equal"] for x in nonnull.values())
     return out
 
 def export_local(path: Path):

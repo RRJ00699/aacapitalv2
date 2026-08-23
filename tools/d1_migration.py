@@ -21,7 +21,7 @@ DDL = ROOT / "d1" / "migrations" / "0001_functional_model.sql"
 DECIMAL = decimal.Decimal
 
 NEON_QUERIES = {
-    "ipo": """SELECT id,isin,name_display,name_norm,symbol,ipomatrix_id,security_kind,
+    "ipo": """SELECT id,isin,name_display,name_norm,symbol,ipomatrix_id,security_kind,status,
                created_at FROM ipo ORDER BY id""",
     "ipo_issue": """SELECT ii.ipo_id,ii.open_date,ii.close_date,ii.allotment_date,i.listing_date,
                ii.band_lo,ii.band_hi,ii.issue_price,ii.face_value,ii.lot_size,ii.issue_size_cr,ii.fresh_cr,
@@ -62,7 +62,8 @@ def validate_issue(row: dict[str, Any]) -> tuple[str, ...]:
         "face_value_rs","issue_size_cr","fresh_cr","ofs_cr")); out=[]
     if lo is not None and hi is not None and lo>hi: out.append("BAND_REVERSED")
     if lo is not None and price is not None and price<lo or hi is not None and price is not None and price>hi: out.append("PRICE_OUTSIDE_BAND")
-    if face and lo and lo < face*DECIMAL("0.5"): out.append("BAND_FACE_MAGNITUDE")
+    if row.get("is_book_built",True) and face is not None and lo is not None and lo<face:
+        out.append("BAND_BELOW_FACE_VALUE")
     if size and fresh is not None and ofs is not None and abs(fresh+ofs-size)>max(DECIMAL(1),size*DECIMAL("0.02")): out.append("ISSUE_COMPONENT_MISMATCH")
     for key in ("issue_size_cr","fresh_cr","ofs_cr","market_cap_cr"):
         value=d(key)
@@ -110,8 +111,10 @@ def survey(rows: list[dict[str, Any]], sample_limit=3) -> dict[str, Any]:
             sample=json.dumps(value,ensure_ascii=False,default=str)
             if sample not in samples[path] and len(samples[path])<sample_limit: samples[path].append(sample)
     return {"files_surveyed":sum(bool(r.get("valid")) for r in rows),"paths":[
-        {"json_path":p,"occurrence_count":counts[p],"inferred_types":dict(sorted(types[p].items())),
-         "sample_values":samples[p]} for p in sorted(counts)]}
+        {"json_path":p,"occurrence_count":counts[p],
+         "primitive_types":dict(sorted(types[p].items())),
+         "null_frequency":(types[p].get("null",0)/sum(types[p].values())),
+         "representative_values":samples[p]} for p in sorted(counts)]}
 
 def json_path(payload: Any, path: str|None) -> Any:
     if not path:return None
@@ -163,10 +166,10 @@ def map_ipomatrix_identity(*, isin: str|None, name: str, matrix_id: int|None,
 
 def transform_neon(dataset: str, row: dict[str,Any]) -> list[str]:
     d=decimal_text
-    if dataset=="ipo": return [insert_sql("ipo",("id","isin","name","name_norm","nse_symbol","ipo_matrix_id","security_kind","discovered_at"),
-        (row["id"],row["isin"],row["name_display"],row["name_norm"] or name_norm(row["name_display"]),row["symbol"],row["ipomatrix_id"],row["security_kind"],row["created_at"]))]
+    if dataset=="ipo": return [insert_sql("ipo",("id","isin","name","name_norm","nse_symbol","ipo_matrix_id","security_kind","status","discovered_at"),
+        (row["id"],row["isin"],row["name_display"],row["name_norm"] or name_norm(row["name_display"]),row["symbol"],row["ipomatrix_id"],str(row.get("security_kind") or "EQUITY").strip().upper(),str(row.get("status") or "ANNOUNCED").strip().upper(),row["created_at"]))]
     if dataset=="ipo_issue":
-        mapped={"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"]}
+        mapped={"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True}
         if validate_issue(mapped): return []
         return [insert_sql("ipo_issue",("ipo_id","open_date","close_date","allotment_date","listing_date","band_lo_rs","band_hi_rs","issue_price_rs","face_value_rs","lot_size_shares","issue_size_cr","fresh_cr","ofs_cr","registrar_name","source_name"),
           (row["ipo_id"],row["open_date"],row["close_date"],row["allotment_date"],row["listing_date"],d(row["band_lo"]),d(row["band_hi"]),d(row["issue_price"]),d(row["face_value"]),row["lot_size"],d(row["issue_size_cr"]),d(row["fresh_cr"]),d(row["ofs_cr"]),row["registrar"],"neon"))]
@@ -215,6 +218,13 @@ def apply_local(sql_lines: list[str]):
     try:wrangler(["execute","DB","--file",path])
     finally:Path(path).unlink(missing_ok=True)
 
+def checkpoint_sql(dataset: str, source_rows: int, written_rows: int) -> str:
+    """Commit a stable dataset boundary; idempotent reruns resume from this boundary."""
+    return ("INSERT INTO migration_checkpoints(dataset,last_key,source_rows,written_rows,updated_at) "
+      f"VALUES({sql_value(dataset)},'COMPLETE',{source_rows},{written_rows},CURRENT_TIMESTAMP) "
+      "ON CONFLICT(dataset) DO UPDATE SET last_key='COMPLETE',source_rows=excluded.source_rows,"
+      "written_rows=excluded.written_rows,updated_at=CURRENT_TIMESTAMP;")
+
 def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument("--ipomatrix",action="append",type=Path,default=[]); ap.add_argument("--survey",type=Path)
     ap.add_argument("--ipomatrix-map",type=Path); ap.add_argument("--apply-local",action="store_true"); ap.add_argument("--batch-size",type=int,default=1000)
@@ -227,15 +237,32 @@ def main() -> int:
     if not url:ap.error("--apply-local requires NEON_READONLY_DATABASE_URL (DATABASE_URL is never accepted)")
     if rows and not args.ipomatrix_map:ap.error("IPO Matrix normalization requires --ipomatrix-map from the reviewed survey")
     wrangler(["migrations","apply","DB"]); statements=[]; counts=Counter(); quarantined=0
-    by_isin={};by_name={};by_matrix={}
+    by_isin={};by_name={};by_matrix={};by_symbol={}
     for dataset,row in extract_neon(url,args.batch_size):
+        structural_reason=None
         if dataset=="ipo":
             if row.get("isin"):by_isin[str(row["isin"]).strip().upper()]=row["id"]
             by_name[row.get("name_norm") or name_norm(row.get("name_display"))]=row["id"]
             if row.get("ipomatrix_id") is not None:by_matrix[row["ipomatrix_id"]]=row["id"]
-        counts[f"source_{dataset}"]+=1; mapped=transform_neon(dataset,row)
+            kind=str(row.get("security_kind") or "EQUITY").strip().upper();status=str(row.get("status") or "ANNOUNCED").strip().upper()
+            if kind not in {"EQUITY","REIT","INVIT","FPO"}:structural_reason="INVALID_SECURITY_KIND"
+            elif status not in {"ANNOUNCED","UPCOMING","OPEN","CLOSED","ALLOTTED","LISTED","WITHDRAWN"}:structural_reason="INVALID_LIFECYCLE_STATUS"
+            if structural_reason:
+                fp=fingerprint("neon","ipo",row["id"],structural_reason)
+                statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["id"],"ipo",structural_reason,{"security_kind":kind,"status":status},fp)))
+                counts["quarantined_ipo_structural"]+=1;quarantined+=1
+            symbol=str(row.get("symbol") or "").strip().upper()
+            if symbol and symbol in by_symbol and by_symbol[symbol]!=row["id"]:
+                fp=fingerprint("neon","ipo",row["id"],"SYMBOL_COLLISION",symbol)
+                statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["id"],"ipo","SYMBOL_COLLISION",{"symbol":symbol,"first_owner":by_symbol[symbol]},fp)))
+                counts["quarantined_ipo_symbol"]+=1;quarantined+=1;row["symbol"]=None
+            elif symbol:by_symbol[symbol]=row["id"]
+        counts[f"source_{dataset}"]+=1
+        for key,value in row.items():
+            if value is not None:counts[f"source_nonnull_{dataset}.{key}"]+=1
+        mapped=[] if structural_reason else transform_neon(dataset,row)
         if dataset=="ipo_issue" and not mapped:
-            anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"]})
+            anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True})
             fp=fingerprint("neon",dataset,row["ipo_id"],anomalies); statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["ipo_id"],dataset,"UNIT_ANOMALY",{"codes":anomalies},fp)));quarantined+=1;counts["quarantined_ipo_issue"]+=1
         statements.extend(mapped);counts[f"mapped_{dataset}"]+=len(mapped)
     mapping=json.loads(args.ipomatrix_map.read_text()) if args.ipomatrix_map else {}
@@ -251,6 +278,9 @@ def main() -> int:
                 if reason is None:counts["mapped_ipomatrix_identity"]+=1
         if reason:
             statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","raw_sha256","fingerprint"),("ipomatrix",item["path"],"raw_objects",reason,{"path":item["path"]},sha,fingerprint("ipomatrix",sha,reason))));quarantined+=1;counts["quarantined_ipomatrix"]+=1
+    for dataset in NEON_QUERIES:
+        statements.append(checkpoint_sql(dataset,counts[f"source_{dataset}"],counts[f"mapped_{dataset}"]))
+    statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
     apply_local(statements)
     report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),"status":"migrated_to_wrangler_local"};args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(report,sort_keys=True));return 0
 

@@ -1,5 +1,7 @@
 # D1 local migration and acceptance runbook
 
+Status: PROPOSED — PR #343 owner review
+
 ## Status and PR ownership
 
 PR **#343** is the replacement candidate for the D1 migration design. If #343 is accepted, PR **#342 must not be merged**. This branch performs no remote Cloudflare operation and has no remote mode.
@@ -16,7 +18,7 @@ python tools/d1_migration.py \
   --survey artifacts/ipomatrix-field-survey.json
 ```
 
-The survey emits only JSON path, occurrence count, inferred JSON type(s), and bounded sample values. It never infers units. Review the output, then create an owner-approved path file, for example:
+The survey emits only JSON path, occurrence count, primitive type frequencies, null frequency, and bounded representative values. It never infers units. Review the output, then create an owner-approved path file, for example:
 
 ```json
 {

@@ -8,7 +8,7 @@ Status: PROPOSED — PR #343 owner review
 |---|---|---:|---|---|---|---|
 | NSE | price band lower/upper | `95`, `100` | offer range | ₹/share | `band_lo_rs`, `band_hi_rs` ₹/share | non-negative; low ≤ high; compare face value |
 | NSE | final issue price | `100` | allotment price | ₹/share | `issue_price_rs` | within band when all present |
-| NSE/RHP | face value | `10` | nominal value | ₹/share | `face_value_rs` | >0; band below 0.5× face quarantined |
+| NSE/RHP | face value | `10` | nominal value | ₹/share | `face_value_rs` | >0; book-built equity band below face value quarantined |
 | NSE | lot size | `150` | minimum lot | shares | `lot_size_shares` | positive integer |
 | NSE/RHP | issue/fresh/OFS amount | `500.25` | issue components | ₹ crore | `*_cr` | ≥0; components reconcile within max(₹1cr, 2%) or quarantine |
 | IPO Matrix | `ttl_fresh_issue_amt_cr`, `ttl_ofs_amt_cr` | `11961618350.29` | issue component | UNKNOWN per record (key can hold ₹) | ₹ crore only after source-specific proof | magnitude/unit evidence required; Shreeji-like values quarantine |
@@ -29,4 +29,4 @@ Status: PROPOSED — PR #343 owner review
 
 ## Anomaly codes
 
-`BAND_REVERSED`, `PRICE_OUTSIDE_BAND`, `BAND_FACE_MAGNITUDE`, `ISSUE_COMPONENT_MISMATCH`, `NEGATIVE_MONEY`, `PERCENT_RANGE`, `OHLC_INVALID`, `UNIT_UNPROVEN`, `IDENTITY_COLLISION`, and `MALFORMED_SOURCE`. `tools/d1_migration.validate_issue` implements the issue gate. Tolerance exceptions require an evidence reference; they are never silent repairs.
+`BAND_REVERSED`, `PRICE_OUTSIDE_BAND`, `BAND_BELOW_FACE_VALUE`, `ISSUE_COMPONENT_MISMATCH`, `NEGATIVE_MONEY`, `PERCENT_RANGE`, `OHLC_INVALID`, `UNIT_UNPROVEN`, `IDENTITY_COLLISION`, `SYMBOL_COLLISION`, and `MALFORMED_SOURCE`. `tools/d1_migration.validate_issue` implements the issue gate. Tolerance exceptions require an evidence reference; they are never silent repairs.

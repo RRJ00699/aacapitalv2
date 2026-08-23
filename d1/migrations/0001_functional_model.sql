@@ -2,18 +2,29 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE ipo (
   id INTEGER PRIMARY KEY, isin TEXT UNIQUE, name TEXT NOT NULL, name_norm TEXT NOT NULL UNIQUE,
-  nse_symbol TEXT, bse_symbol TEXT, ipo_matrix_id INTEGER UNIQUE, security_kind TEXT,
+  -- Multiple NULL ISINs are intentional before allotment; SQLite UNIQUE permits them.
+  nse_symbol TEXT, bse_symbol TEXT, ipo_matrix_id INTEGER UNIQUE,
+  security_kind TEXT NOT NULL DEFAULT 'EQUITY' CHECK(security_kind IN ('EQUITY','REIT','INVIT','FPO')),
+  status TEXT NOT NULL DEFAULT 'ANNOUNCED'
+    CHECK(status IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED','ALLOTTED','LISTED','WITHDRAWN')),
   discovered_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CHECK (isin IS NULL OR length(isin)=12)
 );
 CREATE TABLE ipo_issue (
   ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), open_date TEXT, close_date TEXT, allotment_date TEXT,
-  listing_date TEXT, band_lo_rs TEXT, band_hi_rs TEXT, issue_price_rs TEXT, face_value_rs TEXT,
+  listing_date TEXT,
+  lock30_date TEXT GENERATED ALWAYS AS (CASE WHEN listing_date IS NULL THEN NULL ELSE date(listing_date,'+30 days') END) STORED,
+  lock90_date TEXT GENERATED ALWAYS AS (CASE WHEN listing_date IS NULL THEN NULL ELSE date(listing_date,'+90 days') END) STORED,
+  is_book_built INTEGER NOT NULL DEFAULT 1 CHECK(is_book_built IN (0,1)),
+  band_lo_rs TEXT, band_hi_rs TEXT, issue_price_rs TEXT, face_value_rs TEXT,
   lot_size_shares INTEGER, issue_size_cr TEXT, fresh_cr TEXT, ofs_cr TEXT, market_cap_cr TEXT,
   registrar_name TEXT, brlm_json TEXT, source_name TEXT, source_observed_at TEXT,
   CHECK (band_lo_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)>=0),
   CHECK (band_hi_rs IS NULL OR CAST(band_hi_rs AS NUMERIC)>=0),
-  CHECK (band_lo_rs IS NULL OR band_hi_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)<=CAST(band_hi_rs AS NUMERIC))
+  CHECK (band_lo_rs IS NULL OR band_hi_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)<=CAST(band_hi_rs AS NUMERIC)),
+  CHECK (issue_price_rs IS NULL OR band_lo_rs IS NULL OR CAST(issue_price_rs AS NUMERIC)>=CAST(band_lo_rs AS NUMERIC)),
+  CHECK (issue_price_rs IS NULL OR band_hi_rs IS NULL OR CAST(issue_price_rs AS NUMERIC)<=CAST(band_hi_rs AS NUMERIC)),
+  CHECK (is_book_built=0 OR band_lo_rs IS NULL OR face_value_rs IS NULL OR CAST(band_lo_rs AS NUMERIC)>=CAST(face_value_rs AS NUMERIC))
 );
 CREATE TABLE company_profile (
   ipo_id INTEGER PRIMARY KEY REFERENCES ipo(id), business_description TEXT, sector TEXT, industry TEXT,
@@ -35,11 +46,6 @@ CREATE TABLE financial_statements (
   revenue_cr TEXT, total_income_cr TEXT, ebitda_cr TEXT, pat_cr TEXT, net_worth_cr TEXT,
   reserves_cr TEXT, debt_cr TEXT, assets_cr TEXT, cash_cr TEXT, document_sha256 TEXT, page INTEGER,
   PRIMARY KEY(ipo_id,period,basis)
-);
-CREATE TABLE fundamental_metrics (
-  id INTEGER PRIMARY KEY, ipo_id INTEGER NOT NULL REFERENCES ipo(id), period TEXT, metric_code TEXT NOT NULL,
-  value TEXT NOT NULL, unit TEXT NOT NULL, method TEXT NOT NULL, calculation_version TEXT,
-  document_sha256 TEXT, observed_at TEXT, UNIQUE(ipo_id,period,metric_code,method,observed_at)
 );
 CREATE TABLE reservations (
   ipo_id INTEGER NOT NULL REFERENCES ipo(id), category TEXT NOT NULL, shares_reserved INTEGER,
@@ -102,6 +108,8 @@ CREATE TABLE decision_history (
   decided_at TEXT NOT NULL, decision TEXT NOT NULL, engine_version TEXT NOT NULL,
   inputs_json TEXT NOT NULL, evidence_json TEXT, run_fingerprint TEXT NOT NULL UNIQUE
 );
+CREATE TRIGGER decision_history_no_update BEFORE UPDATE ON decision_history BEGIN SELECT RAISE(ABORT,'decision_history is append-only'); END;
+CREATE TRIGGER decision_history_no_delete BEFORE DELETE ON decision_history BEGIN SELECT RAISE(ABORT,'decision_history is append-only'); END;
 CREATE TABLE source_facts (
   id INTEGER PRIMARY KEY, ipo_id INTEGER REFERENCES ipo(id), target_table TEXT NOT NULL, target_field TEXT NOT NULL,
   raw_value TEXT, normalized_value TEXT, unit TEXT, source_name TEXT NOT NULL, document_sha256 TEXT,
@@ -124,6 +132,16 @@ CREATE TABLE migration_checkpoints (
   dataset TEXT PRIMARY KEY, last_key TEXT, source_rows INTEGER NOT NULL DEFAULT 0,
   written_rows INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Derived lifecycle contract: 0 means NOT_DUE, never missing/failed/zero.
+CREATE VIEW ipo_lifecycle_due AS
+SELECT id AS ipo_id, status,
+  CASE WHEN status='WITHDRAWN' THEN 0 ELSE 1 END AS issue_due,
+  CASE WHEN status IN ('UPCOMING','OPEN','CLOSED','ALLOTTED','LISTED') THEN 1 ELSE 0 END AS documents_due,
+  CASE WHEN status IN ('CLOSED','ALLOTTED','LISTED') THEN 1 ELSE 0 END AS subscription_due,
+  CASE WHEN status IN ('ALLOTTED','LISTED') THEN 1 ELSE 0 END AS allotment_due,
+  CASE WHEN status='LISTED' THEN 1 ELSE 0 END AS market_due
+FROM ipo;
 CREATE INDEX market_bars_lookup ON market_bars(ipo_id,interval,ts);
 CREATE INDEX subscription_lookup ON subscription_snapshots(ipo_id,captured_at,category);
 CREATE INDEX source_facts_target ON source_facts(ipo_id,target_table,target_field);
+CREATE UNIQUE INDEX ipo_nse_symbol_unique ON ipo(nse_symbol) WHERE nse_symbol IS NOT NULL;

@@ -23,9 +23,9 @@ Legend: `PIPELINE_GAP` means no current forward producer was found; `SOURCE_GAP`
 | Anchor investors (`anchor.investors[].investor_name`) | Yes | NSE Anchor Allocation Report | IPO Matrix names-only producer | `PIPELINE_GAP` row-preserving parser | `anchor_allocations` | Tier-A report → parse |
 | GMP | Context only | `SOURCE_GAP` (non-official market intelligence) | InvestorGain scraper exists | D1 time-series mapper | `gmp_observations` (`is_official=0`) | Source observations; not authoritative |
 | Financial statements (nested list located by fallback mapper) | Yes | SEBI RHP/DRHP | RHP writer; IPO Matrix fallback | D1 migration mapper | `financial_statements` period/basis rows | Tier-A PDF/raw JSON → parse |
-| KPIs (`kpi.pe_ratio`, `price_to_book`, `roe`, `ronw`, `roce`, margins, NAV) | Yes where used | RHP; otherwise recompute | IPO Matrix mapper/RHP findings | Versioned metric mapper | `fundamental_metrics` | Sourced evidence or recompute |
-| pre/post EPS (`kpi.eps_pre`, `eps_post`) | Yes | SEBI RHP | IPO Matrix mapper | Official extraction/recompute mapper | `fundamental_metrics` (`EPS_PRE/POST`, `rs_per_share`) | PDF/raw JSON |
-| pre/post PE (`kpi.pe_ratio`, `post_pe_ratio`) | Yes | RHP inputs + issue price | IPO Matrix mapper | Versioned calculation producer | `fundamental_metrics` (`PE_PRE/POST`, `x`) | Recompute from preserved inputs |
+| KPIs (`kpi.pe_ratio`, `price_to_book`, `roe`, `ronw`, `roce`, margins, NAV) | Yes where used | RHP; otherwise recompute | IPO Matrix mapper/RHP findings | Versioned mapper/calculator | sourced values in `source_facts`; computed values in `valuation_runs` | Sourced evidence or recompute |
+| pre/post EPS (`kpi.eps_pre`, `eps_post`) | Yes | SEBI RHP | IPO Matrix mapper | Official extraction/recompute mapper | sourced `source_facts`; calculation inputs/output in `valuation_runs` | PDF/raw JSON |
+| pre/post PE (`kpi.pe_ratio`, `post_pe_ratio`) | Yes | RHP inputs + issue price | IPO Matrix mapper | Versioned calculation producer | sourced `source_facts`; computed `valuation_runs` | Recompute from preserved inputs |
 | Peer Comparison (`peer_analysis`) | Yes | SEBI RHP; SBI commentary separately | IPO Matrix stored opaque JSON; RHP writer evidence | `PIPELINE_GAP` row mapper | `peer_comparisons`; opinions in `research_findings` | PDF/raw JSON → parse |
 | Documents | Yes | SEBI/NSE/SBI | RHP and SBI fetch lanes | Anchor report fetch gap | `documents` metadata; bytes later in R2 | Tier-A source bytes by SHA256 |
 | Company sector/industry/incorporation/office/website | Yes | SEBI RHP | `SOURCE_GAP` exact IPO Matrix keys; no proven mapper | `PIPELINE_GAP` | `company_profile` | PDF → re-extract |
@@ -34,4 +34,4 @@ Legend: `PIPELINE_GAP` means no current forward producer was found; `SOURCE_GAP`
 
 ## Blocking survey output
 
-Run `python tools/d1_migration.py --ipomatrix PATH --survey artifacts/ipomatrix-field-survey.json` before loading. The survey contains JSON path, occurrence count, bounded samples, and inferred JSON type only—never an inferred unit. `files=0` is not acceptance: it is an explicit archive blocker. No key absent from the proven code paths above may be mapped until the field survey records its real path and examples and an owner-reviewed identity path map is supplied.
+Run `python tools/d1_migration.py --ipomatrix PATH --survey artifacts/ipomatrix-field-survey.json` before loading. The survey contains JSON path, occurrence count, primitive type frequencies, null frequency, and representative values—never an inferred unit. `files=0` is not acceptance: it is an explicit archive blocker. No key absent from the proven code paths above may be mapped until the field survey records its real path and examples and an owner-reviewed identity path map is supplied.

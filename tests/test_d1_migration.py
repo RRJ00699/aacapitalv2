@@ -4,8 +4,9 @@ from pathlib import Path
 import pytest
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    map_ipomatrix_identity, resolve_identity, survey, transform_neon, validate_issue)
+    checkpoint_sql, map_ipomatrix_identity, resolve_identity, survey, transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
+from tools.d1_contract import canonical_spine_eligible, concept_state
 
 DDL=Path("d1/migrations/0001_functional_model.sql").read_text()
 
@@ -57,8 +58,50 @@ def test_ipomatrix_identity_collision_is_quarantinable_not_ignored():
 def test_unit_anomalies_are_not_repaired():
     row={"band_lo_rs":1,"band_hi_rs":120,"issue_price_rs":130,"face_value_rs":10,
          "issue_size_cr":100,"fresh_cr":780000000,"ofs_cr":40}
-    assert set(validate_issue(row))=={"BAND_FACE_MAGNITUDE","ISSUE_COMPONENT_MISMATCH","PRICE_OUTSIDE_BAND"}
+    assert set(validate_issue(row))=={"BAND_BELOW_FACE_VALUE","ISSUE_COMPONENT_MISMATCH","PRICE_OUTSIDE_BAND"}
     assert row["fresh_cr"]==780000000
+
+@pytest.mark.parametrize("row,code",[
+ ({"band_lo_rs":"110","band_hi_rs":"100"},"BAND_REVERSED"),
+ ({"band_lo_rs":"100","band_hi_rs":"120","issue_price_rs":"99"},"PRICE_OUTSIDE_BAND"),
+ ({"band_lo_rs":"100","band_hi_rs":"120","issue_price_rs":"121"},"PRICE_OUTSIDE_BAND"),
+ ({"band_lo_rs":"1","band_hi_rs":"10","face_value_rs":"10","is_book_built":True},"BAND_BELOW_FACE_VALUE"),
+])
+def test_molbio_class_values_quarantine_before_insert(row,code):
+    assert code in validate_issue(row)
+
+def test_database_rejects_molbio_and_price_outside_band(db):
+    db.execute("insert into ipo(id,name,name_norm) values(1,'One','one')")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("insert into ipo_issue(ipo_id,band_lo_rs,band_hi_rs,face_value_rs) values(1,'1','10','10')")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("insert into ipo_issue(ipo_id,band_lo_rs,band_hi_rs,issue_price_rs) values(1,'100','120','99')")
+
+def test_security_kind_lifecycle_symbol_and_locks_are_structural(db):
+    db.execute("insert into ipo(id,name,name_norm,status) values(1,'One','one','ALLOTTED')")
+    assert db.execute("select security_kind,status from ipo").fetchone()==("EQUITY","ALLOTTED")
+    with pytest.raises(sqlite3.IntegrityError):db.execute("insert into ipo(id,name,name_norm,security_kind) values(2,'Bad','bad','BOND')")
+    db.execute("insert into ipo(id,name,name_norm,nse_symbol) values(3,'Two','two','SAME')")
+    with pytest.raises(sqlite3.IntegrityError):db.execute("insert into ipo(id,name,name_norm,nse_symbol) values(4,'Three','three','SAME')")
+    db.execute("insert into ipo_issue(ipo_id,listing_date) values(1,'2026-01-01')")
+    assert db.execute("select lock30_date,lock90_date from ipo_issue").fetchone()==("2026-01-31","2026-04-01")
+    assert canonical_spine_eligible(True,"ALLOTTED","EQUITY")
+    assert not canonical_spine_eligible(True,"LISTED","REIT")
+    assert not canonical_spine_eligible(True,"LISTED","INVIT")
+
+def test_not_due_is_not_missing_failed_or_zero(db):
+    assert concept_state("ANNOUNCED","market")=="NOT_DUE"
+    assert concept_state("LISTED","market")=="MISSING"
+    assert concept_state("LISTED","market",failed=True)=="FAILED"
+    assert concept_state("LISTED","market",value=0)=="PRESENT"
+    db.execute("insert into ipo(id,name,name_norm,status) values(1,'One','one','ANNOUNCED')")
+    assert db.execute("select market_due from ipo_lifecycle_due where ipo_id=1").fetchone()[0]==0
+
+def test_decision_history_is_append_only(db):
+    db.execute("insert into ipo(id,name,name_norm) values(1,'One','one')")
+    db.execute("insert into decision_history(ipo_id,layer,decided_at,decision,engine_version,inputs_json,run_fingerprint) values(1,'company_quality','2026-01-01','WATCH','v1','{}','fp')")
+    with pytest.raises(sqlite3.IntegrityError):db.execute("update decision_history set decision='GOOD'")
+    with pytest.raises(sqlite3.IntegrityError):db.execute("delete from decision_history")
 
 def test_inventory_preserves_bytes_and_flags_malformed(tmp_path):
     good=tmp_path/"42.json"; raw=b'{"data":{"id":42,"about_company":"x"}}'; good.write_bytes(raw)
@@ -73,8 +116,10 @@ def test_field_survey_reports_paths_counts_samples_types_but_no_units(tmp_path):
     (tmp_path/"two.json").write_text(json.dumps({"data":{"id":2,"money":12,"rows":[]}}))
     report=survey(inventory([tmp_path])); paths={x["json_path"]:x for x in report["paths"]}
     assert paths["$.data.id"]["occurrence_count"]==2
-    assert paths["$.data.money"]["inferred_types"]=={"integer":1,"string":1}
+    assert paths["$.data.money"]["primitive_types"]=={"integer":1,"string":1}
     assert paths["$.data.rows[].name"]["occurrence_count"]==1
+    assert paths["$.data.money"]["null_frequency"]==0
+    assert paths["$.data.money"]["representative_values"]
     assert "unit" not in json.dumps(report).lower()
 
 def test_neon_transforms_exact_decimals_and_category_snapshots(db):
@@ -94,7 +139,6 @@ def test_raw_archive_rejects_update_and_delete(db):
     with pytest.raises(sqlite3.IntegrityError): db.execute("delete from raw_objects")
 
 def test_resume_checkpoint_and_reconciliation(db):
-    db.execute("insert into migration_checkpoints(dataset,last_key,source_rows,written_rows) values('ipo','10',10,10)")
-    db.execute("update migration_checkpoints set last_key='20',source_rows=20,written_rows=20 where dataset='ipo'")
-    assert db.execute("select last_key from migration_checkpoints").fetchone()[0]=="20"
+    db.executescript(checkpoint_sql("ipo",10,10));db.executescript(checkpoint_sql("ipo",20,20))
+    assert db.execute("select last_key,source_rows,written_rows from migration_checkpoints").fetchone()==("COMPLETE",20,20)
     assert reconcile(db)["critical_checks"]=={"orphan_market_bars":0,"quarantined_rows":0,"duplicate_fingerprints":0}
