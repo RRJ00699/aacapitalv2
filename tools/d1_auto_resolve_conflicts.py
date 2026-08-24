@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-import tools.d1_apply_core_csv as importer
+import d1_apply_core_csv as importer
 
 
 def dec(value: str | None):
@@ -34,12 +35,11 @@ def parse_date(value: str | None):
     if not value:
         return None
     text = value.strip()
-    for fmt in ("%Y-%m-%d", "%a, %b %d, %Y", "%a, %b %d, %Y"):
+    for fmt in ("%Y-%m-%d", "%a, %b %d, %Y"):
         try:
             return datetime.strptime(text, fmt).date().isoformat()
         except ValueError:
             pass
-    # IPO Matrix sometimes emits single-digit day without zero padding; %d accepts both.
     return None
 
 
@@ -68,7 +68,6 @@ def resolve(row: dict[str, str]) -> tuple[str | None, str]:
         nd, md = parse_date(neon), parse_date(matrix)
         if nd and md and nd == md:
             return nd, "DATE_FORMAT_ONLY"
-        # For historical issue timetable, prefer the normalized ISO Neon date when they disagree.
         return nd or md, "CANONICAL_TIMETABLE_DATE"
 
     if field == "registrar_name":
@@ -82,13 +81,10 @@ def resolve(row: dict[str, str]) -> tuple[str | None, str]:
             return neon or None, "MATRIX_MISSING"
         if n is None:
             return canonical_decimal(matrix), "MATRIX_ISSUE_STRUCTURE"
-        # Proven legacy Neon defect: some crore columns contain raw rupees (x10,000,000).
         if m != 0:
             ratio = abs(n / m)
             if Decimal("9000000") <= ratio <= Decimal("11000000"):
                 return canonical_decimal(matrix), "NEON_RAW_RUPEE_SCALE_ERROR"
-        # For the remaining historical issue-structure disagreements, IPO Matrix is the
-        # reviewed archive source and D1 is currently NULL, so take Matrix without overwrite.
         return canonical_decimal(matrix), "MATRIX_ISSUE_STRUCTURE"
 
     if field in {"band_lo_rs", "band_hi_rs"}:
@@ -98,9 +94,6 @@ def resolve(row: dict[str, str]) -> tuple[str | None, str]:
         return canonical_decimal(matrix), "MATRIX_PRICE_BAND"
 
     if field == "issue_price_rs":
-        # The current two conflicts were externally verified:
-        # Fineotex Chemical IPO issue price = Rs 70 (SEBI prospectus),
-        # Future Ventures India IPO issue price = Rs 10 (official/market records).
         verified = {
             "Fineotex Chemical Ltd.": "70",
             "Future Ventures India Ltd.": "10",
@@ -123,6 +116,9 @@ def main() -> int:
     ap.add_argument("--binding", default="DB")
     ap.add_argument("--max-file-bytes", type=int, default=5_000_000)
     args = ap.parse_args()
+
+    if args.apply_staging and os.environ.get("AACAPITAL_D1_STAGING_CONFIRM") != "YES":
+        ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES for staging")
 
     with args.csv.open("r", encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
