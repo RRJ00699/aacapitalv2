@@ -1,7 +1,7 @@
 """Authenticated client for the AACapital D1 ingest Worker.
 
 This is the only persistence seam the production Python pipeline should need after the
-Neon cutover.  It exposes domain operations, never arbitrary SQL.  The Worker owns the
+Neon cutover. It exposes domain operations, never arbitrary SQL. The Worker owns the
 D1 binding and schema checks; the VM holds only the Worker URL + one ingest secret.
 """
 from __future__ import annotations
@@ -44,11 +44,8 @@ class D1IngestClient:
     def _request(self, path: str, payload: dict[str, Any] | None = None,
                  *, method: str = "POST", retries: int = 2) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {self.secret}",
-            "User-Agent": "aacapital-pipeline/1",
-            "Accept": "application/json",
-        }
+        headers = {"Authorization": f"Bearer {self.secret}", "User-Agent": "aacapital-pipeline/1",
+                   "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(self.base_url + path, data=body, headers=headers, method=method)
@@ -86,12 +83,13 @@ class D1IngestClient:
 
     def extraction_state(self, *, document_sha256: str, model: str,
                          prompt_version: str) -> dict[str, Any]:
-        """Fail-closed paid-call idempotency check for one exact extraction identity."""
         return self._request("/v1/state/extraction", {
-            "document_sha256": document_sha256,
-            "model": model,
+            "document_sha256": document_sha256, "model": model,
             "prompt_version": prompt_version,
         })
+
+    def valuation_inputs(self, ipo_id: int) -> dict[str, Any]:
+        return self._request("/v1/state/valuation-inputs", {"ipo_id": ipo_id})
 
     def active_ipos(self, *, limit: int = 20, lookback_days: int = 100) -> list[dict[str, Any]]:
         return list(self._request("/v1/state/active", {"limit": limit, "lookback_days": lookback_days}).get("rows") or [])
@@ -125,7 +123,5 @@ class D1IngestClient:
 
     def finish_job(self, job_id: int, *, status: str, exit_code: int | None,
                    error: str | None, log_tail: str | None) -> None:
-        self._request("/v1/jobs/finish", {
-            "id": job_id, "status": status, "exit_code": exit_code,
-            "error": error, "log_tail": log_tail,
-        })
+        self._request("/v1/jobs/finish", {"id": job_id, "status": status, "exit_code": exit_code,
+                                           "error": error, "log_tail": log_tail})
