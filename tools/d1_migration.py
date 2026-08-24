@@ -45,6 +45,18 @@ NEON_QUERIES = {
     "source_facts": """SELECT ipo_id,field,value,source,confidence,fetched_at
                FROM source_facts ORDER BY ipo_id,fetched_at,field,source""",
 }
+CORE_DATASETS=("ipo","ipo_issue","financial_statements","subscription_snapshots","documents","source_facts")
+MARKET_DATASETS=("market_daily","market_15m","listing_observations")
+CORE_SCOPE_TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
+  "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","documents",
+  "source_facts","raw_objects","migration_quarantine","migration_checkpoints")
+MARKET_SCOPE_TABLES=("market_bars","listing_observations")
+DEFERRED_DERIVED_TABLES=("research_findings","gmp_observations","valuation_runs","decision_history")
+
+def datasets_for_scope(scope: str) -> tuple[str,...]:
+    if scope=="core":return CORE_DATASETS
+    if scope=="market":return MARKET_DATASETS
+    raise ValueError(f"unsupported migration scope: {scope}")
 
 def fingerprint(*parts: Any) -> str:
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False, separators=(",", ":"),
@@ -324,11 +336,12 @@ def transform_neon(dataset: str, row: dict[str,Any]) -> list[str]:
         return [insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","source_name","observed_at","parser_version","confidence","observation_fingerprint"),values+(fingerprint(*values),))]
     raise KeyError(dataset)
 
-def extract_neon(url: str, batch_size=1000):
+def extract_neon(url: str, batch_size=1000, datasets: Iterable[str]|None=None):
     import psycopg2.extras
     conn=psycopg2.connect(url,connect_timeout=20); conn.set_session(readonly=True,isolation_level="REPEATABLE READ",autocommit=False)
     try:
-        for dataset,query in NEON_QUERIES.items():
+        for dataset in datasets or NEON_QUERIES:
+            query=NEON_QUERIES[dataset]
             cur=conn.cursor(name=f"d1_{dataset}",cursor_factory=psycopg2.extras.RealDictCursor); cur.itersize=batch_size; cur.execute(query)
             while True:
                 rows=cur.fetchmany(batch_size)
@@ -466,7 +479,7 @@ def main() -> int:
     ap.add_argument("--ipomatrix-map",type=Path);ap.add_argument("--apply-local",action="store_true");ap.add_argument("--apply-staging",action="store_true")
     ap.add_argument("--wrangler-config",type=Path);ap.add_argument("--binding",default="DB");ap.add_argument("--max-statements",type=int,default=10_000)
     ap.add_argument("--bulk-rows",type=int,default=500);ap.add_argument("--max-sql-bytes",type=int,default=750_000);ap.add_argument("--max-file-bytes",type=int,default=8_000_000)
-    ap.add_argument("--batch-size",type=int,default=1000)
+    ap.add_argument("--batch-size",type=int,default=1000);ap.add_argument("--scope",choices=("core","market"),default="core")
     ap.add_argument("--report",type=Path,default=ROOT/"artifacts/d1-migration.json"); args=ap.parse_args()
     rows=inventory(args.ipomatrix)
     if args.survey:args.survey.parent.mkdir(parents=True,exist_ok=True);args.survey.write_text(json.dumps(survey(rows),indent=2,ensure_ascii=False)+"\n")
@@ -477,6 +490,7 @@ def main() -> int:
         if not args.wrangler_config:ap.error("--apply-staging requires owner-controlled --wrangler-config")
         if os.environ.get("AACAPITAL_D1_STAGING_CONFIRM")!="YES":ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES for staging")
         WRANGLER=args.wrangler_config.resolve();WRANGLER_BINDING=args.binding;WRANGLER_REMOTE=True
+    if args.scope=="market" and rows:ap.error("--scope market does not accept IPO Matrix input")
     url=os.environ.get("NEON_READONLY_DATABASE_URL")
     if not url:ap.error("--apply-local requires NEON_READONLY_DATABASE_URL (DATABASE_URL is never accepted)")
     if rows and not args.ipomatrix_map:ap.error("IPO Matrix normalization requires --ipomatrix-map from the reviewed survey")
@@ -487,7 +501,8 @@ def main() -> int:
     staging_info=staging_database_info() if WRANGLER_REMOTE else None
     wrangler(["migrations","apply",WRANGLER_BINDING]); statements=[]; counts=Counter(); quarantined=0
     by_isin={};by_name={};by_matrix={};by_symbol={}
-    for dataset,row in extract_neon(url,args.batch_size):
+    selected_datasets=datasets_for_scope(args.scope)
+    for dataset,row in extract_neon(url,args.batch_size,selected_datasets):
         structural_reason=None;evidence=set()
         if dataset=="ipo":
             evidence={x for x in str(row.get("security_kind_evidence") or "").split(",") if x}
@@ -527,7 +542,7 @@ def main() -> int:
             anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True})
             fp=fingerprint("neon",dataset,row["ipo_id"],anomalies); statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["ipo_id"],dataset,"UNIT_ANOMALY",{"codes":anomalies},fp)));quarantined+=1;counts["quarantined_ipo_issue"]+=1
         statements.extend(mapped);counts[f"mapped_{dataset}"]+=len(mapped)
-    for item in rows:
+    for item in rows:  # rows are prohibited for market scope above
         sha=item["sha256"]; statements.append(insert_sql("raw_objects",("sha256","source_name","source_object_id","size_bytes","payload_json"),(sha,"ipomatrix",str(json_path(item.get("payload"),mapping.get("matrix_id")) or item["path"]),item["size_bytes"],item["raw"])));counts["source_ipomatrix"]+=1
         if not item.get("valid"):reason="MALFORMED_SOURCE"
         else:
@@ -545,12 +560,17 @@ def main() -> int:
                         reason=str(exc).split(":",1)[0];counts["quarantined_ipomatrix_bootstrap"]+=1
         if reason:
             statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","raw_sha256","fingerprint"),("ipomatrix",item["path"],"raw_objects",reason,{"path":item["path"]},sha,fingerprint("ipomatrix",sha,reason))));quarantined+=1;counts["quarantined_ipomatrix"]+=1
-    for dataset in NEON_QUERIES:
+    for dataset in selected_datasets:
         statements.append(checkpoint_sql(dataset,counts[f"source_{dataset}"],counts[f"mapped_{dataset}"]))
-    statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
+    if args.scope=="core":
+        statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
     load_stats=apply_sql(statements,args.max_statements,args.bulk_rows,args.max_sql_bytes,args.max_file_bytes)
     observed_paths={entry["json_path"] for entry in survey(rows)["paths"]};approved=reviewed_paths(mapping)
-    report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),
+    deferred=(MARKET_DATASETS if args.scope=="core" else CORE_DATASETS)
+    deferred_tables=(MARKET_SCOPE_TABLES+DEFERRED_DERIVED_TABLES if args.scope=="core" else CORE_SCOPE_TABLES+DEFERRED_DERIVED_TABLES)
+    report={**counts,"scope":args.scope,"deferred_datasets":{name:"DEFERRED" for name in deferred},
+      "deferred_tables":{name:"DEFERRED" for name in deferred_tables},
+      "quarantined_rows":quarantined,"sql_statements":len(statements),
       "ipomatrix_raw_only_paths":sorted(observed_paths-approved),"runtime_seconds":round(time.monotonic()-started,6),
       "load_stats":load_stats,"status":"migrated_to_wrangler_local"}
     report["target"]="remote-staging" if WRANGLER_REMOTE else "local"

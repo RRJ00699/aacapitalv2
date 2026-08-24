@@ -5,7 +5,7 @@ import pytest
 import tools.d1_migration as d1m
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    NEON_QUERIES, checkpoint_sql, derive_security_kind, derived_source_fact_sql, insert_sql, map_ipomatrix_identity, normalize_legacy_status, resolve_identity, survey, transform_ipomatrix,
+    NEON_QUERIES, checkpoint_sql, datasets_for_scope, derive_security_kind, derived_source_fact_sql, insert_sql, map_ipomatrix_identity, normalize_legacy_status, resolve_identity, survey, transform_ipomatrix,
     transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 from tools.d1_contract import canonical_spine_eligible, concept_state
@@ -165,6 +165,28 @@ def test_migration_derived_facts_have_no_document_fk(db):
     for statement in statements:db.executescript(statement)
     rows=db.execute("SELECT target_field,document_sha256 FROM source_facts ORDER BY target_field").fetchall()
     assert rows==[("security_kind",None),("status",None)]
+
+def test_core_scope_never_selects_market_datasets():
+    core=datasets_for_scope("core");market=datasets_for_scope("market")
+    assert core==("ipo","ipo_issue","financial_statements","subscription_snapshots","documents","source_facts")
+    assert market==("market_daily","market_15m","listing_observations")
+    assert set(core).isdisjoint(market)
+
+def test_core_reconciliation_marks_market_and_derived_tables_deferred(db):
+    db.execute("INSERT INTO ipo(id,name,name_norm) VALUES(1,'One','one')")
+    source={"scope":"core","source_ipo":1}
+    report=reconcile(db,source,scope="core")
+    assert report["zero_silent_loss"] is True
+    for table in ("market_bars","listing_observations","gmp_observations","valuation_runs","decision_history"):
+        assert report[table]=={"status":"DEFERRED"}
+        assert table not in report["source_comparisons"]
+
+def test_future_market_reconciliation_does_not_assess_core(db):
+    db.execute("INSERT INTO ipo(id,name,name_norm) VALUES(1,'One','one')")
+    source={"scope":"market","source_market_daily":0,"source_market_15m":0,"source_listing_observations":0}
+    report=reconcile(db,source,scope="market")
+    assert report["zero_silent_loss"] is True
+    assert report["ipo"]=={"status":"DEFERRED"}
 
 def test_not_due_is_not_missing_failed_or_zero(db):
     assert concept_state("ANNOUNCED","market")=="NOT_DUE"

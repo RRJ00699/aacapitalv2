@@ -37,8 +37,8 @@ These example strings describe the map format, not the archive's real paths. Eve
 ## 2. Migrate into Wrangler local D1
 
 ```bash
-rm -rf d1/.wrangler/state
 NEON_READONLY_DATABASE_URL='…read-only role…' python tools/d1_migration.py \
+  --scope core \
   --ipomatrix /owner/archive \
   --ipomatrix-map artifacts/ipomatrix-reviewed-map.json \
   --apply-local \
@@ -53,11 +53,15 @@ Neon `ipo` is not assumed to contain `security_kind`. Migration derives it from 
 
 ```bash
 python tools/d1_reconcile.py --wrangler-local \
+  --scope core \
   --source-report artifacts/d1-migration.json \
   --output artifacts/d1-reconciliation.json
 ```
 
-Acceptance requires `zero_silent_loss=true`, exact daily/15-minute/pre-open source comparisons, raw-object equality, zero identity/fingerprint duplicates, explicit null counts/ranges, and owner disposition of every quarantine row. Run the migration a second time and reconcile again to prove idempotency.
+Core acceptance requires `zero_silent_loss=true`, core FK integrity, raw-object equality,
+explicit core null counts, and owner disposition of every quarantine row. Market, listing,
+GMP, valuation, and decision tables are `DEFERRED`, not core failures. Run the core migration
+a second time and reconcile again to prove idempotency without deleting existing state.
 
 Idempotency never uses global SQLite `OR IGNORE` and the bulk path emits no per-row `SELECT` guard. Expected reruns use only declared deterministic conflict keys: the conflict handler no-ops when every supplied value is identical and deliberately aborts the batch if contents differ. Rows without an approved rerun key use plain `INSERT`, so unexpected CHECK/NOT NULL/UNIQUE violations also fail the bounded Wrangler batch.
 
@@ -70,6 +74,7 @@ an explicit confirmation variable and never accepts the production app config im
 ```powershell
 $env:AACAPITAL_D1_STAGING_CONFIRM = "YES"
 python tools/d1_migration.py `
+  --scope core `
   --ipomatrix C:\aacapital-input\ipomatrix `
   --ipomatrix-map C:\aacapital-input\ipomatrix-reviewed-map.json `
   --apply-staging `
@@ -82,6 +87,7 @@ python tools/d1_migration.py `
   --report artifacts\d1-migration-staging.json
 
 python tools/d1_reconcile.py `
+  --scope core `
   --wrangler-staging `
   --wrangler-config C:\aacapital-input\wrangler.d1-staging.jsonc `
   --binding DB `
@@ -95,6 +101,12 @@ database reset is needed. High-volume compatible rows are grouped into 500-row `
 statements. SQL files are UTF-8/LF, bounded by statement count and byte ceilings, emitted
 in the approved FK order, and deleted after each Wrangler batch. Progress is reported by
 table and source row count rather than by individual SQL statement.
+
+`--scope core` queries and writes only the canonical IPO/fundamentals datasets plus
+raw archive and migration metadata. `market_bars`, listing/pre-open observations, GMP,
+valuation runs, and decision history are reported as `DEFERRED`; they cannot make core
+reconciliation fail. A later `--scope market` run queries only Neon daily, 15-minute,
+and listing-observation datasets and relies on the already-loaded `ipo` parent rows.
 
 ## 4. Measure storage
 
