@@ -15,6 +15,7 @@ from pathlib import Path
 from kiteconnect import KiteConnect
 
 ROOT = Path(__file__).resolve().parents[1]
+SAFE_IDENTITY_STATUSES = {"VERIFIED_CURRENT_TOKEN", "RECOVERED_CURRENT_IDENTITY"}
 
 
 def npx_cmd() -> str:
@@ -36,15 +37,8 @@ def d1_query(config: Path, binding: str, sql: str):
     cp = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                         encoding="utf-8", errors="replace")
     if cp.returncode != 0:
-        if cp.stdout:
-            print(cp.stdout, end="")
-        if cp.stderr:
-            print(cp.stderr, end="")
-        raise SystemExit(f"Wrangler D1 query failed with exit code {cp.returncode}: {sql}")
-    try:
-        payload = json.loads(cp.stdout)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"Wrangler returned non-JSON output for D1 query: {exc}\n{cp.stdout}") from exc
+        raise SystemExit(f"Wrangler D1 query failed (exit={cp.returncode})\nSTDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
+    payload = json.loads(cp.stdout)
     if isinstance(payload, list):
         for item in payload:
             if isinstance(item, dict) and isinstance(item.get("results"), list):
@@ -134,12 +128,34 @@ def execute_sql_file(config: Path, binding: str, statements: list[str]):
         path.unlink(missing_ok=True)
 
 
+def audited_windows(path: Path):
+    audit = json.loads(path.read_text(encoding="utf-8"))
+    rows = audit.get("rows", [])
+    safe = []
+    excluded = []
+    for r in rows:
+        status = r.get("status")
+        token = r.get("chosen_token")
+        if status in SAFE_IDENTITY_STATUSES and token:
+            safe.append({
+                "ipo_id": int(r["ipo_id"]),
+                "symbol": r.get("symbol") or "",
+                "listing_date": r["listing_date"],
+                "lock30": r["lock30"],
+                "kite_token": int(token),
+                "identity_status": status,
+            })
+        else:
+            excluded.append({"ipo_id": r.get("ipo_id"), "symbol": r.get("symbol"), "status": status})
+    return safe, excluded
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Backfill IPO listing->lock30 day + 5m Kite candles into remote D1")
-    ap.add_argument("--report", type=Path, default=ROOT / "artifacts/kite-ipo-backfill-report.json")
+    ap = argparse.ArgumentParser(description="Backfill audited IPO listing->lock30 day + 5m Kite candles into remote D1")
+    ap.add_argument("--identity-audit", type=Path, default=ROOT / "artifacts/kite-ipo-identity-audit.json")
     ap.add_argument("--wrangler-config", type=Path, required=True)
     ap.add_argument("--binding", default="DB")
-    ap.add_argument("--limit", type=int, default=10, help="IPOs to fetch; default 10 pilot; use 0 for all resolved")
+    ap.add_argument("--limit", type=int, default=10, help="audited IPOs to fetch; default 10 pilot; use 0 for all safe identities")
     ap.add_argument("--apply", action="store_true", help="write to remote D1; absent = fetch/count only")
     ap.add_argument("--max-statements-per-import", type=int, default=12000)
     ap.add_argument("--sleep", type=float, default=0.35)
@@ -147,12 +163,15 @@ def main() -> int:
 
     if args.apply and os.environ.get("AACAPITAL_D1_STAGING_CONFIRM") != "YES":
         ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES before remote D1 writes")
-    report = json.loads(args.report.read_text(encoding="utf-8"))
-    windows = [w for w in report.get("windows", []) if w.get("kite_token")]
+    if not args.identity_audit.exists():
+        raise SystemExit(f"identity audit not found: {args.identity_audit}; run tools/kite_ipo_identity_audit.py first")
+
+    windows, excluded = audited_windows(args.identity_audit)
+    total_safe = len(windows)
     if args.limit:
         windows = windows[:args.limit]
     if not windows:
-        raise SystemExit("no resolved IPO windows in report")
+        raise SystemExit("no safe audited IPO identities available")
 
     config = args.wrangler_config.resolve()
     ids = sorted({int(w["ipo_id"]) for w in windows})
@@ -172,6 +191,7 @@ def main() -> int:
     kite.set_access_token(token)
     profile = kite.profile()
     print(f"Kite token valid for user_id={profile.get('user_id')}")
+    print(f"audited identities: safe={total_safe} excluded={len(excluded)} selected={len(windows)}")
 
     statements: list[str] = []
     fetched_rows = 0
@@ -207,7 +227,7 @@ def main() -> int:
                     statements.clear()
             counts[d1_interval] = good
             time.sleep(args.sleep)
-        per_ipo.append({"ipo_id": ipo_id, "symbol": symbol, **counts})
+        per_ipo.append({"ipo_id": ipo_id, "symbol": symbol, "identity_status": w["identity_status"], **counts})
         print(f"[{idx}/{len(windows)}] {symbol:<14} day={counts.get('1d',0):4} 5m={counts.get('5m',0):5}")
 
     if args.apply and statements:
@@ -222,6 +242,8 @@ def main() -> int:
 
     result = {
         "mode": "APPLY" if args.apply else "FETCH_ONLY",
+        "safe_audited_total": total_safe,
+        "excluded_identity_total": len(excluded),
         "ipos": len(windows),
         "before_rows": before_rows,
         "fetched_valid_rows": fetched_rows,
@@ -235,7 +257,7 @@ def main() -> int:
     }
     out = ROOT / "artifacts" / ("kite-d1-market-backfill-apply.json" if args.apply else "kite-d1-market-backfill-fetch.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"summary": result, "per_ipo": per_ipo, "failed": failed}, indent=2, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps({"summary": result, "per_ipo": per_ipo, "failed": failed, "excluded_identities": excluded}, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     print(f"output={out.relative_to(ROOT)}")
     return 0 if not failed else 2
