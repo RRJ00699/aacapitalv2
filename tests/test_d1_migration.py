@@ -171,13 +171,15 @@ def test_core_scope_never_selects_market_datasets():
     assert core==("ipo","ipo_issue","financial_statements","subscription_snapshots","documents","source_facts")
     assert market==("market_daily","market_15m","listing_observations")
     assert set(core).isdisjoint(market)
+    assert "raw_objects" not in d1m.CORE_SCOPE_TABLES
+    assert d1m.ARCHIVE_SCOPE_TABLES==("raw_objects",)
 
 def test_core_reconciliation_marks_market_and_derived_tables_deferred(db):
     db.execute("INSERT INTO ipo(id,name,name_norm) VALUES(1,'One','one')")
     source={"scope":"core","source_ipo":1}
     report=reconcile(db,source,scope="core")
     assert report["zero_silent_loss"] is True
-    for table in ("market_bars","listing_observations","gmp_observations","valuation_runs","decision_history"):
+    for table in ("raw_objects","market_bars","listing_observations","gmp_observations","valuation_runs","decision_history"):
         assert report[table]=={"status":"DEFERRED"}
         assert table not in report["source_comparisons"]
 
@@ -258,6 +260,7 @@ def test_reviewed_ipomatrix_map_populates_normalized_history_without_unit_guessi
     for table in ("ipo_issue","company_profile","ownership","objects_of_issue","financial_statements","reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","source_facts","documents"):
         assert any(f"INTO {table}" in sql for sql in statements),table
     assert "'10'" in next(x for x in statements if "INTO financial_statements" in x)  # ₹100m -> ₹10cr
+    assert any("INTO source_facts" in sql and "'"+("a"*64)+"'" in sql for sql in statements)
     with pytest.raises(ValueError,match="UNAPPROVED_UNIT"):
         transform_ipomatrix(payload,"a"*64,{**m,"sourced_kpis":{"ROE":{"path":"$.kpi.roe","unit":"mystery","normalized_unit":"pct"}}})
 

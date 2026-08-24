@@ -49,8 +49,9 @@ CORE_DATASETS=("ipo","ipo_issue","financial_statements","subscription_snapshots"
 MARKET_DATASETS=("market_daily","market_15m","listing_observations")
 CORE_SCOPE_TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
   "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","documents",
-  "source_facts","raw_objects","migration_quarantine","migration_checkpoints")
+  "source_facts","migration_quarantine","migration_checkpoints")
 MARKET_SCOPE_TABLES=("market_bars","listing_observations")
+ARCHIVE_SCOPE_TABLES=("raw_objects",)
 DEFERRED_DERIVED_TABLES=("research_findings","gmp_observations","valuation_runs","decision_history")
 
 def datasets_for_scope(scope: str) -> tuple[str,...]:
@@ -542,8 +543,8 @@ def main() -> int:
             anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True})
             fp=fingerprint("neon",dataset,row["ipo_id"],anomalies); statements.append(insert_sql("migration_quarantine",("source_name","source_identity","dataset","reason_code","detail_json","fingerprint"),("neon",row["ipo_id"],dataset,"UNIT_ANOMALY",{"codes":anomalies},fp)));quarantined+=1;counts["quarantined_ipo_issue"]+=1
         statements.extend(mapped);counts[f"mapped_{dataset}"]+=len(mapped)
-    for item in rows:  # rows are prohibited for market scope above
-        sha=item["sha256"]; statements.append(insert_sql("raw_objects",("sha256","source_name","source_object_id","size_bytes","payload_json"),(sha,"ipomatrix",str(json_path(item.get("payload"),mapping.get("matrix_id")) or item["path"]),item["size_bytes"],item["raw"])));counts["source_ipomatrix"]+=1
+    for item in rows:  # payload bodies remain in the owner Tier-A archive, not core D1
+        sha=item["sha256"];counts["source_ipomatrix"]+=1
         if not item.get("valid"):reason="MALFORMED_SOURCE"
         else:
             name=json_path(item["payload"],mapping.get("name")); isin=json_path(item["payload"],mapping.get("isin")); mid=json_path(item["payload"],mapping.get("matrix_id"))
@@ -567,10 +568,11 @@ def main() -> int:
     load_stats=apply_sql(statements,args.max_statements,args.bulk_rows,args.max_sql_bytes,args.max_file_bytes)
     observed_paths={entry["json_path"] for entry in survey(rows)["paths"]};approved=reviewed_paths(mapping)
     deferred=(MARKET_DATASETS if args.scope=="core" else CORE_DATASETS)
-    deferred_tables=(MARKET_SCOPE_TABLES+DEFERRED_DERIVED_TABLES if args.scope=="core" else CORE_SCOPE_TABLES+DEFERRED_DERIVED_TABLES)
+    deferred_tables=(ARCHIVE_SCOPE_TABLES+MARKET_SCOPE_TABLES+DEFERRED_DERIVED_TABLES if args.scope=="core" else CORE_SCOPE_TABLES+ARCHIVE_SCOPE_TABLES+DEFERRED_DERIVED_TABLES)
     report={**counts,"scope":args.scope,"deferred_datasets":{name:"DEFERRED" for name in deferred},
       "deferred_tables":{name:"DEFERRED" for name in deferred_tables},
       "quarantined_rows":quarantined,"sql_statements":len(statements),
+      "ipomatrix_archive_objects":[{"path":item["path"],"sha256":item["sha256"],"size_bytes":item["size_bytes"]} for item in rows],
       "ipomatrix_raw_only_paths":sorted(observed_paths-approved),"runtime_seconds":round(time.monotonic()-started,6),
       "load_stats":load_stats,"status":"migrated_to_wrangler_local"}
     report["target"]="remote-staging" if WRANGLER_REMOTE else "local"

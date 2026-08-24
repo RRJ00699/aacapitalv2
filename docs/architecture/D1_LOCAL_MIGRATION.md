@@ -32,7 +32,7 @@ The survey emits only JSON path, occurrence count, primitive type frequencies, n
 }
 ```
 
-These example strings describe the map format, not the archive's real paths. Every mapped decimal field must declare its evidence-approved source unit and, only when conversion is approved, its normalized unit. The migration refuses an identity-only map: at least one reviewed normalized bootstrap section is required. It supports issue/profile, ownership, objects, period financials, reservation/subscription rows, anchor summary/rows, peers, sourced KPI facts, and documents. Every valid or malformed raw object is represented by SHA256 and immutable payload bytes; malformed, unmapped, unit-unapproved, and ambiguous records are quarantined or reported raw-only.
+These example strings describe the map format, not the archive's real paths. Every mapped decimal field must declare its evidence-approved source unit and, only when conversion is approved, its normalized unit. The migration refuses an identity-only map: at least one reviewed normalized bootstrap section is required. It supports issue/profile, ownership, objects, period financials, reservation/subscription rows, anchor summary/rows, peers, sourced KPI facts, and documents. Core inventories every file by path, SHA256, and byte size in its report but defers payload-body storage; malformed, unmapped, unit-unapproved, and ambiguous records are quarantined or reported raw-only.
 
 ## 2. Migrate into Wrangler local D1
 
@@ -58,8 +58,8 @@ python tools/d1_reconcile.py --wrangler-local \
   --output artifacts/d1-reconciliation.json
 ```
 
-Core acceptance requires `zero_silent_loss=true`, core FK integrity, raw-object equality,
-explicit core null counts, and owner disposition of every quarantine row. Market, listing,
+Core acceptance requires `zero_silent_loss=true`, core FK integrity, explicit core null
+counts, and owner disposition of every quarantine row. Raw payload bodies, market, listing,
 GMP, valuation, and decision tables are `DEFERRED`, not core failures. Run the core migration
 a second time and reconcile again to prove idempotency without deleting existing state.
 
@@ -103,10 +103,12 @@ in the approved FK order, and deleted after each Wrangler batch. Progress is rep
 table and source row count rather than by individual SQL statement.
 
 `--scope core` queries and writes only the canonical IPO/fundamentals datasets plus
-raw archive and migration metadata. `market_bars`, listing/pre-open observations, GMP,
+migration metadata. `raw_objects` payload bodies, `market_bars`, listing/pre-open observations, GMP,
 valuation runs, and decision history are reported as `DEFERRED`; they cannot make core
 reconciliation fail. A later `--scope market` run queries only Neon daily, 15-minute,
 and listing-observation datasets and relies on the already-loaded `ipo` parent rows.
+The owner-held 968-file archive remains Tier-A recovery evidence; the migration report
+retains each archive path/SHA/size and normalized `source_facts` retain the source SHA.
 
 ## 4. Measure storage
 

@@ -27,7 +27,7 @@ Lifecycle: **discovery** → **document** → **issue** → **subscription** →
 | `valuation_runs` | versioned inputs, ratios, range, MoS, missing inputs | valuation engine | KV snapshot/audit | calculation | recompute from facts | C |
 | `decision_history` | append-only company/trade/live layer decisions | layer-specific engines | KV snapshot/audit | respective lifecycle layer | recompute where inputs preserved | C |
 | `source_facts` | field-level raw/normalized/unit/source/parser provenance | every mapper | audit/reconciliation | every write | raw objects/documents/source | B |
-| `raw_objects` | immutable JSON by SHA; triggers reject update/delete | archive inventory/ingest | recovery/migration audit | capture | owner archive/backups | **A** |
+| `raw_objects` | deferred D1 payload home; schema protections remain for a later archive phase | future archive/R2 ingest | recovery/migration audit | deferred after core cutover | owner Tier-A archive/backups | **A** |
 | `migration_quarantine` | anomalies/unmapped/ambiguous records, never silent loss | migration mapper | reconciliation/owner review | migration | rerun after explicit resolution | A audit record |
 | `migration_checkpoints` | deterministic resume key and counts | migration mapper | migration operator | migration | rerun from prior stable key | C |
 
@@ -39,7 +39,10 @@ Lifecycle: **discovery** → **document** → **issue** → **subscription** →
 
 ## Raw storage decision and sizing gate
 
-No R2-vs-D1 decision is made without the archive. The local report records exact raw bytes and the Wrangler `.sqlite` file supplies measured normalized size. Projected D1 size is `local_db_bytes / migrated_unique_IPOs × 964`, reported with both numerator and sample size. Until real files are supplied, both measured payload size and projection are **UNKNOWN**, not zero. Raw JSON stays in D1 for the local acceptance run; a later R2 proposal must compare measured bytes, request patterns, retention and then-current Cloudflare pricing.
+Core D1 does not store IPO Matrix payload bodies. The owner-held 968-file archive remains
+Tier-A recovery evidence, while the migration report records file path, SHA256, and byte
+size and normalized provenance retains archive SHA references. R2/archive ingestion is a
+later phase and does not block core cutover; the existing `raw_objects` schema is preserved.
 
 ## Recovery order
 

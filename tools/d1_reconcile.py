@@ -11,7 +11,7 @@ TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","fina
         "valuation_runs","decision_history","source_facts","raw_objects","migration_quarantine","migration_checkpoints")
 CORE_TABLES=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","financial_statements",
   "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons",
-  "documents","source_facts","raw_objects","migration_quarantine","migration_checkpoints")
+  "documents","source_facts","migration_quarantine","migration_checkpoints")
 MARKET_TABLES=("market_bars","listing_observations")
 NON_CORE_TABLES=tuple(table for table in TABLES if table not in CORE_TABLES)
 
@@ -37,7 +37,6 @@ def _reconcile_core(conn: sqlite3.Connection, source: dict|None) -> dict:
       "subscription_snapshots":{**bounds(source.get("mapped_subscription_snapshots",0),source.get("ipomatrix_rows_subscription_snapshots",0)),"destination":out["subscription_snapshots"]["destination_rows"]},
       "documents":{**bounds(source.get("source_documents",0),source.get("ipomatrix_rows_documents",0)),"destination":out["documents"]["destination_rows"]},
       "source_facts":{"source":source.get("source_source_facts",0)+source.get("ipomatrix_fact_rows",0)+source.get("derived_source_fact_rows",0),"destination":out["source_facts"]["destination_rows"]},
-      "ipomatrix_raw":{"source":source.get("source_ipomatrix",0),"destination":out["raw_objects"]["destination_rows"]},
     }
     for table in ("company_profile","ownership","objects_of_issue","reservations","anchor_summary","anchor_allocations","peer_comparisons"):
         comparisons[f"ipomatrix_{table}"]={"source":source.get(f"ipomatrix_rows_{table}",0),"destination":out[table]["destination_rows"]}
