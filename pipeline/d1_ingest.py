@@ -64,7 +64,6 @@ class D1IngestClient:
                 return data
             except urllib.error.HTTPError as exc:
                 text = exc.read().decode("utf-8", errors="replace")
-                # 4xx is a contract/identity failure. Retrying would only duplicate cost/noise.
                 if 400 <= exc.code < 500:
                     try:
                         detail = json.loads(text).get("error")
@@ -84,6 +83,15 @@ class D1IngestClient:
     def resolve_identity(self, *, isin: str | None = None,
                          name_norm: str | None = None) -> dict[str, Any] | None:
         return self._request("/v1/identity/resolve", {"isin": isin, "name_norm": name_norm}).get("row")
+
+    def extraction_state(self, *, document_sha256: str, model: str,
+                         prompt_version: str) -> dict[str, Any]:
+        """Fail-closed paid-call idempotency check for one exact extraction identity."""
+        return self._request("/v1/state/extraction", {
+            "document_sha256": document_sha256,
+            "model": model,
+            "prompt_version": prompt_version,
+        })
 
     def active_ipos(self, *, limit: int = 20, lookback_days: int = 100) -> list[dict[str, Any]]:
         return list(self._request("/v1/state/active", {"limit": limit, "lookback_days": lookback_days}).get("rows") or [])
