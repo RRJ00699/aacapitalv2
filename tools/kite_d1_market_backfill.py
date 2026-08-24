@@ -158,6 +158,7 @@ def main() -> int:
     ap.add_argument("--wrangler-config", type=Path, required=True)
     ap.add_argument("--binding", default="DB")
     ap.add_argument("--limit", type=int, default=10, help="audited IPOs to fetch; default 10 pilot; use 0 for all safe identities")
+    ap.add_argument("--start-index", type=int, default=1, help="1-based safe-universe index to resume from")
     ap.add_argument("--apply", action="store_true", help="write to remote D1; absent = fetch/count only")
     ap.add_argument("--max-statements-per-import", type=int, default=4000)
     ap.add_argument("--sleep", type=float, default=0.35)
@@ -165,15 +166,18 @@ def main() -> int:
 
     if args.apply and os.environ.get("AACAPITAL_D1_STAGING_CONFIRM") != "YES":
         ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES before remote D1 writes")
+    if args.start_index < 1:
+        ap.error("--start-index must be >= 1")
     if not args.identity_audit.exists():
         raise SystemExit(f"identity audit not found: {args.identity_audit}; run tools/kite_ipo_identity_audit.py first")
 
     windows, excluded = audited_windows(args.identity_audit)
     total_safe = len(windows)
+    windows = windows[args.start_index - 1:]
     if args.limit:
         windows = windows[:args.limit]
     if not windows:
-        raise SystemExit("no safe audited IPO identities available")
+        raise SystemExit("no safe audited IPO identities available for requested resume range")
 
     config = args.wrangler_config.resolve()
     ids = sorted({int(w["ipo_id"]) for w in windows})
@@ -193,14 +197,14 @@ def main() -> int:
     kite.set_access_token(token)
     profile = kite.profile()
     print(f"Kite token valid for user_id={profile.get('user_id')}")
-    print(f"audited identities: safe={total_safe} excluded={len(excluded)} selected={len(windows)}")
+    print(f"audited identities: safe={total_safe} excluded={len(excluded)} start_index={args.start_index} selected={len(windows)}")
 
     statements: list[str] = []
     fetched_rows = 0
     invalid_rows = 0
     failed = []
     per_ipo = []
-    for idx, w in enumerate(windows, 1):
+    for offset, w in enumerate(windows, args.start_index):
         ipo_id = int(w["ipo_id"])
         symbol = w.get("symbol") or ""
         instrument_token = int(w["kite_token"])
@@ -230,7 +234,7 @@ def main() -> int:
             counts[d1_interval] = good
             time.sleep(args.sleep)
         per_ipo.append({"ipo_id": ipo_id, "symbol": symbol, "identity_status": w["identity_status"], **counts})
-        print(f"[{idx}/{len(windows)}] {symbol:<14} day={counts.get('1d',0):4} 5m={counts.get('5m',0):5}")
+        print(f"[{offset}/{total_safe}] {symbol:<14} day={counts.get('1d',0):4} 5m={counts.get('5m',0):5}")
 
     if args.apply and statements:
         execute_sql_file(config, args.binding, statements)
@@ -246,6 +250,7 @@ def main() -> int:
         "mode": "APPLY" if args.apply else "FETCH_ONLY",
         "safe_audited_total": total_safe,
         "excluded_identity_total": len(excluded),
+        "start_index": args.start_index,
         "ipos": len(windows),
         "before_rows": before_rows,
         "fetched_valid_rows": fetched_rows,
