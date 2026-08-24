@@ -1,33 +1,29 @@
-// app/api/access-note/route.ts — public, rate-safe: attaches a short note to the
-// newest pending access request (created seconds earlier by the auth callback).
+// app/api/access-note/route.ts — public, rate-safe D1 update.
 import { NextRequest, NextResponse } from "next/server";
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { d1First, d1Run } from "@/lib/d1";
 export const dynamic = "force-dynamic";
-// lazy neon client — do NOT init at module scope: `next build` (deploy.yml) has no
-// DATABASE_URL, and a module-scope neon() throws during page-data collection. Same
-// runtime behavior; resolves on first query. (see lib/db.ts for the shared helper)
-let _neonSql: NeonQueryFunction<false, false> | null = null;
-const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-  if (!_neonSql) _neonSql = neon(process.env.DATABASE_URL!);
-  return _neonSql(strings, ...values);
-}) as NeonQueryFunction<false, false>;
 
 export async function POST(req: NextRequest) {
   try {
     const { note } = await req.json();
     const n = String(note || "").slice(0, 200).trim();
     if (!n) return NextResponse.json({ error: "empty" }, { status: 400 });
-    const upd = await sql`
-      UPDATE access_requests SET note = ${n}
-      WHERE email = (SELECT email FROM access_requests
-                     WHERE status = 'pending' AND requested_at > now() - interval '15 minutes'
-                       AND note IS NULL
-                     ORDER BY requested_at DESC LIMIT 1)
-      RETURNING email`;
-    if (upd.length && process.env.NTFY_TOPIC) {
-      await fetch(`https://ntfy.sh/${process.env.NTFY_TOPIC}`, { method: "POST",
-        headers: { Title: "Access request note" },
-        body: `${upd[0].email}: "${n}"` }).catch(() => {});
+    const pending = await d1First<{ email: string }>(
+      `SELECT email FROM access_requests
+       WHERE status='pending'
+         AND datetime(requested_at) > datetime('now','-15 minutes')
+         AND note IS NULL
+       ORDER BY requested_at DESC LIMIT 1`,
+    );
+    if (pending?.email) {
+      await d1Run("UPDATE access_requests SET note=? WHERE email=?", [n, pending.email]);
+      if (process.env.NTFY_TOPIC) {
+        await fetch(`https://ntfy.sh/${process.env.NTFY_TOPIC}`, {
+          method: "POST",
+          headers: { Title: "Access request note" },
+          body: `${pending.email}: "${n}"`,
+        }).catch(() => {});
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (e) { return NextResponse.json({ error: String(e) }, { status: 500 }); }
