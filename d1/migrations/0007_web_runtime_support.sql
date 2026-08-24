@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS pipeline_failures_time ON pipeline_failures(failed_at
 CREATE TABLE IF NOT EXISTS job_runs (
   id INTEGER PRIMARY KEY,
   job TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('queued','running','success','failed','cancelled')),
+  status TEXT NOT NULL CHECK(status IN ('queued','running','done','failed','cancelled')),
   requested_by TEXT,
   requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   started_at TEXT,
