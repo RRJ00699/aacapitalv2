@@ -17,6 +17,13 @@ PR #342 is superseded by PR #343. Only its useful rehearsal/evidence idea was re
 | Local path | Rehearsal executes transformed Neon-shaped rows and immutable Matrix raw through Wrangler local D1 twice, exports D1, and reconciles counts. |
 | IPO Matrix bootstrap | Owner-reviewed paths and explicit units populate normalized issue/profile/ownership/objects/financial/reservation/subscription/anchor/peer/KPI/document homes; every mapped field also writes provenance. Unapproved paths remain raw-only. |
 | Constraint honesty | No global `INSERT OR IGNORE` or per-row `SELECT` guard exists. Known rerun keys use an explicit conflict handler that no-ops only when every supplied value is identical and aborts on differing contents; rows without an approved key use plain `INSERT`, and unexpected CHECK/NOT NULL/UNIQUE violations fail the bounded batch. |
+| Bulk throughput | High-volume tables are grouped by table and exact column/conflict shape into bounded, multi-row `VALUES` statements (500 rows by default). FK ordering, UTF-8, byte ceilings, and identical-rerun conflict semantics remain enforced. |
+
+## Bulk migration performance defect
+
+- **Root cause — VERIFIED by owner run:** emitting roughly 564,871 individual `INSERT` statements made Wrangler/D1 execute row-level SQL even when files contained many statements.
+- **Why tests missed it:** the rehearsal proved correctness and rerun behavior with only a handful of rows; it did not assert SQL-statement compression for a high-volume dataset.
+- **Prevention:** regression tests now require 1,101 market rows to become three multi-row statements, execute those statements twice without row growth, and enforce the configured per-statement byte ceiling.
 
 ## Owner-data evidence still required
 

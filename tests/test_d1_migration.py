@@ -48,9 +48,29 @@ def test_bulk_writer_is_fk_ordered_bounded_and_has_no_row_selects(monkeypatch):
     lines=[insert_sql("raw_objects",("sha256","source_name","size_bytes","payload_json"),("a"*64,"ipomatrix",2,"{}")),
       insert_sql("company_profile",("ipo_id","business_description"),(1,"x")),
       insert_sql("ipo",("id","name","name_norm"),(1,"One","one"))]
-    d1m.apply_sql(lines,max_statements=10)
-    assert seen[0].index("INSERT INTO ipo(") < seen[0].index("company_profile") < seen[0].index("raw_objects")
+    stats=d1m.apply_sql(lines,max_statements=10)
+    combined="\n".join(seen)
+    assert combined.index("INSERT INTO ipo(") < combined.index("company_profile") < combined.index("raw_objects")
     assert all("SELECT CASE WHEN EXISTS" not in sql for sql in seen)
+    assert stats["raw_objects"]=={"source_rows":1,"multirow_statements":1,"sql_files":1}
+
+def test_high_volume_rows_are_multirow_batched_and_rerun_safe(db):
+    db.execute("INSERT INTO ipo(id,name,name_norm) VALUES(1,'One','one')")
+    rows=[]
+    for day in range(1,1102):
+        values=(1,"1d",f"2020-01-{day:04d}","1","2","1","2",100,"neon",f"fp-{day}")
+        rows.append(insert_sql("market_bars",("ipo_id","interval","ts","open_rs","high_rs","low_rs","close_rs","volume_shares","source_name","content_fingerprint"),values))
+    batches=d1m._bulk_statements("market_bars",rows,500,750_000)
+    assert [count for _,count in batches]==[500,500,101]
+    assert all(sql.count("INSERT INTO market_bars")==1 and sql.count("),(")>=100 for sql,_ in batches)
+    for sql,_ in batches:db.executescript(sql)
+    for sql,_ in batches:db.executescript(sql)
+    assert db.execute("SELECT count(*) FROM market_bars").fetchone()[0]==1101
+
+def test_bulk_statement_byte_ceiling_is_enforced():
+    row=insert_sql("raw_objects",("sha256","source_name","size_bytes","payload_json"),("a"*64,"ipomatrix",200,"x"*200))
+    with pytest.raises(ValueError,match="max-sql-bytes"):
+        d1m._bulk_statements("raw_objects",[row],500,100)
 
 def test_wrangler_uses_windows_npx_cmd_and_utf8(monkeypatch):
     captured={}

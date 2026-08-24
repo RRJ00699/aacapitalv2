@@ -75,7 +75,10 @@ python tools/d1_migration.py `
   --apply-staging `
   --wrangler-config C:\aacapital-input\wrangler.d1-staging.jsonc `
   --binding DB `
-  --max-statements 500 `
+  --bulk-rows 500 `
+  --max-statements 10000 `
+  --max-sql-bytes 750000 `
+  --max-file-bytes 8000000 `
   --report artifacts\d1-migration-staging.json
 
 python tools/d1_reconcile.py `
@@ -86,9 +89,12 @@ python tools/d1_reconcile.py `
   --output artifacts\d1-reconciliation-staging.json
 ```
 
-Repeat the identical two commands to prove deterministic rerun behavior. SQL files are
-UTF-8/LF, bounded by `--max-statements`, emitted in the approved FK order, and deleted
-after each Wrangler batch. Migration output reports only concise batch progress.
+Repeat the identical two commands to prove deterministic rerun behavior. The runner keeps
+the current D1 state: deterministic conflicts no-op only for identical contents, so no
+database reset is needed. High-volume compatible rows are grouped into 500-row `VALUES`
+statements. SQL files are UTF-8/LF, bounded by statement count and byte ceilings, emitted
+in the approved FK order, and deleted after each Wrangler batch. Progress is reported by
+table and source row count rather than by individual SQL statement.
 
 ## 4. Measure storage
 

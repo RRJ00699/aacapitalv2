@@ -356,23 +356,88 @@ LOAD_ORDER=("ipo","ipo_issue","company_profile","ownership","objects_of_issue","
   "reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons",
   "documents","research_findings","source_facts","market_bars","listing_observations","valuation_runs",
   "decision_history","raw_objects","migration_quarantine","migration_checkpoints")
+BULK_TABLES={"market_bars","subscription_snapshots","listing_observations","source_facts","raw_objects"}
 
 def _target_table(sql: str) -> str:
     match=re.search(r"(?:INSERT\s+INTO|UPDATE)\s+([a-zA-Z0-9_]+)",sql,re.I)
     return match.group(1).lower() if match else "migration_checkpoints"
 
-def apply_sql(sql_lines: list[str], max_statements=500):
-    """FK-order, bounded files, concise output; constraint errors fail immediately."""
+def _insert_parts(sql: str) -> tuple[str,str,str]|None:
+    """Return INSERT prefix, one VALUES tuple body, and conflict suffix."""
+    marker=" VALUES("
+    if not sql.startswith("INSERT INTO ") or marker not in sql or not sql.endswith(";"):return None
+    prefix,rest=sql.split(marker,1);rest=rest[:-1]
+    conflict=") ON CONFLICT"
+    if conflict in rest:
+        body,suffix=rest.rsplit(conflict,1)
+        return prefix+" VALUES",body," ON CONFLICT"+suffix
+    if not rest.endswith(")"):return None
+    return prefix+" VALUES",rest[:-1],""
+
+def _bulk_statements(table: str, sql_lines: list[str], bulk_rows: int,
+                     max_sql_bytes: int) -> list[tuple[str,int]]:
+    """Coalesce compatible generated inserts without changing conflict semantics."""
+    if table not in BULK_TABLES:
+        for sql in sql_lines:
+            size=len(sql.encode("utf-8"))
+            if size>max_sql_bytes:raise ValueError(f"{table} row exceeds --max-sql-bytes ({size}>{max_sql_bytes})")
+        return [(sql,1) for sql in sql_lines]
+    groups: dict[tuple[str,str],list[str]]={};singles=[]
+    for sql in sql_lines:
+        parts=_insert_parts(sql)
+        if parts is None:
+            size=len(sql.encode("utf-8"))
+            if size>max_sql_bytes:raise ValueError(f"{table} row exceeds --max-sql-bytes ({size}>{max_sql_bytes})")
+            singles.append((sql,1));continue
+        prefix,body,suffix=parts;groups.setdefault((prefix,suffix),[]).append(body)
+    output=[]
+    for (prefix,suffix),bodies in groups.items():
+        chunk=[]
+        for body in bodies:
+            candidate=f"{prefix}"+",".join(f"({value})" for value in (*chunk,body))+suffix+";"
+            size=len(candidate.encode("utf-8"))
+            if chunk and (len(chunk)>=bulk_rows or size>max_sql_bytes):
+                statement=f"{prefix}"+",".join(f"({value})" for value in chunk)+suffix+";"
+                output.append((statement,len(chunk)));chunk=[]
+                candidate=f"{prefix}({body}){suffix};";size=len(candidate.encode("utf-8"))
+            if size>max_sql_bytes:
+                raise ValueError(f"{table} row exceeds --max-sql-bytes ({size}>{max_sql_bytes})")
+            chunk.append(body)
+        if chunk:
+            output.append((f"{prefix}"+",".join(f"({value})" for value in chunk)+suffix+";",len(chunk)))
+    return output+singles
+
+def apply_sql(sql_lines: list[str], max_statements=10_000, bulk_rows=500,
+              max_sql_bytes=750_000, max_file_bytes=8_000_000):
+    """Bulk, FK-order, and bound files; constraint errors fail immediately."""
     buckets={table:[] for table in LOAD_ORDER}
-    for sql in sql_lines:buckets.setdefault(_target_table(sql),[]).append(sql)
-    ordered=[sql for table in LOAD_ORDER for sql in buckets.get(table,[])]
-    for offset in range(0,len(ordered),max_statements):
-        chunk=ordered[offset:offset+max_statements]
-        with tempfile.NamedTemporaryFile("w",suffix=".sql",delete=False,encoding="utf-8",newline="\n") as f:
-            f.write("PRAGMA foreign_keys=ON;\n"+"\n".join(chunk)+"\n");path=f.name
-        try:wrangler(["execute",WRANGLER_BINDING,"--file",path])
-        finally:Path(path).unlink(missing_ok=True)
-        print(f"loaded statements {offset+1}-{offset+len(chunk)} of {len(ordered)}")
+    for sql in sql_lines:
+        table=_target_table(sql)
+        if table not in buckets:raise ValueError(f"table absent from FK load order: {table}")
+        buckets[table].append(sql)
+    stats={}
+    for table in LOAD_ORDER:
+        total=len(buckets[table]);processed=0;pending=[];pending_rows=0;pending_bytes=24
+        compiled=_bulk_statements(table,buckets[table],bulk_rows,max_sql_bytes);files=0
+        for statement,row_count in compiled:
+            size=len(statement.encode("utf-8"))+1
+            if pending and (len(pending)>=max_statements or pending_bytes+size>max_file_bytes):
+                _execute_sql_file(pending);files+=1;processed+=pending_rows
+                print(f"{table}: {processed} / {total}")
+                pending=[];pending_rows=0;pending_bytes=24
+            if size+24>max_file_bytes:raise ValueError(f"{table} statement exceeds --max-file-bytes")
+            pending.append(statement);pending_rows+=row_count;pending_bytes+=size
+        if pending:
+            _execute_sql_file(pending);files+=1;processed+=pending_rows
+            print(f"{table}: {processed} / {total}")
+        if total:stats[table]={"source_rows":total,"multirow_statements":len(compiled),"sql_files":files}
+    return stats
+
+def _execute_sql_file(statements: list[str]):
+    with tempfile.NamedTemporaryFile("w",suffix=".sql",delete=False,encoding="utf-8",newline="\n") as f:
+        f.write("PRAGMA foreign_keys=ON;\n"+"\n".join(statements)+"\n");path=f.name
+    try:wrangler(["execute",WRANGLER_BINDING,"--file",path])
+    finally:Path(path).unlink(missing_ok=True)
 
 apply_local=apply_sql  # compatibility for the repository rehearsal
 
@@ -388,7 +453,8 @@ def main() -> int:
     started=time.monotonic()
     ap=argparse.ArgumentParser(); ap.add_argument("--ipomatrix",action="append",type=Path,default=[]); ap.add_argument("--survey",type=Path)
     ap.add_argument("--ipomatrix-map",type=Path);ap.add_argument("--apply-local",action="store_true");ap.add_argument("--apply-staging",action="store_true")
-    ap.add_argument("--wrangler-config",type=Path);ap.add_argument("--binding",default="DB");ap.add_argument("--max-statements",type=int,default=500)
+    ap.add_argument("--wrangler-config",type=Path);ap.add_argument("--binding",default="DB");ap.add_argument("--max-statements",type=int,default=10_000)
+    ap.add_argument("--bulk-rows",type=int,default=500);ap.add_argument("--max-sql-bytes",type=int,default=750_000);ap.add_argument("--max-file-bytes",type=int,default=8_000_000)
     ap.add_argument("--batch-size",type=int,default=1000)
     ap.add_argument("--report",type=Path,default=ROOT/"artifacts/d1-migration.json"); args=ap.parse_args()
     rows=inventory(args.ipomatrix)
@@ -471,11 +537,11 @@ def main() -> int:
     for dataset in NEON_QUERIES:
         statements.append(checkpoint_sql(dataset,counts[f"source_{dataset}"],counts[f"mapped_{dataset}"]))
     statements.append(checkpoint_sql("ipomatrix",counts["source_ipomatrix"],counts["mapped_ipomatrix_identity"]))
-    apply_sql(statements,args.max_statements)
+    load_stats=apply_sql(statements,args.max_statements,args.bulk_rows,args.max_sql_bytes,args.max_file_bytes)
     observed_paths={entry["json_path"] for entry in survey(rows)["paths"]};approved=reviewed_paths(mapping)
     report={**counts,"quarantined_rows":quarantined,"sql_statements":len(statements),
       "ipomatrix_raw_only_paths":sorted(observed_paths-approved),"runtime_seconds":round(time.monotonic()-started,6),
-      "status":"migrated_to_wrangler_local"}
+      "load_stats":load_stats,"status":"migrated_to_wrangler_local"}
     report["target"]="remote-staging" if WRANGLER_REMOTE else "local"
     if WRANGLER_REMOTE:report["staging_database"]=staging_info
     args.report.parent.mkdir(parents=True,exist_ok=True);args.report.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8");print(json.dumps(report,sort_keys=True));return 0

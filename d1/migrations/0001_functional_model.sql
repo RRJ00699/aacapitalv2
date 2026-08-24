@@ -108,7 +108,12 @@ CREATE TABLE decision_history (
   decided_at TEXT NOT NULL, decision TEXT NOT NULL, engine_version TEXT NOT NULL,
   inputs_json TEXT NOT NULL, evidence_json TEXT, run_fingerprint TEXT NOT NULL UNIQUE
 );
-CREATE TRIGGER decision_history_no_update BEFORE UPDATE ON decision_history BEGIN SELECT RAISE(ABORT,'decision_history is append-only'); END;
+CREATE TRIGGER decision_history_no_update BEFORE UPDATE ON decision_history
+WHEN NOT (OLD.id IS NEW.id AND OLD.ipo_id IS NEW.ipo_id AND OLD.layer IS NEW.layer
+  AND OLD.decided_at IS NEW.decided_at AND OLD.decision IS NEW.decision
+  AND OLD.engine_version IS NEW.engine_version AND OLD.inputs_json IS NEW.inputs_json
+  AND OLD.evidence_json IS NEW.evidence_json AND OLD.run_fingerprint IS NEW.run_fingerprint)
+BEGIN SELECT RAISE(ABORT,'decision_history is append-only'); END;
 CREATE TRIGGER decision_history_no_delete BEFORE DELETE ON decision_history BEGIN SELECT RAISE(ABORT,'decision_history is append-only'); END;
 CREATE TABLE source_facts (
   id INTEGER PRIMARY KEY, ipo_id INTEGER REFERENCES ipo(id), target_table TEXT NOT NULL, target_field TEXT NOT NULL,
@@ -121,7 +126,11 @@ CREATE TABLE raw_objects (
   captured_at TEXT, size_bytes INTEGER NOT NULL, payload_json TEXT NOT NULL,
   UNIQUE(source_name,source_object_id,sha256)
 );
-CREATE TRIGGER raw_objects_no_update BEFORE UPDATE ON raw_objects BEGIN SELECT RAISE(ABORT,'raw_objects is immutable'); END;
+CREATE TRIGGER raw_objects_no_update BEFORE UPDATE ON raw_objects
+WHEN NOT (OLD.sha256 IS NEW.sha256 AND OLD.source_name IS NEW.source_name
+  AND OLD.source_object_id IS NEW.source_object_id AND OLD.captured_at IS NEW.captured_at
+  AND OLD.size_bytes IS NEW.size_bytes AND OLD.payload_json IS NEW.payload_json)
+BEGIN SELECT RAISE(ABORT,'raw_objects is immutable'); END;
 CREATE TRIGGER raw_objects_no_delete BEFORE DELETE ON raw_objects BEGIN SELECT RAISE(ABORT,'raw_objects is immutable'); END;
 CREATE TABLE migration_quarantine (
   id INTEGER PRIMARY KEY, source_name TEXT NOT NULL, source_identity TEXT, dataset TEXT NOT NULL,
