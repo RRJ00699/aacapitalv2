@@ -44,6 +44,15 @@ async function extractionGuard(req: Request, env: Env): Promise<Response> {
   return json({ ok: true, extracted: !!row, row: row ?? null })
 }
 
+async function stateIndex(req:Request,env:Env):Promise<Response>{
+  if(!authenticated(req,env))return json({ok:false,error:"unauthorized"},401)
+  const list=await rows(env,`SELECT i.name AS company_name,i.nse_symbol AS sym,i.isin,ii.listing_date
+      FROM ipo i LEFT JOIN ipo_issue ii ON ii.ipo_id=i.id
+      WHERE i.name IS NOT NULL AND i.security_kind='EQUITY'
+      ORDER BY ii.listing_date DESC,i.id DESC LIMIT 2000`)
+  return json({ok:true,rows:list})
+}
+
 async function valuationInputs(req:Request,env:Env):Promise<Response>{
   if(!authenticated(req,env))return json({ok:false,error:"unauthorized"},401)
   const p=await payload(req);if(!p)return json({ok:false,error:"invalid_json"},400)
@@ -80,14 +89,20 @@ async function valuationInputs(req:Request,env:Env):Promise<Response>{
   const street=await env.DB.prepare(`SELECT calculated_at,positive_count,neutral_count,negative_count,summary_json FROM street_summary WHERE ipo_id=?`).bind(ipoId).first<any>()
   const outcome=await env.DB.prepare(`SELECT listing_open,d1_close,gap_pct,best_close,worst_close,ceiling_20,hold_positive_vs_open,winner_35,pool,computed_at,dataset_version
       FROM listing_outcomes WHERE ipo_id=?`).bind(ipoId).first<any>()
+  const dailyBars=await rows(env,`SELECT ts AS date,open_rs AS open,high_rs AS high,low_rs AS low,close_rs AS close,volume_shares AS volume
+      FROM market_bars WHERE ipo_id=? AND interval='1d' ORDER BY ts ASC LIMIT 40`,[ipoId])
+  const latestPreopen=await env.DB.prepare(`SELECT observed_at,price_rs,buy_qty_shares,sell_qty_shares,ieq_shares,payload_json,source_name
+      FROM listing_observations WHERE ipo_id=? AND observation_type='preopen' ORDER BY observed_at DESC LIMIT 1`).bind(ipoId).first<any>()
   return json({ok:true,issue,financials,facts,peers,gmp,sbi,news,anchor,anchor_allocations:anchorRows,
-               subscriptions,reservations,documents,extractions,valuation,proforma,street,outcome})
+               subscriptions,reservations,documents,extractions,valuation,proforma,street,outcome,
+               daily_bars:dailyBars,latest_preopen:latestPreopen})
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
     if (url.pathname === "/v1/state/extraction" && req.method === "POST") return extractionGuard(req, env)
+    if (url.pathname === "/v1/state/index" && req.method === "POST") return stateIndex(req,env)
     if (url.pathname === "/v1/state/valuation-inputs" && req.method === "POST") return valuationInputs(req,env)
     return handleIngestRequest(req, env as any)
   },
