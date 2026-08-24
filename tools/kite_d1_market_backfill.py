@@ -28,11 +28,23 @@ def sqlv(value) -> str:
 
 
 def d1_query(config: Path, binding: str, sql: str):
+    sql = sql.strip()
+    if not sql.endswith(";"):
+        sql += ";"
     cmd = [npx_cmd(), "wrangler", "--config", str(config), "d1", "execute", binding,
            "--remote", "--command", sql, "--json"]
-    cp = subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True, text=True,
+    cp = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                         encoding="utf-8", errors="replace")
-    payload = json.loads(cp.stdout)
+    if cp.returncode != 0:
+        if cp.stdout:
+            print(cp.stdout, end="")
+        if cp.stderr:
+            print(cp.stderr, end="")
+        raise SystemExit(f"Wrangler D1 query failed with exit code {cp.returncode}: {sql}")
+    try:
+        payload = json.loads(cp.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Wrangler returned non-JSON output for D1 query: {exc}\n{cp.stdout}") from exc
     if isinstance(payload, list):
         for item in payload:
             if isinstance(item, dict) and isinstance(item.get("results"), list):
