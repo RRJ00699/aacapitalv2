@@ -24,6 +24,15 @@ def name_norm(value: str | None) -> str | None:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
+def int_key(value: Any):
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def json_path(payload: Any, path: str | None):
     if not path:
         return None
@@ -120,20 +129,20 @@ def main() -> int:
     if remote and os.environ.get("AACAPITAL_D1_STAGING_CONFIRM")!="YES": ap.error("set AACAPITAL_D1_STAGING_CONFIRM=YES for staging")
     mapping=json.loads(args.ipomatrix_map.read_text(encoding="utf-8"))
     issue_neon,fin_neon=neon_rows(url)
-    by_mid={r["ipomatrix_id"]:r for r in issue_neon if r.get("ipomatrix_id") is not None}
+    by_mid={int_key(r["ipomatrix_id"]):r for r in issue_neon if r.get("ipomatrix_id") is not None}
     by_isin={str(r["isin"]).upper():r for r in issue_neon if r.get("isin")}
     by_name={r["name_norm"] or name_norm(r.get("name_display")):r for r in issue_neon}
-    fin_by_key={(r["ipo_id"],str(r["period"]),str(r["basis"])):r for r in fin_neon}
+    fin_by_key={(int_key(r["ipo_id"]),str(r["period"]),str(r["basis"])):r for r in fin_neon}
     config=args.wrangler_config.resolve()
     d1_ipo=d1_query(config,args.binding,remote,"SELECT id,ipo_matrix_id,isin,name_norm FROM ipo")
-    d1_by_mid={r.get("ipo_matrix_id"):r for r in d1_ipo if r.get("ipo_matrix_id") is not None}
+    d1_by_mid={int_key(r.get("ipo_matrix_id")):r for r in d1_ipo if r.get("ipo_matrix_id") is not None}
     d1_by_isin={str(r.get("isin")).upper():r for r in d1_ipo if r.get("isin")}
     d1_by_name={r.get("name_norm"):r for r in d1_ipo if r.get("name_norm")}
     table_cache={}
     for table in ("ipo_issue","company_profile","anchor_summary"):
-        rows=d1_query(config,args.binding,remote,f"SELECT * FROM {table}"); table_cache[table]={r.get("ipo_id"):r for r in rows}
+        rows=d1_query(config,args.binding,remote,f"SELECT * FROM {table}"); table_cache[table]={int_key(r.get("ipo_id")):r for r in rows}
     fin_d1=d1_query(config,args.binding,remote,"SELECT * FROM financial_statements")
-    table_cache["financial_statements"]={(r.get("ipo_id"),str(r.get("period")),str(r.get("basis"))):r for r in fin_d1}
+    table_cache["financial_statements"]={(int_key(r.get("ipo_id")),str(r.get("period")),str(r.get("basis"))):r for r in fin_d1}
     issue_neon_fields={"open_date":"open_date","close_date":"close_date","allotment_date":"allotment_date","listing_date":"listing_date","band_lo_rs":"band_lo","band_hi_rs":"band_hi","issue_price_rs":"issue_price","face_value_rs":"face_value","lot_size_shares":"lot_size","issue_size_cr":"issue_size_cr","fresh_cr":"fresh_cr","ofs_cr":"ofs_cr","registrar_name":"registrar"}
     fin_neon_fields={"revenue_cr":"revenue","total_income_cr":"total_income","ebitda_cr":"ebitda","pat_cr":"pat","net_worth_cr":"net_worth","debt_cr":"total_debt","assets_cr":"total_assets"}
     output=[]
@@ -141,11 +150,11 @@ def main() -> int:
         for path in sorted(base.rglob("*.json")):
             try: payload=json.loads(path.read_text(encoding="utf-8-sig"))
             except Exception: continue
-            mid=json_path(payload,mapping.get("matrix_id")); name=json_path(payload,mapping.get("name")); isin=json_path(payload,mapping.get("isin"))
+            mid=int_key(json_path(payload,mapping.get("matrix_id"))); name=json_path(payload,mapping.get("name")); isin=json_path(payload,mapping.get("isin"))
             if mid is None or not name: continue
             neon=by_mid.get(mid) or (by_isin.get(str(isin).upper()) if isin else None) or by_name.get(name_norm(name))
             d1spine=d1_by_mid.get(mid) or (d1_by_isin.get(str(isin).upper()) if isin else None) or d1_by_name.get(name_norm(name))
-            ipo_id=(d1spine or {}).get("id") or (neon or {}).get("ipo_id")
+            ipo_id=int_key((d1spine or {}).get("id")) or int_key((neon or {}).get("ipo_id"))
             if ipo_id is None:
                 output.append({"matrix_id":mid,"ipo_id":"","company_name":name,"table":"ipo","row_key":"","field":"identity","d1_value":"","neon_value":"","matrix_value":str(isin or name),"status":"UNMATCHED_IDENTITY","recommended_value":"","approved":""}); continue
             for section,table in (("ipo_issue","ipo_issue"),("company_profile","company_profile"),("anchor_summary","anchor_summary")):
