@@ -33,10 +33,18 @@ def npx_cmd() -> str:
     return "npx.cmd" if platform.system().lower().startswith("win") else "npx"
 
 
-def run_wrangler(config: Path, binding: str, remote: bool, args: list[str]) -> subprocess.CompletedProcess:
+def run_wrangler(config: Path, binding: str, remote: bool, args: list[str], *, capture: bool = False) -> subprocess.CompletedProcess:
     target = "--remote" if remote else "--local"
     cmd = [npx_cmd(), "wrangler", "d1", *args, target, "--config", str(config)]
-    return subprocess.run(cmd, cwd=ROOT, check=True, text=True, encoding="utf-8", errors="replace")
+    return subprocess.run(
+        cmd,
+        cwd=ROOT,
+        check=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=capture,
+    )
 
 
 def inventory(paths: list[Path]):
@@ -67,22 +75,59 @@ def inventory(paths: list[Path]):
             }
 
 
-def insert_sql(row: dict) -> str:
-    cols = ("sha256", "matrix_id", "company_name", "name_norm", "isin", "filename", "size_bytes", "payload_json")
-    values = ",".join(sql_value(row[c]) for c in cols)
-    return (
-        f"INSERT INTO ipomatrix_raw_stage({','.join(cols)}) VALUES({values}) "
-        "ON CONFLICT(sha256) DO NOTHING;"
+def split_payload(text: str, chunk_chars: int) -> list[str]:
+    if chunk_chars < 1000:
+        raise ValueError("--chunk-chars must be >= 1000")
+    return [text[i : i + chunk_chars] for i in range(0, len(text), chunk_chars)] or [""]
+
+
+def row_sql(row: dict, chunk_chars: int) -> list[str]:
+    chunks = split_payload(row["payload_json"], chunk_chars)
+    metadata_cols = (
+        "sha256",
+        "matrix_id",
+        "company_name",
+        "name_norm",
+        "isin",
+        "filename",
+        "size_bytes",
+        "payload_json",
+        "chunk_count",
     )
+    metadata_values = (
+        row["sha256"],
+        row["matrix_id"],
+        row["company_name"],
+        row["name_norm"],
+        row["isin"],
+        row["filename"],
+        row["size_bytes"],
+        "",
+        len(chunks),
+    )
+    statements = [
+        f"INSERT INTO ipomatrix_raw_stage({','.join(metadata_cols)}) "
+        f"VALUES({','.join(sql_value(v) for v in metadata_values)}) "
+        "ON CONFLICT(sha256) DO UPDATE SET "
+        "matrix_id=excluded.matrix_id,company_name=excluded.company_name,name_norm=excluded.name_norm,"
+        "isin=excluded.isin,filename=excluded.filename,size_bytes=excluded.size_bytes,chunk_count=excluded.chunk_count;"
+    ]
+    for chunk_no, chunk in enumerate(chunks):
+        statements.append(
+            "INSERT INTO ipomatrix_raw_stage_chunks(sha256,chunk_no,payload_chunk) "
+            f"VALUES({sql_value(row['sha256'])},{chunk_no},{sql_value(chunk)}) "
+            "ON CONFLICT(sha256,chunk_no) DO NOTHING;"
+        )
+    return statements
 
 
 def execute_bounded(config: Path, binding: str, remote: bool, statements: list[str], max_file_bytes: int):
     pending: list[str] = []
     size = 24
-    loaded = 0
+    executed = 0
 
     def flush():
-        nonlocal pending, size, loaded
+        nonlocal pending, size, executed
         if not pending:
             return
         with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8", newline="\n") as f:
@@ -92,8 +137,8 @@ def execute_bounded(config: Path, binding: str, remote: bool, statements: list[s
             run_wrangler(config, binding, remote, ["execute", binding, "--file", str(temp)])
         finally:
             temp.unlink(missing_ok=True)
-        loaded += len(pending)
-        print(f"ipomatrix_raw_stage: {loaded} / {len(statements)}")
+        executed += len(pending)
+        print(f"ipomatrix_raw_stage SQL: {executed} / {len(statements)}")
         pending = []
         size = 24
 
@@ -102,10 +147,22 @@ def execute_bounded(config: Path, binding: str, remote: bool, statements: list[s
         if pending and size + statement_bytes > max_file_bytes:
             flush()
         if statement_bytes + 24 > max_file_bytes:
-            raise ValueError(f"single JSON row exceeds --max-file-bytes: {statement_bytes}")
+            raise ValueError(f"single chunk statement exceeds --max-file-bytes: {statement_bytes}")
         pending.append(statement)
         size += statement_bytes
     flush()
+
+
+def d1_scalar(config: Path, binding: str, remote: bool, sql: str) -> int:
+    cp = run_wrangler(config, binding, remote, ["execute", binding, "--command", sql, "--json"], capture=True)
+    payload = json.loads(cp.stdout)
+    if isinstance(payload, list) and payload and isinstance(payload[0], dict):
+        rows = payload[0].get("results") or []
+    elif isinstance(payload, dict):
+        rows = payload.get("results") or []
+    else:
+        rows = []
+    return int(rows[0]["n"]) if rows else 0
 
 
 def main() -> int:
@@ -117,6 +174,7 @@ def main() -> int:
     target.add_argument("--local", action="store_true")
     target.add_argument("--staging", action="store_true")
     ap.add_argument("--max-file-bytes", type=int, default=5_000_000)
+    ap.add_argument("--chunk-chars", type=int, default=12_000)
     args = ap.parse_args()
 
     remote = bool(args.staging)
@@ -127,12 +185,37 @@ def main() -> int:
     run_wrangler(config, args.binding, remote, ["migrations", "apply", args.binding])
 
     rows = list(inventory(args.ipomatrix))
-    statements = [insert_sql(row) for row in rows]
+    statements: list[str] = []
+    for row in rows:
+        statements.extend(row_sql(row, args.chunk_chars))
     execute_bounded(config, args.binding, remote, statements, args.max_file_bytes)
 
     real_ipos = sum(1 for row in rows if row["matrix_id"] is not None and row["company_name"])
     helper_files = len(rows) - real_ipos
-    print(json.dumps({"json_files": len(rows), "ipo_payloads": real_ipos, "helper_files": helper_files}, sort_keys=True))
+    staged_files = d1_scalar(config, args.binding, remote, "SELECT count(*) AS n FROM ipomatrix_raw_stage")
+    staged_chunks = d1_scalar(config, args.binding, remote, "SELECT count(*) AS n FROM ipomatrix_raw_stage_chunks")
+    bad_chunk_counts = d1_scalar(
+        config,
+        args.binding,
+        remote,
+        "SELECT count(*) AS n FROM ipomatrix_raw_stage s WHERE "
+        "s.chunk_count<>(SELECT count(*) FROM ipomatrix_raw_stage_chunks c WHERE c.sha256=s.sha256)",
+    )
+    print(
+        json.dumps(
+            {
+                "json_files": len(rows),
+                "ipo_payloads": real_ipos,
+                "helper_files": helper_files,
+                "staged_files": staged_files,
+                "staged_chunks": staged_chunks,
+                "bad_chunk_counts": bad_chunk_counts,
+            },
+            sort_keys=True,
+        )
+    )
+    if staged_files != len(rows) or bad_chunk_counts != 0:
+        raise SystemExit("raw stage verification failed")
     return 0
 
 
