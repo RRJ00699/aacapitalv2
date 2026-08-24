@@ -121,9 +121,11 @@ def execute_sql_file(config: Path, binding: str, statements: list[str]):
             f.write(s + "\n")
         path = Path(f.name)
     try:
-        subprocess.run([npx_cmd(), "wrangler", "--config", str(config), "d1", "execute", binding,
-                        "--remote", "--file", str(path)], cwd=ROOT, check=True, text=True,
-                       encoding="utf-8", errors="replace")
+        cmd = [npx_cmd(), "wrangler", "--config", str(config), "d1", "execute", binding,
+               "--remote", "--file", str(path), "--yes"]
+        cp = subprocess.run(cmd, cwd=ROOT, text=True, encoding="utf-8", errors="replace")
+        if cp.returncode != 0:
+            raise subprocess.CalledProcessError(cp.returncode, cmd)
     finally:
         path.unlink(missing_ok=True)
 
@@ -157,7 +159,7 @@ def main() -> int:
     ap.add_argument("--binding", default="DB")
     ap.add_argument("--limit", type=int, default=10, help="audited IPOs to fetch; default 10 pilot; use 0 for all safe identities")
     ap.add_argument("--apply", action="store_true", help="write to remote D1; absent = fetch/count only")
-    ap.add_argument("--max-statements-per-import", type=int, default=12000)
+    ap.add_argument("--max-statements-per-import", type=int, default=4000)
     ap.add_argument("--sleep", type=float, default=0.35)
     args = ap.parse_args()
 
