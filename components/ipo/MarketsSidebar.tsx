@@ -19,9 +19,6 @@ const first = (...vals: unknown[]) => vals.find(has);
 const fmt = (v: unknown, d = 0) => (has(v) ? Number(v).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d}) : "—");
 const cr = (v: unknown) => { if(!has(v)) return "—"; const n=Number(v); return `${n>=0?"+":""}${n.toLocaleString("en-IN",{maximumFractionDigits:0})}`; };
 const sgn = (n: number | null, isPct = true) =>
-  // UAT bug U4 (2026-07-21): absolute point changes were rendered with a %
-  // suffix (^DJI +594.83 pts shown as +594.83%). Percent suffix ONLY when the
-  // value IS a percent; bare points otherwise.
   (n==null?"—":`${n>=0?"+":""}${n.toFixed(2)}${isPct?"%":""}`);
 
 function Tile({ label, value, sub, tone }: { label:string; value:string; sub?:string; tone?:"up"|"down"|null }) {
@@ -52,37 +49,24 @@ export default function MarketsSidebar() {
     ]).then(([gg, ss]) => {
       if (!live) return;
       const g = (gg?.india) || gg || {};
-      const s = (ss?.data) || ss || {};   // /api/market/snapshot answers { ok, data }
+      const s = (ss?.data) || ss || {};
       setDom({
         nifty: fmt(first(g.nifty, s.nifty_price), 0),
         niftyChg: has(first(g.niftyChg, s.nifty_change_pct)) ? num(first(g.niftyChg, s.nifty_change_pct)) : null,
         bn: fmt(first(g.bankNifty, s.banknifty_price), 0),
         bnChg: has(first(g.bankNiftyChg, s.banknifty_change_pct)) ? num(first(g.bankNiftyChg, s.banknifty_change_pct)) : null,
         vix: fmt(first(g.vix, s.vix, s.india_vix), 2),
-        // fii_cash_flow / dii_cash_flow were also dead reads: /api/market/snapshot
-        // ships fii_flow / dii_flow, and /api/market/global ships india.fii / .dii.
         fii: cr(first(g.fii, s.fii_flow)),
         dii: cr(first(g.dii, s.dii_flow)),
         pcr: fmt(first(g.pcr, s.pcr), 2),
       });
-      // Global rows. DEAD-READ FIX (2026-08-17): this used to look the map up by
-      // slugs — mk("dowjones"), mk("nasdaq"), … — which /api/market/global has
-      // never shipped; it keys by Yahoo symbol (^DJI, ^NDX, …). Every labeled
-      // row therefore resolved to null and the rail silently fell through to a
-      // raw-key fallback that printed "^DJI" as the label. Same class of bug as
-      // ListingReview's c.candles_json: a read of a field no payload carries.
-      // It now reads the real keys and the label/flag the API already ships.
       const gm = (gg?.global) || {};
       setBreadth(gg?.breadth || null);
       if (gg?.as_of) setAsOf(new Date(gg.as_of).toLocaleTimeString());
       const rows: GRow[] = [];
       for (const key of GLOBAL_ORDER) {
         const row = gm[key];
-        if (!row || !has(row.price)) continue;      // absent stays absent — no zero row
-        // U4 contract (_scripts/tests/test_ux_premium.py pins this exact line):
-        // a percent field is always preferred over a point change, so a point
-        // change can never wear a % suffix. change_pct is kept as a defensive
-        // alias only — /api/market/global ships changePct.
+        if (!row || !has(row.price)) continue;
         const pct = first(row.changePct, row.change_pct);
         rows.push({
           label: [row.flag, row.label].filter(Boolean).join(" ") || key,
@@ -91,8 +75,6 @@ export default function MarketsSidebar() {
           isPct: has(pct),
         });
       }
-      // Anything the API adds that this order does not name yet still renders,
-      // under its own shipped label rather than a bare symbol.
       for (const [key, row] of Object.entries<any>(gm)) {
         if (GLOBAL_ORDER.includes(key) || !has(row?.price)) continue;
         rows.push({
@@ -115,7 +97,6 @@ export default function MarketsSidebar() {
 
   return (
     <aside style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      {/* Domestic */}
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 13px" }}>
         <div style={{ fontSize:11, fontWeight:800, letterSpacing:.5, textTransform:"uppercase", color:C.sub, marginBottom:9 }}>Domestic Market</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
@@ -128,8 +109,7 @@ export default function MarketsSidebar() {
         </div>
         {domGaps.length ? (
           <div style={{ fontSize:10.5, color:C.meta, marginTop:8 }}>
-            {domGaps.join(" · ")} unavailable — no maintained producer ships these fields
-            (FII/DII need daily_institutional_flows, which was never built; PCR needs a market_snapshot row).
+            {domGaps.join(" · ")} unavailable — no maintained producer ships these fields.
           </div>
         ) : null}
       </div>
@@ -138,7 +118,6 @@ export default function MarketsSidebar() {
         <b style={{color:C.red}}>Dec {breadth.dec ?? "—"}</b>{" · unch "}{breadth.unch ?? "—"}
         <span style={{color:C.meta}}> · {breadth.asof || ""}</span></div>) : null}
       {asOf ? (<div style={{fontSize:10.5,color:C.meta,margin:"0 2px 8px"}}>quotes as of {asOf}</div>) : null}
-      {/* Global */}
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 13px" }}>
         <div style={{ fontSize:11, fontWeight:800, letterSpacing:.5, textTransform:"uppercase", color:C.sub, marginBottom:9 }}>Global Markets</div>
         {loading ? <div style={{ fontSize:12, color:C.meta, padding:"8px 0" }}>Loading…</div> : (
