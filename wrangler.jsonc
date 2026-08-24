@@ -9,6 +9,13 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aacapitalpvtltd",
+      "database_id": "ef426358-e0ea-4fb0-9926-61cab986626f"
+    }
+  ],
   // CACHE binding removed 2026-07-18: it shipped with a PLACEHOLDER id and broke
   // EVERY production deploy ("KV namespace 'PLACEHOLDER_CACHE_NS_ID' is not valid",
   // code 10042). Re-add ONLY with a real id from `npx wrangler kv namespace create CACHE`.
