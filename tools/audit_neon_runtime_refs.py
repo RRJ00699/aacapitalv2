@@ -1,29 +1,24 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts" / "neon-runtime-ref-audit.json"
 
-TERMS = (
+STRONG_TERMS = (
     "@neondatabase/serverless",
     "DATABASE_URL",
     "NEON_DATABASE_URL",
     "psycopg2",
-    "platform_config",
-    "kite_session",
 )
+WEAK_TERMS = ("platform_config", "kite_session")
+TERMS = STRONG_TERMS + WEAK_TERMS
 
 SKIP_DIRS = {
     ".git", "node_modules", ".next", ".open-next", "_archive", "docs", "artifacts",
     ".local-input", "research", "tests", "uat", "compatibility",
 }
-
-# One-time migration/diagnostic tools may intentionally read Neon and do not keep
-# production alive. The audit's blocker counts are for code that can execute as part
-# of the web app or current owner/pipeline production entrypoints.
 SUPPORT_PREFIXES = (
     "tools/d1_",
     "tools/diagnostics/",
@@ -32,11 +27,7 @@ SUPPORT_PREFIXES = (
 )
 
 WEB_PREFIXES = ("app/", "lib/")
-WEB_EXACT = {"auth.ts", "pipeline/build/build_snapshots.ts"}
-
-# Current owner/production surfaces. Individual helper modules under pipeline/ count
-# because cron/drive can import them. Generic historical _scripts are support unless
-# they are explicit production entrypoints below.
+WEB_EXACT = {"auth.ts"}
 PIPELINE_PREFIXES = ("pipeline/",)
 PIPELINE_EXACT = {
     "_scripts/job_runner.py",
@@ -68,9 +59,7 @@ def strip_nonexec_line(line: str, suffix: str) -> str:
     s = line.strip()
     if not s:
         return ""
-    # Ignore whole-line comments. This deliberately does not try to parse strings;
-    # blocker evidence below is conservative and requires a runtime term on a code line.
-    if suffix in {".py"} and s.startswith("#"):
+    if suffix == ".py" and s.startswith("#"):
         return ""
     if suffix in {".ts", ".tsx", ".js", ".mjs", ".cjs"} and s.startswith("//"):
         return ""
@@ -81,7 +70,6 @@ def strip_nonexec_line(line: str, suffix: str) -> str:
 
 def classify(r: str) -> str:
     if r in WEB_EXACT or r.startswith(WEB_PREFIXES):
-        # Test files inside app/lib are support only.
         if ".test." in r or ".spec." in r:
             return "support"
         return "web"
@@ -103,13 +91,17 @@ def main() -> int:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
+
+        executable = [strip_nonexec_line(raw, path.suffix.lower()) for raw in lines]
+        has_strong = any(any(term in line for term in STRONG_TERMS) for line in executable if line)
         matches = []
-        for n, raw in enumerate(lines, 1):
-            line = strip_nonexec_line(raw, path.suffix.lower())
+        for n, line in enumerate(executable, 1):
             if not line:
                 continue
             terms = [t for t in TERMS if t in line]
-            if terms:
+            # A table-name mention in UI copy/metadata is not a database dependency.
+            # Weak terms only count when the same file also contains a real DB client/env reference.
+            if terms and (has_strong or any(t in STRONG_TERMS for t in terms)):
                 matches.append({"line": n, "terms": terms, "text": line[:220]})
         if matches:
             buckets[classify(r)].append({"path": r, "matches": matches})
