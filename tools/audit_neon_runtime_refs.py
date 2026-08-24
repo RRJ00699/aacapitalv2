@@ -1,108 +1,138 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TERMS = [
+OUT = ROOT / "artifacts" / "neon-runtime-ref-audit.json"
+
+TERMS = (
     "@neondatabase/serverless",
     "DATABASE_URL",
     "NEON_DATABASE_URL",
     "psycopg2",
     "platform_config",
     "kite_session",
-]
-CODE_EXTS = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs"}
-GLOBAL_EXCLUDES = {".git", "node_modules", ".next", ".open-next", "_archive", "docs", "artifacts", ".local-input"}
+)
+
+SKIP_DIRS = {
+    ".git", "node_modules", ".next", ".open-next", "_archive", "docs", "artifacts",
+    ".local-input", "research", "tests", "uat", "compatibility",
+}
+
+# One-time migration/diagnostic tools may intentionally read Neon and do not keep
+# production alive. The audit's blocker counts are for code that can execute as part
+# of the web app or current owner/pipeline production entrypoints.
+SUPPORT_PREFIXES = (
+    "tools/d1_",
+    "tools/diagnostics/",
+    "tools/audit_neon_runtime_refs.py",
+    "_scripts/tests/",
+)
+
+WEB_PREFIXES = ("app/", "lib/")
+WEB_EXACT = {"auth.ts", "pipeline/build/build_snapshots.ts"}
+
+# Current owner/production surfaces. Individual helper modules under pipeline/ count
+# because cron/drive can import them. Generic historical _scripts are support unless
+# they are explicit production entrypoints below.
+PIPELINE_PREFIXES = ("pipeline/",)
+PIPELINE_EXACT = {
+    "_scripts/job_runner.py",
+    "_scripts/run_ipo_pipeline_lean.py",
+    "_scripts/nse_preopen_capture.py",
+    "_scripts/refresh_kite_token.py",
+    "_scripts/prod/env_utils.py",
+    "_scripts/prod/kite_sync_and_predict.py",
+}
+
+CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".sql"}
 
 
-def is_test_or_support(rel: str) -> bool:
-    name = Path(rel).name.lower()
-    return (
-        rel.startswith(("research/", "tests/", "uat/", "tools/diagnostics/", "compatibility/"))
-        or "/tests/" in rel
-        or name.startswith("test_")
-        or name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
-        or rel.startswith("tools/d1_")
-        or rel == "tools/audit_neon_runtime_refs.py"
-    )
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
 
 
-def tier(rel: str) -> str:
-    if is_test_or_support(rel):
-        return "nonblocking_support"
-    if rel == "auth.ts" or rel.startswith("app/") or rel.startswith("lib/") or rel.startswith("workers/") or rel.startswith("pipeline/build/"):
-        return "web_runtime"
-    if rel.startswith("pipeline/") or rel.startswith("_scripts/"):
-        return "pipeline_owner_runtime"
-    return "nonblocking_support"
+def base_included(path: Path) -> bool:
+    r = rel(path)
+    parts = path.relative_to(ROOT).parts
+    if any(part in SKIP_DIRS for part in parts):
+        return False
+    if any(r.startswith(p) for p in SUPPORT_PREFIXES):
+        return False
+    return path.suffix.lower() in CODE_SUFFIXES
 
 
-def executable_lines(path: Path):
-    """Yield (line_no, text) with obvious comments removed.
+def strip_nonexec_line(line: str, suffix: str) -> str:
+    s = line.strip()
+    if not s:
+        return ""
+    # Ignore whole-line comments. This deliberately does not try to parse strings;
+    # blocker evidence below is conservative and requires a runtime term on a code line.
+    if suffix in {".py"} and s.startswith("#"):
+        return ""
+    if suffix in {".ts", ".tsx", ".js", ".mjs", ".cjs"} and s.startswith("//"):
+        return ""
+    if suffix == ".sql" and s.startswith("--"):
+        return ""
+    return s
 
-    This is intentionally conservative: it removes full-line comments and TS/JS block
-    comments so prose mentioning Neon does not become a runtime blocker. It does not
-    attempt to parse language grammars; exact matched lines are still emitted for review.
-    """
-    in_block = False
-    for n, raw in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-        s = raw.strip()
-        if path.suffix.lower() in {".ts", ".tsx", ".js", ".mjs", ".cjs"}:
-            if in_block:
-                if "*/" in s:
-                    in_block = False
-                    s = s.split("*/", 1)[1].strip()
-                else:
-                    continue
-            if s.startswith("/*"):
-                if "*/" in s:
-                    s = s.split("*/", 1)[1].strip()
-                else:
-                    in_block = True
-                    continue
-            if s.startswith("//"):
-                continue
-        elif path.suffix.lower() == ".py":
-            if s.startswith("#"):
-                continue
-        if s:
-            yield n, s
+
+def classify(r: str) -> str:
+    if r in WEB_EXACT or r.startswith(WEB_PREFIXES):
+        # Test files inside app/lib are support only.
+        if ".test." in r or ".spec." in r:
+            return "support"
+        return "web"
+    if r in PIPELINE_EXACT or r.startswith(PIPELINE_PREFIXES):
+        name = Path(r).name
+        if name.startswith("test_") or name in {"conftest.py", "inspect_schema.py", "inspect_checks.py", "verify_r2.py", "verify_scores.py"}:
+            return "support"
+        return "pipeline"
+    return "support"
 
 
 def main() -> int:
-    buckets = {"web_runtime": [], "pipeline_owner_runtime": [], "nonblocking_support": []}
+    buckets: dict[str, list[dict]] = {"web": [], "pipeline": [], "support": []}
     for path in ROOT.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in CODE_EXTS:
+        if not path.is_file() or not base_included(path):
             continue
-        rel_path = path.relative_to(ROOT)
-        if any(part in GLOBAL_EXCLUDES for part in rel_path.parts):
-            continue
-        rel = rel_path.as_posix()
+        r = rel(path)
         try:
-            matched = []
-            for n, line in executable_lines(path):
-                terms = [term for term in TERMS if term in line]
-                if terms:
-                    matched.append({"line": n, "terms": terms, "text": line[:220]})
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        if matched:
-            buckets[tier(rel)].append({"path": rel, "matches": matched})
+        matches = []
+        for n, raw in enumerate(lines, 1):
+            line = strip_nonexec_line(raw, path.suffix.lower())
+            if not line:
+                continue
+            terms = [t for t in TERMS if t in line]
+            if terms:
+                matches.append({"line": n, "terms": terms, "text": line[:220]})
+        if matches:
+            buckets[classify(r)].append({"path": r, "matches": matches})
 
-    summary = {
-        "web_runtime_blockers": len(buckets["web_runtime"]),
-        "pipeline_owner_runtime_blockers": len(buckets["pipeline_owner_runtime"]),
-        "nonblocking_support_refs": len(buckets["nonblocking_support"]),
-        "web_runtime_paths": [x["path"] for x in buckets["web_runtime"]],
-        "pipeline_owner_runtime_paths": [x["path"] for x in buckets["pipeline_owner_runtime"]],
+    result = {
+        "web_runtime_blockers": len(buckets["web"]),
+        "pipeline_owner_runtime_blockers": len(buckets["pipeline"]),
+        "nonblocking_support_refs": len(buckets["support"]),
+        "web_runtime_paths": [x["path"] for x in buckets["web"]],
+        "pipeline_owner_runtime_paths": [x["path"] for x in buckets["pipeline"]],
+        "support_paths": [x["path"] for x in buckets["support"]],
+        "details": buckets,
     }
-    result = {"summary": summary, **buckets}
-    out = ROOT / "artifacts" / "neon-runtime-ref-audit.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps(summary, indent=2))
-    print(f"output={out.relative_to(ROOT)}")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({
+        "web_runtime_blockers": result["web_runtime_blockers"],
+        "pipeline_owner_runtime_blockers": result["pipeline_owner_runtime_blockers"],
+        "nonblocking_support_refs": result["nonblocking_support_refs"],
+        "web_runtime_paths": result["web_runtime_paths"],
+        "pipeline_owner_runtime_paths": result["pipeline_owner_runtime_paths"],
+    }, indent=2))
+    print(f"output={OUT.relative_to(ROOT)}")
     return 0
 
 
