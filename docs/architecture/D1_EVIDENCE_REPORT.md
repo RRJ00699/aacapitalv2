@@ -19,6 +19,7 @@ PR #342 is superseded by PR #343. Only its useful rehearsal/evidence idea was re
 | Constraint honesty | No global `INSERT OR IGNORE` or per-row `SELECT` guard exists. Known rerun keys use an explicit conflict handler that no-ops only when every supplied value is identical and aborts on differing contents; rows without an approved key use plain `INSERT`, and unexpected CHECK/NOT NULL/UNIQUE violations fail the bounded batch. |
 | Bulk throughput | High-volume tables are grouped by table and exact column/conflict shape into bounded, multi-row `VALUES` statements (500 rows by default). FK ordering, UTF-8, byte ceilings, and identical-rerun conflict semantics remain enforced. |
 | Explicit scope | `core` excludes raw payload bodies and market/listing/GMP/valuation/decision writes; core reconciliation labels those tables `DEFERRED`. Archive path/SHA/size remains in the run report and normalized provenance retains SHA. |
+| Bootstrap singleton merge | Matrix fills only Neon NULLs in issue/profile/anchor singleton rows; equal values no-op and disagreements preserve Neon plus `SOURCE_CONFLICT` quarantine evidence. |
 
 ## Bulk migration performance defect
 

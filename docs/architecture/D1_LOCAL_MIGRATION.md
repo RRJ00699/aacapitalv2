@@ -65,6 +65,12 @@ a second time and reconcile again to prove idempotency without deleting existing
 
 Idempotency never uses global SQLite `OR IGNORE` and the bulk path emits no per-row `SELECT` guard. Expected reruns use only declared deterministic conflict keys: the conflict handler no-ops when every supplied value is identical and deliberately aborts the batch if contents differ. Rows without an approved rerun key use plain `INSERT`, so unexpected CHECK/NOT NULL/UNIQUE violations also fail the bounded Wrangler batch.
 
+IPO Matrix bootstrap enrichment is intentionally different for singleton `ipo_issue`,
+`company_profile`, and `anchor_summary` rows: an incoming value fills only an existing
+NULL. Equal non-NULL values no-op; differing non-NULL values preserve the existing Neon
+fact and append a `SOURCE_CONFLICT` quarantine record. Append-only/event tables retain
+strict deterministic conflict behavior.
+
 ## Owner staging execution (Windows-safe)
 
 The Python runner selects `npx.cmd` on Windows and `npx` elsewhere. The owner-controlled

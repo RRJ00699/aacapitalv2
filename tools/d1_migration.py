@@ -203,6 +203,26 @@ def approved_decimal(value: Any, source_unit: str, normalized_unit: str) -> str|
     if source_unit=="rs" and normalized_unit=="cr":return decimal_text(DECIMAL(text)/DECIMAL(10_000_000))
     raise ValueError(f"UNAPPROVED_UNIT:{source_unit}->{normalized_unit}")
 
+def singleton_bootstrap_sql(table: str, ipo_id: SqlExpr, names: list[str], values: list[Any],
+                            source_identity: Any, raw_sha: str) -> list[str]:
+    """Fill singleton NULLs and quarantine disagreements without overwriting facts."""
+    allowed={"ipo_issue","company_profile","anchor_summary"}
+    if table not in allowed:raise ValueError(f"not a bootstrap singleton: {table}")
+    columns=("ipo_id",*names);incoming=(ipo_id,*values)
+    assignments=",".join(f"{name}=COALESCE({table}.{name},excluded.{name})" for name in names)
+    merge=(f"INSERT INTO {table}({','.join(columns)}) VALUES({','.join(sql_value(v) for v in incoming)}) "
+      f"ON CONFLICT(ipo_id) DO UPDATE SET {assignments};")
+    conflicts=[]
+    for name,value in zip(names,values):
+        fp=fingerprint("ipomatrix",source_identity,table,name,raw_sha,value)
+        detail=SqlExpr(f"json_object('field',{sql_value(name)},'existing',{table}.{name},'incoming',{sql_value(value)})")
+        conflicts.append(
+          f"INSERT INTO migration_quarantine(source_name,source_identity,dataset,reason_code,detail_json,raw_sha256,fingerprint) "
+          f"SELECT 'ipomatrix',{sql_value(source_identity)},{sql_value(table)},'SOURCE_CONFLICT',{sql_value(detail)},{sql_value(raw_sha)},{sql_value(fp)} "
+          f"FROM {table} WHERE ipo_id={sql_value(ipo_id)} AND {name} IS NOT NULL AND NOT ({name} IS {sql_value(value)}) "
+          "ON CONFLICT(fingerprint) DO NOTHING;")
+    return [merge,*conflicts]
+
 def transform_ipomatrix(payload: dict[str,Any], raw_sha: str, mapping: dict[str,Any]) -> tuple[list[str],Counter]:
     """Reviewed-map-driven bootstrap. No path or unit exists here by assumption."""
     mid=json_path(payload,mapping["matrix_id"]); ipo_id=SqlExpr(f"(SELECT id FROM ipo WHERE ipo_matrix_id={sql_value(mid)})")
@@ -222,7 +242,8 @@ def transform_ipomatrix(payload: dict[str,Any], raw_sha: str, mapping: dict[str,
                 names.append(target);values.append(value);field_values[target]=value;counts[f"ipomatrix_{table}.{target}"]+=1
                 provenance(table,target,raw,value,rule.get("normalized_unit",rule.get("unit")),rule["path"])
         if table=="ipo_issue" and validate_issue(field_values):raise ValueError("UNIT_ANOMALY:"+",".join(validate_issue(field_values)))
-        if names:sql.append(insert_sql(table,("ipo_id",*names),(ipo_id,*values)));counts[f"ipomatrix_rows_{table}"]+=1
+        if names:
+            sql.extend(singleton_bootstrap_sql(table,ipo_id,names,values,mid,raw_sha));counts[f"ipomatrix_rows_{table}"]+=1
     scalar_section("ipo_issue","ipo_issue",("open_date","close_date","allotment_date","listing_date","band_lo_rs","band_hi_rs","issue_price_rs","face_value_rs","lot_size_shares","issue_size_cr","fresh_cr","ofs_cr","market_cap_cr","registrar_name"))
     scalar_section("company_profile","company_profile",("business_description","sector","industry","incorporated_date","registered_office","website","promoters_json"))
     for section,table,fields,key_fields in (
@@ -436,21 +457,26 @@ def apply_sql(sql_lines: list[str], max_statements=10_000, bulk_rows=500,
         for statement,row_count in compiled:
             size=len(statement.encode("utf-8"))+1
             if pending and (len(pending)>=max_statements or pending_bytes+size>max_file_bytes):
-                _execute_sql_file(pending);files+=1;processed+=pending_rows
+                _execute_sql_file(table,pending);files+=1;processed+=pending_rows
                 print(f"{table}: {processed} / {total}")
                 pending=[];pending_rows=0;pending_bytes=24
             if size+24>max_file_bytes:raise ValueError(f"{table} statement exceeds --max-file-bytes")
             pending.append(statement);pending_rows+=row_count;pending_bytes+=size
         if pending:
-            _execute_sql_file(pending);files+=1;processed+=pending_rows
+            _execute_sql_file(table,pending);files+=1;processed+=pending_rows
             print(f"{table}: {processed} / {total}")
         if total:stats[table]={"source_rows":total,"multirow_statements":len(compiled),"sql_files":files}
     return stats
 
-def _execute_sql_file(statements: list[str]):
+def _execute_sql_file(table: str, statements: list[str]):
     with tempfile.NamedTemporaryFile("w",suffix=".sql",delete=False,encoding="utf-8",newline="\n") as f:
         f.write("PRAGMA foreign_keys=ON;\n"+"\n".join(statements)+"\n");path=f.name
     try:wrangler(["execute",WRANGLER_BINDING,"--file",path])
+    except subprocess.CalledProcessError as exc:
+        print(f"Wrangler failed while loading target table: {table}",file=sys.stderr)
+        if exc.stdout:print(exc.stdout,file=sys.stderr,end="" if exc.stdout.endswith("\n") else "\n")
+        if exc.stderr:print(exc.stderr,file=sys.stderr,end="" if exc.stderr.endswith("\n") else "\n")
+        raise
     finally:Path(path).unlink(missing_ok=True)
 
 apply_local=apply_sql  # compatibility for the repository rehearsal

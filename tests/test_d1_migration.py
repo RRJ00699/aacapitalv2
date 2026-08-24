@@ -1,4 +1,5 @@
 import hashlib, json, sqlite3
+import subprocess
 from decimal import Decimal
 from pathlib import Path
 import pytest
@@ -259,10 +260,41 @@ def test_reviewed_ipomatrix_map_populates_normalized_history_without_unit_guessi
     statements,counts=transform_ipomatrix(payload,"a"*64,m)
     for table in ("ipo_issue","company_profile","ownership","objects_of_issue","financial_statements","reservations","subscription_snapshots","anchor_summary","anchor_allocations","peer_comparisons","source_facts","documents"):
         assert any(f"INTO {table}" in sql for sql in statements),table
+    for table in ("ipo_issue","company_profile","anchor_summary"):
+        assert any(f"INSERT INTO {table}" in sql and f"COALESCE({table}." in sql for sql in statements)
     assert "'10'" in next(x for x in statements if "INTO financial_statements" in x)  # ₹100m -> ₹10cr
     assert any("INTO source_facts" in sql and "'"+("a"*64)+"'" in sql for sql in statements)
     with pytest.raises(ValueError,match="UNAPPROVED_UNIT"):
         transform_ipomatrix(payload,"a"*64,{**m,"sourced_kpis":{"ROE":{"path":"$.kpi.roe","unit":"mystery","normalized_unit":"pct"}}})
+
+def test_singleton_bootstrap_fills_null_preserves_neon_and_quarantines_conflict(db):
+    db.execute("PRAGMA foreign_keys=ON")
+    db.execute("INSERT INTO ipo(id,isin,name,name_norm,ipo_matrix_id) VALUES(1,'INE123456789','Example','example',42)")
+    db.execute("INSERT INTO ipo_issue(ipo_id,band_lo_rs,issue_price_rs) VALUES(1,NULL,'160')")
+    mapping={"matrix_id":"$.data.id","name":"$.data.company_name","isin":"$.data.isin",
+      "ipo_issue":{"band_lo_rs":{"path":"$.data.band_lo","unit":"rs"},
+        "issue_price_rs":{"path":"$.data.issue_price","unit":"rs"}}}
+    payload={"data":{"id":42,"company_name":"Example","isin":"INE123456789","band_lo":"152","issue_price":"160"}}
+    identity,reason=map_ipomatrix_identity(isin=d1m.json_path(payload,mapping["isin"]),
+      name=d1m.json_path(payload,mapping["name"]),matrix_id=d1m.json_path(payload,mapping["matrix_id"]),
+      by_isin={"INE123456789":1},by_name={"example":1},by_matrix={42:1})
+    assert reason is None and identity
+    statements,_=transform_ipomatrix(payload,"a"*64,mapping)
+    for statement in statements:db.executescript(statement)
+    assert db.execute("SELECT band_lo_rs,issue_price_rs FROM ipo_issue").fetchone()==("152","160")
+    assert db.execute("SELECT count(*) FROM migration_quarantine").fetchone()[0]==0
+    conflicting={"data":{**payload["data"],"issue_price":"165"}}
+    statements,_=transform_ipomatrix(conflicting,"b"*64,mapping)
+    for statement in statements:db.executescript(statement)
+    assert db.execute("SELECT count(*),min(issue_price_rs) FROM ipo_issue").fetchone()==(1,"160")
+    assert db.execute("SELECT reason_code FROM migration_quarantine").fetchall()==[("SOURCE_CONFLICT",)]
+
+def test_wrangler_failure_prints_table_and_captured_output(monkeypatch,capsys):
+    error=subprocess.CalledProcessError(1,["wrangler"],output="D1 stdout\n",stderr="D1 constraint failed\n")
+    monkeypatch.setattr(d1m,"wrangler",lambda args:(_ for _ in ()).throw(error))
+    with pytest.raises(subprocess.CalledProcessError):d1m._execute_sql_file("ipo_issue",["SELECT 1;"])
+    stderr=capsys.readouterr().err
+    assert "ipo_issue" in stderr and "D1 stdout" in stderr and "D1 constraint failed" in stderr
 
 def test_raw_archive_rejects_update_and_delete(db):
     sha="a"*64; db.execute("insert into raw_objects values(?,?,?,?,?,?)",(sha,"ipomatrix","1",None,2,"{}"))
