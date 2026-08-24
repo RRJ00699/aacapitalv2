@@ -11,7 +11,7 @@ def name_norm(v):
 def npx_cmd(): return "npx.cmd" if platform.system().lower().startswith("win") else "npx"
 
 def d1_query(config: Path,binding: str,sql: str):
-    cp=subprocess.run([npx_cmd(),"wrangler","d1","execute",binding,"--command",sql,"--json","--remote","--config",str(config)],cwd=ROOT,check=True,capture_output=True,text=True,encoding="utf-8",errors="replace")
+    cp=subprocess.run([npx_cmd(),"wrangler","--config",str(config),"d1","execute",binding,"--remote","--command",sql,"--json"],cwd=ROOT,check=True,capture_output=True,text=True,encoding="utf-8",errors="replace")
     payload=json.loads(cp.stdout)
     if isinstance(payload,list):
         for item in payload:
@@ -44,10 +44,11 @@ def main():
     ap.add_argument("--wrangler-config",type=Path,required=True)
     ap.add_argument("--binding",default="DB")
     args=ap.parse_args()
+    config=args.wrangler_config.resolve()
     rows=list(csv.DictReader(args.csv.open("r",encoding="utf-8-sig",newline="")))
     mids=sorted({int(r["matrix_id"]) for r in rows if r.get("status")=="UNMATCHED_IDENTITY" and r.get("matrix_id")})
     payloads=load_payloads(args.ipomatrix)
-    existing=d1_query(args.wrangler_config.resolve(),args.binding,"SELECT id,ipo_matrix_id,isin,name_norm FROM ipo")
+    existing=d1_query(config,args.binding,"SELECT id,ipo_matrix_id,isin,name_norm FROM ipo")
     by_mid={r.get("ipo_matrix_id") for r in existing if r.get("ipo_matrix_id") is not None}
     by_isin={str(r.get("isin")).upper() for r in existing if r.get("isin")}
     by_name={r.get("name_norm") for r in existing if r.get("name_norm")}
@@ -65,7 +66,7 @@ def main():
         inserted+=1
     if stmts:
         sql="PRAGMA foreign_keys=ON;\n"+"\n".join(stmts)
-        subprocess.run([npx_cmd(),"wrangler","d1","execute",args.binding,"--command",sql,"--remote","--config",str(args.wrangler_config.resolve())],cwd=ROOT,check=True,text=True,encoding="utf-8",errors="replace")
+        subprocess.run([npx_cmd(),"wrangler","--config",str(config),"d1","execute",args.binding,"--remote","--command",sql],cwd=ROOT,check=True,text=True,encoding="utf-8",errors="replace")
     print(json.dumps({"unmatched":len(mids),"inserted":inserted,"skipped_existing":skipped},sort_keys=True))
 
 if __name__=="__main__": main()
