@@ -5,7 +5,7 @@ import pytest
 import tools.d1_migration as d1m
 
 from tools.d1_migration import (decimal_text, fingerprint, inventory, name_norm,
-    NEON_QUERIES, checkpoint_sql, derive_security_kind, insert_sql, map_ipomatrix_identity, normalize_legacy_status, resolve_identity, survey, transform_ipomatrix,
+    NEON_QUERIES, checkpoint_sql, derive_security_kind, derived_source_fact_sql, insert_sql, map_ipomatrix_identity, normalize_legacy_status, resolve_identity, survey, transform_ipomatrix,
     transform_neon, validate_issue)
 from tools.d1_reconcile import reconcile
 from tools.d1_contract import canonical_spine_eligible, concept_state
@@ -154,6 +154,17 @@ def test_neon_security_kind_uses_provenance_not_a_nonexistent_ipo_column():
     assert derive_security_kind("EQUITY,REIT")==("EQUITY","AMBIGUOUS_SECURITY_KIND")
     assert normalize_legacy_status("ARCHIVED","2020-01-01")==("LISTED","ARCHIVED")
     assert normalize_legacy_status("ARCHIVED",None)==("ANNOUNCED","ARCHIVED")
+
+def test_migration_derived_facts_have_no_document_fk(db):
+    db.execute("PRAGMA foreign_keys=ON")
+    db.execute("INSERT INTO ipo(id,name,name_norm) VALUES(1,'One','one')")
+    statements=(
+      derived_source_fact_sql(1,"status","ARCHIVED","LISTED","neon_legacy_normalization","2020-01-01"),
+      derived_source_fact_sql(1,"security_kind",None,"EQUITY","migration_default","2020-01-01"),
+    )
+    for statement in statements:db.executescript(statement)
+    rows=db.execute("SELECT target_field,document_sha256 FROM source_facts ORDER BY target_field").fetchall()
+    assert rows==[("security_kind",None),("status",None)]
 
 def test_not_due_is_not_missing_failed_or_zero(db):
     assert concept_state("ANNOUNCED","market")=="NOT_DUE"

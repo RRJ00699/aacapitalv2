@@ -448,6 +448,17 @@ def checkpoint_sql(dataset: str, source_rows: int, written_rows: int) -> str:
       "ON CONFLICT(dataset) DO UPDATE SET last_key='COMPLETE',source_rows=excluded.source_rows,"
       "written_rows=excluded.written_rows,updated_at=CURRENT_TIMESTAMP;")
 
+def derived_source_fact_sql(ipo_id: int, field: str, raw_value: Any,
+                            normalized_value: Any, source_name: str,
+                            observed_at: Any) -> str:
+    """Build migration provenance with no document FK for a derived fact."""
+    values=(ipo_id,"ipo",field,raw_value,normalized_value,None,source_name,None,
+            observed_at,"d1-migration-v1")
+    columns=("ipo_id","target_table","target_field","raw_value","normalized_value",
+             "unit","source_name","document_sha256","observed_at","parser_version",
+             "observation_fingerprint")
+    return insert_sql("source_facts",columns,values+(fingerprint(*values),))
+
 def main() -> int:
     global WRANGLER,WRANGLER_BINDING,WRANGLER_REMOTE
     started=time.monotonic()
@@ -505,12 +516,12 @@ def main() -> int:
         # A bad legacy field is quarantined, but never suppresses the parent IPO row.
         mapped=transform_neon(dataset,row)
         if dataset=="ipo" and legacy_status!=row["status"]:
-            values=(row["id"],"ipo","status",legacy_status,row["status"],None,"neon_legacy_normalization","lifecycle-status",row["created_at"],"d1-migration-v1")
-            mapped.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","document_sha256","observed_at","parser_version","observation_fingerprint"),values+(fingerprint(*values),)))
+            mapped.append(derived_source_fact_sql(row["id"],"status",legacy_status,row["status"],
+              "neon_legacy_normalization",row["created_at"]))
             counts["normalized_legacy_status"]+=1;counts["derived_source_fact_rows"]+=1
         if dataset=="ipo" and not evidence:
-            values=(row["id"],"ipo","security_kind",None,"EQUITY",None,"migration_default","security-classification",row["created_at"],"d1-migration-v1")
-            mapped.append(insert_sql("source_facts",("ipo_id","target_table","target_field","raw_value","normalized_value","unit","source_name","document_sha256","observed_at","parser_version","observation_fingerprint"),values+(fingerprint(*values),)))
+            mapped.append(derived_source_fact_sql(row["id"],"security_kind",None,"EQUITY",
+              "migration_default",row["created_at"]))
             counts["derived_source_fact_rows"]+=1
         if dataset=="ipo_issue" and not mapped:
             anomalies=validate_issue({"band_lo_rs":row["band_lo"],"band_hi_rs":row["band_hi"],"issue_price_rs":row["issue_price"],"face_value_rs":row["face_value"],"issue_size_cr":row["issue_size_cr"],"fresh_cr":row["fresh_cr"],"ofs_cr":row["ofs_cr"],"is_book_built":True})
