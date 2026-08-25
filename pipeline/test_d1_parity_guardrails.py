@@ -18,6 +18,10 @@ PR343_COLUMNS = {
                     "close_rs", "volume_shares", "source_name", "content_fingerprint"},
 }
 
+# d1/migrations/0001_functional_model.sql from #343 also defines these provenance
+# and issue-mechanism fields on ipo_issue.
+PR343_COLUMNS["ipo_issue"].update({"is_book_built", "source_name", "source_observed_at"})
+
 
 def test_derive_outcome_rejects_implausible_gap(v2_db):
     cur = v2_db.cursor()
@@ -56,3 +60,21 @@ def test_real_bulk_d1_export_has_pr343_schema():
     for table, expected in PR343_COLUMNS.items():
         actual = {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')}
         assert actual == expected, f"{table}: missing={expected-actual}, extra={actual-expected}"
+
+
+@pytest.mark.parametrize(
+    ("issue_size", "fresh", "ofs", "should_fail"),
+    [(500, 300, 200.5, False), (500, 300, 215, True),
+     (20, 10, 10.8, False), (20, 10, 12, True)],
+)
+def test_fresh_ofs_reconciliation_uses_two_percent_with_one_crore_floor(
+        issue_size, fresh, ofs, should_fail):
+    from tools.d1_spine_check import FRESH_OFS_SQL
+
+    db = sqlite3.connect(":memory:")
+    db.execute("""CREATE TABLE ipo_issue(
+        ipo_id INTEGER, fresh_cr TEXT, ofs_cr TEXT, issue_size_cr TEXT)""")
+    db.execute("INSERT INTO ipo_issue VALUES(1,?,?,?)", (str(fresh), str(ofs), str(issue_size)))
+    assert db.execute("SELECT MAX(1.0, ABS(CAST(? AS REAL))*0.02)",
+                      (str(issue_size),)).fetchone()[0] == max(1.0, abs(issue_size) * 0.02)
+    assert bool(db.execute(FRESH_OFS_SQL).fetchall()) is should_fail

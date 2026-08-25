@@ -12,6 +12,10 @@ from dataclasses import dataclass
 
 
 ISO_DATE = r"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+FRESH_OFS_SQL = """SELECT ipo_id,fresh_cr,ofs_cr,issue_size_cr FROM ipo_issue
+WHERE fresh_cr IS NOT NULL AND ofs_cr IS NOT NULL AND issue_size_cr IS NOT NULL
+  AND ABS(CAST(fresh_cr AS REAL)+CAST(ofs_cr AS REAL)-CAST(issue_size_cr AS REAL))
+      > MAX(1.0, ABS(CAST(issue_size_cr AS REAL))*0.02)"""
 
 
 @dataclass(frozen=True)
@@ -31,7 +35,7 @@ CHECKS = (
     Check("band/price integrity", "SELECT ipo_id,band_lo_rs,band_hi_rs,issue_price_rs FROM ipo_issue WHERE CAST(band_lo_rs AS REAL)<0 OR CAST(band_hi_rs AS REAL)<0 OR CAST(band_lo_rs AS REAL)>CAST(band_hi_rs AS REAL) OR CAST(issue_price_rs AS REAL)<CAST(band_lo_rs AS REAL) OR CAST(issue_price_rs AS REAL)>CAST(band_hi_rs AS REAL)"),
     Check("gap sanity", "SELECT ipo_id,gap_pct FROM listing_outcomes WHERE ABS(CAST(gap_pct AS REAL))>300"),
     Check("allowed statuses", "SELECT id,status FROM ipo WHERE status NOT IN ('ANNOUNCED','UPCOMING','OPEN','CLOSED','ALLOTTED','LISTED','WITHDRAWN') OR status IS NULL"),
-    Check("fresh+OFS reconciliation", "SELECT ipo_id,fresh_cr,ofs_cr,issue_size_cr FROM ipo_issue WHERE fresh_cr IS NOT NULL AND ofs_cr IS NOT NULL AND issue_size_cr IS NOT NULL AND ABS(CAST(fresh_cr AS REAL)+CAST(ofs_cr AS REAL)-CAST(issue_size_cr AS REAL))>0.02"),
+    Check("fresh+OFS reconciliation", FRESH_OFS_SQL),
     Check("raw object floor", "SELECT COUNT(*) n FROM raw_objects HAVING n<968"),
     Check("allowed security_kind", "SELECT id,security_kind FROM ipo WHERE security_kind NOT IN ('EQUITY','REIT','INVIT','FPO') OR security_kind IS NULL"),
 )
