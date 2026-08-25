@@ -67,7 +67,10 @@ def ledger_names(conn: sqlite3.Connection) -> set[str]:
 def migration_files(path: Path) -> list[Path]:
     files = sorted(path.glob("*.sql"))
     if not files:
-        raise RuntimeError(f"no canonical migrations found in {path}")
+        raise RuntimeError(
+            f"no migrations found in {path}; the canonical #343 migration tree must "
+            "be supplied explicitly (for example, from the migration worktree)"
+        )
     return files
 
 
@@ -135,7 +138,8 @@ def compare(actual_path: Path, migrations_path: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("actual_export", type=Path)
-    parser.add_argument("--migrations", type=Path, default=Path("d1/migrations"))
+    parser.add_argument("--migrations", type=Path, required=True,
+                        help="explicit path to the canonical #343 d1/migrations tree")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     report = compare(args.actual_export, args.migrations)

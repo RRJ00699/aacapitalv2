@@ -55,7 +55,7 @@ def test_real_bulk_d1_export_has_pr343_schema():
         pytest.skip("AACAPITAL_D1_EXPORT not supplied; real D1 export required")
     db = sqlite3.connect(f"file:{export}?mode=ro", uri=True)
     for table, expected in PR343_COLUMNS.items():
-        actual = {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')}
+        actual = {row[1] for row in db.execute(f'PRAGMA table_xinfo("{table}")')}
         assert actual == expected, f"{table}: missing={expected-actual}, extra={actual-expected}"
 
 
@@ -136,3 +136,12 @@ def test_schema_parity_uses_table_xinfo_for_generated_columns(tmp_path):
     actual.close()
     matrix = compare(actual_path, migrations)["matrix"]
     assert next(row for row in matrix if row["name"] == "issue")["state"] == "PRESENT_MATCH"
+
+
+def test_schema_parity_missing_canonical_migrations_fails_loudly(tmp_path):
+    from tools.d1_schema_parity import compare
+
+    actual_path = tmp_path / "actual.sqlite"
+    sqlite3.connect(actual_path).close()
+    with pytest.raises(RuntimeError, match="canonical #343 migration tree must be supplied"):
+        compare(actual_path, tmp_path / "missing-migrations")
