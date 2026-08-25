@@ -181,6 +181,14 @@ def derive_outcome(conn, ipo_id):
            "d1_close": float(d1[4]) if d1[4] is not None else None}
     if issue_price and rec["listing_open"]:
         gap = (rec["listing_open"] - issue_price) / issue_price * 100
+        # A listing-open gap outside this range is a broken price/unit input, not a
+        # legitimate outcome.  Do not let one bad upstream value overwrite the
+        # derived outcome (or assign it to the HEAVY pool).
+        if abs(gap) > 300:
+            raise ValueError(
+                f"ipo_id={ipo_id}: refusing implausible listing gap {gap:.4f}% "
+                "(expected abs(gap_pct) <= 300)"
+            )
         rec["gap_pct"] = round(gap, 4)
         # Pool doctrine (business case §3): Negative <0, Flat 0-15, Warm 15-50, Heavy >=50.
         # LABELS ARE UPPERCASE — CHECK outcome_pool_valid allows only
