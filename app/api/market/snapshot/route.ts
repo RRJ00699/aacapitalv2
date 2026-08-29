@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server"
-import { sql } from "@/lib/db"
+import { d1First } from "@/lib/d1"
 import { getCloudflareContext } from "@opennextjs/cloudflare"
 
 export const dynamic = "force-dynamic"
 
-// ── KV cache (ledger #13.2, owner-approved): dashboard snapshot is
-// slow-moving; 300s TTL. A hit also skips the 3 Yahoo live-price fetches.
-const CACHE_KEY = "market-snapshot:v1"
+const CACHE_KEY = "market-snapshot:v2"
 const CACHE_TTL_S = 300
 async function getKV(): Promise<({ get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> }) | null> {
   try { return (getCloudflareContext().env as unknown as { CACHE?: { get: (k: string) => Promise<string | null>; put: (k: string, v: string, o?: { expirationTtl?: number }) => Promise<void> } }).CACHE ?? null }
   catch { return null }
 }
 
-const n = (v: any, f: any = null) => { const x = Number(v); return Number.isFinite(x) ? x : f }
-const pick = (...vals: any[]) => vals.find(v => v !== null && v !== undefined && String(v) !== "") ?? null
-const safe = async <T,>(p: Promise<T>, f: T): Promise<T> => { try { return await p } catch { return f } }
+const n = (v: unknown, f: number | null = null) => { const x = Number(v); return Number.isFinite(x) ? x : f }
 
 export async function GET() {
   const kv = await getKV()
@@ -23,74 +19,50 @@ export async function GET() {
     try {
       const cached = await kv.get(CACHE_KEY)
       if (cached) return new NextResponse(cached, { headers: { "content-type": "application/json", "x-cache": "HIT" } })
-    } catch { /* fall through to DB */ }
+    } catch { /* miss */ }
   }
-  const [snapshot, regime, flows] = await Promise.all([
-    safe(sql`SELECT * FROM market_snapshot WHERE id=1 LIMIT 1`, [] as any[]),
-    safe(sql`SELECT * FROM market_regimes ORDER BY evaluation_date DESC LIMIT 1`, [] as any[]),
-    // daily_institutional_flows was never built (prod triage 2026-07-17) —
-    // graceful degrade per owner: FII/DII fields resolve null until the
-    // feature is scoped for real. Do NOT add a writer to satisfy this route.
-    Promise.resolve([] as any[]),
-  ])
 
-  const snap = snapshot[0] || {}
-  const reg = regime[0] || {}
-  const flow = flows[0] || {}
-  const payload = typeof snap.payload === "string" ? (() => { try { return JSON.parse(snap.payload) } catch { return {} } })() : (snap.payload || {})
+  const ctx = await d1First<{
+    d: string; regime: string | null; vix_close: string | null; breadth_pct: string | null;
+    advances: number | null; declines: number | null; pcr: string | null;
+  }>(`SELECT d,regime,vix_close,breadth_pct,advances,declines,pcr FROM market_context_daily ORDER BY d DESC LIMIT 1`)
 
-  const regimeName = pick(reg.active_regime, snap.market_regime, "NORMAL")
-  const deployMin = n(pick(reg.recommended_allocation_min, snap.deploy_min, payload.deploy_min), regimeName === "BEARISH" ? 10 : 50)
-  const deployMax = n(pick(reg.recommended_allocation_max, snap.deploy_max, payload.deploy_max), regimeName === "BEARISH" ? 30 : 70)
-
-  // Live price fetch from Yahoo (fallback when DB has stale/null data)
   let liveNifty = 0, liveBankNifty = 0, liveVix = 0
   try {
     const [nRes, bRes, vRes] = await Promise.all([
-      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1d",
-        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
-      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEBANK?interval=1d&range=1d",
-        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
-      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=1d",
-        { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1d", { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEBANK?interval=1d&range=1d", { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
+      fetch("https://query2.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=1d", { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }).then(r=>r.json()).catch(()=>null),
     ])
     const price = (d: any) => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? 0
-    liveNifty     = price(nRes)
-    liveBankNifty = price(bRes)
-    liveVix       = price(vRes)
+    liveNifty = price(nRes); liveBankNifty = price(bRes); liveVix = price(vRes)
   } catch {}
 
-  const finalNifty     = liveNifty     || n(pick(snap.nifty_price, reg.nifty_close, payload.nifty_price))
-  const finalBankNifty = liveBankNifty || n(pick(snap.banknifty_price, payload.banknifty_price))
-  const finalVix       = liveVix       || n(pick(snap.vix, snap.india_vix, payload.vix))
-
+  const regimeName = ctx?.regime ?? "NORMAL"
   const payloadOut = JSON.stringify({
     ok: true,
     data: {
       regime: regimeName,
       market_regime: regimeName,
-      nifty_price: finalNifty,
-      nifty_change_pct: n(pick(snap.nifty_change_pct, payload.nifty_change_pct)),
-      sensex_price: n(pick(snap.sensex_price, payload.sensex_price)),
-      sensex_change_pct: n(pick(snap.sensex_change_pct, payload.sensex_change_pct)),
-      banknifty_price: finalBankNifty,
-      banknifty_change_pct: n(pick(snap.banknifty_change_pct, payload.banknifty_change_pct)),
-      nifty_ema200: n(pick(reg.nifty_ema_200, payload.ema200)),
-      breadth_pct: n(pick(reg.breadth_percentage, snap.breadth_pct, payload.breadth)),
-      deploy_min: deployMin,
-      deploy_max: deployMax,
-      vix: n(pick(snap.vix, snap.india_vix, reg.india_vix, payload.vix)),
-      pcr: n(pick(snap.pcr, snap.nifty_pcr, payload.pcr)),
-      fii_flow: n(pick(flow.fii_net, snap.fii_flow, payload.fii_flow)),
-      dii_flow: n(pick(flow.dii_net, snap.dii_flow, payload.dii_flow)),
-      last_updated: pick(snap.last_updated, reg.evaluation_date),
+      nifty_price: liveNifty || null,
+      nifty_change_pct: null,
+      sensex_price: null,
+      sensex_change_pct: null,
+      banknifty_price: liveBankNifty || null,
+      banknifty_change_pct: null,
+      nifty_ema200: null,
+      breadth_pct: n(ctx?.breadth_pct),
+      advances: ctx?.advances ?? null,
+      declines: ctx?.declines ?? null,
+      deploy_min: regimeName === "BEARISH" ? 10 : 50,
+      deploy_max: regimeName === "BEARISH" ? 30 : 70,
+      vix: liveVix || n(ctx?.vix_close),
+      pcr: n(ctx?.pcr),
+      fii_flow: null,
+      dii_flow: null,
+      last_updated: ctx?.d ?? null,
     }
   })
-  if (kv) {
-    try { await kv.put(CACHE_KEY, payloadOut, { expirationTtl: CACHE_TTL_S }) }
-    catch { /* cache write failed — response still served */ }
-  }
-  return new NextResponse(payloadOut, {
-    headers: { "content-type": "application/json", "x-cache": "MISS" },
-  })
+  if (kv) { try { await kv.put(CACHE_KEY, payloadOut, { expirationTtl: CACHE_TTL_S }) } catch {} }
+  return new NextResponse(payloadOut, { headers: { "content-type": "application/json", "x-cache": "MISS" } })
 }

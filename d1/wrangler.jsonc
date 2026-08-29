@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "aacapital-d1-local-migration",
+  "compatibility_date": "2026-08-23",
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "aacapital-core-local",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }]
+}

@@ -1,25 +1,12 @@
-// set-password.mjs — set (or reset) a user's password for the username/password
-// login provider. Hashes with bcryptjs and upserts allowed_users(email,
-// password_hash), which ALSO allowlists the user (ring 2). The plaintext password
-// is read from a hidden TTY prompt — never from argv, never echoed, never logged.
-//
-// Targets whatever DATABASE_URL is set in the environment. It prints the host and
-// refuses to run if unset, so you consciously pick the DB (same safety pattern as
-// migrate_auth.py). Because production's DATABASE_URL still points at ep-small-river
-// while local dev uses ep-misty-meadow, set the password on EACH DB the worker may
-// read:
-//
-//   # PowerShell — production DB (small-river), so live login works:
-//   $env:DATABASE_URL="postgres://...ep-small-river.../..."; npm run set-password -- --email you@example.com
-//   # and the local/V2 DB (misty-meadow):
-//   $env:DATABASE_URL="postgres://...ep-misty-meadow.../..."; npm run set-password -- --email you@example.com
-//
+// set-password.mjs — set/reset a D1 allowed_users password hash.
 import readline from "node:readline";
 import bcrypt from "bcryptjs";
-import { neon } from "@neondatabase/serverless";
+import { execFileSync } from "node:child_process";
 
 const MIN_LEN = 8;
 const BCRYPT_ROUNDS = 12;
+const CONFIG = "wrangler.jsonc";
+const BINDING = "DB";
 
 function argEmail() {
   const i = process.argv.indexOf("--email");
@@ -27,13 +14,25 @@ function argEmail() {
   return String(v ?? "").toLowerCase().trim();
 }
 
-// Hidden prompt: prints the query, then mutes echo so the typed password never
-// appears on screen or in scrollback.
+function sqlv(v) { return `'${String(v).replaceAll("'", "''")}'`; }
+
+function d1(sql) {
+  const out = execFileSync(
+    process.platform === "win32" ? "npx.cmd" : "npx",
+    ["wrangler", "--config", CONFIG, "d1", "execute", BINDING, "--remote", "--command", sql, "--json"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const payload = JSON.parse(out);
+  for (const item of Array.isArray(payload) ? payload : [payload]) {
+    if (Array.isArray(item?.results)) return item.results;
+  }
+  return [];
+}
+
 function askHidden(query) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     rl._writeToOutput = (str) => {
-      // let the query through once; suppress everything the user types
       if (!rl.__muted) { rl.output.write(str); return; }
       if (str.includes("\n") || str.includes("\r")) rl.output.write("\n");
     };
@@ -42,7 +41,6 @@ function askHidden(query) {
   });
 }
 
-// Visible prompt (for the y/N confirmation — nothing secret here).
 function askVisible(query) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -51,26 +49,16 @@ function askVisible(query) {
 }
 
 async function main() {
-  const url = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
-  if (!url) {
-    console.error("Refusing to run: set DATABASE_URL (the DB the worker reads) first.");
-    process.exit(1);
-  }
-  const host = url.split("@").at(-1)?.split("/")[0] ?? "(unparsed)";
-
   const email = argEmail();
   if (!email || !email.includes("@")) {
     console.error("Usage: npm run set-password -- --email user@example.com");
     process.exit(1);
   }
 
-  console.log(`  target DB host : ${host}`);
+  console.log("  target         : Cloudflare D1 / DB");
   console.log(`  email          : ${email}`);
 
-  const sql = neon(url);
-  // Guard against a typo'd email silently creating a brand-new allowlisted account:
-  // if the email isn't already in allowed_users, require an explicit confirmation.
-  const existing = await sql`SELECT 1 FROM allowed_users WHERE email = ${email} LIMIT 1`;
+  const existing = d1(`SELECT 1 AS ok FROM allowed_users WHERE email=${sqlv(email)} LIMIT 1;`);
   if (existing.length === 0) {
     console.log("  note           : this email is NOT currently in allowed_users.");
     const yn = await askVisible("  create a NEW allowlisted account for it? (y/N): ");
@@ -92,18 +80,15 @@ async function main() {
   }
 
   const hash = await bcrypt.hash(pw, BCRYPT_ROUNDS);
-  // Insert sets added_by on first write; on conflict we only refresh the hash and
-  // leave the original added_by intact.
-  await sql`INSERT INTO allowed_users (email, password_hash, added_by)
-            VALUES (${email}, ${hash}, ${"set-password script"})
-            ON CONFLICT (email) DO UPDATE SET password_hash = ${hash}`;
+  d1(`INSERT INTO allowed_users(email,password_hash,added_by,added_at)
+      VALUES(${sqlv(email)},${sqlv(hash)},'set-password script',CURRENT_TIMESTAMP)
+      ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash;`);
 
-  console.log(`\n  ✓ password set for ${email} on ${host}`);
+  console.log(`\n  ✓ password set for ${email} in D1`);
   console.log("    (bcrypt hash stored; plaintext was never logged)");
 }
 
 main().catch((e) => {
-  // Print the message only — never the password or the full connection string.
   console.error("\nFailed:", e?.message ?? String(e));
   process.exit(1);
 });

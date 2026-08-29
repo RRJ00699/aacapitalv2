@@ -1,29 +1,18 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db/schema"
+import { getBroker } from "@/lib/brokers"
 
 export async function GET() {
   try {
-    const sql = getDb()
-    const rows = await sql`
-      SELECT user_id, created_at, expires_at
-      FROM kite_session
-      WHERE expires_at > NOW()
-      ORDER BY created_at DESC LIMIT 1
-    `
-    if (!rows.length) {
-      return NextResponse.json({
-        connected: false,
-        loginUrl: "/api/auth/zerodha",
-        message: "Zerodha not connected. Click to login.",
-      })
-    }
+    const broker = getBroker()
+    const connected = await broker.isConnected()
     return NextResponse.json({
-      connected: true,
-      userId: rows[0].user_id,
-      expiresAt: rows[0].expires_at,
+      connected,
       loginUrl: "/api/auth/zerodha",
+      message: connected
+        ? "Zerodha token available in Cloudflare broker storage."
+        : "Zerodha token unavailable. Refresh the Cloudflare Kite token.",
     })
   } catch (err: any) {
-    return NextResponse.json({ connected: false, message: err.message })
+    return NextResponse.json({ connected: false, message: err?.message ?? "status check failed" })
   }
 }

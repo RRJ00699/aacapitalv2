@@ -1,0 +1,14 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "aacapital-d1-ingest",
+  "main": "src/entry.ts",
+  "compatibility_date": "2026-08-24",
+  "keep_vars": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aacapitalpvtltd",
+      "database_id": "ef426358-e0ea-4fb0-9926-61cab986626f"
+    }
+  ]
+}

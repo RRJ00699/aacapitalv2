@@ -1,24 +1,20 @@
-// app/api/admin/pipeline-failures/route.ts — recent cron step failures for the
-// Settings "Pipeline health" panel (7-day window). Table is created lazily by
-// the lean pipeline's failure sink; absent table = zero failures, not an error.
+// app/api/admin/pipeline-failures/route.ts — recent cron step failures, D1-backed.
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
 import { requireUser } from "@/lib/api-guard";
+import { d1All } from "@/lib/d1";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const gate = await requireUser(); if (gate) return gate;   // ledger #15: was unguarded (stderr tails can carry secrets)
+  const gate = await requireUser(); if (gate) return gate;
   try {
-    const sql = neon(process.env.DATABASE_URL!);
-    const rows = await sql`
-      SELECT step, script, stderr_tail, failed_at
-      FROM pipeline_failures
-      WHERE failed_at > NOW() - interval '7 days'
-      ORDER BY failed_at DESC LIMIT 30`;
+    const rows = await d1All(
+      `SELECT step, script, stderr_tail, failed_at
+       FROM pipeline_failures
+       WHERE failed_at > datetime('now','-7 days')
+       ORDER BY failed_at DESC LIMIT 30`
+    );
     return NextResponse.json({ ok: true, failures: rows });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "";
-    if (msg.includes("does not exist")) return NextResponse.json({ ok: true, failures: [] });
-    return NextResponse.json({ ok: false, failures: [], error: msg }, { status: 500 });
+    return NextResponse.json({ ok: true, failures: [], warning: e instanceof Error ? e.message : "D1 query failed" });
   }
 }

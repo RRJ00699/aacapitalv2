@@ -1,13 +1,7 @@
 // lib/security/ratelimit.ts
-// Neon-backed rate limiter for AI routes.
-// The table is provisioned by explicit migration tooling, never request code.
-// On infra failure it ALLOWS the request — never blocks real users on a DB hiccup.
+// D1-backed rate limiter for AI routes. Infra failure allows the request.
 
-import { neon } from "@neondatabase/serverless"
-
-function db() {
-  return neon(process.env.DATABASE_URL!)
-}
+import { d1First, d1Run } from "@/lib/d1"
 
 export interface RateLimitResult {
   allowed: boolean
@@ -15,42 +9,22 @@ export interface RateLimitResult {
   limit: number
 }
 
-/**
- * Check and record a rate-limited request.
- * @param key       Unique identifier, e.g. `"ai-memo:1.2.3.4"`
- * @param limitPerHour  Max requests allowed per rolling hour window
- */
-export async function checkRateLimit(
-  key: string,
-  limitPerHour = 20
-): Promise<RateLimitResult> {
+export async function checkRateLimit(key: string, limitPerHour = 20): Promise<RateLimitResult> {
   try {
-    const sql = db()
+    const row = await d1First<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM rate_limit_log
+       WHERE rate_key=? AND created_at > datetime('now','-1 hour')`,
+      [key],
+    )
+    const count = Number(row?.count ?? 0)
+    if (count >= limitPerHour) return { allowed: false, remaining: 0, limit: limitPerHour }
 
-    // Count requests in the last hour for this key
-    const rows = await sql`
-      SELECT COUNT(*) AS count
-      FROM rate_limit_log
-      WHERE key = ${key}
-        AND created_at > NOW() - INTERVAL '1 hour'
-    `
-    const count = parseInt(rows[0]?.count ?? "0", 10)
-
-    if (count >= limitPerHour) {
-      return { allowed: false, remaining: 0, limit: limitPerHour }
-    }
-
-    // Log this request
-    await sql`INSERT INTO rate_limit_log (key) VALUES (${key})`
-
-    // Cleanup old rows probabilistically (10% of requests) to keep table lean
+    await d1Run(`INSERT INTO rate_limit_log(rate_key,created_at) VALUES(?,CURRENT_TIMESTAMP)`, [key])
     if (Math.random() < 0.1) {
-      await sql`DELETE FROM rate_limit_log WHERE created_at < NOW() - INTERVAL '24 hours'`
+      await d1Run(`DELETE FROM rate_limit_log WHERE created_at < datetime('now','-24 hours')`)
     }
-
     return { allowed: true, remaining: limitPerHour - count - 1, limit: limitPerHour }
   } catch {
-    // Never block a real user because of a rate-limit infra failure
     return { allowed: true, remaining: -1, limit: limitPerHour }
   }
 }

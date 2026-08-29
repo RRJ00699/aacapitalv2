@@ -87,13 +87,13 @@ def security_kind_from_series(series):
 # readmit a REIT/InvIT.
 CANONICAL_UNIVERSE_SQL = ("i.is_mainboard=TRUE AND "
                           "upper(COALESCE(i.status,'')) IN "
-                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','LISTED') AND "
+                          "('ANNOUNCED','UPCOMING','OPEN','CLOSED','ALLOTTED','LISTED') AND "
                           "NOT EXISTS (SELECT 1 FROM source_facts canonical_kind "
                           "WHERE canonical_kind.ipo_id=i.id AND "
                           "canonical_kind.field='" + SECURITY_KIND_FIELD + "' AND "
                           "upper(trim(COALESCE(canonical_kind.value,''))) "
                           "IN ('REIT','INVIT'))")
-CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "LISTED"}
+CANONICAL_STATUSES = {"ANNOUNCED", "UPCOMING", "OPEN", "CLOSED", "ALLOTTED", "LISTED"}
 
 def canonical_spine_eligible(is_mainboard, status, security_kind=None):
     """Python twin of CANONICAL_UNIVERSE_SQL for explicit-ID outcome accounting.
@@ -102,7 +102,9 @@ def canonical_spine_eligible(is_mainboard, status, security_kind=None):
     classified, which the SQL admits) so callers that do not read the fact keep the
     previous behaviour; a caller holding the fact MUST pass it, or the twin silently
     disagrees with the predicate it claims to mirror."""
-    kind = str(security_kind or "").strip().upper()
+    # D1's structural default is EQUITY; use the same default in the one canonical
+    # Python predicate so a missing optional argument never creates a second policy.
+    kind = str(security_kind or "EQUITY").strip().upper()
     return (is_mainboard is True and str(status or "").upper() in CANONICAL_STATUSES
             and kind not in EXCLUDED_SECURITY_KINDS)
 HEADERS = {
